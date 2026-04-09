@@ -13,6 +13,7 @@ import HelpTooltip from '../../../components/ui/HelpTooltip';
 const MenuSettings = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const BIZ_URL = "https://questhub-portal.vercel.app";
   const menuFormRef = useRef(null);
   const adjFormRef = useRef(null);
   const prodFormRef = useRef(null);
@@ -551,10 +552,10 @@ const handleProdCatSubmit = async (e) => {
             <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>全メニュー表示用（共通）</label>
             <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
               <code style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {`https://quest-hub-five.vercel.app/shop/${shopId}/reserve`}
+                {`${BIZ_URL}/shop/${shopId}/reserve`}
               </code>
               <button 
-                onClick={() => copyToClipboard(`https://quest-hub-five.vercel.app/shop/${shopId}/reserve`)}
+                onClick={() => copyToClipboard(`${BIZ_URL}/shop/${shopId}/reserve`)}
                 style={{ padding: '6px 12px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
               >コピー</button>
             </div>
@@ -568,10 +569,10 @@ const handleProdCatSubmit = async (e) => {
               </label>
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <code style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {`https://quest-hub-five.vercel.app/shop/${shopId}/reserve?type=${key}`}
+                  {`${BIZ_URL}/shop/${shopId}/reserve?type=${key}`}
                 </code>
                 <button 
-                  onClick={() => copyToClipboard(`https://quest-hub-five.vercel.app/shop/${shopId}/reserve?type=${key}`)}
+                  onClick={() => copyToClipboard(`${BIZ_URL}/shop/${shopId}/reserve?type=${key}`)}
                   style={{ padding: '6px 12px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}
                 >コピー</button>
               </div>
