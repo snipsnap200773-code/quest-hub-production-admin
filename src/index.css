@@ -1,0 +1,37 @@
+/* 余計な装飾をリセット */
+* {
+  box-sizing: border-box;
+}
+
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  background-color: #f0f2f5; /* 背景は少しグレー */
+  font-family: -apple-system, sans-serif;
+  display: flex;
+  justify-content: center; /* PCで見た時に中央に寄せる */
+}
+
+#root {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+}
+
+/* スマホサイズの白いコンテナ */
+.mobile-container {
+  width: 100%;
+  max-width: 480px; /* スマホの最大幅に制限 */
+  min-height: 100vh;
+  background-color: #ffffff; /* コンテンツエリアは白 */
+  box-shadow: 0 0 20px rgba(0,0,0,0.05);
+  padding-bottom: 50px; /* 下に余白を作る */
+}
+
+/* ボタンのタップ感を良くする */
+button:active {
+  opacity: 0.7;
+  transform: scale(0.98);
+}
