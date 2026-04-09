@@ -126,9 +126,7 @@ const AdminDashboard = () => {
               QUEST HUB COMMAND CENTER
             </p>
           </div>
-          <Link to={`/shop/${shopId}/reserve`} target="_blank" style={{ fontSize: '0.8rem', color: themeColor, textDecoration: 'none', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            お客様用ページを表示 <ExternalLink size={14} />
-          </Link>
+          {/* 🚀 右側のリンクを削除しました */}
         </div>
       </header>
 
