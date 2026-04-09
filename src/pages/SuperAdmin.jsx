@@ -152,18 +152,9 @@ function SuperAdmin() {
     setIsProcessing(true);
 
     try {
-      // 🚀 Edge Function（通知エンジン）に「Auth作成 + DB登録 + メール」を全部丸投げ
-      const CORRECT_URL = "https://rdpupixaqckhkpgjqcnb.supabase.co/functions/v1/resend";
-
-      const response = await fetch(CORRECT_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          // 🚀 2. 確実に .env から取得できているか確認しつつ送信
-          'Authorization': `Bearer ${supabase.supabaseKey}`, 
-          'apikey': supabase.supabaseKey
-        },
-        body: JSON.stringify({
+      // 🚀 正しい命令(CREATE_SHOP_FULL)と新規店舗のデータを送ります
+      const { data, error } = await supabase.functions.invoke('resend', {
+        body: {
           type: 'CREATE_SHOP_FULL',
           shopName: newShopName,
           shopNameKana: newShopKana,
@@ -174,21 +165,19 @@ function SuperAdmin() {
           businessType: newBusinessType,
           subBusinessType: newSubBusinessType,
           originUrl: window.location.origin
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'サーバー側での発行に失敗しました');
+      if (error) {
+        throw new Error(error.message || 'サーバー側での発行に失敗しました');
       }
 
       alert(`「${newShopName}」の発行が完了しました！\nAuthアカウント作成、DB登録、ウェルカムメール送信が完了しました。`);
       
-      // フォームリセット
       setNewShopName(''); setNewShopKana(''); setNewOwnerName(''); setNewOwnerNameKana('');
       setNewEmail(''); setNewPhone('');
       
-      fetchCreatedShops(); // リストを更新
+      fetchCreatedShops(); 
       setActiveTab('list');
 
     } catch (err) {
@@ -230,30 +219,23 @@ function SuperAdmin() {
     
     setIsProcessing(true);
     try {
-      const CORRECT_URL = "https://rdpupixaqckhkpgjqcnb.supabase.co/functions/v1/resend";
-      const response = await fetch(CORRECT_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.supabaseKey}`, 
-          'apikey': supabase.supabaseKey
-        },
-        body: JSON.stringify({
-          type: 'REPAIR_AUTH', // 🆕 復旧専用の命令タイプ
-          shopId: shop.id,     // 👈 これが最重要！今のIDを渡す
+      // 🚀 正しい命令(REPAIR_AUTH)と既存の店舗情報を送ります
+      const { data, error } = await supabase.functions.invoke('resend', {
+        body: {
+          type: 'REPAIR_AUTH',
+          shopId: shop.id,
           email: shop.email_contact,
           password: shop.admin_password,
           shopName: shop.business_name
-        })
+        }
       });
 
-      if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.message || '復旧に失敗しました');
+      if (error) {
+        throw new Error(error.message || '復旧に失敗しました');
       }
 
       alert(`「${shop.business_name}」の認証復旧が完了しました！\n次回から正常にログイン・通知が可能です。`);
-      fetchCreatedShops(); // リストを更新
+      fetchCreatedShops(); 
 
     } catch (err) {
       console.error("Repair Error:", err);
@@ -299,7 +281,7 @@ function SuperAdmin() {
   };
 
 const updateShopInfo = async (id) => {
-    setIsProcessing(true); // 🚀 処理中フラグをON
+    setIsProcessing(true); 
 
     // 1. まずはDB（profiles）を更新
     const { error: dbError } = await supabase.from('profiles').update({ 
@@ -320,24 +302,18 @@ const updateShopInfo = async (id) => {
       return;
     }
 
-    // 2. 🚀 🆕 Auth（認証）側のパスワードも同期させる
+    // 2. 🚀 Auth（認証）側のパスワードも同期させる
     try {
-      const CORRECT_URL = "https://rdpupixaqckhkpgjqcnb.supabase.co/functions/v1/resend";
-      const response = await fetch(CORRECT_URL, {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${supabase.supabaseKey}`, 
-          'apikey': supabase.supabaseKey
-        },
-        body: JSON.stringify({
-          type: 'UPDATE_PASSWORD', // 🆕 パスワード更新命令
+      // 🚀 正しい命令(UPDATE_PASSWORD)と新しいパスワードを送ります
+      const { error } = await supabase.functions.invoke('resend', {
+        body: {
+          type: 'UPDATE_PASSWORD',
           shopId: id,
           password: editPassword
-        })
+        }
       });
 
-      if (!response.ok) {
+      if (error) {
         console.warn("Auth sync failed, but DB was updated.");
       }
     } catch (err) {
