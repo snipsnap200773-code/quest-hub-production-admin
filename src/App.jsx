@@ -37,6 +37,11 @@ import ShopSearch from './components/ShopSearch';
 import ScrollToTop from './components/ScrollToTop';
 import InquiryForm from "./components/InquiryForm";
 
+// 🚀 🆕 【ねじ込み予約用に必須】ユーザーエリアの画面をインポート
+import ReservationForm from './pages/ReservationForm';
+import TimeSelectionCalendar from './pages/TimeSelectionCalendar'; 
+import ConfirmReservation from './pages/ConfirmReservation';
+
 function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
 
@@ -65,12 +70,12 @@ function App() {
         {/* 🏠 玄関口 */}
         <Route path="/" element={<FacilityLogin />} />
         
-        {/* 🕵️ 三土手さん専用（秘密の裏口） */}
+        {/* 🕵️ 三土手さん専用 */}
         <Route path="/super-admin-216-midote-snipsnap-dmaaaahkmm" element={<SuperAdmin />} />
 
-        {/* --- 📊 管理エリア：稼働中のAppと完全一致させました --- */}
+        {/* --- 📊 管理エリア --- */}
         <Route path="/admin/:shopId/dashboard" element={<AdminDashboard />} />
-        <Route path="/admin/:shopId" element={<AdminDashboard />} /> {/* ✅ 短縮URLを復元 */}
+        <Route path="/admin/:shopId" element={<AdminDashboard />} />
         <Route path="/admin/:shopId/management" element={<AdminManagement />} />
         <Route path="/admin/:shopId/reservations" element={<AdminReservations />} />
         <Route path="/admin/:shopId/timeline" element={<AdminTimeline />} />
@@ -101,10 +106,18 @@ function App() {
         <Route path="/admin/:shopId/facility-search" element={<FacilitySearch />} />
         <Route path="/facility-portal/:facilityId/find-shops" element={<ShopSearch />} />
 
-        {/* 🚀 お問い合わせ：稼働中と同じ「ユーザーエリア」のパスを維持 */}
+        {/* 🚀 お問い合わせ */}
         <Route path="/shop/:shopId/inquiry" element={<InquiryForm />} />
 
-        {/* 迷子防止 */}
+        {/* -----------------------------------------------------------
+            🆕 【ねじ込み予約用】ユーザー側画面のルートを復活（Adminアプリ内での表示用）
+        -------------------------------------------------------------- */}
+        <Route path="/shop/:shopId" element={<ReservationForm />} /> 
+        <Route path="/shop/:shopId/reserve" element={<ReservationForm />} />
+        <Route path="/shop/:shopId/reserve/time" element={<TimeSelectionCalendar />} />
+        <Route path="/shop/:shopId/confirm" element={<ConfirmReservation />} />
+
+        {/* 迷子防止（最後にある必要があります） */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </Router>
