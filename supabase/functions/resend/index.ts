@@ -28,6 +28,10 @@ const STORE_DEFAULTS = {
   remind_body: "{name} 様\n\n明日のご予約確認です。お気をつけてお越しくださいませ。\n\n📅 日時: {start_time}\n🏨 場所: {shop_name}\n📋 メニュー: {services}",
 };
 
+// index.ts の最初の方に追加
+const PORTAL_URL = "https://questhub-portal.vercel.app";
+const ADMIN_URL  = "https://quest-hub-admin.vercel.app";
+
 // 💡 プレースホルダー置換用の共通関数（全項目対応版）
 function applyPlaceholders(template: string, data: any) {
   if (!template) return "";
@@ -71,16 +75,36 @@ Deno.serve(async (req) => {
 
   try {
 const payload = await req.json();
-    const { 
-  type, shopId, customerEmail, customerName, shopName, 
-  startTime, services, shopEmail, cancelUrl, lineUserId, 
-  notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
-  reserve_url, password, ownerName, phone: ownerPhone, businessType,
-  staffName,
-  // 🆕 修正：custom_answers を受け取りリストに追加
-  furigana, address, parking, buildingType, careNotes, 
-  companyName, symptoms, requestDetails, notes, allOptions, custom_answers
-} = payload;
+    let { 
+      type, shopId, customerEmail, customerName, shopName, 
+      startTime, services, shopEmail, cancelUrl, lineUserId, 
+      notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
+      reserve_url, password, ownerName, phone, businessType,
+      staffName, furigana, address, parking, buildingType, careNotes, 
+      companyName, symptoms, requestDetails, notes, allOptions, custom_answers
+    } = payload;
+
+    // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
+    if (type === 'cancel' && payload.reservation) {
+      const res = payload.reservation;
+      customerEmail = customerEmail || res.customer_email;
+      customerName = customerName || res.customer_name;
+      startTime = startTime || res.start_time;
+      // メニュー名は services に入っているものを復元
+      if (!services) {
+        if (res.options?.people) {
+          // 複数名データ（people）がある場合
+          services = res.options.people.map((p: any) => p.services.map((s: any) => s.name).join(', ')).join(' / ');
+        } else if (res.options?.services) {
+          // 従来データ（services）がある場合
+          services = res.options.services.map((s: any) => s.name).join(', ');
+        } else {
+          services = "メニューなし";
+        }
+      }
+      // 店舗情報はDBから後で取りますが、最低限必要なものを補填
+      shopId = shopId || res.shop_id;
+    }
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
     // 🚀 さっき設定した名前に合わせる（SUPABASE_ を取る）
@@ -146,7 +170,7 @@ if (type === 'remind_all') {
       staffName: res.staffs?.name || "店舗スタッフ", // 🆕 ここを追加！
       address: info.address || shop.address || "",
       parking: info.parking || "",
-      cancelUrl: `https://quest-hub-five.vercel.app/shop/${shop.id}/reserve?cancel=${res.id}`,
+      cancelUrl: `${PORTAL_URL}/shop/${shop.id}/reserve?cancel=${res.id}`,
       officialUrl: shop.custom_official_url 
     };
 
@@ -281,12 +305,12 @@ if (type === 'partnership_approved') {
 
   // 2. 施設側へ送信（設定がONの場合のみ）
   if (fData?.email_notifications_enabled !== false && facilityEmail) {
-    await sendEmail(facilityEmail, facilityName, shopName, `https://quest-hub-five.vercel.app/facility-login/${facilityId}`);
+    await sendEmail(facilityEmail, facilityName, shopName, `${ADMIN_URL}/facility-login/${facilityId}`);
   }
 
   // 3. 店舗側へ送信（設定がONの場合のみ）
   if (sData?.email_notifications_enabled !== false && shopEmail) {
-    await sendEmail(shopEmail, shopName, facilityName, `https://quest-hub-five.vercel.app/admin/${shopId}/facilities`);
+    await sendEmail(shopEmail, shopName, facilityName, `${ADMIN_URL}/admin/${shopId}/facilities`);
   }
 
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
@@ -341,8 +365,8 @@ if (type === 'facility_booking') {
           </div>
 
           <div style="text-align: center;">
-            <a href="https://quest-hub-five.vercel.app/admin/${shopId}/reservations" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で詳細を確認する</a>
-          </div>
+  <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で詳細を確認する</a>
+</div>
         </div>`
     })
   });
@@ -371,7 +395,8 @@ if (type === 'facility_booking') {
 
             <p style="font-size: 0.9rem;">予約の内容はポータルの「予約状況・進捗管理」からいつでもご確認いただけます。</p>
             <div style="text-align: center; margin-top: 20px;">
-              <a href="https://quest-hub-five.vercel.app/facility-login/${facilityId}" style="display: inline-block; background: #c5a059; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
+              {/* 🚀 🆕 新しい管理画面URL（ADMIN_URL）に修正！ */}
+              <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #c5a059; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
             </div>
           </div>`
       })
@@ -447,8 +472,8 @@ if (type === 'inquiry') {
       </div>
 
       <div style="text-align: center;">
-        <a href="https://quest-hub-five.vercel.app/admin/${shopId}/dashboard" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面を開く</a>
-      </div>
+  <a href="${ADMIN_URL}/admin/${shopId}/dashboard" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面を開く</a>
+</div>
     </div>`;
 
   await fetch('https://api.resend.com/emails', {
@@ -484,7 +509,7 @@ if (type === 'inquiry') {
 
   // --- 💬 店舗様へのLINE通知 ---
   if (profile.line_admin_user_id && profile.line_channel_access_token) {
-    const lineMsg = `【${displayShopName}】\n${lineFieldsText}\n\n内容：\n${content}\n${customAnswersText ? `\nその他：\n${customAnswersText}` : ''}\n\nhttps://quest-hub-five.vercel.app/admin/${shopId}/dashboard`;
+    const lineMsg = `【${displayShopName}】\n${lineFieldsText}\n\n内容：\n${content}\n${customAnswersText ? `\nその他：\n${customAnswersText}` : ''}\n\n${ADMIN_URL}/admin/${shopId}/dashboard`;
     await safePushToLine(profile.line_admin_user_id, lineMsg, profile.line_channel_access_token, "INQUIRY_OWNER");
   }
 
@@ -665,20 +690,33 @@ if (type === 'inquiry') {
     // 🚀 パターンB・D・E：予約完了 ＆ キャンセル通知 (三土手さん指定の5パターン)
     // ==========================================
     const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).single();
-    const currentToken = profile?.line_channel_access_token;
-    const currentAdminId = profile?.line_admin_user_id;
+    
+    // 🚀 🆕 【ここを追加！】不足している店舗情報を補完する
+    if (profile) {
+      shopName = shopName || profile.business_name;
+      shopEmail = shopEmail || profile.email_contact || profile.email;
+    }
+
+    const currentToken = profile?.line_channel_access_token;
+    const currentAdminId = profile?.line_admin_user_id;
 
 const sendMail = async (to: string, isOwner: boolean) => {
+      // 🚀 🆕 キャンセル時は payload.reservation からデータを補填する
+      const resData = type === 'cancel' ? payload.reservation : {};
+      const targetName = customerName || resData.customer_name;
+      const targetTime = startTime || resData.start_time;
+      const targetServices = services || resData.options?.services?.map((s:any)=>s.name).join(', ') || "メニューなし";
+
       // ✅ 置換用データセット
-const placeholderData = { 
-        customerName, 
+      const placeholderData = { 
+        customerName: targetName, 
         shopName, 
-        startTime, 
-        services, 
+        startTime: targetTime, 
+        services: targetServices, 
         cancelUrl, 
-        staffName: staffName || "店舗スタッフ", // 🆕 ここに staffName を追加！
-        furigana, 
-        address, 
+        staffName: staffName || resData.staff_name || "店舗スタッフ",
+        furigana: furigana || resData.options?.visit_info?.furigana || "", 
+        address: address || resData.options?.visit_info?.address || "",
         parking, 
         buildingType, 
         careNotes,
@@ -695,17 +733,53 @@ const placeholderData = {
       let finalHtml = "";
 
       if (type === 'cancel') {
-        // --- キャンセル通知 ---
+        // --- 🚀 🆕 キャンセル通知（デザイン版） ---
+        const d = new Date(targetTime);
+        // 🚀 🆕 サーバーの時間ではなく、強制的に「日本時間」として整形する
+        const dateStr = d.toLocaleString('ja-JP', {
+          timeZone: 'Asia/Tokyo',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+        }).replace(/\//g, '年').replace(' ', '日 ');
+
         if (isOwner) {
-          finalSubject = applyPlaceholders(profile.mail_sub_shop_cancel || `【キャンセル通知】${customerName} 様`, placeholderData);
-          const body = applyPlaceholders(profile.mail_body_shop_cancel || `${shopName} 管理者様\n予約がキャンセルされました。\nお客様: ${customerName}\n日時: ${startTime}`, placeholderData).replace(/\n/g, '<br>');
-          finalHtml = `<div style="font-family:sans-serif;color:#333;">${body}</div>`;
+          // 🏪 店舗様向け通知
+          finalSubject = `【予約キャンセル】${targetName} 様 (${dateStr})`;
+          finalHtml = `
+            <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #ef4444;">
+              <h2 style="color: #ef4444; margin-top: 0;">⚠️ 予約キャンセル通知</h2>
+              <p><strong>${shopName} 管理者様</strong></p>
+              <p>お客様により、以下の予約がキャンセルされました。</p>
+              <div style="background: #fff5f5; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #feb2b2;">
+                <p style="margin: 0;">👤 <b>お客様:</b> ${targetName} 様</p>
+                <p style="margin: 5px 0 0;">📅 <b>予約日時:</b> ${dateStr}</p>
+                <p style="margin: 5px 0 0;">📋 <b>メニュー:</b> ${targetServices}</p>
+              </div>
+              <p style="font-size: 0.9rem; color: #64748b;">※予約枠が開放されました。必要に応じてカレンダーをご確認ください。</p>
+            </div>`;
         } else {
-          finalSubject = applyPlaceholders(profile.mail_sub_customer_cancel || `キャンセル完了のお知らせ（${shopName}）`, placeholderData);
-          const body = applyPlaceholders(profile.mail_body_customer_cancel || `${customerName} 様\n予約のキャンセルが完了しました。`, placeholderData).replace(/\n/g, '<br>');
-          finalHtml = `<div style="font-family:sans-serif;color:#333;">${body}</div>`;
+          // 👤 お客様向け通知
+          finalSubject = `【キャンセル完了】ご予約の取り消しを承りました（${shopName}）`;
+          finalHtml = `
+            <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #94a3b8;">
+              <h2 style="color: #475569; margin-top: 0;">キャンセル完了のお知らせ</h2>
+              <p>${targetName} 様</p>
+              <p>下記のご予約キャンセルを承りました。ご確認をお願いいたします。</p>
+              <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #e2e8f0;">
+                <p style="margin: 0;">📅 <b>日時:</b> ${dateStr}</p>
+                <p style="margin: 5px 0 0;">🏨 <b>店舗名:</b> ${shopName}</p>
+              </div>
+              <p>またのご利用をスタッフ一同、心よりお待ちしております。</p>
+              <div style="text-align: center; margin-top: 25px;">
+                <a href="${reserve_url || '#'}" style="display: inline-block; background: #475569; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">新しい予約を入れる</a>
+              </div>
+            </div>`;
         }
-      } else {
+      }
+      else {
         // --- 予約確定通知（サンクスメール） ---
         if (isOwner) {
           // 店舗宛
@@ -777,8 +851,9 @@ const placeholderData = {
             </div>
 
             <div style="margin-top: 25px; text-align: center;">
-              <a href="https://quest-hub-five.vercel.app/admin/${shopId}/reservations" style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem;">予約台帳で確認する</a>
-            </div>
+  {/* 🚀 🆕 新しい管理画面URL（ADMIN_URL）に修正！ */}
+  <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem;">予約台帳で確認する</a>
+</div>
           </div>`;
         } else {
           // お客様宛（サンクスメール）
