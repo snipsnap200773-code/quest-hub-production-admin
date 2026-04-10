@@ -148,7 +148,7 @@ const FacilityLogin = () => {
     <div style={bgStyle}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={cardStyle}>
         <div style={iconBoxStyle}><Building2 size={32} /></div>
-        <h1 style={titleStyle}>{facilityMetadata?.facility_name || "QUEST HUB Biz"}</h1>
+        <h1 style={titleStyle}>{facilityMetadata?.facility_name || "QUEST HUB Admin"}</h1>
         <p style={subtitleStyle}>マルチ管理ポータルログイン</p>
 
         <form onSubmit={handleLogin} style={formStyle}>
