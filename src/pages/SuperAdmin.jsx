@@ -10,7 +10,7 @@ import {
   MapPin, Plus, Trash2, Save, Image as ImageIcon, Bell, Search, 
   Filter, Store, UserCheck, ShieldAlert, Copy, ExternalLink, 
   Edit2, PlusSquare, Settings, List, LayoutDashboard, CheckCircle2, XCircle, Send,
-  Building2
+  Building2, LogOut
 } from 'lucide-react';
 
 // 🗑️ ここにあった「const INDUSTRY_OPTIONS = [...]」は削除しました
@@ -26,6 +26,15 @@ function SuperAdmin() {
   // 環境変数
   const MASTER_PASSWORD = import.meta.env.VITE_SUPER_MASTER_PASSWORD; 
   const DELETE_PASSWORD = import.meta.env.VITE_SUPER_DELETE_PASSWORD;
+
+  // 🆕 ログアウト処理：バトンを消してリロード
+  const handleLogout = () => {
+    if (window.confirm("システムからログアウトしますか？")) {
+      sessionStorage.removeItem('auth_super');
+      setIsAuthorized(false);
+      navigate('/');
+    }
+  };
 
   // --- その他のState ---
   const [createdShops, setCreatedShops] = useState([]);
@@ -738,6 +747,17 @@ const updateShopInfo = async (id) => {
           >
             <Settings size={18} /> 全体設定
           </button>
+
+          {/* 🆕 ログアウトボタンをタブバーの右端に追加 */}
+          <button 
+            onClick={handleLogout}
+            style={logoutCircleBtn}
+            title="システムログアウト"
+            onMouseOver={(e) => { e.currentTarget.style.color = '#ef4444'; e.currentTarget.style.background = '#fef2f2'; }}
+            onMouseOut={(e) => { e.currentTarget.style.color = '#64748b'; e.currentTarget.style.background = '#fff'; }}
+          >
+            <LogOut size={20} />
+          </button>
         </div>
 
         {/* 統計エリア（共通） */}
@@ -938,6 +958,22 @@ const newsItemStyle = { display: 'flex', justifyContent: 'space-between', fontSi
 const bottomNavStyle = { position: 'fixed', bottom: 0, left: 0, right: 0, background: '#fff', display: 'flex', justifyContent: 'space-around', padding: '12px 0', borderTop: '1px solid #e2e8f0', boxShadow: '0 -4px 15px rgba(0,0,0,0.05)', zIndex: 9999 };
 const navBtn = { background: 'none', border: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', color: '#94a3b8', cursor: 'pointer', flex: 1 };
 const navBtnActive = { ...navBtn, color: '#e60012' };
+
+// 🆕 ログアウトボタン（丸型で右端に置く用）
+const logoutCircleBtn = {
+  width: '40px',
+  height: '40px',
+  borderRadius: '10px',
+  border: '1px solid #e2e8f0',
+  background: '#fff',
+  color: '#64748b',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  cursor: 'pointer',
+  transition: 'all 0.2s',
+  marginLeft: '10px'
+};
 function CategoryRow({ name, dbData, onSave }) {
   const [imgUrl, setImgUrl] = useState("");
   const [sortOrder, setSortOrder] = useState(0);

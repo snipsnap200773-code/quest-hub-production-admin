@@ -6,7 +6,8 @@ import {
   ExternalLink, MessageCircle, MapPin, Sparkles, Mail,
   Users,
   Layout,
-  Building2 // 🆕 これを追加
+  Building2,
+  LogOut
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -19,6 +20,15 @@ const AdminDashboard = () => {
   const [isLoading, setIsLoading] = useState(true);  // ロード中フラグ
   const [isAuthorized, setIsAuthorized] = useState(false); // 認証フラグ
   const [inputPass, setInputPass] = useState('');    // 入力パスワード
+
+  // 🆕 ログアウト処理：セッションを消してTOPへ戻る
+  const handleLogout = () => {
+    if (window.confirm("ログアウトしてもよろしいですか？")) {
+      sessionStorage.removeItem(`auth_${shopId}`);
+      sessionStorage.removeItem('auth_super');
+      navigate('/');
+    }
+  };
 
   // 🆕 お店の情報と承認待ち件数を取得するメイン処理
   const fetchData = async () => {
@@ -106,6 +116,22 @@ const AdminDashboard = () => {
     display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' 
   });
 
+  // 🆕 ログアウトボタンのスタイル
+  const logoutBtnStyle = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: '8px',
+    padding: '10px 16px',
+    borderRadius: '12px',
+    border: '1px solid #e2e8f0',
+    background: '#fff',
+    color: '#64748b',
+    fontSize: '0.85rem',
+    fontWeight: 'bold',
+    cursor: 'pointer',
+    transition: 'all 0.2s'
+  };
+
   // ロード中は何も出さない
   if (isLoading) return null;
 
@@ -126,7 +152,25 @@ const AdminDashboard = () => {
               QUEST HUB COMMAND CENTER
             </p>
           </div>
-          {/* 🚀 右側のリンクを削除しました */}
+
+          {/* 🆕 ログアウトボタンを右側に配置 */}
+          <button 
+            onClick={handleLogout}
+            style={logoutBtnStyle}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = '#fff1f2';
+              e.currentTarget.style.color = '#f43f5e';
+              e.currentTarget.style.borderColor = '#fecdd3';
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = '#fff';
+              e.currentTarget.style.color = '#64748b';
+              e.currentTarget.style.borderColor = '#e2e8f0';
+            }}
+          >
+            <LogOut size={18} />
+            ログアウト
+          </button>
         </div>
       </header>
 
