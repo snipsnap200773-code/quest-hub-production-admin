@@ -395,12 +395,28 @@ const handleSave = async (e) => {
             </div>
 
             {/* 右側：振込先エリア */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-              <label style={labelStyle}>銀行名<input type="text" value={shopSettings.bank_name || ''} onChange={(e) => setShopSettings({...shopSettings, bank_name: e.target.value})} style={inputStyle} /></label>
-              <label style={labelStyle}>支店名<input type="text" value={shopSettings.bank_branch || ''} onChange={(e) => setShopSettings({...shopSettings, bank_branch: e.target.value})} style={inputStyle} /></label>
-              <label style={labelStyle}>口座番号<input type="text" value={shopSettings.bank_account_number || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_number: e.target.value})} style={inputStyle} /></label>
-              <label style={{ ...labelStyle, gridColumn: '1 / -1' }}>名義(カナ)<input type="text" value={shopSettings.bank_account_holder || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_holder: e.target.value})} style={inputStyle} /></label>
-            </div>
+            <div style={{ 
+  display: 'grid', 
+  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', // 🚀 スマホ対応
+  gap: '12px' 
+}}>
+  <label style={labelStyle}>銀行名
+    <input type="text" value={shopSettings.bank_name || ''} onChange={(e) => setShopSettings({...shopSettings, bank_name: e.target.value})} style={inputStyle} />
+  </label>
+  
+  <label style={labelStyle}>支店名
+    <input type="text" value={shopSettings.bank_branch || ''} onChange={(e) => setShopSettings({...shopSettings, bank_branch: e.target.value})} style={inputStyle} />
+  </label>
+  
+  <label style={labelStyle}>口座番号
+    <input type="text" value={shopSettings.bank_account_number || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_number: e.target.value})} style={inputStyle} />
+  </label>
+  
+  {/* 名義は重要なので、常に1行（2カラム分）使わせるのが綺麗です */}
+  <label style={{ ...labelStyle, gridColumn: '1 / -1' }}>名義(カナ)
+    <input type="text" value={shopSettings.bank_account_holder || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_holder: e.target.value})} style={inputStyle} />
+  </label>
+</div>
           </div>
           
           <button 
@@ -697,7 +713,14 @@ const modalHeaderStyle = { display: 'flex', justifyContent: 'space-between', ali
 const scrollAreaStyle = { flex: 1, overflowY: 'auto', paddingRight: '10px' };
 const formGridStyle = { display: 'flex', flexDirection: 'column', gap: '15px' };
 const labelStyle = { fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', display: 'flex', flexDirection: 'column', gap: '5px' };
-const inputStyle = { padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', outline: 'none' };
+const inputStyle = { 
+  width: '100%',            // 🚀 幅を親に合わせる
+  boxSizing: 'border-box',  // 🚀 パディングを内側に含める（これで解決！）
+  padding: '12px', 
+  borderRadius: '12px', 
+  border: '1px solid #cbd5e1', 
+  outline: 'none' 
+};
 const ruleConfigBoxStyle = { background: '#f8fafc', padding: '20px', borderRadius: '20px', border: '1px solid #e2e8f0' };
 const tinyLabelStyle = { fontSize: '0.7rem', fontWeight: 'bold', color: '#94a3b8', textTransform: 'uppercase' };
 const tileGridStyle = { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px', marginTop: '5px' };

@@ -395,7 +395,6 @@ if (type === 'facility_booking') {
 
             <p style="font-size: 0.9rem;">予約の内容はポータルの「予約状況・進捗管理」からいつでもご確認いただけます。</p>
             <div style="text-align: center; margin-top: 20px;">
-              {/* 🚀 🆕 新しい管理画面URL（ADMIN_URL）に修正！ */}
               <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #c5a059; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
             </div>
           </div>`
@@ -851,7 +850,6 @@ const sendMail = async (to: string, isOwner: boolean) => {
             </div>
 
             <div style="margin-top: 25px; text-align: center;">
-  {/* 🚀 🆕 新しい管理画面URL（ADMIN_URL）に修正！ */}
   <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem;">予約台帳で確認する</a>
 </div>
           </div>`;
