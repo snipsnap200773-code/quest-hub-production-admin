@@ -1388,7 +1388,7 @@ return (
                       
                       // 🚀 🆕 ここを追加：今の時間枠の左側だけ赤く太くする
                       ...(applyCurrentTimeMarker(dStr, time) && {
-                        borderLeft: '4px solid #ef4444',
+                        borderLeft: '3px solid #14a9d7',
                         // 💡 赤い棒が枠線に隠れないように zIndex を指定
                         zIndex: 10 
                       })
