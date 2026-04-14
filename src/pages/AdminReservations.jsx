@@ -1880,51 +1880,76 @@ return (
                       const hDate = new Date(h.start_time);
                       const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
                       const hBrandLabel = categoryMap[h.biz_type];
+                      // 🚀 1. キャンセル判定のフラグ
+                      const isCanceled = h.status === 'canceled';
 
-  return (
-    <div 
-      key={h.id} 
-      style={{ 
-        padding: '15px', 
-        borderBottom: '1px solid #eee', 
-        background: '#fff', 
-        borderRadius: isToday ? '12px' : '0', 
-        border: isToday ? `2px solid ${themeColor}` : 'none' 
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ fontWeight: 'bold' }}>{hDate.toLocaleDateString('ja-JP')}</span>
-          
-          {/* 🚀 🆕 追加：履歴リスト用の小さなバッジ */}
-          {hBrandLabel && (
-            <span style={{ 
-              fontSize: '0.6rem', 
-              padding: '1px 5px', 
-              borderRadius: '4px',
-              // カレンダーと同じ色分けルールを適用
-              background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', 
-              color: '#fff', 
-              fontWeight: '900',
-              whiteSpace: 'nowrap'
-            }}>
-              {hBrandLabel.slice(0, 5)}
-            </span>
-          )}
-        </div>
+                      return (
+                        <div 
+                          key={h.id} 
+                          style={{ 
+                            padding: '15px', 
+                            borderBottom: '1px solid #eee', 
+                            background: isCanceled ? '#fcfcfc' : '#fff', // キャンセルなら背景をわずかにグレーに
+                            borderRadius: isToday ? '12px' : '0', 
+                            border: isToday ? `2px solid ${themeColor}` : 'none',
+                            opacity: isCanceled ? 0.7 : 1, // キャンセルなら全体を少し薄く
+                            position: 'relative'
+                          }}
+                        >
+                          {/* 上段：日付と金額の行 */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                              {/* 🚀 2. 日付に斜線を適用 */}
+                              <span style={{ 
+                                fontWeight: 'bold', 
+                                fontSize: '0.9rem',
+                                color: isCanceled ? '#94a3b8' : '#1e293b',
+                                textDecoration: isCanceled ? 'line-through' : 'none' 
+                              }}>
+                                {hDate.toLocaleDateString('ja-JP')}
+                              </span>
+                              
+                              {/* 屋号バッジ */}
+                              {hBrandLabel && (
+                                <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                                  {hBrandLabel.slice(0, 5)}
+                                </span>
+                              )}
 
-        {(() => {
-  // 実績(total_price)があればそれを使い、なければ予定額を計算する
-  const displayPrice = h.total_price > 0 ? h.total_price : parseReservationDetails(h).totalPrice;
-  return (
-    <span style={{ color: '#e11d48', fontWeight: 'bold' }}>
-      ¥{displayPrice.toLocaleString()}
-      {h.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
-    </span>
-  );
-})()}
+                              {/* 🚀 3. 「当日キャンセル」バッジを表示 */}
+                              {isCanceled && (
+                                <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
+                                  当日キャンセル
+                                </span>
+                              )}
+                            </div>
+
+                            {/* 金額表示 */}
+                            {(() => {
+                              const displayPrice = h.total_price > 0 ? h.total_price : parseReservationDetails(h).totalPrice;
+                              return (
+                                <span style={{ 
+                                  color: isCanceled ? '#94a3b8' : '#e11d48', 
+                                  fontWeight: 'bold',
+                                  fontSize: '0.9rem',
+                                  textDecoration: isCanceled ? 'line-through' : 'none' 
+                                }}>
+                                  ¥{displayPrice.toLocaleString()}
+                                  {h.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
+                                </span>
+                              );
+                            })()}
                           </div>
-                          <div style={{ color: '#475569', fontSize: '0.8rem' }}>{h.menu_name}</div>
+
+                          {/* 下段：メニュー名 */}
+                          {/* 🚀 4. メニュー名にも斜線を適用 */}
+                          <div style={{ 
+                            color: isCanceled ? '#cbd5e1' : '#475569', 
+                            fontSize: '0.8rem',
+                            textDecoration: isCanceled ? 'line-through' : 'none'
+                          }}>
+                            {h.menu_name}
+                          </div>
                         </div>
                       );
                     })}

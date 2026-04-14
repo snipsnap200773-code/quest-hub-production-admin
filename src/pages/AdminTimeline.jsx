@@ -428,6 +428,26 @@ const handleSavePrivateTask = async () => {
   }
 };
 
+// 🚀 🆕 ここにキャンセル関数を差し込みます
+  const cancelRes = async (id) => {
+    if (!window.confirm("この予約を「キャンセル扱い」にして記録に残しますか？\n（予約枠は空きます）")) return;
+
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'canceled' }) // 🚀 物理削除せず、ステータスを書き換える
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setShowDetailModal(false);
+      fetchData(); // 🔄 画面を最新にする
+      alert("キャンセルとして記録しました"); 
+    } catch (err) {
+      alert("エラー: " + err.message);
+    }
+  };
+  
   // --- 予約の削除 ---
   const deleteRes = async (id) => {
     const isPrivate = selectedRes?.res_type === 'private_task';
@@ -1054,7 +1074,22 @@ const timeSlots = useMemo(() => {
                     </div>
                     
                     <button onClick={handleUpdateCustomer} style={{ width: '100%', padding: '12px', background: themeColor, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>情報を保存</button>
-                    <button onClick={() => deleteRes(selectedRes.id)} style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>予約を消去 ＆ 名簿掃除</button>
+
+{/* 🚀 🆕 ここを2段構えに修正（キャンセルボタンを追加） */}
+<div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+  <button 
+    onClick={() => cancelRes(selectedRes.id)} 
+    style={{ padding: '12px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+  >
+    キャンセル処理
+  </button>
+  <button 
+    onClick={() => deleteRes(selectedRes.id)} 
+    style={{ padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+  >
+    消去 & 掃除
+  </button>
+</div>
                   </div>
                 </div>
 
@@ -1065,46 +1100,68 @@ const timeSlots = useMemo(() => {
                     {customerHistory.map((h) => {
                       const hDate = new Date(h.start_time);
                       const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                      
-                      // 🚀 🆕 追加：この履歴項目の事業名を取得
                       const hBrandLabel = categoryMap[h.biz_type];
+                      // 🚀 1. キャンセル判定
+                      const isCanceled = h.status === 'canceled';
 
                       return (
-                        <div key={h.id} style={{ padding: '15px', borderBottom: '1px solid #eee', background: '#fff', borderRadius: isToday ? '12px' : '0', border: isToday ? `2px solid ${themeColor}` : 'none' }}>
+                        <div key={h.id} style={{ 
+                          padding: '15px', 
+                          borderBottom: '1px solid #eee', 
+                          background: isCanceled ? '#fcfcfc' : '#fff', 
+                          borderRadius: isToday ? '12px' : '0', 
+                          border: isToday ? `2px solid ${themeColor}` : 'none',
+                          opacity: isCanceled ? 0.7 : 1 
+                        }}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 'bold' }}>{hDate.toLocaleDateString('ja-JP')}</span>
+                              {/* 🚀 2. 日付に斜線を適用 */}
+                              <span style={{ 
+                                fontWeight: 'bold',
+                                color: isCanceled ? '#94a3b8' : '#1e293b',
+                                textDecoration: isCanceled ? 'line-through' : 'none' 
+                              }}>
+                                {hDate.toLocaleDateString('ja-JP')}
+                              </span>
                               
-                              {/* 🚀 🆕 追加：履歴リスト用の小さなバッジ */}
-{hBrandLabel && (
-                                <span style={{ 
-                                  fontSize: '0.6rem', 
-                                  padding: '1px 5px', 
-                                  borderRadius: '4px',
-                                  background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', 
-                                  color: '#fff', 
-                                  fontWeight: '900',
-                                  whiteSpace: 'nowrap'
-                                }}>
+                              {hBrandLabel && (
+                                <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap' }}>
                                   {hBrandLabel.slice(0, 5)}
                                 </span>
                               )}
+
+                              {/* 🚀 3. キャンセルバッジ */}
+                              {isCanceled && (
+                                <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
+                                  キャンセル済
+                                </span>
+                              )}
                             </div>
-                            
-                            {/* 🚀 🆕 修正：金額表示を (予) 対応版に書き換え */}
+
                             {(() => {
-                              // 実績(total_price)があればそれ、なければ計算した予定額(予)を表示
                               const displayPrice = h.total_price > 0 ? h.total_price : parseReservationDetails(h).totalPrice;
                               return (
-                                <span style={{ color: '#e11d48', fontWeight: 'bold' }}>
+                                <span style={{ 
+                                  color: isCanceled ? '#cbd5e1' : '#e11d48', 
+                                  fontWeight: 'bold',
+                                  textDecoration: isCanceled ? 'line-through' : 'none' 
+                                }}>
                                   ¥{displayPrice.toLocaleString()}
-                                  {h.total_price === 0 && <small style={{ fontSize: '0.6rem', marginLeft: '2px' }}>(予)</small>}
+                                  {h.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
                                 </span>
                               );
                             })()}
                           </div>
-                          <div style={{ color: '#475569', fontSize: '0.8rem' }}>{h.menu_name}</div>
+                          
+                          {/* 🚀 4. メニュー名にも斜線を適用 */}
+                          <div style={{ 
+                            color: isCanceled ? '#cbd5e1' : '#475569', 
+                            fontSize: '0.8rem',
+                            textDecoration: isCanceled ? 'line-through' : 'none'
+                          }}>
+                            {h.menu_name}
                           </div>
+                        </div>
                       );
                     })}
                   </div>

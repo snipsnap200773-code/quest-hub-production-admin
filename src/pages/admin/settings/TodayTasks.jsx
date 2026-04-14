@@ -484,6 +484,23 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
     }
   };
 
+  const handleCancelTask = async (task) => {
+    if (!window.confirm("この予約を「キャンセル扱い」にして記録に残しますか？\n（本日の予定から除外されます）")) return;
+
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'canceled' })
+        .eq('id', task.id);
+
+      if (error) throw error;
+      showMsg("キャンセルとして記録しました");
+      fetchTodayTasks(); // 🔄 リストを再読み込みして表示を更新
+    } catch (err) {
+      alert("エラー: " + err.message);
+    }
+  };
+  
 /* ==========================================
     🆕 お客様の詳細情報（名簿マスタからメモを取得 ＆ 履歴を名前でも検索）
    ========================================== */
@@ -698,106 +715,90 @@ const handleSaveMemo = async () => {
             <p>今日の売上対象タスクはありません</p>
           </div>
         ) : (
-          // 🆕 修正：売上対象外を除外してから map で表示
           tasks.map(task => {
             const isFacility = task.task_type === 'facility';
+            // 🚀 1. キャンセル判定のフラグを作成
+            const isCanceled = task.status === 'canceled';
             
             return (
               <div key={task.id} style={{ 
-                background: task.status === 'completed' ? '#f8fafc' : '#fff', 
+                // キャンセル時は背景をわずかにグレーに
+                background: isCanceled ? '#fcfcfc' : (task.status === 'completed' ? '#f8fafc' : '#fff'), 
                 padding: '20px', 
                 borderRadius: '20px', 
-                border: task.status === 'completed' 
-                  ? '1px solid #e2e8f0' 
-                  : (isFacility ? `2px solid #4f46e544` : `2px solid ${themeColor}22`), // 施設は紫系に
+                border: isCanceled ? '1px solid #e2e8f0' : (task.status === 'completed' ? '1px solid #e2e8f0' : (isFacility ? `2px solid #4f46e544` : `2px solid ${themeColor}22`)),
                 boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)',
-                opacity: task.status === 'completed' ? 0.7 : 1
+                // 🚀 完了 or キャンセルなら全体を薄くする
+                opacity: (task.status === 'completed' || isCanceled) ? 0.7 : 1
               }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '15px' }}>
                   <div style={{ flex: 1, minWidth: '200px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
-                      <Clock size={16} color={isFacility ? '#4f46e5' : themeColor} />
-                      <span style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b' }}>
+                      <Clock size={16} color={isCanceled ? '#94a3b8' : (isFacility ? '#4f46e5' : themeColor)} />
+                      <span style={{ 
+                        fontWeight: 'bold', 
+                        fontSize: '1.1rem', 
+                        color: isCanceled ? '#94a3b8' : '#1e293b',
+                        // 🚀 2. キャンセルなら時間に斜線
+                        textDecoration: isCanceled ? 'line-through' : 'none' 
+                      }}>
                         {isFacility ? '訪問予定' : new Date(task.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }) + ' 〜'}
                       </span>
 
-                      {/* 🚀 🆕 追加：屋号バッジ（biz_typeがある場合のみ） */}
-                      {!isFacility && categoryMap[task.biz_type] && (
-                        <span style={{ 
-                          fontSize: '0.6rem', padding: '2px 6px', borderRadius: '4px',
-                          background: task.biz_type === 'foot' ? '#4285f4' : '#d34817',
-                          color: '#fff', fontWeight: '900', marginLeft: '5px'
-                        }}>
-                          {categoryMap[task.biz_type].slice(0, 5)}
+                      {/* 🚀 3. キャンセルバッジを表示 */}
+                      {isCanceled && (
+                        <span style={{ fontSize: '0.65rem', background: '#fee2e2', color: '#ef4444', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
+                          当日キャンセル
                         </span>
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#1e293b' }}>
-                      {/* 🆕 アイコンの出し分け */}
-                      {isFacility ? <Building2 size={18} color="#4f46e5" strokeWidth={2.5} /> : <User size={18} />}
-                      <span style={{ fontWeight: '900', fontSize: '1.2rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                      {isFacility ? <Building2 size={18} color={isCanceled ? '#cbd5e1' : "#4f46e5"} strokeWidth={2.5} /> : <User size={18} />}
+                      <span style={{ 
+                        fontWeight: '900', 
+                        fontSize: '1.2rem',
+                        // 🚀 4. キャンセルならお名前に斜線
+                        textDecoration: isCanceled ? 'line-through' : 'none' 
+                      }}>
                         {task.customer_name} {isFacility ? '' : '様'}
                       </span>
                     </div>
 
-                    <div style={{ fontSize: '0.85rem', color: isFacility ? '#4f46e5' : themeColor, marginTop: '8px', fontWeight: 'bold', paddingLeft: '26px' }}>
+                    <div style={{ fontSize: '0.85rem', color: isCanceled ? '#cbd5e1' : (isFacility ? '#4f46e5' : themeColor), marginTop: '8px', fontWeight: 'bold', paddingLeft: '26px' }}>
                       {isFacility ? '施設訪問カット（名簿あり）' : (task.menu_name || 'メニュー未設定')}
                     </div>
                   </div>
 
-                  {task.status === 'completed' ? (
+                  {/* 🚀 5. 右側のボタンエリアの出し分け */}
+                  {isCanceled ? (
+                    // キャンセル済みなら「予約中止」の文字だけ出す（レジへ行かせない）
+                    <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold', padding: '10px' }}>
+                      予約中止
+                    </div>
+                  ) : task.status === 'completed' ? (
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#10b981', fontWeight: 'bold', fontSize: '0.9rem' }}>
                         <CheckCircle size={20} /> 完了済み
                       </div>
-                      <button 
-                        onClick={() => handleRevertTask(task)}
-                        style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
-                      >
-                        修正する（戻す）
-                      </button>
+                      <button onClick={() => handleRevertTask(task)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}>修正する</button>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {isFacility ? (
-                        /* 🏢 施設訪問用：名簿ポチポチ画面へ一直線！ */
-                        <button
-                          onClick={() => navigate(`/admin/${shopId}/visit-requests/${task.id}`)}
-                          style={{ 
-                            padding: '16px 24px', 
-                            background: '#4f46e5', 
-                            color: '#fff', 
-                            border: 'none', 
-                            borderRadius: '15px', 
-                            fontWeight: 'bold', 
-                            cursor: 'pointer', 
-                            fontSize: '1rem',
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '8px',
-                            boxShadow: '0 4px 12px rgba(79, 70, 229, 0.3)'
-                          }}
+                      {!isFacility && (
+                        <button 
+                          onClick={() => handleCancelTask(task)} // 🚀 さっき作ったキャンセル関数
+                          style={{ padding: '12px 15px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
                         >
-                          <ClipboardCheck size={20} /> 名簿の入力を開始
+                          キャンセル
                         </button>
-                      ) : (
-                        /* 👤 個人客用：既存のレジフロー */
-                        <>
-                          <button
-                            onClick={() => openCustomerInfo(task)}
-                            style={{ padding: '12px 15px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
-                          >
-                            履歴
-                          </button>
-                          <button
-                            onClick={() => openQuickCheckout(task)}
-                            style={{ padding: '12px 20px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem', boxShadow: `0 4px 12px ${themeColor}44` }}
-                          >
-                            お会計 ＆ 完了
-                          </button>
-                        </>
                       )}
+                      <button
+                        onClick={() => isFacility ? navigate(`/admin/${shopId}/visit-requests/${task.id}`) : openQuickCheckout(task)}
+                        style={{ padding: '12px 20px', background: isFacility ? '#4f46e5' : themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}
+                      >
+                        {isFacility ? '名簿入力' : 'お会計 ＆ 完了'}
+                      </button>
                     </div>
                   )}
                 </div>

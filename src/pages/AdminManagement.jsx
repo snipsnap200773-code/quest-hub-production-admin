@@ -787,7 +787,7 @@ const completePayment = async () => {
         .select('*, staffs(name)')
         .eq('shop_id', cleanShopId)
         .eq('customer_name', res.customer_name)
-        .eq('status', 'completed')
+        .in('status', ['completed', 'canceled']) // 💡 キャンセル分も仲間に加える
         .order('start_time', { ascending: false });
 
       setPastVisits(visits || []);
@@ -1364,23 +1364,26 @@ return (
                             </td>
 
                             {/* --- ⑤ お会計 (レジ) 列 --- */}
-                            <td 
-                              onClick={(e) => { 
-                                e.stopPropagation(); 
-                                if(!isFacility) openCheckout(res); 
-                              }} 
-                              style={{ 
-                                ...tdStyle, 
-                                fontWeight: '900', 
-                                color: isFinalized ? '#1e293b' : '#d34817', 
-                                cursor: isFacility ? 'default' : 'pointer'
-                              }}
-                            >
-                              ¥ {Number(displayPrice).toLocaleString()}
-                              {!isFinalized && displayPrice > 0 && (
-                                <span style={{ fontSize: '0.6rem', marginLeft: '4px', fontWeight: 'normal' }}>(予)</span>
-                              )}
-                            </td>
+                            {/* 🚀 🆕 キャンセル判定を追加 */}
+<td 
+  onClick={(e) => { 
+    e.stopPropagation(); 
+    // キャンセル済み、または施設訪問ならレジを開かせない
+    if(!isFacility && res.status !== 'canceled') openCheckout(res); 
+  }} 
+  style={{
+    ...tdStyle, 
+    fontWeight: '900', 
+    color: res.status === 'canceled' ? '#cbd5e1' : (isFinalized ? '#1e293b' : '#d34817'),
+    cursor: (isFacility || res.status === 'canceled') ? 'default' : 'pointer',
+    textDecoration: res.status === 'canceled' ? 'line-through' : 'none' // 🚀 キャンセルなら金額に斜線
+  }}
+>
+  {res.status === 'canceled' ? 'キャンセル' : `¥ ${Number(displayPrice).toLocaleString()}`}
+  {res.status !== 'canceled' && !isFinalized && displayPrice > 0 && (
+    <span style={{ fontSize: '0.6rem', marginLeft: '4px', fontWeight: 'normal' }}>(予)</span>
+  )}
+</td>
                           </tr>
                         );
                     }) : (
@@ -2144,32 +2147,66 @@ return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 {pastVisits.map(v => {
                   const details = parseReservationDetails(v);
-                  // 🚀 🆕 履歴用の事業名を取得
                   const vBrandLabel = categoryMap[v.biz_type];
+                  // 🚀 1. キャンセル判定
+                  const isCanceled = v.status === 'canceled';
 
                   return (
-                    <div key={v.id} style={{ background: '#fff', padding: '12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div key={v.id} style={{ 
+                      background: isCanceled ? '#fcfcfc' : '#fff', 
+                      padding: '12px', 
+                      borderRadius: '10px', 
+                      border: '1px solid #e2e8f0',
+                      opacity: isCanceled ? 0.7 : 1,
+                      position: 'relative'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <b>{v.start_time.split('T')[0]}</b>
+                          {/* 🚀 2. 日付に斜線を適用 */}
+                          <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                            {v.start_time.split('T')[0].replace(/-/g, '/')}
+                          </b>
                           
-                          {/* 🚀 🆕 追加：履歴リスト用の小さなバッジ */}
                           {vBrandLabel && (
-                            <span style={{ 
-                              fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px',
-                              background: v.biz_type === 'foot' ? '#4285f4' : '#d34817', 
-                              color: '#fff', fontWeight: '900'
-                            }}>
+                            <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: v.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
                               {vBrandLabel.slice(0, 4)}
                             </span>
                           )}
+
+                          {/* 🚀 3. キャンセルバッジを表示 */}
+                          {isCanceled && (
+                            <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
+                              キャンセル
+                            </span>
+                          )}
                         </div>
-                        <span style={{color:'#d34817', fontWeight: 'bold'}}>¥{Number(v.total_price || 0).toLocaleString()}</span>
+
+                        {/* 金額の表示 */}
+                        {(() => {
+                          const displayPrice = v.total_price > 0 ? v.total_price : details.totalPrice;
+                          return (
+                            <span style={{ 
+                              color: isCanceled ? '#94a3b8' : '#d34817', 
+                              fontWeight: 'bold',
+                              textDecoration: isCanceled ? 'line-through' : 'none' 
+                            }}>
+                              ¥{displayPrice.toLocaleString()}
+                              {!isCanceled && v.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
+                            </span>
+                          );
+                        })()}
                       </div>
-<p style={{ margin: 0, fontSize: '0.8rem' }}>
-  <span style={{ fontWeight: 'bold', color: '#4b2c85', marginRight: '8px' }}>👤 {v.staffs?.name || 'フリー'}</span> {/* 🆕 追加 */}
-  {details.menuName}
-                          {details.savedProducts?.length > 0 && (
+
+                      {/* メニュー名の表示 */}
+                      <p style={{ 
+                        margin: 0, 
+                        fontSize: '0.8rem', 
+                        color: isCanceled ? '#cbd5e1' : '#475569',
+                        textDecoration: isCanceled ? 'line-through' : 'none' 
+                      }}>
+                        <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {v.staffs?.name || 'フリー'}</span>
+                        {v.menu_name || details.menuName}
+                        {details.savedProducts?.length > 0 && !isCanceled && (
                           <span style={{ color: '#008000', fontWeight: 'bold' }}>
                             {" "}＋({details.savedProducts.map(p => p.name).join(', ')})
                           </span>
@@ -2178,19 +2215,30 @@ return (
                     </div>
                   );
                 })}
+                {/* 履歴が0件の時のメッセージ */}
+                {pastVisits.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.8rem' }}>履歴はありません</div>
+                )}
               </div>
             </div>
             {/* 🆕 修正：予約IDがある（台帳から開いた）場合のみ、お会計ボタンを表示する */}
-            {selectedRes?.id && (
-              <div style={{ padding: '25px', borderTop: '2px solid #ddd', background: '#fff' }}>
-                <button 
-                  onClick={() => openCheckout(selectedRes)} 
-                  style={{ ...completeBtnStyle, background: '#d34817', borderRadius: '15px' }}
-                >
-                  <Clipboard size={20} /> この予約のお会計（レジ）へ
-                </button>
-              </div>
-            )}
+            {selectedRes?.id && selectedRes.status !== 'canceled' && (
+  <div style={{ padding: '25px', borderTop: '2px solid #ddd', background: '#fff' }}>
+    <button 
+      onClick={() => openCheckout(selectedRes)} 
+      style={{ ...completeBtnStyle, background: '#d34817', borderRadius: '15px' }}
+    >
+      <Clipboard size={20} /> この予約のお会計（レジ）へ
+    </button>
+  </div>
+)}
+
+{/* 💡 おまけ：キャンセル済みの時は代わりにメッセージを出すと親切です */}
+{selectedRes?.status === 'canceled' && (
+  <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold' }}>
+    ⚠️ この予約はキャンセル済みのためお会計できません
+  </div>
+)}
           </div>
         </div>
       )}
