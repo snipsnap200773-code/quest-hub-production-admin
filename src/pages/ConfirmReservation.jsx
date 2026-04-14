@@ -409,7 +409,7 @@ const handleReserve = async () => {
     const endDateTime = new Date(startDateTime.getTime() + totalMinutes * 60000);
           
       const cancelToken = crypto.randomUUID();
-      const cancelUrl = `${window.location.origin}/cancel?token=${cancelToken}`;
+      const cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
 
       let finalStaffId = staffId;
       let finalStaffName = staffName;
