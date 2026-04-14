@@ -684,6 +684,26 @@ const openDetail = async (res) => {
   };
 
 // --- [330行目付近] ---
+  // 🆕 キャンセル（記録を残す）処理
+  const cancelRes = async (id) => {
+    if (!window.confirm("この予約を「キャンセル扱い」にして記録に残しますか？\n（予約枠は空きます）")) return;
+
+    try {
+      const { error } = await supabase
+        .from('reservations')
+        .update({ status: 'canceled' }) // 🚀 削除せずステータスだけ更新
+        .eq('id', id);
+
+      if (error) throw error;
+      
+      setShowDetailModal(false);
+      fetchData();
+      showMsg("キャンセルとして記録しました");
+    } catch (err) {
+      alert("エラー: " + err.message);
+    }
+  };
+
   const deleteRes = async (id) => {
     const isPrivate = selectedRes?.res_type === 'private_task';
     const isBlock = selectedRes?.res_type === 'blocked';
@@ -1832,8 +1852,23 @@ return (
                       </div>
                     </div>
                     
-                    <button onClick={handleUpdateCustomer} style={{ width: '100%', padding: '12px', background: themeColor, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>情報を保存</button>
-                    <button onClick={() => deleteRes(selectedRes.id)} style={{ width: '100%', padding: '12px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>予約を消去 ＆ 名簿掃除</button>
+                    <button onClick={handleUpdateCustomer} style={{ width: '100%', padding: '14px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', marginTop: '15px' }}>情報を保存</button>
+
+                    {/* 🆕 2段構えの削除・キャンセルエリア */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
+                      <button 
+                        onClick={() => cancelRes(selectedRes.id)} 
+                        style={{ padding: '12px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        キャンセル処理
+                      </button>
+                      <button 
+                        onClick={() => deleteRes(selectedRes.id)} 
+                        style={{ padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                      >
+                        消去 & 掃除
+                      </button>
+                    </div>
                   </div>
                 </div>
 
