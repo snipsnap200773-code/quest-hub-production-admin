@@ -59,16 +59,15 @@ const FacilityLogin = () => {
           .maybeSingle();
 
         if (profile) {
-          // 🚀 【重要】ここでもバトン（sessionStorage）をセットする！
           sessionStorage.setItem(`auth_${profile.id}`, 'true');
           
           if (profile.role === 'super_admin') {
             sessionStorage.setItem('auth_super', 'true');
-            alert(`総括管理者としてログイン`);
+            // ポップアップなしで即移動
             navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
           } else {
             setIsProcessing(false);
-            alert(`店舗：${profile.business_name} としてログインしました`);
+            // ポップアップなしで即移動
             navigate(`/admin/${profile.id}/dashboard`);
           }
           return;
@@ -104,11 +103,9 @@ const FacilityLogin = () => {
           });
 
           if (!response.ok) {
-            // すでにAuthにいる場合はここに来るが、中には入れるようにする
             console.warn("Auth sync skipped or failed, but DB password matched.");
           }
-          
-          alert(`店舗：${shopUser.business_name} としてログインしました（認証同期完了）`);
+          // alertを削除
         } catch (err) {
           console.error("Sync Error:", err);
         }
@@ -133,7 +130,7 @@ const FacilityLogin = () => {
       if (facilityUser && !facilityError) {
         sessionStorage.setItem('facility_user_id', facilityUser.id);
         sessionStorage.setItem(`facility_auth_active`, 'true');
-        alert(`${facilityUser.facility_name} としてログインしました`);
+        // alertを削除して即移動
         navigate(`/facility-portal/${facilityUser.id}/residents`);
       } else {
         alert('施設ログインIDまたはパスワードが正しくありません。');
