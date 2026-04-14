@@ -586,15 +586,19 @@ const handleReserve = async () => {
           }
         });
       }      
-alert(isAdminEntry ? '爆速ねじ込み完了！' : '予約が完了しました！');
-      
-      // 🆕 管理者ねじ込みの場合は、予約を入れた日付(targetDate)をパラメータに付けて戻る
-      if (isAdminEntry) {
-        navigate(`/admin/${shopId}/reservations?date=${targetDate}`);
-      } else {
-        navigate('/');
-      }
-            
+if (isAdminEntry) {
+  // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
+  navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { state: { newlyAdded: true } });
+} else {
+  // 🚀 一般ユーザーは達成感を味わってもらうために「完了ページ」へ
+  navigate('/reserved-success', { 
+    state: { 
+      shopName: customShopName || shop.business_name,
+      startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`
+    } 
+  });
+}
+
     } catch (err) {
       console.error(err);
       alert(`エラーが発生しました: ${err.message}`);

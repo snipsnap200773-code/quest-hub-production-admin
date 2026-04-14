@@ -41,6 +41,7 @@ import InquiryForm from "./components/InquiryForm";
 import ReservationForm from './pages/ReservationForm';
 import TimeSelectionCalendar from './pages/TimeSelectionCalendar'; 
 import ConfirmReservation from './pages/ConfirmReservation';
+import ReservedSuccess from './pages/ReservedSuccess';
 
 function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -116,6 +117,7 @@ function App() {
         <Route path="/shop/:shopId/reserve" element={<ReservationForm />} />
         <Route path="/shop/:shopId/reserve/time" element={<TimeSelectionCalendar />} />
         <Route path="/shop/:shopId/confirm" element={<ConfirmReservation />} />
+        <Route path="/reserved-success" element={<ReservedSuccess />} />
 
         {/* 迷子防止（最後にある必要があります） */}
         <Route path="*" element={<Navigate to="/" replace />} />
