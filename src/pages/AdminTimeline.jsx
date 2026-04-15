@@ -283,7 +283,7 @@ const finalizeOpenDetail = async (res, cust) => {
     // 🆕 3. 修正の核心：全ての項目 ＆ カスタム質問を State (editFields) にまとめる
     // 名簿データ(cust)を優先しつつ、予約時データ(visitInfo/res)で補完します
     const allFields = {
-      name: cust ? (cust.name || res.customer_name) : res.customer_name,
+      name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
       admin_name: cust?.admin_name || '',
       furigana: cust?.furigana || visitInfo.furigana || '',
       phone: cust?.phone || res.customer_phone || '',
@@ -1045,8 +1045,16 @@ const timeSlots = useMemo(() => {
                                   <a href={`tel:${editFields.phone}`} style={badgeStyle('#10b981')}>電話 📞</a>
                                 )}
                                 {key === 'address' && editFields.address && (
-                                  <a href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(editFields.address)}`} target="_blank" rel="noopener noreferrer" style={badgeStyle('#3b82f6')}>マップ 📍</a>
-                                )}
+  <a 
+    /* 🚀 修正ポイント：公式のURL形式に直し、${ } で囲みました */
+    href={`https://www.google.co.jp/maps/search/${encodeURIComponent(editFields.address)}`} 
+    target="_blank" 
+    rel="noopener noreferrer" 
+    style={badgeStyle('#3b82f6')}
+  >
+    マップ 📍
+  </a>
+)}
                               </div>
                               
                               {key === 'parking' ? (

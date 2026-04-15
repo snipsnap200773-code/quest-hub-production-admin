@@ -829,7 +829,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
                 ${address ? `
                   <p style="margin: 4px 0;">📍 <b>住所:</b> ${address}</p>
                   <div style="margin: 8px 0 15px 0;">
-                    <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}" target="_blank" style="display: inline-block; background: #3b82f6; color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">🗺 Googleマップで場所を確認</a>
+                    <a href="https://www.google.co.jp/maps/search/${encodeURIComponent(address)}" target="_blank" style="display: inline-block; background: #3b82f6; color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">🗺 Googleマップで場所を確認</a>
                   </div>
                 ` : ''}
                 
@@ -915,7 +915,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
       let detailsText = address ? `\n📍 住: ${address}` : "";
       if (notes) detailsText += `\n💬 備: ${notes}`;
       const phoneUrl = payload.phone ? `\n📞 呼: tel:${payload.phone}` : "";
-      const mapUrl = address ? `\n🗺 地: https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}` : "";
+      const mapUrl = address ? `\n🗺 地: https://www.google.co.jp/maps/search/${encodeURIComponent(address)}` : "";
 
       const shopMsg = type === 'cancel' 
         ? `【予約キャンセル】\n👤 客: ${customerName} 様\n📅 日: ${startTime}〜`

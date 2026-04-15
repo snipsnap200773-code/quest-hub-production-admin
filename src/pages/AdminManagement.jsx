@@ -466,6 +466,7 @@ const completePayment = async () => {
       const customerPayload = {
         shop_id: cleanShopId, 
         name: normalizedName,
+        admin_name: normalizedName,
         furigana: editFields.furigana || currentMaster?.furigana || '',
         phone: editFields.phone || currentMaster?.phone || selectedRes.customer_phone || '',
         email: editFields.email || currentMaster?.email || selectedRes.customer_email || '',
@@ -804,43 +805,9 @@ const completePayment = async () => {
     const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
 
     try {
-      const currentId = selectedCustomer.id;
-      
-      // 🚀 1. 送信データの整理（空文字を null に変換してDBエラーを防止）
-      const payload = { 
-        shop_id: cleanShopId, 
-        name: normalizedName, 
-        furigana: editFields.furigana || null, 
-        phone: editFields.phone || null, 
-        email: editFields.email || null, 
-        address: editFields.address || null,
-        is_facility: !!editFields.is_facility, // 強制的に true/false にする
-        zip_code: editFields.zip_code || null,
-        parking: editFields.parking || null,
-        building_type: editFields.building_type || null,
-        care_notes: editFields.care_notes || null,
-        company_name: editFields.company_name || null,
-        symptoms: editFields.symptoms || null,
-        request_details: editFields.request_details || null,
-        memo: editFields.memo || null, 
-        // 🚀 日付が空文字 "" だとエラーになるので、必ず null に変換
-        first_arrival_date: editFields.first_arrival_date || null, 
-        is_blocked: !!editFields.is_blocked, 
-        updated_at: new Date().toISOString() 
-      };
-      
-      // 🚀 2. 顧客テーブル（customers）の更新
-      let error;
-      const saveCustomerInfo = async () => {
-    if (!selectedCustomer) return; 
-    setIsSavingMemo(true);
-
-    const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
-
-    try {
       let targetId = selectedCustomer.id;
 
-      // 🚀 1. 【最重要】IDがない場合、まず名前で名簿をガサ入れする（増殖防止）
+      // 1. IDがない場合、名前で既存顧客をチェック
       if (!targetId) {
         const { data: existingCust } = await supabase
           .from('customers')
@@ -850,13 +817,14 @@ const completePayment = async () => {
           .maybeSingle();
         
         if (existingCust) {
-          targetId = existingCust.id; // すでに名簿にいたらその人のIDを使う
+          targetId = existingCust.id;
         }
       }
       
       const payload = { 
         shop_id: cleanShopId, 
         name: normalizedName, 
+        admin_name: normalizedName,
         furigana: editFields.furigana || null, 
         phone: editFields.phone || null, 
         email: editFields.email || null, 
@@ -875,19 +843,14 @@ const completePayment = async () => {
         updated_at: new Date().toISOString() 
       };
       
-      // 🚀 2. IDがあるなら更新(update)、なければ新規作成(insert)
-      let error;
-      if (targetId) {
-        const res = await supabase.from('customers').update(payload).eq('id', targetId);
-        error = res.error;
-      } else {
-        const res = await supabase.from('customers').insert([payload]);
-        error = res.error;
-      }
+      // 2. IDがあるなら更新、なければ新規作成
+      const { error } = targetId 
+        ? await supabase.from('customers').update(payload).eq('id', targetId)
+        : await supabase.from('customers').insert([payload]);
 
       if (error) throw error;
 
-      // 🚀 3. 施設データ同期（既存通り）
+      // 3. 施設の場合、同期更新
       if (editFields.is_facility) {
         await supabase.from('facility_users').update({
           contact_name: editFields.furigana || null,
@@ -902,44 +865,27 @@ const completePayment = async () => {
       setIsCustomerInfoOpen(false); 
     } catch (err) { 
       console.error("Save Error:", err);
-      alert("保存に失敗しました: " + err.message); 
-    } 
-    finally { setIsSavingMemo(false); }
+      alert("保存に失敗しました: " + (err.message || "エラーが発生しました")); 
+    } finally { 
+      setIsSavingMemo(false); 
+    }
   };
 
-      if (error) throw error; // エラーがあれば catch ブロックへ飛ばす
-
-      // 🚀 3. 施設の場合、facility_users テーブル側も同期更新する
-      if (editFields.is_facility) {
-        await supabase.from('facility_users').update({
-          contact_name: editFields.furigana || null,
-          tel: editFields.phone || null,
-          email: editFields.email || null,
-          address: editFields.address || null
-        }).eq('facility_name', normalizedName);
-      }
-
-      alert("情報を更新しました。"); 
-      fetchInitialData();
-      setIsCustomerInfoOpen(false); // 成功したらパネルを閉じる
-    } catch (err) { 
-      console.error("Save Error:", err);
-      // 💡 エラーメッセージを分かりやすく表示
-      alert("保存に失敗しました: " + (err.message || "データベースの列が不足している可能性があります。SQLを実行したか確認してください。")); 
-    } 
-    finally { setIsSavingMemo(false); }
-  };
-
-  const handleUpdateStaffDirectly = async (resId, newStaffId) => {
+  const handleUpdateStaffDirectly = async (resId, newStaffId) => { 
     try {
       const { error } = await supabase.from('reservations').update({ staff_id: newStaffId }).eq('id', resId);
       if (error) throw error;
       setStaffPickerRes(null); 
       fetchInitialData();
-    } catch (err) { alert("担当者の変更に失敗しました"); }
+    } catch (err) { 
+      alert("担当者の変更に失敗しました"); 
+    }
   };
+  // 🚀 【ここまで入れ替え終了】
 
-  const handleDateChangeUI = (days) => { const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toLocaleDateString('sv-SE')); };
+  const handleDateChangeUI = (days) => {
+    
+    const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toLocaleDateString('sv-SE')); };
 
   // 🆕 修正：開いているポップアップをすべて強制終了する関数
   const closeAllPopups = () => {

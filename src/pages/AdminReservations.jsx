@@ -459,7 +459,7 @@ const openDetail = async (res) => {
 
     // 🆕 修正：全項目 ＆ カスタム質問の回答を State (editFields) に集約して読み込む
     const allFields = {
-      name: cust ? (cust.name || res.customer_name) : res.customer_name,
+      name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
       furigana: cust?.furigana || visitInfo.furigana || '',
       phone: cust?.phone || res.customer_phone || '',
       email: cust?.email || res.customer_email || '',
@@ -1777,27 +1777,28 @@ return (
 
         {/* 📍 マップを開くボタン (addressかつデータがある時のみ) */}
         {key === 'address' && editFields.address && (
-          <a 
-            href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(editFields.address)}`}
-            target="_blank" 
-            rel="noopener noreferrer"
-            style={{ 
-              textDecoration: 'none', 
-              background: '#3b82f6', 
-              color: '#fff', 
-              padding: '2px 8px', 
-              borderRadius: '6px', 
-              fontSize: '0.65rem', 
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              boxShadow: '0 2px 4px rgba(59,130,246,0.2)'
-            }}
-          >
-            <span>マップで開く</span> 📍
-          </a>
-        )}
+  <a 
+    /* 🚀 修正ポイント：公式の検索URLに変更し、${ } で住所を囲む */
+    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(editFields.address)}`}
+    target="_blank" 
+    rel="noopener noreferrer"
+    style={{ 
+      textDecoration: 'none', 
+      background: '#3b82f6', 
+      color: '#fff', 
+      padding: '2px 8px', 
+      borderRadius: '6px', 
+      fontSize: '0.65rem', 
+      fontWeight: 'bold',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '4px',
+      boxShadow: '0 2px 4px rgba(59,130,246,0.2)'
+    }}
+  >
+    <span>マップで開く</span> 📍
+  </a>
+)}
       </div>
 
       {/* 💡 入力欄はスッキリ配置 */}
