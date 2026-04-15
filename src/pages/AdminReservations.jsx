@@ -691,10 +691,16 @@ const openDetail = async (res) => {
     try {
       const { error } = await supabase
         .from('reservations')
-        .update({ status: 'canceled' }) // 🚀 削除せずステータスだけ更新
+        .update({ status: 'canceled' })
         .eq('id', id);
 
       if (error) throw error;
+
+      // 🚀 🆕 追加：顧客マスタのキャンセル回数を +1 する
+      if (selectedRes?.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('cancel_count').eq('id', selectedRes.customer_id).single();
+        await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', selectedRes.customer_id);
+      }
       
       setShowDetailModal(false);
       fetchData();
@@ -1479,7 +1485,12 @@ return (
         )}
 
         {isPC ? (
-          <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{name}{countSuffix}</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
+  {name}{countSuffix}
+  {/* 🚀 🆕 カレンダー上にも 🚫 を出す */}
+  {res.customers?.is_blocked && <span style={{ color: '#ef4444' }}>🚫</span>}
+  {res.customers?.cancel_count >= 3 && <span style={{ color: '#ef4444' }}>‼️</span>}
+</span>
         ) : (
           <span style={{ writingMode: 'vertical-rl', textOrientation: 'upright', fontSize: '0.75rem', fontWeight: 'bold' }}>{name}</span>
         )}
@@ -1857,11 +1868,24 @@ return (
                     {/* 🆕 2段構えの削除・キャンセルエリア */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
                       <button 
-                        onClick={() => cancelRes(selectedRes.id)} 
-                        style={{ padding: '12px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
-                      >
-                        キャンセル処理
-                      </button>
+  // 🚀 すでにキャンセル済みならボタンを無効化
+  onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
+  disabled={selectedRes?.status === 'canceled'}
+  style={{ 
+    padding: '12px', 
+    // 🚀 キャンセル済みなら灰色背景、そうでなければ白背景
+    background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', 
+    // 🚀 キャンセル済みなら灰色文字、そうでなければオレンジ文字
+    color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#f59e0b', 
+    border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#f59e0b'}`, 
+    borderRadius: '10px', 
+    fontWeight: 'bold', 
+    cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', 
+    fontSize: '0.8rem' 
+  }}
+>
+  {selectedRes?.status === 'canceled' ? 'キャンセル済み' : 'キャンセル処理'}
+</button>
                       <button 
                         onClick={() => deleteRes(selectedRes.id)} 
                         style={{ padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}

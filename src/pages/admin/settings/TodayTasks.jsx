@@ -492,9 +492,15 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
       const { error } = await supabase
         .from('reservations')
         .update({ status: 'canceled' })
-        .eq('id', task.id);
+        .eq('id', id);
 
       if (error) throw error;
+
+      // 🚀 🆕 追加：顧客マスタのキャンセル回数を +1 する
+      if (selectedRes?.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('cancel_count').eq('id', selectedRes.customer_id).single();
+        await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', selectedRes.customer_id);
+      }
       showMsg("キャンセルとして記録しました");
       fetchTodayTasks(); // 🔄 リストを再読み込みして表示を更新
     } catch (err) {
@@ -759,10 +765,14 @@ const handleSaveMemo = async () => {
                       <span style={{ 
                         fontWeight: '900', 
                         fontSize: '1.2rem',
-                        // 🚀 4. キャンセルならお名前に斜線
-                        textDecoration: isCanceled ? 'line-through' : 'none' 
+                        textDecoration: isCanceled ? 'line-through' : 'none',
+                        display: 'inline-flex', alignItems: 'center', gap: '5px' // 🚀 🆕 追加
                       }}>
                         {task.customer_name} {isFacility ? '' : '様'}
+                        
+                        {/* 🚀 🆕 名前ラベルの中に追加 */}
+                        {task.customers?.is_blocked && <span style={{ color: '#ef4444', textDecoration: 'none' }}>🚫</span>}
+                        {task.customers?.cancel_count >= 3 && <span style={{ color: '#ef4444', textDecoration: 'none' }}>‼️</span>}
                       </span>
                     </div>
 

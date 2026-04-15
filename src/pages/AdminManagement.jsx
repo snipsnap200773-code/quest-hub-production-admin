@@ -82,6 +82,7 @@ function AdminManagement() {
     zip_code: '', address: '', parking: '', 
     building_type: '', care_notes: '', company_name: '', 
     symptoms: '', request_details: '', 
+    is_blocked: false, // 🚀 🆕 追加
     first_arrival_date: '', memo: '', custom_answers: {}
   });
 
@@ -738,29 +739,30 @@ const completePayment = async () => {
     }
 
     try {
-      const { data: customer } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', cleanShopId)
-        .eq('name', res.customer_name)
-        .maybeSingle();
+      // 🚀 🆕 修正：名前の空白などで検索に失敗しないよう、正規化した名前で検索
+      const searchName = res.customer_name.replace(/　/g, ' ').trim();
+      
+      // 🚀 1. IDがある場合はIDで、なければ名前で検索（名寄せの精度アップ）
+      let query = supabase.from('customers').select('*').eq('shop_id', cleanShopId);
+      if (res.customer_id) {
+        query = query.eq('id', res.customer_id);
+      } else {
+        query = query.eq('name', searchName);
+      }
+      
+      const { data: customer } = await query.maybeSingle();
 
-      // 🚀 🆕 施設の場合、facility_users テーブルからも詳細を取得する
+      // ...施設情報の取得（既存通り）...
       let facilityDetail = null;
       if (customer?.is_facility) {
-        const { data: fData } = await supabase
-          .from('facility_users')
-          .select('*')
-          .eq('facility_name', customer.name)
-          .maybeSingle();
+        const { data: fData } = await supabase.from('facility_users').select('*').eq('facility_name', customer.name).maybeSingle();
         facilityDetail = fData;
       }
 
       const visitInfo = res.options?.visit_info || {};
       const allFields = {
-        is_facility: customer?.is_facility || false, // 🚀 🆕 施設判定を保持
+        is_facility: customer?.is_facility || false,
         name: customer?.name || res.customer_name || '',
-        // 🚀 🆕 施設なら「担当者名」、個人なら「ふりがな」をセット
         furigana: facilityDetail?.contact_name || customer?.furigana || visitInfo.furigana || '',
         phone: facilityDetail?.tel || customer?.phone || res.customer_phone || '',
         email: facilityDetail?.email || customer?.email || res.customer_email || '',
@@ -773,29 +775,23 @@ const completePayment = async () => {
         symptoms: customer?.symptoms || visitInfo.symptoms || '',
         request_details: customer?.request_details || visitInfo.request_details || '',
         first_arrival_date: customer?.first_arrival_date || '',
+        // 🚀 🆕 2. ここが重要！ DBから読み込んだ「is_blocked」の状態をセットする
+        is_blocked: !!customer?.is_blocked, 
         memo: customer?.memo || '',
         line_user_id: customer?.line_user_id || res.line_user_id || null,
         custom_answers: visitInfo.custom_answers || customer?.custom_answers || {}
       };
 
       setSelectedCustomer(customer || { name: res.customer_name });
-      setEditFields(allFields);
+      setEditFields(allFields); // 🚀 これで画面上のボタンが正しい状態で開く
       setSelectedRes(res);
-
-      // 2. 過去の来店履歴（完了済み予約）を取得
-      const { data: visits } = await supabase
-        .from('reservations')
-        .select('*, staffs(name)')
-        .eq('shop_id', cleanShopId)
-        .eq('customer_name', res.customer_name)
-        .in('status', ['completed', 'canceled']) // 💡 キャンセル分も仲間に加える
-        .order('start_time', { ascending: false });
-
+      
+      // ...来店履歴の取得（既存通り）...
+      const { data: visits } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', cleanShopId).eq('customer_name', res.customer_name).in('status', ['completed', 'canceled']).order('start_time', { ascending: false });
       setPastVisits(visits || []);
       
-      // パネルを表示
       setIsCustomerInfoOpen(true);
-      setIsCheckoutOpen(false); // レジが開いていたら閉じる
+      setIsCheckoutOpen(false);
     } catch (err) {
       console.error("Customer Info Error:", err);
     }
@@ -805,63 +801,132 @@ const completePayment = async () => {
     if (!selectedCustomer) return; 
     setIsSavingMemo(true);
 
-    // 🆕 修正：editFields.name を使うように変更
     const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
 
     try {
       const currentId = selectedCustomer.id;
-      const { data: duplicate } = await supabase.from('customers').select('*').eq('shop_id', cleanShopId).eq('name', normalizedName).neq('id', currentId || '00000000-0000-0000-0000-000000000000').maybeSingle();
       
-      if (duplicate && window.confirm(`「${normalizedName}」様を統合しますか？`)) {
-          await supabase.from('customers').update({ 
-            memo: `${duplicate.memo || ''}\n\n${editFields.memo}`.trim(), 
-            total_visits: (duplicate.total_visits || 0) + (selectedCustomer.total_visits || 0), 
-            phone: editFields.phone || duplicate.phone, 
-            email: editFields.email || duplicate.email, 
-            updated_at: new Date().toISOString() 
-          }).eq('id', duplicate.id);
-          await supabase.from('reservations').update({ customer_name: normalizedName }).eq('shop_id', cleanShopId).eq('customer_name', selectedCustomer.name);
-          if (currentId) await supabase.from('customers').delete().eq('id', currentId);
-          alert("統合完了！"); setIsCustomerInfoOpen(false); fetchInitialData(); return;
-      }
-      
-      // 🆕 修正：送信データを一括Stateから取得
+      // 🚀 1. 送信データの整理（空文字を null に変換してDBエラーを防止）
       const payload = { 
         shop_id: cleanShopId, 
         name: normalizedName, 
-        furigana: editFields.furigana, // 施設ならここが担当者名として保存される
-        phone: editFields.phone, 
-        email: editFields.email, 
-        address: editFields.address,
-        is_facility: editFields.is_facility, // 🚀 🆕 施設フラグを維持
-        zip_code: editFields.zip_code,
-        parking: editFields.parking,
-        building_type: editFields.building_type,
-        care_notes: editFields.care_notes,
-        company_name: editFields.company_name,
-        symptoms: editFields.symptoms,
-        request_details: editFields.request_details,
-        memo: editFields.memo, 
-        first_arrival_date: editFields.first_arrival_date, 
+        furigana: editFields.furigana || null, 
+        phone: editFields.phone || null, 
+        email: editFields.email || null, 
+        address: editFields.address || null,
+        is_facility: !!editFields.is_facility, // 強制的に true/false にする
+        zip_code: editFields.zip_code || null,
+        parking: editFields.parking || null,
+        building_type: editFields.building_type || null,
+        care_notes: editFields.care_notes || null,
+        company_name: editFields.company_name || null,
+        symptoms: editFields.symptoms || null,
+        request_details: editFields.request_details || null,
+        memo: editFields.memo || null, 
+        // 🚀 日付が空文字 "" だとエラーになるので、必ず null に変換
+        first_arrival_date: editFields.first_arrival_date || null, 
+        is_blocked: !!editFields.is_blocked, 
         updated_at: new Date().toISOString() 
       };
       
-      if (currentId) await supabase.from('customers').update(payload).eq('id', currentId); 
-      else await supabase.from('customers').insert([payload]);
+      // 🚀 2. 顧客テーブル（customers）の更新
+      let error;
+      const saveCustomerInfo = async () => {
+    if (!selectedCustomer) return; 
+    setIsSavingMemo(true);
 
-      // 🚀 🆕 施設の場合、facility_users テーブル側も更新する
+    const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
+
+    try {
+      let targetId = selectedCustomer.id;
+
+      // 🚀 1. 【最重要】IDがない場合、まず名前で名簿をガサ入れする（増殖防止）
+      if (!targetId) {
+        const { data: existingCust } = await supabase
+          .from('customers')
+          .select('id')
+          .eq('shop_id', cleanShopId)
+          .eq('name', normalizedName)
+          .maybeSingle();
+        
+        if (existingCust) {
+          targetId = existingCust.id; // すでに名簿にいたらその人のIDを使う
+        }
+      }
+      
+      const payload = { 
+        shop_id: cleanShopId, 
+        name: normalizedName, 
+        furigana: editFields.furigana || null, 
+        phone: editFields.phone || null, 
+        email: editFields.email || null, 
+        address: editFields.address || null,
+        is_facility: !!editFields.is_facility,
+        zip_code: editFields.zip_code || null,
+        parking: editFields.parking || null,
+        building_type: editFields.building_type || null,
+        care_notes: editFields.care_notes || null,
+        company_name: editFields.company_name || null,
+        symptoms: editFields.symptoms || null,
+        request_details: editFields.request_details || null,
+        memo: editFields.memo || null, 
+        first_arrival_date: editFields.first_arrival_date || null, 
+        is_blocked: !!editFields.is_blocked, 
+        updated_at: new Date().toISOString() 
+      };
+      
+      // 🚀 2. IDがあるなら更新(update)、なければ新規作成(insert)
+      let error;
+      if (targetId) {
+        const res = await supabase.from('customers').update(payload).eq('id', targetId);
+        error = res.error;
+      } else {
+        const res = await supabase.from('customers').insert([payload]);
+        error = res.error;
+      }
+
+      if (error) throw error;
+
+      // 🚀 3. 施設データ同期（既存通り）
       if (editFields.is_facility) {
         await supabase.from('facility_users').update({
-          contact_name: editFields.furigana, // ふりがな欄を「担当者名」として同期
-          tel: editFields.phone,
-          email: editFields.email,
-          address: editFields.address
+          contact_name: editFields.furigana || null,
+          tel: editFields.phone || null,
+          email: editFields.email || null,
+          address: editFields.address || null
         }).eq('facility_name', normalizedName);
       }
 
       alert("情報を更新しました。"); 
       fetchInitialData();
-    } catch (err) { alert("失敗: " + err.message); } 
+      setIsCustomerInfoOpen(false); 
+    } catch (err) { 
+      console.error("Save Error:", err);
+      alert("保存に失敗しました: " + err.message); 
+    } 
+    finally { setIsSavingMemo(false); }
+  };
+
+      if (error) throw error; // エラーがあれば catch ブロックへ飛ばす
+
+      // 🚀 3. 施設の場合、facility_users テーブル側も同期更新する
+      if (editFields.is_facility) {
+        await supabase.from('facility_users').update({
+          contact_name: editFields.furigana || null,
+          tel: editFields.phone || null,
+          email: editFields.email || null,
+          address: editFields.address || null
+        }).eq('facility_name', normalizedName);
+      }
+
+      alert("情報を更新しました。"); 
+      fetchInitialData();
+      setIsCustomerInfoOpen(false); // 成功したらパネルを閉じる
+    } catch (err) { 
+      console.error("Save Error:", err);
+      // 💡 エラーメッセージを分かりやすく表示
+      alert("保存に失敗しました: " + (err.message || "データベースの列が不足している可能性があります。SQLを実行したか確認してください。")); 
+    } 
     finally { setIsSavingMemo(false); }
   };
 
@@ -1642,7 +1707,21 @@ return (
                         onMouseLeave={(e) => isPC && (e.currentTarget.style.transform = 'translateY(0)')}
                       >
                         <div>
-                          <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b' }}>{cust.name} 様</div>
+                          <div style={{ 
+                            fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b',
+                            display: 'flex', alignItems: 'center', gap: '5px' // 🚀 🆕 横並びの調整
+                          }}>
+                            {cust.name} 様
+                            
+                            {/* 🚀 🆕 1. ブロック(出禁)フラグがあれば 🚫 を表示 */}
+                            {cust.is_blocked && <span style={{ color: '#ef4444' }} title="ブロック中">🚫</span>}
+
+                            {/* 🚀 🆕 2. キャンセル回数が3回以上なら‼️を表示 */}
+                            {(cust.cancel_count >= 3 || allReservations.filter(r => 
+                              (r.customer_name === cust.name || r.customer_id === cust.id) && r.status === 'canceled'
+                            ).length >= 3) && <span style={{ color: '#ef4444' }}>‼️</span>}
+                          </div>
+
                           <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
                           <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
                             最終来店: {cust.last_arrival_at ? new Date(cust.last_arrival_at).toLocaleDateString() : '記録なし'}
@@ -2168,6 +2247,50 @@ return (
                     return null;
                   })}
                 </div>
+              </div>
+
+              {/* 🚀 🆕 出禁（ブラックリスト）設定ボタン */}
+              <div style={{ 
+                marginBottom: '20px', padding: '15px', borderRadius: '15px', 
+                background: editFields.is_blocked ? '#fff5f5' : '#f8fafc',
+                border: `2px solid ${editFields.is_blocked ? '#ef4444' : '#e2e8f0'}`,
+                display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+              }}>
+                <div>
+                  <div style={{ fontWeight: 'bold', color: editFields.is_blocked ? '#ef4444' : '#1e293b' }}>
+                    {editFields.is_blocked ? '🚫 ブラックリスト登録中' : '👤 通常のお客様'}
+                  </div>
+                  <p style={{ margin: 0, fontSize: '0.7rem', color: '#64748b' }}>
+                    {editFields.is_blocked ? '警告アイコンが表示されています' : 'ONにすると各画面で警告アイコンが表示されます'}
+                  </p>
+                </div>
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    // 🚀 1. 現在の状態を反転させる
+                    const nextStatus = !editFields.is_blocked;
+                    
+                    // 🚀 2. 画面上の表示をまず切り替える
+                    setEditFields({ ...editFields, is_blocked: nextStatus });
+
+                    // 🚀 3. IDがあれば、その場でDBも更新（保存漏れ防止）
+                    if (selectedCustomer?.id) {
+                      const { error } = await supabase.from('customers').update({ is_blocked: nextStatus }).eq('id', selectedCustomer.id);
+                      if (!error) {
+                        fetchInitialData(); // 背後の名簿一覧も更新
+                        alert(nextStatus ? "ブラックリストに登録しました 🚫" : "ブラックリストを解除しました ✅");
+                      }
+                    }
+                  }}
+                  style={{ 
+                    padding: '8px 16px', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer',
+                    background: editFields.is_blocked ? '#fff' : '#ef4444',
+                    color: editFields.is_blocked ? '#ef4444' : '#fff',
+                    border: `2px solid #ef4444`
+                  }}
+                >
+                  {editFields.is_blocked ? '解除する' : '出禁にする'}
+                </button>
               </div>
 
               <SectionTitle icon={<FileText size={16} />} title="顧客メモ" color="#d34817" />

@@ -435,10 +435,16 @@ const handleSavePrivateTask = async () => {
     try {
       const { error } = await supabase
         .from('reservations')
-        .update({ status: 'canceled' }) // 🚀 物理削除せず、ステータスを書き換える
+        .update({ status: 'canceled' })
         .eq('id', id);
 
       if (error) throw error;
+
+      // 🚀 🆕 追加：顧客マスタのキャンセル回数を +1 する
+      if (selectedRes?.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('cancel_count').eq('id', selectedRes.customer_id).single();
+        await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', selectedRes.customer_id);
+      }
       
       setShowDetailModal(false);
       fetchData(); // 🔄 画面を最新にする
@@ -784,7 +790,15 @@ const timeSlots = useMemo(() => {
                           const res = startingHere[0];
                           const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
                           const name = masterName?.split(/[\s　]+/)[0] || "名前なし";
-                          return isMultiple ? `${name} (${matches.length}名)` : `${name} 様`;
+                          
+                          // 🚀 🆕 警告アイコン（🚫と‼️）を組み合せる
+                          const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
+                          const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
+                          const icons = `${blockedIcon}${cancelIcon}`;
+
+                          return isMultiple 
+                            ? `${name} (${matches.length}名)${icons}` 
+                            : `${name} 様${icons}`;
                         }
                         // 同時に2人以上が開始する場合は人数を表示
                         return `👥 ${matches.length}名`;
@@ -1078,11 +1092,24 @@ const timeSlots = useMemo(() => {
 {/* 🚀 🆕 ここを2段構えに修正（キャンセルボタンを追加） */}
 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
   <button 
-    onClick={() => cancelRes(selectedRes.id)} 
-    style={{ padding: '12px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
-  >
-    キャンセル処理
-  </button>
+  // 🚀 すでにキャンセル済みならボタンを無効化
+  onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
+  disabled={selectedRes?.status === 'canceled'}
+  style={{ 
+    padding: '12px', 
+    // 🚀 キャンセル済みなら灰色背景、そうでなければ白背景
+    background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', 
+    // 🚀 キャンセル済みなら灰色文字、そうでなければオレンジ文字
+    color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#f59e0b', 
+    border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#f59e0b'}`, 
+    borderRadius: '10px', 
+    fontWeight: 'bold', 
+    cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', 
+    fontSize: '0.8rem' 
+  }}
+>
+  {selectedRes?.status === 'canceled' ? 'キャンセル済み' : 'キャンセル処理'}
+</button>
   <button 
     onClick={() => deleteRes(selectedRes.id)} 
     style={{ padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
