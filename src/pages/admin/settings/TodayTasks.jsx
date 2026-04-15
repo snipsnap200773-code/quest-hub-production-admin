@@ -796,17 +796,35 @@ const handleSaveMemo = async () => {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                      {!isFacility && (
-                        <button 
-                          onClick={() => handleCancelTask(task)} // 🚀 さっき作ったキャンセル関数
-                          style={{ padding: '12px 15px', background: '#fff', color: '#f59e0b', border: '1px solid #f59e0b', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
-                        >
-                          キャンセル
-                        </button>
-                      )}
+                      {/* 🚀 🆕 キャンセルを削除し、詳細（カルテ）ボタンを復活 */}
+                      <button 
+                        onClick={() => openCustomerInfo(task)} 
+                        style={{ 
+                          padding: '12px 15px', 
+                          background: '#fff', 
+                          color: '#64748b', 
+                          border: '1px solid #cbd5e1', 
+                          borderRadius: '12px', 
+                          fontWeight: 'bold', 
+                          cursor: 'pointer', 
+                          fontSize: '0.85rem' 
+                        }}
+                      >
+                        詳細
+                      </button>
+
                       <button
                         onClick={() => isFacility ? navigate(`/admin/${shopId}/visit-requests/${task.id}`) : openQuickCheckout(task)}
-                        style={{ padding: '12px 20px', background: isFacility ? '#4f46e5' : themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}
+                        style={{ 
+                          padding: '12px 20px', 
+                          background: isFacility ? '#4f46e5' : themeColor, 
+                          color: '#fff', 
+                          border: 'none', 
+                          borderRadius: '12px', 
+                          fontWeight: 'bold', 
+                          cursor: 'pointer', 
+                          fontSize: '0.9rem' 
+                        }}
                       >
                         {isFacility ? '名簿入力' : 'お会計 ＆ 完了'}
                       </button>
