@@ -1876,20 +1876,20 @@ return (
     padding: '12px', 
     // 🚀 キャンセル済みなら灰色背景、そうでなければ白背景
     background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', 
-    // 🚀 キャンセル済みなら灰色文字、そうでなければオレンジ文字
-    color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#f59e0b', 
-    border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#f59e0b'}`, 
+    // 🚀 キャンセル済みなら灰色文字、そうでなければ茶色文字
+    color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#8d5c08', 
+    border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#8d5c08'}`, 
     borderRadius: '10px', 
     fontWeight: 'bold', 
     cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', 
     fontSize: '0.8rem' 
   }}
 >
-  {selectedRes?.status === 'canceled' ? 'キャンセル済み' : 'キャンセル処理'}
+  {selectedRes?.status === 'canceled' ? 'キャンセル済み' : '当日キャンセル'}
 </button>
                       <button 
                         onClick={() => deleteRes(selectedRes.id)} 
-                        style={{ padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                        style={{ padding: '12px', background: '#e0dddd8d', color: '#780606', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
                       >
                         消去 & 掃除
                       </button>
