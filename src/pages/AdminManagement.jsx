@@ -598,9 +598,10 @@ const completePayment = async () => {
     
     const incomplete = allReservations
       .filter(r => 
-        // ✅ 個人予約(individual)または施設訪問(facility)の両方を対象にする
+        // ✅ 完了でもなく、かつキャンセルでもないものだけを「未処理」とする
         (r.task_type === 'individual' || r.task_type === 'facility') && 
         r.status !== 'completed' && 
+        r.status !== 'canceled' && // 🚀 ここを追記！
         r.start_time.split('T')[0] < today && 
         !isSalesExcludedRes(r)
       )
@@ -1398,67 +1399,97 @@ return (
                    ========================================== */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {allReservations
-  .filter(r => r.start_time.startsWith(selectedDate) && !isSalesExcludedRes(r)) // 💡 res_type の縛りを解除！
+  .filter(r => r.start_time.startsWith(selectedDate) && !isSalesExcludedRes(r))
   .length > 0 ? (
     allReservations
       .filter(r => r.start_time.startsWith(selectedDate) && !isSalesExcludedRes(r))
       .map((res) => {
                       const details = parseReservationDetails(res);
                       const isCompleted = res.status === 'completed';
+                      // 🚀 1. キャンセル判定フラグ
+                      const isCanceled = res.status === 'canceled';
+
                       return (
                         <div 
                           key={res.id} 
                           style={{ 
-                            background: '#fff', 
+                            background: isCanceled ? '#fcfcfc' : '#fff', // キャンセルなら少しグレーに
                             borderRadius: '16px', 
                             padding: '16px', 
                             boxShadow: '0 4px 15px rgba(0,0,0,0.05)', 
-                            border: `1px solid ${isCompleted ? '#e2e8f0' : '#d3481722'}`,
-                            position: 'relative'
+                            border: isCanceled ? '1px solid #e2e8f0' : `1px solid ${isCompleted ? '#e2e8f0' : '#d3481722'}`,
+                            position: 'relative',
+                            opacity: isCanceled ? 0.7 : 1 // 🚀 全体を薄くする
                           }}
                         >
                           {/* ステータスバー（左端の色） */}
-                          <div style={{ position: 'absolute', left: 0, top: 15, bottom: 15, width: '4px', background: isCompleted ? '#94a3b8' : '#008000', borderRadius: '0 4px 4px 0' }} />
+                          <div style={{ 
+                            position: 'absolute', left: 0, top: 15, bottom: 15, width: '4px', 
+                            background: isCanceled ? '#cbd5e1' : (isCompleted ? '#94a3b8' : '#008000'), 
+                            borderRadius: '0 4px 4px 0' 
+                          }} />
                           
                           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', paddingLeft: '8px' }}>
-                            <span style={{ fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>
+                            <span style={{ 
+                              fontSize: '1.1rem', fontWeight: '900', 
+                              color: isCanceled ? '#94a3b8' : '#1e293b',
+                              textDecoration: isCanceled ? 'line-through' : 'none' // 🚀 時間に斜線
+                            }}>
                               {new Date(res.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                             </span>
                             <button 
-                              onClick={() => setStaffPickerRes(res)}
-                              style={{ background: '#f3f0ff', color: '#4b2c85', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold' }}
+                              onClick={() => !isCanceled && setStaffPickerRes(res)} // 🚀 キャンセルなら担当変更も不可
+                              style={{ background: '#f3f0ff', color: '#4b2c85', border: 'none', padding: '4px 10px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', cursor: isCanceled ? 'default' : 'pointer' }}
                             >
                               👤 {res.staffs?.name || '担当者選択'}
                             </button>
                           </div>
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', paddingLeft: '8px' }}>
-<div 
-  onClick={() => openCustomerInfo(res)} 
-  style={{ flex: 1, fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b', textDecoration: 'underline', textDecorationColor: '#cbd5e1' }}
->
-  {/* 🆕 ここも同様にガードを入れます */}
-  {res.customer_name || '名前なし'} 様
-</div>
-                            <button 
-                              onClick={() => openCheckout(res)}
+                            <div 
+                              onClick={() => openCustomerInfo(res)} 
                               style={{ 
-                                background: isCompleted ? '#f1f5f9' : '#008000', 
-                                color: isCompleted ? '#94a3b8' : '#fff', 
-                                border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold' 
+                                flex: 1, fontSize: '1.1rem', fontWeight: 'bold', 
+                                color: isCanceled ? '#94a3b8' : '#1e293b', 
+                                textDecoration: isCanceled ? 'line-through' : 'underline', // 🚀 キャンセルなら名前に斜線
+                                textDecorationColor: '#cbd5e1' 
                               }}
                             >
-                              {isCompleted ? '確定済 ✓' : 'レジへ'}
+                              {res.customer_name || '名前なし'} 様
+                            </div>
+                            
+                            {/* 🚀 2. 「レジへ」ボタンの無効化 ＆ テキスト変更 */}
+                            <button 
+                              onClick={() => !isCanceled && openCheckout(res)}
+                              disabled={isCanceled}
+                              style={{ 
+                                background: isCanceled ? '#f1f5f9' : (isCompleted ? '#f1f5f9' : '#008000'), 
+                                color: isCanceled ? '#94a3b8' : (isCompleted ? '#94a3b8' : '#fff'), 
+                                border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold',
+                                cursor: isCanceled ? 'default' : 'pointer'
+                              }}
+                            >
+                              {isCanceled ? 'キャンセル' : (isCompleted ? '確定済 ✓' : 'レジへ')}
                             </button>
                           </div>
 
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', paddingLeft: '8px', lineHeight: '1.4' }}>
+                          <div style={{ 
+                            fontSize: '0.8rem', 
+                            color: isCanceled ? '#cbd5e1' : '#64748b', 
+                            marginBottom: '10px', paddingLeft: '8px', lineHeight: '1.4',
+                            textDecoration: isCanceled ? 'line-through' : 'none' // 🚀 メニューに斜線
+                          }}>
                             📋 {details.menuName}
                           </div>
 
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #f1f5f9', paddingTop: '10px', paddingLeft: '8px' }}>
                             <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>お会計金額</span>
-                            <span style={{ fontSize: '1.3rem', fontWeight: '900', color: isCompleted ? '#1e293b' : '#d34817' }}>
+                            {/* 🚀 3. 金額に斜線を引く */}
+                            <span style={{ 
+                              fontSize: '1.3rem', fontWeight: '900', 
+                              color: isCanceled ? '#cbd5e1' : (isCompleted ? '#1e293b' : '#d34817'),
+                              textDecoration: isCanceled ? 'line-through' : 'none'
+                            }}>
                               ¥ {Number(res.total_price || details.totalPrice).toLocaleString()}
                             </span>
                           </div>

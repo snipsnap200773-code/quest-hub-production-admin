@@ -15,7 +15,7 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
 // 🆕 2. 訪問型専用のデフォルト文章
 const VISIT_DEFAULTS = {
   booking_sub: "【予約確定】訪問確定のお知らせ",
-  booking_body: "{name} 様\n\nご予約ありがとうございます。当日はご指定の場所へお伺いいたします。\n\n📅 日時: {start_time}\n📍 訪問先: {address}\n📋 メニュー: {services}\n👤 担当: {staff_name}",
+  booking_body: "{name} 様\n\nこの度はご予約いただき、ありがとうございます。下記の内容でご予約を確定いたしました。\n\n📅 日時: {start_time}\n📍 訪問先: {address}\n📋 メニュー: {services}\n👤 担当: {staff_name}\n\nご不明点や変更等ございましたら、お気軽にご連絡ください。当日お会いできることを楽しみにしております。",
   remind_sub: "【リマインド】明日、ご指定の場所へお伺いいたします",
   remind_body: "{name} 様\n\n明日のご予約確認です。お約束の時間にお伺いいたします。\n\n📅 日時: {start_time}\n📍 訪問先: {address}\n📋 メニュー: {services}\n\n当日、道中の状況により多少前後する場合はお電話いたします。",
 };
@@ -23,7 +23,7 @@ const VISIT_DEFAULTS = {
 // 🆕 3. 来店型（従来通り）のデフォルト文章
 const STORE_DEFAULTS = {
   booking_sub: "【予約確定】ご来店をお待ちしております",
-  booking_body: "{name} 様\n\nご予約ありがとうございます。当日お会いできるのを楽しみにしております。\n\n📅 日時: {start_time}\n🏨 場所: {shop_name}\n📋 メニュー: {services}\n👤 担当: {staff_name}",
+  booking_body: "{name} 様\n\nこの度はご予約いただき、ありがとうございます。下記の内容でご予約を確定いたしました。\n\n📅 日時: {start_time}\n🏨 場所: {shop_name}\n📋 メニュー: {services}\n👤 担当: {staff_name}\n\nご不明点や変更等ございましたら、お気軽にご連絡ください。ご来店を心よりお待ちしております。",
   remind_sub: "【リマインド】明日、ご来店を心よりお待ちしております",
   remind_body: "{name} 様\n\n明日のご予約確認です。お気をつけてお越しくださいませ。\n\n📅 日時: {start_time}\n🏨 場所: {shop_name}\n📋 メニュー: {services}",
 };

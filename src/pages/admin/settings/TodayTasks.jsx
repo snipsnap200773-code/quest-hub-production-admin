@@ -181,6 +181,7 @@ const fetchTodayTasks = async () => {
       .select('start_time')
       .eq('shop_id', shopId)
       .neq('status', 'completed')
+      .neq('status', 'canceled')
       .lt('start_time', `${todayStr} 00:00:00`)
       .or('is_block.is.null,is_block.eq.false') 
       .eq('res_type', 'normal');
