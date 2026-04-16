@@ -99,7 +99,6 @@ function App() {
 
         {/* --- 🏢 施設ポータル --- */}
         <Route path="/admin/:shopId/facilities" element={<FacilityManagement />} />
-        <Route path="/facility-login/:facilityId" element={<FacilityLogin />} />
         <Route path="/facility-portal/:facilityId/residents" element={<FacilityPortal />} />
         <Route path="/admin/:shopId/visit-requests/:visitId" element={<AdminFacilityVisit_PC />} />
 
