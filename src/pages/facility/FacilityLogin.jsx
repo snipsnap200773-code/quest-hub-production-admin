@@ -155,12 +155,17 @@ const FacilityLogin = () => {
         .eq('password', password)
         .maybeSingle();
 
-      if (facilityUser && !facilityError) {
-        sessionStorage.setItem('facility_user_id', facilityUser.id);
-        sessionStorage.setItem(`facility_auth_active`, 'true');
-        // alertを削除して即移動
-        navigate(`/facility-portal/${facilityUser.id}/residents`);
-      } else {
+      // FacilityLogin.jsx の施設ログイン成功時の処理
+if (facilityUser && !facilityError) {
+  // 🚀 sessionStorage だけでなく localStorage にも保存する
+  localStorage.setItem('facility_user_id', facilityUser.id);
+  localStorage.setItem('facility_auth_active', 'true');
+  
+  sessionStorage.setItem('facility_user_id', facilityUser.id);
+  sessionStorage.setItem(`facility_auth_active`, 'true');
+  
+  navigate(`/facility-portal/${facilityUser.id}/residents`);
+} else {
         alert('施設ログインIDまたはパスワードが正しくありません。');
         setIsProcessing(false);
       }

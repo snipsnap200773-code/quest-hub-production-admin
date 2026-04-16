@@ -47,16 +47,31 @@ const FacilityPortal = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // 認証チェック
+  // 🚀 🆕 認証チェック：LocalStorage（永続保存）を確認するように強化
   useEffect(() => {
-    const loggedInId = sessionStorage.getItem('facility_user_id');
-    const isActive = sessionStorage.getItem('facility_auth_active');
-    if (!isActive || loggedInId !== facilityId) {
-      navigate(`/facility-login/${facilityId}`);
-      return;
-    }
-    fetchFacilityData();
-  }, [facilityId]);
+    const checkAuth = async () => {
+      // 1. URLの ?logout=true を確認
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('logout') === 'true') return; // ログアウト直後なら何もしない
+
+      // 2. セッション（sessionStorage）または 永続メモリ（localStorage）からIDを取得
+      const loggedInId = sessionStorage.getItem('facility_user_id') || localStorage.getItem('facility_user_id');
+      const isActive = sessionStorage.getItem('facility_auth_active') || localStorage.getItem('facility_auth_active');
+
+      if (isActive === 'true' && loggedInId === facilityId) {
+        // 🚀 ログイン継続中：sessionStorageに値を同期してデータを読み込む
+        sessionStorage.setItem('facility_user_id', loggedInId);
+        sessionStorage.setItem('facility_auth_active', 'true');
+        fetchFacilityData();
+      } else {
+        // 🚀 ログイン情報がない場合：ログイン画面へ
+        console.log("セッションが見つからないため、ログイン画面へ移動します");
+        navigate(`/facility-login/${facilityId}`);
+      }
+    };
+
+    checkAuth();
+  }, [facilityId, navigate]);
 
   const fetchFacilityData = async () => {
     setLoading(true);
@@ -180,7 +195,18 @@ const FacilityPortal = () => {
 
         <div style={sidebarFooterStyle}>
           <button 
-            onClick={() => { sessionStorage.clear(); navigate(`/facility-login/${facilityId}`); }} 
+            onClick={async () => { 
+              if (window.confirm("ログアウトしますか？")) {
+                // 1. Supabase Authも（もしあれば）ログアウト
+                await supabase.auth.signOut();
+                // 2. 全ての保存領域を掃除
+                sessionStorage.clear(); 
+                localStorage.removeItem('facility_user_id');
+                localStorage.removeItem('facility_auth_active');
+                // 3. 🚀 🆕 重要：?logout=true を付けてログイン画面に戻る
+                navigate(`/facility-login/${facilityId}?logout=true`, { replace: true }); 
+              }
+            }} 
             style={logoutBtnStyle}
           >
             <LogOut size={18} /> ログアウト
