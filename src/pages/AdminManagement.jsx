@@ -73,7 +73,6 @@ function AdminManagement() {
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
   const [editEmail, setEditEmail] = useState('');
-  const [customerMemo, setCustomerMemo] = useState('');
   const [firstArrivalDate, setFirstArrivalDate] = useState(''); 
   const [pastVisits, setPastVisits] = useState([]);
   const [isSavingMemo, setIsSavingMemo] = useState(false);
@@ -2240,7 +2239,12 @@ return (
               </div>
 
               <SectionTitle icon={<FileText size={16} />} title="顧客メモ" color="#d34817" />
-              <textarea value={customerMemo} onChange={(e) => setCustomerMemo(e.target.value)} style={{ width: '100%', minHeight: '120px', padding: '10px', borderRadius: '10px', border: '2px solid #d34817', marginBottom: '10px' }} />
+<textarea 
+  value={editFields.memo || ''} 
+  onChange={(e) => setEditFields({ ...editFields, memo: e.target.value })} 
+  style={{ width: '100%', minHeight: '120px', padding: '10px', borderRadius: '10px', border: '2px solid #d34817', marginBottom: '10px' }} 
+  placeholder="お客様の好みや注意事項（全画面共通のメモです）"
+/>
               <button onClick={saveCustomerInfo} disabled={isSavingMemo} style={{ width: '100%', padding: '15px', background: '#008000', color: '#fff', borderRadius: '10px', fontWeight: 'bold' }}>{isSavingMemo ? '保存中...' : '情報を保存'}</button>
               
               <SectionTitle icon={<History size={16} />} title="過去の履歴" color="#4b2c85" />

@@ -471,9 +471,8 @@ const openDetail = async (res) => {
       company_name: cust?.company_name || visitInfo.company_name || '',
       symptoms: cust?.symptoms || visitInfo.symptoms || '',
       request_details: cust?.request_details || visitInfo.request_details || '',
-      memo: cust?.memo || '',
+      memo: res.res_type === 'private_task' ? (res.note || '') : (cust?.memo || ''),
       line_user_id: cust?.line_user_id || res.line_user_id || null,
-      // 💡 重要：カスタム質問の回答を確実にセット
       custom_answers: visitInfo.custom_answers || cust?.custom_answers || {}
     };
 
