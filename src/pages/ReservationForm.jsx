@@ -522,7 +522,7 @@ const handleNextStep = () => {
                     placeholder="郵便番号(7桁)" 
                     style={{ flex: 1, padding: '14px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '1rem' }} 
                   />
-                  <button onClick={handleZipSearch} type="button" style={{ padding: '0 20px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }}>住所検索</button>
+                  <button onClick={handleZipSearch} type="button" style={{ padding: '0 20px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }}>検索</button>
                 </div>
                 <input 
                   type="text" 
