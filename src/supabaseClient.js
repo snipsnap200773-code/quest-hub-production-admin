@@ -29,6 +29,14 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     headers: {
       'x-shop-id': getShopIdFromUrl()
     }
+  },
+  // 🚀 🆕 ここから追記：ログイン維持のための強力な設定
+  auth: {
+    persistSession: true,      // ログイン状態をブラウザ（LocalStorage）に保存する
+    autoRefreshToken: true,    // トークンが切れる前に自動で更新する
+    detectSessionInUrl: true,  // URL（メール認証等）からのセッション復帰を許可する
+    storageKey: 'quest-hub-main-auth', // 保存場所の名前を固定（他のアプリとの衝突を防ぐ）
+    storage: window.localStorage // 明示的にLocalStorageを使用
   }
 });
 
