@@ -204,7 +204,7 @@ const FacilityPortal = () => {
                 localStorage.removeItem('facility_user_id');
                 localStorage.removeItem('facility_auth_active');
                 // 3. 🚀 🆕 重要：?logout=true を付けてログイン画面に戻る
-                navigate(`/facility-login/${facilityId}?logout=true`, { replace: true }); 
+                navigate('/login?logout=true', { replace: true }); 
               }
             }} 
             style={logoutBtnStyle}
