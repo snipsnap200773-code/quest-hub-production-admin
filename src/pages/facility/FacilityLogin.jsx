@@ -18,22 +18,50 @@ const FacilityLogin = () => {
   const [isProcessing, setIsProcessing] = useState(false);
 
   useEffect(() => {
-    const fetchFacilityMetadata = async () => {
-      if (!facilityId) { setLoading(false); return; }
-      const { data } = await supabase
-        .from('facility_users')
-        .select('facility_name, login_id')
-        .eq('id', facilityId)
-        .maybeSingle(); 
+    const initLoginScreen = async () => {
+      // 🚀 1. まずは「すでにログイン済みか」をチェック
+      const { data: { session } } = await supabase.auth.getSession();
       
-      if (data) {
-        setFacilityMetadata(data);
-        setLoginId(data.login_id);
+      if (session && session.user) {
+        // 🚀 2. ログイン済みなら、プロフィールを取得してリダイレクト
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        if (profile) {
+          console.log("💎 有効なセッションを検出しました。自動ログインします。");
+          // セッションストレージにも念のためフラグを立てる（既存のガード用）
+          sessionStorage.setItem(`auth_${profile.id}`, 'true');
+          
+          if (profile.role === 'super_admin') {
+            navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
+          } else {
+            navigate(`/admin/${profile.id}/dashboard`);
+          }
+          return; // リダイレクトするので、これ以降の処理（読み込み中解除など）は不要
+        }
+      }
+
+      // 💡 以下は「ログインしていない場合」のみ実行される
+      if (facilityId) {
+        const { data } = await supabase
+          .from('facility_users')
+          .select('facility_name, login_id')
+          .eq('id', facilityId)
+          .maybeSingle(); 
+        
+        if (data) {
+          setFacilityMetadata(data);
+          setLoginId(data.login_id);
+        }
       }
       setLoading(false);
     };
-    fetchFacilityMetadata();
-  }, [facilityId]);
+
+    initLoginScreen();
+  }, [facilityId, navigate]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
