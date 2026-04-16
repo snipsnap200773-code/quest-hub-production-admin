@@ -45,6 +45,7 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
   const [visitorAddress, setVisitorAddress] = useState('');
   const [isAddressFixed, setIsAddressFixed] = useState(false);
   const [isVisitService, setIsVisitService] = useState(false);
+  const [shouldSaveAddress, setShouldSaveAddress] = useState(true);
 
   // --- 複数名予約用のState ---
   // --- 複数名予約用のState ---
@@ -64,10 +65,18 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
   const serviceRefs = useRef({});
 
   useEffect(() => {
-    // 🆕 ページ表示時に強制的に最上部へ
     window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
     fetchData();
-    // 💡 ここでの initLiff() 呼び出しは削除します
+
+    // 🚀 🆕 ブラウザのメモリ(LocalStorage)に保存された住所があれば読み込む
+    const savedZip = localStorage.getItem('guest_zip');
+    const savedAddr = localStorage.getItem('guest_addr');
+    if (savedAddr) {
+      setVisitorZip(savedZip || '');
+      setVisitorAddress(savedAddr);
+      setIsAddressFixed(true); // 住所があれば最初から確定状態にしてメニューへ進ませる
+      console.log("📦 ブラウザ保存の住所を復元しました");
+    }
   }, [shopId]);
   
   const initLiff = async (dynamicLiffId) => {
@@ -515,14 +524,40 @@ const handleNextStep = () => {
               <>
                 <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px' }}>郵便番号を入力すると住所が自動入力されます。</p>
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                  {/* 🚀 🆕 flex: 2 を指定（全体の3分の2を占める） */}
                   <input 
                     type="tel" 
                     value={visitorZip} 
                     onChange={(e) => setVisitorZip(e.target.value.replace(/[^0-9]/g, '').slice(0, 7))} 
                     placeholder="郵便番号(7桁)" 
-                    style={{ flex: 1, padding: '14px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '1rem' }} 
+                    style={{ 
+                      flex: 2, 
+                      padding: '14px', 
+                      borderRadius: '10px', 
+                      border: '1px solid #ddd', 
+                      fontSize: '1rem',
+                      minWidth: 0 // 横幅がはみ出すのを防ぐおまじない
+                    }} 
                   />
-                  <button onClick={handleZipSearch} type="button" style={{ padding: '0 20px', background: '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', color: '#475569' }}>検索</button>
+                  {/* 🚀 🆕 flex: 1 を指定（全体の3分の1を占める） */}
+                  <button 
+                    onClick={handleZipSearch} 
+                    type="button" 
+                    style={{ 
+                      flex: 1, 
+                      whiteSpace: 'nowrap', 
+                      padding: '0 5px', 
+                      background: '#f1f5f9', 
+                      border: '1px solid #cbd5e1', 
+                      borderRadius: '10px', 
+                      fontSize: '0.85rem', 
+                      fontWeight: 'bold', 
+                      cursor: 'pointer', 
+                      color: '#475569' 
+                    }}
+                  >
+                    検索
+                  </button>
                 </div>
                 <input 
                   type="text" 
@@ -531,26 +566,50 @@ const handleNextStep = () => {
                   placeholder="市区町村・番地・建物名まで入力してください" 
                   style={{ width: '100%', padding: '14px', borderRadius: '10px', border: '1px solid #ddd', fontSize: '1rem', marginBottom: '12px', boxSizing: 'border-box' }} 
                 />
-<button 
-  // 🚀 🆕 1.末尾が数字 2.ハイフンあり 3.丁目/番地/号/の が含まれる かをチェック
-  disabled={!visitorAddress || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))} 
-  onClick={() => setIsAddressFixed(true)} 
-  style={{ 
-    width: '100%', padding: '14px', 
-    // 判定ロジックを共通化
-    background: (visitorAddress && /[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? themeColor : '#cbd5e1', 
-    color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' 
-  }}
->
-  {!visitorAddress ? '住所を入力してください' 
-   : !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? '番地まで入力してください' 
-   : 'この場所で空き枠を探す'}
-</button>
+
+                {/* 🚀 🆕 チェックボックスの設置 */}
+                <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '5px' }}>
+                  <input 
+                    type="checkbox" 
+                    id="save_guest_address"
+                    checked={shouldSaveAddress}
+                    onChange={(e) => setShouldSaveAddress(e.target.checked)}
+                    style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                  />
+                  <label htmlFor="save_guest_address" style={{ fontSize: '0.8rem', color: '#64748b', cursor: 'pointer', fontWeight: 'bold' }}>
+                    次回から住所入力を省略する（このスマホに保存）
+                  </label>
+                </div>
+
+                <button 
+                  disabled={!visitorAddress || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))} 
+                  onClick={() => {
+                    // 🚀 🆕 保存の判定処理を追加
+                    if (shouldSaveAddress) {
+                      localStorage.setItem('guest_zip', visitorZip);
+                      localStorage.setItem('guest_addr', visitorAddress);
+                    } else {
+                      localStorage.removeItem('guest_zip');
+                      localStorage.removeItem('guest_addr');
+                    }
+                    setIsAddressFixed(true);
+                  }} 
+                  style={{ 
+                    width: '100%', padding: '14px', 
+                    background: (visitorAddress && /[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? themeColor : '#cbd5e1', 
+                    color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer' 
+                  }}
+                >
+                  {/* ...ボタン文字（既存通り）... */}
+                  {!visitorAddress ? '住所を入力してください' 
+                  : !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? '番地まで入力してください' 
+                  : 'この場所で空き枠を探す'}
+                </button>
               </>
             ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
-                  <p style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold', marginBottom: '4px' }}>📍 訪問先（前回と同じ場所を表示中）</p>
+                  <p style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold', marginBottom: '4px' }}>📍 訪問先</p>
                   <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{visitorAddress}</div>
                 </div>
                 <button onClick={() => setIsAddressFixed(false)} style={{ background: 'none', border: `2px solid ${themeColor}`, color: themeColor, padding: '5px 15px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>変更</button>
