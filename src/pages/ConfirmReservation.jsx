@@ -448,7 +448,7 @@ const handleReserve = async () => {
 
         const { data: matched } = await supabase
           .from('customers')
-          .select('id, total_visits')
+          .select('id, name, admin_name, total_visits')
           .or(orConditions.length > 0 ? orConditions.join(',') : `name.eq.${customerData.name}`)
           .eq('shop_id', shopId)
           .maybeSingle();
@@ -516,6 +516,8 @@ const handleReserve = async () => {
         finalCustomerId = newCust.id;
       }
       
+      // 修正箇所：customer_name の決定ロジック
+      const finalDisplayName = existingCust?.admin_name || existingCust?.name || customerData.name;
       // ✅ 予約データの挿入
       const { error: dbError } = await supabase.from('reservations').insert([
         {
@@ -523,7 +525,7 @@ const handleReserve = async () => {
           customer_id: finalCustomerId,
           staff_id: finalStaffId,
           reservation_date: targetDate, 
-          customer_name: customerData.name,
+          customer_name: finalDisplayName,
           customer_phone: customerData.phone || '---',
           customer_email: customerData.email || null,
           zip_code: customerData.zip_code || null,
@@ -567,7 +569,7 @@ const handleReserve = async () => {
           body: {
             type: 'booking', 
             shopId,
-            customerName: displayNameForEmail, // ✅ 書き換えられた名前を送る
+            customerName: finalDisplayName, // ✅ 書き換えられた名前を送る
             staffName: finalStaffName || staffName,
             shopName: customShopName || shop.business_name, // 🆕 追加
             startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`,
@@ -625,7 +627,37 @@ if (isAdminEntry) {
   const restrictedServices = selectedServices.filter(s => s.restricted_hours && s.restricted_hours.length > 0);
 
 return (
-    <div style={{ padding: '20px', maxWidth: '500px', margin: '0 auto', fontFamily: 'sans-serif', color: '#333' }}>
+    <div style={{ padding: '20px', maxWidth: '500px', margin: '0 auto', fontFamily: 'sans-serif', color: '#333' }}>
+
+      {/* 🚀 🆕 ここから追加：送信中のフルスクリーン・メッセージ */}
+      {isSubmitting && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'rgba(255, 255, 255, 0.9)', // 白背景で少し透けさせる
+          zIndex: 10000, // 他の要素より一番上に
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: '20px',
+          backdropFilter: 'blur(5px)' // 背景をぼかすとおしゃれです
+        }}>
+          {/* グルグル回るアイコン */}
+          <Loader2 size={48} color={themeColor} style={{ animation: 'spin 1s linear infinite' }} />
+          
+          <div style={{ textAlign: 'center', padding: '0 20px' }}>
+            <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontWeight: '900' }}>
+              予約を送信中...
+            </h3>
+            <p style={{ margin: 0, fontSize: '0.9rem', color: '#64748b', lineHeight: '1.6' }}>
+              <b>この処理は10秒ほどかかる場合があります。</b><br />
+              画面を閉じずにお待ちください。
+            </p>
+          </div>
+        </div>
+      )}
+      {/* 🚀 🆕 ここまで追加 */}
       
       {/* 🆕 1. ここに追加：自動入力通知 [cite: 2025-12-01] */}
       <div style={{
