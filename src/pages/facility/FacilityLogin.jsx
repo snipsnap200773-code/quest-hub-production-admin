@@ -19,11 +19,14 @@ const FacilityLogin = () => {
 
   useEffect(() => {
     const initLoginScreen = async () => {
-      // 🚀 1. まずは「すでにログイン済みか」をチェック
+      // 🚀 🆕 URLに ?logout=true が含まれているか確認
+      const params = new URLSearchParams(window.location.search);
+      const isLogoutMode = params.get('logout') === 'true';
+
+      // 🚀 ログインセッションがある、かつ「ログアウト直後ではない」時だけ自動遷移する
       const { data: { session } } = await supabase.auth.getSession();
       
-      if (session && session.user) {
-        // 🚀 2. ログイン済みなら、プロフィールを取得してリダイレクト
+      if (session && session.user && !isLogoutMode) {
         const { data: profile } = await supabase
           .from('profiles')
           .select('id, role')
@@ -31,16 +34,13 @@ const FacilityLogin = () => {
           .maybeSingle();
 
         if (profile) {
-          console.log("💎 有効なセッションを検出しました。自動ログインします。");
-          // セッションストレージにも念のためフラグを立てる（既存のガード用）
+          console.log("💎 自動ログインを実行します");
           sessionStorage.setItem(`auth_${profile.id}`, 'true');
-          
-          if (profile.role === 'super_admin') {
-            navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
-          } else {
-            navigate(`/admin/${profile.id}/dashboard`);
-          }
-          return; // リダイレクトするので、これ以降の処理（読み込み中解除など）は不要
+          navigate(profile.role === 'super_admin' 
+            ? '/super-admin-216-midote-snipsnap-dmaaaahkmm' 
+            : `/admin/${profile.id}/dashboard`
+          );
+          return;
         }
       }
 

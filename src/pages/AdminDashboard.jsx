@@ -21,12 +21,17 @@ const AdminDashboard = () => {
   const [isAuthorized, setIsAuthorized] = useState(false); // 認証フラグ
   const [inputPass, setInputPass] = useState('');    // 入力パスワード
 
-  // 🆕 ログアウト処理：セッションを消してTOPへ戻る
-  const handleLogout = () => {
+  // 🚀 🆕 修正：自動ログインループを防止するログアウト処理
+  const handleLogout = async () => { // 💡 async を追加
     if (window.confirm("ログアウトしてもよろしいですか？")) {
-      sessionStorage.removeItem(`auth_${shopId}`);
-      sessionStorage.removeItem('auth_super');
-      navigate('/');
+      // 1. Supabaseのセッションを終了（これにより自動復元が止まる）
+      await supabase.auth.signOut();
+      
+      // 2. ショップ個別や管理者のバトンを全削除
+      sessionStorage.clear();
+      
+      // 3. 🚀 重要：URLに印を付けてログイン画面へ
+      navigate('/?logout=true', { replace: true });
     }
   };
 

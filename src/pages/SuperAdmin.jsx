@@ -27,12 +27,20 @@ function SuperAdmin() {
   const MASTER_PASSWORD = import.meta.env.VITE_SUPER_MASTER_PASSWORD; 
   const DELETE_PASSWORD = import.meta.env.VITE_SUPER_DELETE_PASSWORD;
 
-  // 🆕 ログアウト処理：バトンを消してリロード
-  const handleLogout = () => {
+  // 🚀 🆕 修正：自動ログインループを防止するログアウト処理
+  const handleLogout = async () => { // 💡 async を追加
     if (window.confirm("システムからログアウトしますか？")) {
-      sessionStorage.removeItem('auth_super');
+      // 1. Supabaseのセッションを物理的に終了させる
+      await supabase.auth.signOut();
+      
+      // 2. セッションストレージ（バトン）をすべて掃除
+      sessionStorage.clear();
+      
+      // 3. 状態を解除
       setIsAuthorized(false);
-      navigate('/');
+      
+      // 4. 🚀 重要：URLに印を付けてログイン画面へ
+      navigate('/?logout=true', { replace: true });
     }
   };
 
