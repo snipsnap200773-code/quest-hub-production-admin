@@ -369,23 +369,30 @@ const updateShopInfo = async (id) => {
   };
 
   const deleteShop = async (shop) => {
-    const input = window.prompt("削除パスワードを入力してください：");
+    const input = window.prompt(`店舗「${shop.business_name}」を完全に削除しますか？\nログインアカウントも同時に消去されます。\n実行するには削除パスワードを入力してください：`);
+    
     if (input === DELETE_PASSWORD) {
-      const { error } = await supabase.from('profiles').delete().eq('id', shop.id);
-      if (!error) { fetchCreatedShops(); alert('削除完了'); }
-    }
-  };
+      setIsProcessing(true); // 送信中状態にする
+      try {
+        const { data, error } = await supabase.functions.invoke('resend', {
+          body: {
+            type: 'DELETE_SHOP_FULL',
+            shopId: shop.id
+          }
+        });
 
-  const addNews = async () => {
-    if (!newNewsDate || !newNewsTitle) return alert('日付とタイトルを入力してください');
-    const { error } = await supabase.from('portal_news').insert([{ publish_date: newNewsDate, category: newNewsCat, title: newNewsTitle }]);
-    if (!error) { setNewNewsDate(''); setNewNewsTitle(''); fetchPortalContent(); }
-  };
+        if (error) throw new Error(error.message);
 
-  const deleteNews = async (id) => {
-    if (window.confirm('削除しますか？')) {
-      await supabase.from('portal_news').delete().eq('id', id);
-      fetchPortalContent();
+        alert('店舗と認証アカウントを完全に消去しました。');
+        fetchCreatedShops(); // リストを更新
+      } catch (err) {
+        console.error("Delete Error:", err);
+        alert('削除に失敗しました: ' + err.message);
+      } finally {
+        setIsProcessing(false);
+      }
+    } else if (input !== null) {
+      alert('パスワードが違います');
     }
   };
 

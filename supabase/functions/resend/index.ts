@@ -710,6 +710,34 @@ if (type === 'inquiry') {
       });
     }
 
+    // 🆕 ここから追加！
+    // ==========================================
+    // 🆕 パターンO：店舗の完全消去（Authアカウント ＋ DBプロファイル）
+    // ==========================================
+    if (type === 'DELETE_SHOP_FULL') {
+      const { shopId } = payload;
+      console.log(`[DELETE_SHOP_FULL] 開始: ID ${shopId}`);
+
+      // 1. まずはログインアカウント（Auth）を削除
+      const { error: authError } = await supabaseAdmin.auth.admin.deleteUser(shopId);
+      if (authError) {
+        console.warn("Authアカウント削除失敗（既にない可能性あり）:", authError.message);
+      }
+
+      // 2. profilesテーブルから削除
+      const { error: dbError } = await supabaseAdmin
+        .from('profiles')
+        .delete()
+        .eq('id', shopId);
+
+      if (dbError) {
+        return new Response(JSON.stringify({ error: `DB削除失敗: ${dbError.message}` }), { status: 400, headers: corsHeaders });
+      }
+
+      return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+    }
+    // 🆕 ここまで追加！
+
     // ==========================================
     // 🚀 パターンA：店主様への歓迎メール ＆ 三土手さんへの通知送信 (本家ロジック完全維持)
     // ==========================================
