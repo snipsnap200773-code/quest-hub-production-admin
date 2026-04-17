@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => { // 💡 typeを引数に追加
@@ -1524,10 +1524,10 @@ return (
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxShadow: '0 -4px 15px rgba(0,0,0,0.05)' 
         }}>
-          {/* 1. ライン（タイムライン） */}
-          <button onClick={() => navigate(`/admin/${shopId}/timeline?date=${selectedDate}`)} style={mobileTabStyle(false, '#4b2c85')}>
-            <Activity size={22} />
-            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>ライン</span>
+          {/* 🆕 1. 設定（ダッシュボード）へ変更 */}
+          <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={mobileTabStyle(false, '#64748b')}>
+            <Settings size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
           </button>
 
           {/* 2. タスク（現場実行） */}
