@@ -18,6 +18,7 @@ function AdminManagement() {
   const [shop, setShop] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isAutoProcessing, setIsAutoProcessing] = useState(false);
   const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('sv-SE'));
   const [categoryMap, setCategoryMap] = useState({});
   const [viewMonth, setViewMonth] = useState(new Date());
@@ -528,6 +529,64 @@ const completePayment = async () => {
       alert("確定失敗: " + err.message); 
     } finally {
       setIsSavingMemo(false);
+    }
+  };
+
+  /* ==========================================
+      🆕 追加：自動売上確定モード用の一括処理ロジック
+      未処理の予約を、見積金額で一括して「売上確定」させます
+     ========================================== */
+  const handleAutoBatchProcess = async () => {
+    if (!oldestIncompleteDate) return;
+    if (!window.confirm(`${oldestIncompleteDate} 以前の未処理予約を、すべて見積金額で一括確定しますか？`)) return;
+
+    setIsAutoProcessing(true); // 👈 fetchInitialData の前あたりに追加した State
+    try {
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+      
+      // 1. 過去の未処理予約（完了・キャンセル以外、かつ売上対象外でないもの）を抽出
+      const incompleteTasks = allReservations.filter(r => 
+        r.status !== 'completed' && 
+        r.status !== 'canceled' && 
+        r.start_time.split('T')[0] < todayStr &&
+        !isSalesExcludedRes(r)
+      );
+
+      if (incompleteTasks.length === 0) {
+        alert("処理対象のタスクはありません。");
+        return;
+      }
+
+      // 2. ループで1件ずつ処理
+      for (const task of incompleteTasks) {
+        const details = parseReservationDetails(task);
+        const estimatedPrice = task.total_price || details.totalPrice || 0;
+
+        // A. 予約データの更新
+        await supabase.from('reservations').update({
+          status: 'completed',
+          total_price: estimatedPrice,
+          options: { ...task.options, isAutoMatched: true }
+        }).eq('id', task.id);
+
+        // B. 売上台帳（sales）への書き込み
+        await supabase.from('sales').upsert({
+          shop_id: cleanShopId,
+          reservation_id: task.id,
+          customer_id: task.customer_id,
+          total_amount: estimatedPrice,
+          sale_date: task.start_time.split('T')[0],
+          details: { ...task.options, note: '管理画面からの一括確定' }
+        }, { onConflict: 'reservation_id' });
+      }
+
+      alert(`${incompleteTasks.length}件を一括確定し、台帳に記録しました！✨`);
+      fetchInitialData(); // 最新状態にリロード
+    } catch (err) {
+      console.error("一括処理エラー:", err);
+      alert("一括処理中にエラーが発生しました: " + err.message);
+    } finally {
+      setIsAutoProcessing(false);
     }
   };
   
@@ -1155,30 +1214,44 @@ return (
                   台帳：{selectedDate.replace(/-/g, '/')}
                 </h2>
 
-                {/* 🆕 修正：レジ忘れアラートボタン */}
-                {oldestIncompleteDate && (
-                  <button
-                    onClick={() => setSelectedDate(oldestIncompleteDate)}
-                    style={{
-                      background: '#ffeb3b',
-                      color: '#d34817',
-                      border: 'none',
-                      padding: '6px 12px',
-                      borderRadius: '20px',
-                      fontSize: '0.75rem',
-                      fontWeight: '900',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      animation: 'blinkRed 1.5s infinite', // 💡 下で定義する点滅アニメーション
-                      boxShadow: '0 0 15px rgba(255, 235, 59, 0.5)'
-                    }}
-                  >
-                    <AlertCircle size={14} /> 
-                    未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})
-                  </button>
-                )}
+                {/* 🚀 自動売上確定モードONなら一括確定ボタン、OFFなら日付ジャンプ */}
+{oldestIncompleteDate && (
+  <button
+    disabled={isAutoProcessing}
+    onClick={() => {
+      // ✅ 新しい「一括売上確定モード」のスイッチを見るように変更
+      if (shop?.allow_batch_matching) {
+        handleAutoBatchProcess();
+      } else {
+        setSelectedDate(oldestIncompleteDate);
+      }
+    }}
+    style={{
+      // ✅ 色の判定も新しいスイッチに合わせる
+      background: shop?.allow_batch_matching ? '#dcfce7' : '#ffeb3b',
+      color: shop?.allow_batch_matching ? '#166534' : '#d34817',
+      border: shop?.allow_batch_matching ? '1px solid #16653444' : 'none',
+      padding: '6px 12px',
+      borderRadius: '20px',
+      fontSize: '0.75rem',
+      fontWeight: '900',
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '5px',
+      animation: isAutoProcessing ? 'none' : 'blinkRed 1.5s infinite',
+      boxShadow: '0 0 15px rgba(255, 235, 59, 0.5)'
+    }}
+  >
+    {isAutoProcessing ? (
+      '処理中...'
+    ) : shop?.allow_batch_matching ? ( // ✅ ここも新しいスイッチに変更
+      <><CheckCircle size={14} /> 未処理を一括確定</>
+    ) : (
+      <><AlertCircle size={14} /> 未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})</>
+    )}
+  </button>
+)}
               </div>
 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', position: 'relative' }}>
   {/* 🔍 検索入力エリア */}

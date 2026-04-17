@@ -4,7 +4,7 @@ import { supabase } from "../../../supabaseClient";
 import bcrypt from 'bcryptjs';
 import { 
   Settings, Shield, Palette, Layout, Save, 
-  ArrowLeft, CheckCircle2 
+  ArrowLeft, CheckCircle2, RefreshCcw // 🆕 RefreshCcwを追加
 } from 'lucide-react';
 
 const GeneralSettings = () => {
@@ -13,7 +13,6 @@ const GeneralSettings = () => {
   const [message, setMessage] = useState('');
   const [shopData, setShopData] = useState(null);
 
-  // 🆕 画面サイズ管理を追加（ボタンをレスポンシブにするため）
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -22,10 +21,11 @@ const GeneralSettings = () => {
   }, []);
   const isPC = windowWidth > 900; 
 
-  // --- 1. State 管理 (外観、同期、表示拡張、セキュリティを完全維持) ---
   const [themeColor, setThemeColor] = useState('#2563eb');
   const [extraSlotsBefore, setExtraSlotsBefore] = useState(0);
   const [extraSlotsAfter, setExtraSlotsAfter] = useState(0);
+  const [autoSalesMatching, setAutoSalesMatching] = useState(false); // 🆕 自動売上確定のState
+  const [allowBatchMatching, setAllowBatchMatching] = useState(false);
 
   const [newPassword, setNewPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -37,55 +37,52 @@ const GeneralSettings = () => {
     if (data) {
       setShopData(data);
       setThemeColor(data.theme_color || '#2563eb');
-      // 念のため || 0 を重ねて確実に数値として初期化します
       setExtraSlotsBefore(data.extra_slots_before || 0);
       setExtraSlotsAfter(data.extra_slots_after || 0);
-        }
+      setAutoSalesMatching(data.auto_sales_matching || false);
+      setAllowBatchMatching(data.allow_batch_matching || false);
+    }
   };
 
   const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
 
-  // --- 💾 保存ロジック (完全維持) ---
   const handleSave = async () => {
     const { error } = await supabase.from('profiles').update({
       theme_color: themeColor,
       extra_slots_before: extraSlotsBefore,
-      extra_slots_after: extraSlotsAfter
+      extra_slots_after: extraSlotsAfter,
+      auto_sales_matching: autoSalesMatching,
+      allow_batch_matching: allowBatchMatching
     }).eq('id', shopId);
 
     if (!error) showMsg('全般設定を保存しました！');
     else alert('保存に失敗しました。');
   };
 
-  // --- 🔐 セキュリティロジック (bcryptハッシュ化完備) ---
-const handleUpdatePassword = async () => {
-    // newPassword が存在しない場合を考慮します
+  const handleUpdatePassword = async () => {
     if (!newPassword || newPassword.length < 8) { alert("セキュリティのため、パスワードは8文字以上に設定してください。"); return; }
     if (window.confirm("パスワードを更新します。一度更新されると運営者もあなたのパスワードを知ることはできなくなります。よろしいですか？")) {
-            const salt = bcrypt.genSaltSync(10);
+      const salt = bcrypt.genSaltSync(10);
       const hashed = bcrypt.hashSync(newPassword, salt);
       const { error } = await supabase.from('profiles').update({ hashed_password: hashed, admin_password: '********' }).eq('id', shopId);
       if (!error) { showMsg('パスワードを安全に更新しました！'); setNewPassword(''); setIsChangingPassword(false); }
     }
   };
 
-  // --- スタイル定義 (リニューアル統一版) ---
+  // スタイル定義
   const containerStyle = { fontFamily: 'sans-serif', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', position: 'relative' };
-const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
+  const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
-  // themeColor が空の場合に備えてデフォルト色を仕込みます
   const btnActiveS = (val, target) => ({ padding: '12px 5px', background: val === target ? (themeColor || '#2563eb') : '#fff', color: val === target ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' });
   
   return (
     <div style={containerStyle}>
-      {/* 🔔 通知メッセージ */}
       {message && (
         <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }}>
           <CheckCircle2 size={20} style={{ verticalAlign: 'middle', marginRight: '8px' }} /> {message}
         </div>
       )}
 
-      {/* 🚀 ナビゲーションヘッダー */}
       <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '30px' }}>
         <button 
           onClick={() => navigate(`/admin/${shopId}/dashboard`)}
@@ -130,6 +127,75 @@ const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', b
           </div>
         </div>
       </section>
+
+      {/* 🆕 自動処理・効率化設定 */}
+<section style={{ ...cardStyle, borderLeft: `8px solid #3b82f6`, background: '#f8faff' }}>
+  <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+    <RefreshCcw size={20} /> 自動処理・効率化設定
+  </h3>
+
+  {/* --- ① 一括売上確定モード（手動ボタン用） --- */}
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #e2e8f0' }}>
+    <div style={{ flex: 1, paddingRight: '15px' }}>
+      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+        一括売上確定モード
+      </div>
+      <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+        ONにすると、未処理の予約をボタン一つで一括確定できるようになります。
+      </div>
+    </div>
+    <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+      <input 
+        type="checkbox" 
+        checked={allowBatchMatching} 
+        onChange={(e) => setAllowBatchMatching(e.target.checked)} 
+        style={{ opacity: 0, width: 0, height: 0 }} 
+      />
+      <span style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: allowBatchMatching ? themeColor : '#cbd5e1',
+        transition: '.3s', borderRadius: '34px'
+      }}>
+        <span style={{
+          position: 'absolute', content: '""', height: '18px', width: '18px',
+          left: allowBatchMatching ? '28px' : '4px', bottom: '4px',
+          backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
+        }}></span>
+      </span>
+    </label>
+  </div>
+
+  {/* --- ② 自動売上確定モード（深夜自動用） --- */}
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <div style={{ flex: 1, paddingRight: '15px' }}>
+      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+        自動売上確定モード（深夜自動）
+      </div>
+      <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+        ONにすると、深夜に未処理の予約を自動的に集計します。
+      </div>
+    </div>
+    <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+      <input 
+        type="checkbox" 
+        checked={autoSalesMatching} 
+        onChange={(e) => setAutoSalesMatching(e.target.checked)} 
+        style={{ opacity: 0, width: 0, height: 0 }} 
+      />
+      <span style={{
+        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+        backgroundColor: autoSalesMatching ? themeColor : '#cbd5e1',
+        transition: '.3s', borderRadius: '34px'
+      }}>
+        <span style={{
+          position: 'absolute', content: '""', height: '18px', width: '18px',
+          left: autoSalesMatching ? '28px' : '4px', bottom: '4px',
+          backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
+        }}></span>
+      </span>
+    </label>
+  </div>
+</section>
 
       {/* 📌 管理画面の表示拡張 */}
       <section style={{ ...cardStyle, background: '#fdfcf5', border: '1px solid #eab308' }}>

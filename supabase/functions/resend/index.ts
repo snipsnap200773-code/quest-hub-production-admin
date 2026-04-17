@@ -216,6 +216,82 @@ const mRes = await fetch('https://api.resend.com/emails', {
   return new Response(JSON.stringify({ report }), { status: 200, headers: corsHeaders });
 }
 
+// ==========================================
+// 🆕 パターンN：自動売上確定（深夜一括処理用）
+// ==========================================
+if (type === 'auto_sales_batch') {
+  // 日本時間の昨日を取得
+  const nowJST = new Date(new Date().getTime() + (9 * 60 * 60 * 1000));
+  const yesterday = new Date(nowJST);
+  yesterday.setDate(yesterday.getDate() - 1);
+  const dateStr = yesterday.toISOString().split('T')[0];
+
+  console.log(`[AUTO_SALES] 開始: 対象日 ${dateStr}`);
+
+  // 1. 自動集計設定がONの店舗を抽出
+  const { data: shops } = await supabaseAdmin
+    .from('profiles')
+    .select('id, business_name')
+    .eq('auto_sales_matching', true);
+
+  if (!shops || shops.length === 0) {
+    return new Response(JSON.stringify({ message: '対象店舗なし' }), { headers: corsHeaders });
+  }
+
+  const results = [];
+
+  for (const shop of shops) {
+    // 2. その店舗の「昨日」の未処理予約を取得
+    // 既存のリマインドと同じ時刻指定形式（T00:00:00.000Z）で検索します
+    const { data: tasks, error: taskError } = await supabaseAdmin
+      .from('reservations')
+      .select('*')
+      .eq('shop_id', shop.id)
+      .gte('start_time', `${dateStr}T00:00:00.000Z`)
+      .lte('start_time', `${dateStr}T23:59:59.999Z`)
+      .neq('status', 'completed')
+      .neq('status', 'canceled')
+      .or('is_block.is.null,is_block.eq.false')
+      .eq('res_type', 'normal');
+
+    if (taskError || !tasks || tasks.length === 0) continue;
+
+    let processedCount = 0;
+
+    for (const task of tasks) {
+      // 3. 金額計算（JSONオプションを解析）
+      const opt = typeof task.options === 'string' ? JSON.parse(task.options) : (task.options || {});
+      const items = opt.services || (opt.people ? opt.people.flatMap((p: any) => p.services || []) : []);
+      const subItems = Object.values(opt.options || {}) as any[];
+
+      const basePrice = items.reduce((sum: number, i: any) => sum + (Number(i.price) || 0), 0);
+      const optPrice = subItems.reduce((sum: number, o: any) => sum + (Number(o.additional_price) || 0), 0);
+      const finalPrice = basePrice + optPrice;
+
+      // A. 売上テーブル(sales)へ追加
+      await supabaseAdmin.from('sales').upsert({
+        shop_id: shop.id,
+        reservation_id: task.id,
+        customer_id: task.customer_id,
+        total_amount: finalPrice,
+        sale_date: dateStr,
+        details: { ...opt, note: 'Edge Functionによる深夜自動確定' }
+      }, { onConflict: 'reservation_id' });
+
+      // B. 予約ステータスを完了に更新
+      await supabaseAdmin.from('reservations').update({
+        status: 'completed',
+        total_price: finalPrice
+      }).eq('id', task.id);
+
+      processedCount++;
+    }
+    results.push({ shopName: shop.business_name, processed: processedCount });
+  }
+
+  return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: corsHeaders });
+}
+
 // 🆕 ここから追記：パターンF（新規登録用OTP）
 if (type === 'signup_otp') {
   const { otpCode } = payload; // Home.jsx側で作った数字を受け取る

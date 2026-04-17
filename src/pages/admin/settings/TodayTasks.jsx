@@ -28,6 +28,7 @@ const TodayTasks = () => {
   const [targetDate, setTargetDate] = useState(new Date().toLocaleDateString('sv-SE'));
   const [oldestIncompleteDate, setOldestIncompleteDate] = useState(null);
   const [shopData, setShopData] = useState(null);
+  const [isAutoProcessing, setIsAutoProcessing] = useState(false);
   // 🆕 金額計算のためにマスターを保持する箱を追加
   const [services, setServices] = useState([]);
   const [serviceOptions, setServiceOptions] = useState([]);
@@ -131,7 +132,10 @@ const fetchMasterData = async () => {
   }, [shopId]);
 
   const fetchShopData = async () => {
-    const { data } = await supabase.from('profiles').select('theme_color, business_name').eq('id', shopId).single();
+    const { data } = await supabase.from('profiles')
+      // ✅ ここに allow_batch_matching を追加して取得するようにします
+      .select('theme_color, business_name, auto_sales_matching, allow_batch_matching') 
+      .eq('id', shopId).single();
     if (data) setShopData(data);
   };
 
@@ -445,6 +449,67 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
   }
 };
 
+/* ==========================================
+    🆕 追加：自動売上確定モード用の一括処理ロジック
+    過去の未処理予約をすべて「見積額」で一括確定します
+   ========================================== */
+const handleAutoBatchProcess = async () => {
+  if (!oldestIncompleteDate) return;
+  if (!window.confirm(`${oldestIncompleteDate} 以前の未処理予約を、すべて見積金額で一括確定しますか？`)) return;
+
+  setIsAutoProcessing(true); // 👈 前の手順でStateに追加したもの
+  try {
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    
+    // 1. 過去の未処理予約（キャンセル・完了以外）をすべて取得
+    const { data: incompleteTasks, error: fetchError } = await supabase
+      .from('reservations')
+      .select('*, customers(name)')
+      .eq('shop_id', shopId)
+      .neq('status', 'completed')
+      .neq('status', 'canceled')
+      .lt('start_time', `${todayStr} 00:00:00`)
+      .or('is_block.is.null,is_block.eq.false')
+      .eq('res_type', 'normal');
+
+    if (fetchError) throw fetchError;
+    if (!incompleteTasks || incompleteTasks.length === 0) {
+      showMsg("処理対象のタスクはありませんでした。");
+      return;
+    }
+
+    // 2. 1件ずつ確定処理を実行（ループ）
+    for (const task of incompleteTasks) {
+      const estimatedPrice = calculateInitialPrice(task); // 既存の見積計算ロジックを利用
+      
+      // A. 予約ステータスを「完了」に更新
+      await supabase.from('reservations').update({
+        status: 'completed',
+        total_price: estimatedPrice,
+        options: { ...task.options, isAutoMatched: true, processed_at: new Date().toISOString() }
+      }).eq('id', task.id);
+
+      // B. 売上台帳（sales）へ記録
+      await supabase.from('sales').upsert({
+        shop_id: shopId,
+        reservation_id: task.id,
+        customer_id: task.customer_id,
+        total_amount: estimatedPrice,
+        sale_date: task.start_time.split('T')[0],
+        details: { ...task.options, note: '自動売上確定モードによる一括処理' }
+      }, { onConflict: 'reservation_id' });
+    }
+
+    showMsg(`${incompleteTasks.length}件の予約を一括で売上確定しました！✨`);
+    fetchTodayTasks(); // リストを再読み込み
+  } catch (err) {
+    console.error("一括確定エラー:", err);
+    alert("一括処理中にエラーが発生しました: " + err.message);
+  } finally {
+    setIsAutoProcessing(false);
+  }
+};
+
   // 🆕 修正：エラー解決のための「お会計戻し」関数（完成版）
   const handleRevertTask = async (task) => {
     const isFacility = task.task_type === 'facility';
@@ -684,18 +749,38 @@ const handleSaveMemo = async () => {
             >▶</button>
           </div>
 
-          {/* 🚀 🆕 レジ忘れアラートボタン。クリックでその日にジャンプ！ */}
-          {oldestIncompleteDate && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              onClick={() => setTargetDate(oldestIncompleteDate)}
-              style={alertBadgeStyle}
-            >
-              <AlertCircle size={14} /> 
-              未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})
-            </motion.button>
-          )}
+          {/* 🚀 自動売上確定モードに応じたアラート表示の切り替え */}
+  {oldestIncompleteDate && (
+    <motion.button
+      initial={{ opacity: 0, scale: 0.9 }}
+      animate={{ opacity: 1, scale: 1 }}
+      disabled={isAutoProcessing}
+      onClick={() => {
+        // ✅ 「一括ボタンを表示」がONなら一括処理、OFFなら日付ジャンプ
+        if (shopData?.allow_batch_matching) {
+          handleAutoBatchProcess();
+        } else {
+          setTargetDate(oldestIncompleteDate);
+        }
+      }}
+      style={{
+        ...alertBadgeStyle,
+        // ✅ 全て allow_batch_matching を参照するように統一します
+        background: shopData?.allow_batch_matching ? '#dcfce7' : '#ffeb3b',
+        color: shopData?.allow_batch_matching ? '#166534' : '#d34817',
+        animation: isAutoProcessing ? 'none' : 'blinkRed 1.5s infinite',
+        border: shopData?.allow_batch_matching ? '1px solid #16653444' : 'none'
+      }}
+    >
+      {isAutoProcessing ? (
+        '処理中...'
+      ) : shopData?.allow_batch_matching ? (
+        <><CheckCircle size={14} /> 過去の未処理を一括確定する</>
+      ) : (
+        <><AlertCircle size={14} /> 未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})</>
+      )}
+    </motion.button>
+  )}
         </div>
 
         {/* ✅ 帰り道スイッチ（既存のまま） */}
