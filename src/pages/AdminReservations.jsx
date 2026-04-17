@@ -60,6 +60,9 @@ function AdminReservations() {
   const navigate = useNavigate();
   const location = useLocation();
 
+  // 🆕 予約から戻った直後のスクロールを止めるフラグ
+  const [isScrollLocked, setIsScrollLocked] = useState(false);
+
   // --- 状態管理 ---
   const [shop, setShop] = useState(null);
   const [staffs, setStaffs] = useState([]);
@@ -231,6 +234,17 @@ const [editFields, setEditFields] = useState({
     const timer = setInterval(() => setNow(new Date()), 60000); // 1分ごとに更新
     return () => clearInterval(timer);
   }, []);
+
+  // 🆕 ここに差し込み！（予約画面から戻った時の5秒ロック）
+  useEffect(() => {
+    if (location.state?.fromReserve) {
+      setIsScrollLocked(true);
+      const timer = setTimeout(() => {
+        setIsScrollLocked(false);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
 const isPC = windowWidth > 1024;
 
@@ -860,8 +874,8 @@ const openDetail = async (res) => {
 
     // ✅ 🆕 【Step B：自動スクロール実行ロジック】ここから差し込み
   useEffect(() => {
-    // 読み込みが終わり、時間軸データがあり、Refが準備できている時だけ実行
-    if (!loading && timeSlots.length > 0 && scrollContainerRef.current) {
+    // 🆕 「!isScrollLocked」を追加。ロック中は現在時刻へ飛ばさない。
+    if (!loading && timeSlots.length > 0 && scrollContainerRef.current && !isScrollLocked) {
       const now = new Date();
       const currentH = now.getHours();
       const currentM = now.getMinutes();
