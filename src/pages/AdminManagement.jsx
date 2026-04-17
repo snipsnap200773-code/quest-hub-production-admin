@@ -1245,7 +1245,8 @@ return (
   >
     {isAutoProcessing ? (
       '処理中...'
-    ) : shop?.allow_batch_matching ? ( // ✅ ここも新しいスイッチに変更
+    // ✅ ここも書き換え
+    ) : shop?.allow_batch_matching ? ( 
       <><CheckCircle size={14} /> 未処理を一括確定</>
     ) : (
       <><AlertCircle size={14} /> 未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})</>

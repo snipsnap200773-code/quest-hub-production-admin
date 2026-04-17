@@ -220,15 +220,11 @@ const mRes = await fetch('https://api.resend.com/emails', {
 // 🆕 パターンN：自動売上確定（深夜一括処理用）
 // ==========================================
 if (type === 'auto_sales_batch') {
-  // 日本時間の昨日を取得
   const nowJST = new Date(new Date().getTime() + (9 * 60 * 60 * 1000));
-  const yesterday = new Date(nowJST);
-  yesterday.setDate(yesterday.getDate() - 1);
-  const dateStr = yesterday.toISOString().split('T')[0];
+  const todayStr = nowJST.toISOString().split('T')[0]; // 今日の日付 "2026-04-17"
 
-  console.log(`[AUTO_SALES] 開始: 対象日 ${dateStr}`);
+  console.log(`[AUTO_SALES] 開始: ${todayStr} 以前の未処理をスキャンします`);
 
-  // 1. 自動集計設定がONの店舗を抽出
   const { data: shops } = await supabaseAdmin
     .from('profiles')
     .select('id, business_name')
@@ -241,14 +237,12 @@ if (type === 'auto_sales_batch') {
   const results = [];
 
   for (const shop of shops) {
-    // 2. その店舗の「昨日」の未処理予約を取得
-    // 既存のリマインドと同じ時刻指定形式（T00:00:00.000Z）で検索します
+    // ✅ 修正：今日より前（lt = less than）の未完了予約をすべて取得
     const { data: tasks, error: taskError } = await supabaseAdmin
       .from('reservations')
       .select('*')
       .eq('shop_id', shop.id)
-      .gte('start_time', `${dateStr}T00:00:00.000Z`)
-      .lte('start_time', `${dateStr}T23:59:59.999Z`)
+      .lt('start_time', `${todayStr}T00:00:00.000Z`) // 今日より前のデータ
       .neq('status', 'completed')
       .neq('status', 'canceled')
       .or('is_block.is.null,is_block.eq.false')
@@ -259,7 +253,6 @@ if (type === 'auto_sales_batch') {
     let processedCount = 0;
 
     for (const task of tasks) {
-      // 3. 金額計算（JSONオプションを解析）
       const opt = typeof task.options === 'string' ? JSON.parse(task.options) : (task.options || {});
       const items = opt.services || (opt.people ? opt.people.flatMap((p: any) => p.services || []) : []);
       const subItems = Object.values(opt.options || {}) as any[];
@@ -274,7 +267,7 @@ if (type === 'auto_sales_batch') {
         reservation_id: task.id,
         customer_id: task.customer_id,
         total_amount: finalPrice,
-        sale_date: dateStr,
+        sale_date: task.start_time.split('T')[0], // 予約日の日付で計上
         details: { ...opt, note: 'Edge Functionによる深夜自動確定' }
       }, { onConflict: 'reservation_id' });
 

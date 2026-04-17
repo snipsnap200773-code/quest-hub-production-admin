@@ -765,16 +765,16 @@ const handleSaveMemo = async () => {
       }}
       style={{
         ...alertBadgeStyle,
-        // ✅ 全て allow_batch_matching を参照するように統一します
+        // ✅ すべて「一括ボタン」用のフラグに書き換えます
         background: shopData?.allow_batch_matching ? '#dcfce7' : '#ffeb3b',
         color: shopData?.allow_batch_matching ? '#166534' : '#d34817',
-        animation: isAutoProcessing ? 'none' : 'blinkRed 1.5s infinite',
         border: shopData?.allow_batch_matching ? '1px solid #16653444' : 'none'
       }}
     >
       {isAutoProcessing ? (
         '処理中...'
-      ) : shopData?.allow_batch_matching ? (
+      // ✅ ここも一括ボタン用のフラグに書き換えます
+      ) : shopData?.allow_batch_matching ? ( 
         <><CheckCircle size={14} /> 過去の未処理を一括確定する</>
       ) : (
         <><AlertCircle size={14} /> 未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})</>
