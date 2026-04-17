@@ -622,7 +622,7 @@ if (type === 'inquiry') {
           is_management_enabled: true,
           role: 'shop'
         }], { 
-          onConflict: 'email_contact' // 📧 メアドが重なったら「更新」せよという命令
+        onConflict: 'id' // ✅ 主キーである id を基準にします（これが一番確実です）
         });
 
       if (dbError) {
