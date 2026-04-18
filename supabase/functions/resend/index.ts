@@ -1,5 +1,7 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
+// 🆕 プッシュ通知ライブラリを導入
+import webpush from "npm:web-push";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -67,6 +69,32 @@ async function safePushToLine(to: string, text: string, token: string, targetNam
   } catch (err) {
     console.error(`[${targetName}] LINE Push Error:`, err);
     return false;
+  }
+}
+
+// 🆕 プッシュ通知を送信する共通関数
+async function sendPushNotification(supabase: any, shopId: string, title: string, body: string, url: string) {
+  const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY') || "";
+  const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') || "";
+
+  // 鍵の設定
+  webpush.setVapidDetails('mailto:snipsnap.2007.7.3@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
+
+  // 1. そのお店の「通知用住所（Subscription）」をすべて取得
+  const { data: subs } = await supabase.from('push_subscriptions').select('subscription').eq('shop_id', shopId);
+  if (!subs || subs.length === 0) return;
+
+  // 2. 登録されている全端末（PC・スマホ等）に通知を飛ばす
+  for (const row of subs) {
+    try {
+      await webpush.sendNotification(row.subscription, JSON.stringify({ title, body, url }));
+    } catch (err) {
+      console.error('[PUSH_ERROR]', err);
+      // 無効になった古い住所（404/410エラー等）を自動削除する
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        await supabase.from('push_subscriptions').delete().eq('subscription', row.subscription);
+      }
+    }
   }
 }
 
@@ -1020,6 +1048,15 @@ const sendMail = async (to: string, isOwner: boolean) => {
       
       shopLineSent = await safePushToLine(currentAdminId, shopMsg, currentToken, "OWNER");
     }
+
+    // 🆕 プッシュ通知の実行（予約 or キャンセル）
+    const pushTitle = type === 'cancel' ? `⚠️ 予約キャンセル通知` : `📅 新着予約のお知らせ`;
+    const pushBody = type === 'cancel' 
+      ? `${customerName} 様が ${startTime}〜 の予約をキャンセルしました` 
+      : `${customerName} 様 (${startTime}〜) \n内容: ${services}`;
+    const pushUrl = `${ADMIN_URL}/admin/${shopId}/reservations`; // 通知タップで予約一覧へ
+
+    await sendPushNotification(supabaseAdmin, shopId, pushTitle, pushBody, pushUrl);
 
     // 処理結果のレスポンス
     return new Response(JSON.stringify({ 

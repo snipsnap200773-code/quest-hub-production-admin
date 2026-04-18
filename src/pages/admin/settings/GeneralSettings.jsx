@@ -4,8 +4,21 @@ import { supabase } from "../../../supabaseClient";
 import bcrypt from 'bcryptjs';
 import { 
   Settings, Shield, Palette, Layout, Save, 
-  ArrowLeft, CheckCircle2, RefreshCcw // 🆕 RefreshCcwを追加
+  ArrowLeft, CheckCircle2, RefreshCcw,
+  Bell // 🆕 Bellを追加
 } from 'lucide-react';
+
+// 🆕 追加：VAPID公開鍵を変換するヘルパー関数
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+  return outputArray;
+}
 
 const GeneralSettings = () => {
   const { shopId } = useParams();
@@ -26,6 +39,46 @@ const GeneralSettings = () => {
   const [extraSlotsAfter, setExtraSlotsAfter] = useState(0);
   const [autoSalesMatching, setAutoSalesMatching] = useState(false); // 🆕 自動売上確定のState
   const [allowBatchMatching, setAllowBatchMatching] = useState(false);
+  // 🆕 追加：プッシュ通知の状態
+  const [isPushEnabled, setIsPushEnabled] = useState(false);
+
+  // 🆕 追加：通知のON/OFFを切り替える魔法の関数
+  const handlePushToggle = async (enabled) => {
+    if (!enabled) {
+      setIsPushEnabled(false);
+      return;
+    }
+
+    try {
+      // 1. ブラウザに許可をもらう
+      const permission = await Notification.requestPermission();
+      if (permission !== 'granted') return alert('通知を許可してください！');
+
+      // 2. Service Worker（受信機）を呼び出す
+      const registration = await navigator.serviceWorker.ready;
+
+      // 3. ブラウザから「住所（Subscription）」を発行してもらう
+      const subscribeOptions = {
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY)
+      };
+      const subscription = await registration.pushManager.subscribe(subscribeOptions);
+
+      // 4. Supabaseに住所を保存する
+      const { error } = await supabase.from('push_subscriptions').upsert({
+        shop_id: shopId,
+        subscription: subscription.toJSON()
+      }, { onConflict: 'shop_id, subscription' });
+
+      if (error) throw error;
+
+      setIsPushEnabled(true);
+      showMsg('プッシュ通知を有効にしました！');
+    } catch (err) {
+      console.error('Push Error:', err);
+      alert('PWAとしてホーム画面に追加してからお試しください。');
+    }
+  };
 
   const [newPassword, setNewPassword] = useState('');
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -196,6 +249,42 @@ const GeneralSettings = () => {
     </label>
   </div>
 </section>
+
+      {/* 📱 🆕 プッシュ通知設定カード */}
+      <section style={{ ...cardStyle, borderLeft: `8px solid #f59e0b`, background: '#fffbeb' }}>
+        <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+          <Bell size={20} /> アプリ内プッシュ通知
+        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1, paddingRight: '15px' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+              新着予約の通知を受け取る
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#b45309', lineHeight: '1.4' }}>
+              スマホへ直接「新着予約」をお知らせします。iPhoneの方は「ホーム画面に追加」してご利用ください。
+            </div>
+          </div>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={isPushEnabled} 
+              onChange={(e) => handlePushToggle(e.target.checked)} 
+              style={{ opacity: 0, width: 0, height: 0 }} 
+            />
+            <span style={{
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
+              backgroundColor: isPushEnabled ? '#f59e0b' : '#cbd5e1',
+              transition: '.3s', borderRadius: '34px'
+            }}>
+              <span style={{
+                position: 'absolute', content: '""', height: '18px', width: '18px',
+                left: isPushEnabled ? '28px' : '4px', bottom: '4px',
+                backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
+              }}></span>
+            </span>
+          </label>
+        </div>
+      </section>
 
       {/* 📌 管理画面の表示拡張（30分固定表示版） */}
       <section style={{ ...cardStyle, background: '#fdfcf5', border: '1px solid #eab308' }}>
