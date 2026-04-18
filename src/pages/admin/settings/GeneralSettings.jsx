@@ -45,7 +45,20 @@ const GeneralSettings = () => {
   // 🆕 追加：通知のON/OFFを切り替える魔法の関数
   const handlePushToggle = async (enabled) => {
     if (!enabled) {
-      setIsPushEnabled(false);
+      // 🆕 OFFにする時は、このお店の購読データをすべて削除する
+      try {
+        const { error } = await supabase
+          .from('push_subscriptions')
+          .delete()
+          .eq('shop_id', shopId);
+        
+        if (error) throw error;
+        
+        setIsPushEnabled(false);
+        showMsg('プッシュ通知を解除しました');
+      } catch (err) {
+        alert('解除に失敗しました');
+      }
       return;
     }
 
@@ -94,6 +107,17 @@ const GeneralSettings = () => {
       setExtraSlotsAfter(data.extra_slots_after || 0);
       setAutoSalesMatching(data.auto_sales_matching || false);
       setAllowBatchMatching(data.allow_batch_matching || false);
+    }
+
+    // 🆕 追記：プッシュ通知の購読データがあるか確認
+    const { data: pushData } = await supabase
+      .from('push_subscriptions')
+      .select('id')
+      .eq('shop_id', shopId);
+
+    // データが1件でもあればスイッチをONにする
+    if (pushData && pushData.length > 0) {
+      setIsPushEnabled(true);
     }
   };
 
