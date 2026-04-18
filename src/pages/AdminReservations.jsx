@@ -858,14 +858,29 @@ const openDetail = async (res) => {
     if (!hasOpenDay) { minTotalMinutes = 9 * 60; maxTotalMinutes = 18 * 60; }
     const slots = [];
     const interval = shop.slot_interval_min || 15;
-    const extraBefore = shop.extra_slots_before || 0; // 🆕 追加
-    const extraAfter = shop.extra_slots_after || 0;   // 🆕 追加
+    const extraBefore = shop.extra_slots_before || 0;
+    const extraAfter = shop.extra_slots_after || 0;
 
-    // 🆕 拡張分を含めた開始・終了時間を計算
-    const finalStart = minTotalMinutes - (extraBefore * interval);
-    const finalEnd = maxTotalMinutes + (extraAfter * interval);
+    // 1. 【前方の拡張枠】30分固定で計算
+    for (let i = extraBefore; i > 0; i--) {
+      const m = minTotalMinutes - (i * 30);
+      const h = Math.floor(m / 60); const mm = m % 60;
+      slots.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+    }
 
-    for (let m = finalStart; m <= finalEnd; m += interval) {
+    // 2. 【営業時間内】設定されたインターバル（10分など）で計算
+    for (let m = minTotalMinutes; m < maxTotalMinutes; m += interval) {
+      const h = Math.floor(m / 60); const mm = m % 60;
+      slots.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
+    }
+    
+    // 閉店時間ちょうどを最後に追加（営業時間ループの終着点）
+    const hEnd = Math.floor(maxTotalMinutes / 60); const mmEnd = maxTotalMinutes % 60;
+    slots.push(`${String(hEnd).padStart(2, '0')}:${String(mmEnd).padStart(2, '0')}`);
+
+    // 3. 【後方の拡張枠】30分固定で計算
+    for (let i = 1; i <= extraAfter; i++) {
+      const m = maxTotalMinutes + (i * 30);
       const h = Math.floor(m / 60); const mm = m % 60;
       slots.push(`${String(h).padStart(2, '0')}:${String(mm).padStart(2, '0')}`);
     }

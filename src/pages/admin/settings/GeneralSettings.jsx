@@ -197,30 +197,39 @@ const GeneralSettings = () => {
   </div>
 </section>
 
-      {/* 📌 管理画面の表示拡張 */}
+      {/* 📌 管理画面の表示拡張（30分固定表示版） */}
       <section style={{ ...cardStyle, background: '#fdfcf5', border: '1px solid #eab308' }}>
         <h3 style={{ marginTop: 0, color: '#a16207', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
           <Layout size={20} /> 管理画面の表示拡張
         </h3>
+        {/* 🆕 説明文をより具体的に変更 */}
         <p style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '20px', lineHeight: '1.5' }}>
-          営業時間の前後に、個人的な予定を書き込める予備枠を表示します。
+          営業時間の前後に、個人的な予定（プライベート予定）を書き込める予備枠を表示します。<br />
+          <b>※予約設定に関わらず、拡張枠は1コマ30分固定でスッキリ表示されます。</b>
         </p>
         
         <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>☀ 開店前の表示コマ数:</label>
+          {/* 🆕 ラベルに (30分単位) を追記 */}
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>☀ 開店前の拡張 (30分 × 数):</label>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
               <button key={n} type="button" onClick={() => setExtraSlotsBefore(n)} style={{ ...btnActiveS(extraSlotsBefore, n), width: '40px', height: '40px' }}>{n}</button>
             ))}
           </div>
+          {/* 🆕 合計何分増えるか目安を表示（親切設計） */}
+          {extraSlotsBefore > 0 && <span style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '5px', display: 'block' }}>➔ 開店前を {extraSlotsBefore * 30}分 拡張中</span>}
         </div>
+
         <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>🌙 閉店後の表示コマ数:</label>
+          {/* 🆕 ラベルに (30分単位) を追記 */}
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>🌙 閉店後の拡張 (30分 × 数):</label>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
               <button key={n} type="button" onClick={() => setExtraSlotsAfter(n)} style={{ ...btnActiveS(extraSlotsAfter, n), width: '40px', height: '40px' }}>{n}</button>
             ))}
           </div>
+          {/* 🆕 合計何分増えるか目安を表示 */}
+          {extraSlotsAfter > 0 && <span style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '5px', display: 'block' }}>➔ 閉店後を {extraSlotsAfter * 30}分 拡張中</span>}
         </div>
       </section>
 
