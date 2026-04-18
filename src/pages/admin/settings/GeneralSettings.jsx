@@ -99,6 +99,7 @@ const GeneralSettings = () => {
   useEffect(() => { if (shopId) fetch(); }, [shopId]);
 
   const fetch = async () => {
+    // 1. 店舗の基本設定をDBから取得（従来通り）
     const { data } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (data) {
       setShopData(data);
@@ -109,15 +110,20 @@ const GeneralSettings = () => {
       setAllowBatchMatching(data.allow_batch_matching || false);
     }
 
-    // 🆕 追記：プッシュ通知の購読データがあるか確認
-    const { data: pushData } = await supabase
-      .from('push_subscriptions')
-      .select('id')
-      .eq('shop_id', shopId);
-
-    // データが1件でもあればスイッチをONにする
-    if (pushData && pushData.length > 0) {
-      setIsPushEnabled(true);
+    // 2. 🆕 端末固有の通知状態を確認
+    // DBではなく、今使っているブラウザに「住所（Subscription）」があるかを聞く
+    if ('serviceWorker' in navigator && 'PushManager' in window) {
+      try {
+        const registration = await navigator.serviceWorker.ready;
+        const subscription = await registration.pushManager.getSubscription();
+        
+        // この端末がすでに購読済みなら、スイッチをONにする
+        setIsPushEnabled(!!subscription);
+        
+        console.log("この端末の通知状態:", !!subscription ? "ON" : "OFF");
+      } catch (err) {
+        console.error("通知状態の取得に失敗:", err);
+      }
     }
   };
 
