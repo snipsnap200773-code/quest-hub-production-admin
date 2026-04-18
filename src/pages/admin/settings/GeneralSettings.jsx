@@ -45,54 +45,69 @@ const GeneralSettings = () => {
   // 🆕 追加：通知のON/OFFを切り替える魔法の関数
   const handlePushToggle = async (enabled) => {
     try {
-      // Service Worker（受信機）の準備
       const registration = await navigator.serviceWorker.ready;
       
       if (!enabled) {
-        // --- 🔴 OFFにする時（自分だけ解除） ---
+        // --- 🔴 解除処理 ---
         const subscription = await registration.pushManager.getSubscription();
         if (subscription) {
-          // DBから「この端末の特定の住所（endpoint）」だけを削除する
+          // 【🆕 確実な削除】
+          // JSONBの中の endpoint を指定して、この端末の住所だけを狙い撃ちで消す
           const { error } = await supabase
             .from('push_subscriptions')
             .delete()
-            .eq('shop_id', shopId)
-            .contains('subscription', { endpoint: subscription.endpoint }); 
+            .match({ shop_id: shopId })
+            .filter('subscription->>endpoint', 'eq', subscription.endpoint);
           
           if (error) throw error;
-
-          // ブラウザ側の購読（住所）も解除して初期化する
           await subscription.unsubscribe();
         }
         setIsPushEnabled(false);
         showMsg('この端末の通知を解除しました');
       } 
       else {
-        // --- 🔵 ONにする時（自分だけ登録） ---
+        // --- 🔵 登録処理 ---
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') return alert('通知を許可してください！');
 
+        // 🆕 VAPIDキーが空でないかチェック（localhostで忘れがち！）
+        const vapidKey = import.meta.env.VITE_VAPID_PUBLIC_KEY;
+        if (!vapidKey) throw new Error("VAPIDキーが設定されていません。.envを確認して再起動してください。");
+
         const subscribeOptions = {
           userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(import.meta.env.VITE_VAPID_PUBLIC_KEY)
+          applicationServerKey: urlBase64ToUint8Array(vapidKey)
         };
         const subscription = await registration.pushManager.subscribe(subscribeOptions);
+        const subJson = subscription.toJSON();
 
-        // DBに「今の端末」の住所を保存（既にあったら上書き）
-        const { error } = await supabase.from('push_subscriptions').upsert({
-          shop_id: shopId,
-          subscription: subscription.toJSON()
-        }, { onConflict: 'subscription' }); // 住所をキーにして重複を防ぐ
+        // 【🆕 確実な保存（スナイパー方式）】
+        // 1. まず、この端末の住所がすでにDBにないか探す
+        const { data: existing } = await supabase
+          .from('push_subscriptions')
+          .select('id')
+          .filter('subscription->>endpoint', 'eq', subJson.endpoint)
+          .maybeSingle();
 
-        if (error) throw error;
+        if (existing) {
+          // 2. すでにあるなら、最新の情報に更新
+          await supabase.from('push_subscriptions')
+            .update({ subscription: subJson })
+            .eq('id', existing.id);
+        } else {
+          // 3. なければ新規追加
+          await supabase.from('push_subscriptions')
+            .insert({ shop_id: shopId, subscription: subJson });
+        }
 
         setIsPushEnabled(true);
-        showMsg('この端末で通知を受け取れるようになりました！');
+        showMsg('この端末の通知を有効にしました！');
       }
     } catch (err) {
       console.error('Push Toggle Error:', err);
-      alert('設定に失敗しました。PWAとしてホーム画面に追加されているか確認してください。');
-      setIsPushEnabled(!enabled); // 失敗したらスイッチを元に戻す
+      // エラーを詳しく表示するように変更
+      alert(`設定に失敗しました: ${err.message || 'ブラウザの通知設定を確認してください'}`);
+      setIsPushEnabled(!enabled); 
     }
   };
 
