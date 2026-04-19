@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => { // 💡 typeを引数に追加
@@ -144,36 +144,29 @@ const [showVisitDetailModal, setShowVisitDetailModal] = useState(false);
 const [visitResidents, setVisitResidents] = useState([]);
 
 // 🏢 施設訪問詳細（入居者リスト）を開く関数
-const openVisitDetail = async (visitId, facilityName, visitData) => {
-  if (!visitId) return;
-  setLoading(true);
-  
-  // 🆕 1. 親がいれば親のID、いなければ自分のIDを「名簿取得用」にする
-  // これにより、3/19を開いても3/18に紐付いた10名のリストが取得できます
-  const targetId = visitData.parent_id || visitId;
+const [finalizedSale, setFinalizedSale] = useState(null); // 🆕 売上実績保存用のStateを追加
 
-  const { data, error } = await supabase
-    .from('visit_request_residents')
-    .select(`
-      status,
-      menu_name,
-      members (name, room, floor)
-    `)
-    .eq('visit_request_id', targetId);
+  const openVisitDetail = async (visitId, facilityName, visitData) => {
+    if (!visitId) return;
+    setLoading(true);
+    setFinalizedSale(null); // 🆕 前のデータをクリア
 
-  if (!error) {
-    setVisitResidents(data || []);
-    // 💡 visitDataを丸ごとセット（parent_idなどの情報も保持するため）
-    setSelectedRes({ 
-      ...visitData, 
-      id: visitId, 
-      customer_name: facilityName, 
-      res_type: 'facility_visit' 
-    });
-    setShowVisitDetailModal(true);
-  }
-  setLoading(false);
-};
+    const targetId = visitData.parent_id || visitId;
+    
+    // 🚀 名簿と売上実績を同時に取得
+    const [resRes, saleRes] = await Promise.all([
+      supabase.from('visit_request_residents').select('status, menu_name, members (name, room, floor)').eq('visit_request_id', targetId),
+      supabase.from('sales').select('*').eq('visit_request_id', visitId).maybeSingle() // 🆕 その日の売上実績を探す
+    ]);
+
+    if (!resRes.error) {
+      setVisitResidents(resRes.data || []);
+      setFinalizedSale(saleRes.data || null); // 🆕 あればセット
+      setSelectedRes({ ...visitData, id: visitId, customer_name: facilityName, res_type: 'facility_visit' });
+      setShowVisitDetailModal(true);
+    }
+    setLoading(false);
+  };
 
 // 🆕 施設予約のキャンセル実行
 const handleCancelKeep = async (facilityId, dateStr, facilityName) => {
@@ -377,11 +370,13 @@ const { data: resData } = await supabase
   }, [searchTerm, shopId]);
 
   const openCustomerDetail = async (customer) => {
-    // 🆕 1. 別の人の履歴が残らないよう、まず箱を空にする
-    setCustomerHistory([]); 
-    
-    setSelectedCustomer(customer);
+    setCustomerHistory([]); // 残像クリア
+
+    // 🆕 施設かどうかを判定（名簿のフラグ または 名前で判定）
+    const isFac = customer.is_facility || customer.res_type === 'facility_visit';
+
     setEditFields({ 
+      is_facility: isFac, // 🚩 旗を立てる
       name: customer.name || '', 
       admin_name: customer.admin_name || '',
       furigana: customer.furigana || '', 
@@ -390,18 +385,29 @@ const { data: resData } = await supabase
       memo: customer.memo || '',
       line_user_id: customer.line_user_id || null 
     });
+
+    let historyData = [];
+    if (isFac) {
+      // 🚀 施設の場合：visitRequests（読み込み済みState）から、名前が一致するものを探す
+      historyData = visitRequests
+        .filter(v => 
+          v.facility_users?.facility_name === customer.name || 
+          v.facility_id === customer.id ||
+          v.customer_name === customer.name
+        )
+        .map(v => ({ ...v, start_time: v.scheduled_date })) // キー名変換
+        .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
+    } else {
+      // 個人の場合
+      const { data } = await supabase.from('reservations').select('*').eq('shop_id', shopId)
+        .or(`customer_id.eq.${customer.id},customer_name.eq.${customer.name}`)
+        .order('start_time', { ascending: false });
+      historyData = data || [];
+    }
+
+    setCustomerHistory(historyData);
     setSearchTerm('');
     setSelectedIndex(-1);
-
-    // 🆕 2. 保存先を customerHistory に統一し、IDか名前のどちらかで検索
-    const { data } = await supabase
-      .from('reservations')
-      .select('*')
-      .eq('shop_id', shopId)
-      .or(`customer_id.eq.${customer.id},customer_name.eq.${customer.name}`) 
-      .order('start_time', { ascending: false });
-
-    setCustomerHistory(data || []); 
     setShowCustomerModal(true);
   };
 
@@ -477,13 +483,14 @@ const openDetail = async (res) => {
 };
   // 🆕 共通処理：詳細モーダルを表示するための確定処理
   const finalizeOpenDetail = (res, cust) => {
-    // 🆕 前に見ていた人の履歴をリセットする
-    setCustomerHistory([]);
+    setCustomerHistory([]); // 残像クリア
+
+    // 🆕 施設判定を強化
+    const isFac = cust?.is_facility || res.res_type === 'facility_visit';
 
     const visitInfo = res.options?.visit_info || {};
-
-    // 🆕 修正：全項目 ＆ カスタム質問の回答を State (editFields) に集約して読み込む
     const allFields = {
+      is_facility: isFac, // 🚩 ここで旗を立てることでJSXの切り替えが動く
       name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
       furigana: cust?.furigana || visitInfo.furigana || '',
       phone: cust?.phone || res.customer_phone || '',
@@ -501,21 +508,32 @@ const openDetail = async (res) => {
       custom_answers: visitInfo.custom_answers || cust?.custom_answers || {}
     };
 
-    if (cust) {
-      setSelectedCustomer(cust);
-      setEditFields(allFields);
-    } else {
-      setSelectedCustomer(null);
-      setEditFields(allFields);
-    }
+    setEditFields(allFields);
+    setSelectedCustomer(cust || null);
 
-    const history = reservations
-      .filter(r => 
-        r.shop_id === shopId && 
-        r.res_type === 'normal' && 
-        (r.customer_name === res.customer_name || (cust?.id && r.customer_id === cust.id))
-      )
-      .sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+    // 🆕 履歴の抽出
+    let history = [];
+    if (isFac) {
+      // 🚀 施設の場合：名前 または ID で visitRequests から探す
+      const targetName = allFields.name;
+      history = visitRequests
+        .filter(v => 
+          v.facility_users?.facility_name === targetName || 
+          v.customer_name === targetName ||
+          v.facility_id === cust?.id
+        )
+        .map(v => ({ ...v, start_time: v.scheduled_date }))
+        .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
+    } else {
+      // 個人の場合
+      history = reservations
+        .filter(r => 
+          r.shop_id === shopId && 
+          r.res_type === 'normal' && 
+          (r.customer_name === res.customer_name || (cust?.id && r.customer_id === cust.id))
+        )
+        .sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
+    }
 
     setCustomerHistory(history);
     setShowDetailModal(true);
@@ -929,7 +947,8 @@ const getStatusAt = (dateStr, timeStr) => {
 
     // --- 🏆 優先度1：確定した施設訪問（visit_requests） ---
     const confirmedVisit = visitRequests.find(v => {
-      if (v.status !== 'confirmed') return false;
+      // 🚀 🆕 確定(confirmed) だけでなく 完了(completed) も対象に含める
+      if (!['confirmed', 'completed'].includes(v.status)) return false;
       const vStart = v.start_time?.substring(0, 5) || "09:00";
       if (Array.isArray(v.visit_date_list)) {
         return v.visit_date_list.some(d => {
@@ -1411,20 +1430,30 @@ return (
 
                       const activeTask = items[0];
 
-                      // 🚀 🆕 【ここから施設訪問のガード判定】
+                      // 🚀 🆕 【施設訪問のプロテクト ＆ 複数日対応】
                       if (activeTask.res_type === 'facility_visit') {
-                        // 1人でも「完了」している人がいるか、その場でDBに問い合わせます
+                        
+                        // ✨ 1. 訪問自体が「完了」ステータスなら、即座に詳細を開く（絶対安全）
+                        if (activeTask.visitData?.status === 'completed') {
+                          openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
+                          return; 
+                        }
+
+                        // ✨ 2. 複数日訪問（2日目以降）に対応するため、親IDを取得
+                        const targetIdForCount = activeTask.visitData?.parent_id || activeTask.visitId;
+
+                        // 3. 名簿に一人でも完了者がいるかチェック（親IDで検索）
                         const { count } = await supabase
                           .from('visit_request_residents')
                           .select('id', { count: 'exact', head: true })
-                          .eq('visit_request_id', activeTask.visitId)
+                          .eq('visit_request_id', targetIdForCount) // 👈 親IDを使うのがポイント
                           .eq('status', 'completed');
 
                         if (count > 0) {
-                          // 💡 1人でも終わっていれば、詳細（名簿）を開く
+                          // 一人でも終わっていれば詳細へ
                           openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
                         } else {
-                          // 💡 全員未完了なら、削除の確認（handleDeleteVisit）へ
+                          // 全員未完了（空振りの予約など）の場合のみ、削除確認を出す
                           handleDeleteVisit(activeTask.visitId, dStr, activeTask.customer_name);
                         }
                       } 
@@ -1940,83 +1969,84 @@ return (
                 <div>
                   <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#64748b' }}>🕒 来店履歴 ＆ 予定</h4>
                   <div style={{ height: isPC ? '420px' : '250px', overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: '15px', background: '#f8fafc', padding: '5px' }}>
-                    {customerHistory.map((h, idx) => {
-                      const hDate = new Date(h.start_time);
-                      const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                      const hBrandLabel = categoryMap[h.biz_type];
-                      // 🚀 1. キャンセル判定のフラグ
-                      const isCanceled = h.status === 'canceled';
+                    {(() => {
+                      // 🚀 1. 施設の場合：月ごとにグルーピングして表示
+                      if (editFields.is_facility === true || selectedRes?.res_type === 'facility_visit') {
+                        const groups = {};
+                        customerHistory.forEach(h => {
+                          if (h.status === 'canceled') return; // キャンセル分はまとめに含めない
+                          const d = new Date(h.start_time);
+                          const monthKey = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+                          if (!groups[monthKey]) groups[monthKey] = { month: monthKey, visits: [] };
+                          groups[monthKey].visits.push(h);
+                        });
 
-                      return (
-                        <div 
-                          key={h.id} 
-                          style={{ 
-                            padding: '15px', 
-                            borderBottom: '1px solid #eee', 
-                            background: isCanceled ? '#fcfcfc' : '#fff', // キャンセルなら背景をわずかにグレーに
-                            borderRadius: isToday ? '12px' : '0', 
-                            border: isToday ? `2px solid ${themeColor}` : 'none',
-                            opacity: isCanceled ? 0.7 : 1, // キャンセルなら全体を少し薄く
-                            position: 'relative'
-                          }}
-                        >
-                          {/* 上段：日付と金額の行 */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {/* 🚀 2. 日付に斜線を適用 */}
-                              <span style={{ 
-                                fontWeight: 'bold', 
-                                fontSize: '0.9rem',
-                                color: isCanceled ? '#94a3b8' : '#1e293b',
-                                textDecoration: isCanceled ? 'line-through' : 'none' 
-                              }}>
-                                {hDate.toLocaleDateString('ja-JP')}
+                        return Object.values(groups).map((group) => (
+                          <div key={group.month} style={{ 
+                            background: '#fff', border: '1px solid #e0e7ff', borderRadius: '16px', 
+                            padding: '15px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(79,70,229,0.05)' 
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
+                              <span style={{ fontWeight: '900', color: '#4f46e5', fontSize: '1rem' }}>{group.month}度 訪問</span>
+                              <span style={{ fontSize: '0.65rem', background: '#f5f3ff', color: '#4f46e5', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+                                完了
                               </span>
-                              
-                              {/* 屋号バッジ */}
-                              {hBrandLabel && (
-                                <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap' }}>
-                                  {hBrandLabel.slice(0, 5)}
-                                </span>
-                              )}
-
-                              {/* 🚀 3. 「当日キャンセル」バッジを表示 */}
-                              {isCanceled && (
-                                <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
-                                  当日キャンセル
-                                </span>
-                              )}
+                            </div>
+                            
+                            {/* 📅 実施日を「・」で繋いで横並びにする */}
+                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px', paddingLeft: '5px' }}>
+                              {group.visits.sort((a,b) => new Date(a.start_time) - new Date(b.start_time)).map((v, i) => {
+                                const date = new Date(v.start_time);
+                                const dayName = ['日','月','火','水','木','金','土'][date.getDay()];
+                                return (
+                                  <span key={v.id} style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b' }}>
+                                    {date.getDate()}日({dayName}){i < group.visits.length - 1 ? ' ・ ' : ''}
+                                  </span>
+                                );
+                              })}
                             </div>
 
-                            {/* 金額表示 */}
-                            {(() => {
-                              const displayPrice = h.total_price > 0 ? h.total_price : parseReservationDetails(h).totalPrice;
-                              return (
-                                <span style={{ 
-                                  color: isCanceled ? '#94a3b8' : '#e11d48', 
-                                  fontWeight: 'bold',
-                                  fontSize: '0.9rem',
-                                  textDecoration: isCanceled ? 'line-through' : 'none' 
-                                }}>
-                                  ¥{displayPrice.toLocaleString()}
-                                  {h.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
-                                </span>
-                              );
-                            })()}
+                            <div style={{ fontSize: '0.75rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                              <Clipboard size={14} /> 施設訪問 施術一式
+                            </div>
                           </div>
+                        ));
+                      }
 
-                          {/* 下段：メニュー名 */}
-                          {/* 🚀 4. メニュー名にも斜線を適用 */}
-                          <div style={{ 
-                            color: isCanceled ? '#cbd5e1' : '#475569', 
-                            fontSize: '0.8rem',
-                            textDecoration: isCanceled ? 'line-through' : 'none'
-                          }}>
-                            {h.menu_name}
+                      // 🚀 2. 個人の場合：従来通りの1件ずつ詳細表示
+                      return customerHistory.map((h, idx) => {
+                        const hDate = new Date(h.start_time);
+                        const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
+                        const hBrandLabel = categoryMap[h.biz_type];
+                        const isCanceled = h.status === 'canceled';
+
+                        return (
+                          <div 
+                            key={h.id} 
+                            style={{ 
+                              padding: '15px', borderBottom: '1px solid #eee', 
+                              background: isCanceled ? '#fcfcfc' : '#fff', 
+                              borderRadius: isToday ? '12px' : '0', 
+                              border: isToday ? `2px solid ${themeColor}` : 'none',
+                              opacity: isCanceled ? 0.7 : 1, position: 'relative'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isCanceled ? '#94a3b8' : '#1e293b', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                  {hDate.toLocaleDateString('ja-JP')}
+                                </span>
+                                {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>キャンセル</span>}
+                              </div>
+                              <span style={{ color: isCanceled ? '#94a3b8' : '#e11d48', fontWeight: 'bold', fontSize: '0.9rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                ¥{(h.total_price || parseReservationDetails(h).totalPrice).toLocaleString()}
+                              </span>
+                            </div>
+                            <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>{h.menu_name}</div>
                           </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </div>
@@ -2233,6 +2263,35 @@ return (
           </div>
         );
       })()}
+
+      {/* 🚀 🆕 ここを追加！：売上確定済みのメンバーリスト */}
+      {finalizedSale && finalizedSale.details?.members_list && (
+        <div style={{ marginBottom: '25px', background: '#f0fdf4', padding: '15px', borderRadius: '20px', border: '2px solid #10b981' }}>
+          <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+            <CheckCircle size={18} /> 本日の完了実績（確定済み）
+          </h4>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            {finalizedSale.details.members_list.map((m, idx) => (
+              <div key={idx} style={{ 
+                background: '#fff', padding: '10px 12px', borderRadius: '10px', display: 'flex', 
+                justifyContent: 'space-between', alignItems: 'center', border: '1px solid #bbf7d0' 
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '0.7rem', background: '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', minWidth: '35px', textAlign: 'center' }}>
+  {/* 🚀 🆕 もしデータに「F」が含まれていればそのまま、なければ「F」を足す */}
+  {m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : '-'}
+</span>
+                  <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{m.name} 様</span>
+                </div>
+                <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>{m.menu}</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: '900', color: '#166534' }}>
+             完了分合計：{finalizedSale.details.members_list.length} 名 / ¥{finalizedSale.total_amount?.toLocaleString()}
+          </div>
+        </div>
+      )}
 
       {/* 📋 施術予定者リスト（まだ残っている人を優先して表示） */}
       <p style={{ color: '#64748b', fontWeight: 'bold', marginBottom: '10px', fontSize: '0.85rem' }}>👥 本日の施術予定者（未完了の方）</p>
