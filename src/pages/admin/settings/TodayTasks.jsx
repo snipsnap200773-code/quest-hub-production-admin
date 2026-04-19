@@ -178,23 +178,40 @@ const fetchTodayTasks = async () => {
 
     setTasks(combined);
     
-    // 過去のレジ忘れチェック
+    // ==========================================
+    // 🚀 🆕 過去のレジ忘れ（未処理）チェック：個人と施設の両方を探す
+    // ==========================================
     const todayStr = new Date().toLocaleDateString('sv-SE');
-    const { data: incomplete } = await supabase
-      .from('reservations')
-      .select('start_time')
-      .eq('shop_id', shopId)
-      .neq('status', 'completed')
-      .neq('status', 'canceled')
-      .lt('start_time', `${todayStr} 00:00:00`)
-      .or('is_block.is.null,is_block.eq.false') 
-      .eq('res_type', 'normal');
+    
+    const [resRes2, visitRes2] = await Promise.all([
+      // 1. 個人の未処理
+      supabase.from('reservations').select('start_time')
+        .eq('shop_id', shopId)
+        .neq('status', 'completed').neq('status', 'canceled')
+        .lt('start_time', `${todayStr} 00:00:00`)
+        .or('is_block.is.null,is_block.eq.false')
+        .eq('res_type', 'normal'),
+      
+      // 2. 施設の未処理
+      supabase.from('visit_requests').select('scheduled_date')
+        .eq('shop_id', shopId)
+        .eq('status', 'confirmed') // 施設はconfirmedが未完了
+        .lt('scheduled_date', todayStr)
+    ]);
 
-    if (incomplete && incomplete.length > 0) {
-      setOldestIncompleteDate(incomplete[0].start_time.split('T')[0]);
+    // 両方のデータを日付形式に統一して合体
+    const iTasks = (resRes2.data || []).map(r => r.start_time.split('T')[0]);
+    const fTasks = (visitRes2.data || []).map(v => v.scheduled_date);
+    const allIncompleteDates = [...iTasks, ...fTasks].sort();
+
+    // 一番古い日付をセット
+    if (allIncompleteDates.length > 0) {
+      setOldestIncompleteDate(allIncompleteDates[0]);
     } else {
       setOldestIncompleteDate(null);
     }
+    // ==========================================
+
   } catch (error) {
     console.error("タスク取得エラー:", error.message);
   } finally {
@@ -619,35 +636,58 @@ const openCustomerInfo = async (task) => {
 
     // 3. 🆕 過去の来店履歴を取得（AdminReservationsのロジックを移植）
     const searchId = cust?.id || task.customer_id;
-    
-    // クエリの構築
-    let historyQuery = supabase
-      .from('reservations')
-      .select('*')
-      .eq('shop_id', shopId)
-      .eq('res_type', 'normal');
+    const isFacility = task.task_type === 'facility' || cust?.is_facility;
+    let historyData = [];
 
-    if (searchId) {
-      historyQuery = historyQuery.or(`customer_id.eq.${searchId},customer_name.eq.${task.customer_name}`);
+    if (isFacility) {
+      // 🏢 施設の場合：visit_requestsテーブルから取得
+      // 🚀 400エラー修正：存在しないカラムでの検索を避け、正しい facility_user_id を使う
+      const targetFacId = task.facility_user_id;
+
+      if (targetFacId) {
+        const { data, error } = await supabase
+          .from('visit_requests')
+          .select('*')
+          .eq('shop_id', shopId)
+          .eq('facility_user_id', targetFacId) // 👈 正しいカラム名で検索
+          .eq('status', 'completed') // 完了したものだけ
+          .order('scheduled_date', { ascending: false });
+
+        if (!error) {
+          historyData = (data || []).map(v => ({ 
+            ...v, 
+            start_time: v.scheduled_date, // 表示用にキーを合わせる
+            menu_name: '施設訪問 施術一式' 
+          }));
+        } else {
+          console.error("施設履歴エラー:", error);
+        }
+      }
     } else {
-      historyQuery = historyQuery.eq('customer_name', task.customer_name);
+      // 👤 個人の場合：reservationsテーブルから取得
+      let historyQuery = supabase
+        .from('reservations')
+        .select('*')
+        .eq('shop_id', shopId)
+        .eq('res_type', 'normal')
+        .in('status', ['completed', 'canceled']);
+
+      if (searchId) {
+        historyQuery = historyQuery.or(`customer_id.eq.${searchId},customer_name.eq.${task.customer_name}`);
+      } else {
+        historyQuery = historyQuery.eq('customer_name', task.customer_name);
+      }
+
+      const { data } = await historyQuery.order('start_time', { ascending: false });
+      historyData = data || [];
     }
 
-    const { data: history, error: hError } = await historyQuery
-      .order('start_time', { ascending: false }); // 新しい順に並べる
-
-    if (!hError) {
-      setCustomerHistory(history || []);
-    }
-     else {
-      setCustomerHistory([]);
-    }
-
-    setShowCustomerModal(true);
-  } catch (err) {
-    console.error("データ取得エラー:", err);
-    setShowCustomerModal(true);
-  }
+    setCustomerHistory(historyData);
+    setShowCustomerModal(true);
+  } catch (err) {
+    console.error("データ取得エラー:", err);
+    setShowCustomerModal(true);
+  }
 };
 
 /* ==========================================
@@ -1421,83 +1461,128 @@ const handleSaveMemo = async () => {
               {/* 🕒 履歴エリア：売上金額付き [cite: 2026-03-08] */}
               <h4 style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '12px', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', fontWeight: 'bold' }}>🕒 来店履歴 ＆ 予定</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                {customerHistory.length > 0 ? customerHistory.map((h, idx) => {
-                  const hDate = new Date(h.start_time);
-                  const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                  const isFuture = hDate > new Date() && !isToday;
-                  
-                  // 💡 前回との差分日数を計算
-                  let dayDiff = null;
-                  if (customerHistory[idx + 1]) {
-                    const prevDate = new Date(customerHistory[idx + 1].start_time);
-                    dayDiff = Math.floor((hDate - prevDate) / (1000 * 60 * 60 * 24));
+                {(() => {
+                  if (customerHistory.length === 0) {
+                    return <div style={{ textAlign: 'center', padding: '30px', background: '#f8fafc', borderRadius: '12px', color: '#94a3b8', fontSize: '0.85rem' }}>来店履歴はありません</div>;
                   }
 
-                  return (
-                    <div 
-                      key={h.id} 
-                      style={{ 
-                        padding: '15px', 
-                        background: isToday ? '#fff' : (isFuture ? '#f0f9ff' : '#f8fafc'), 
-                        borderRadius: '16px', 
-                        border: isToday ? `2px solid ${themeColor}` : (isFuture ? '1px dashed #0ea5e9' : '1px solid #f1f5f9'),
-                        boxShadow: isToday ? `0 4px 15px ${themeColor}33` : 'none',
-                        position: 'relative',
-                        animation: isToday ? 'pulseGlow 2s infinite' : 'none'
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <span style={{ color: isToday ? themeColor : (isFuture ? '#0ea5e9' : '#1e293b') }}>
-                            📅 {hDate.toLocaleDateString('ja-JP')}
+                  // 🚀 1. 施設の場合：月ごとにカードを分けて「実施日」をバッジ表示
+                  const isFac = selectedTask?.task_type === 'facility' || selectedCustomer?.is_facility;
+                  if (isFac) {
+                    const groups = {};
+                    customerHistory.forEach(v => {
+                      if (v.status === 'canceled') return; 
+                      const d = new Date(v.start_time);
+                      const monthKey = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+                      if (!groups[monthKey]) groups[monthKey] = { month: monthKey, visits: [] };
+                      groups[monthKey].visits.push(v);
+                    });
+
+                    return Object.values(groups).map((group) => (
+                      <div key={group.month} style={{ 
+                        background: '#fff', border: '1px solid #e2e8f0', borderRadius: '18px', 
+                        padding: '18px', marginBottom: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' 
+                      }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                          <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.05rem' }}>{group.month}度 訪問実績</span>
+                          <span style={{ fontSize: '0.65rem', background: '#f0fdf4', color: '#166534', padding: '4px 10px', borderRadius: '100px', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>
+                            COMPLETE
                           </span>
-                          
-                          {/* 🚀 🆕 修正：エラーの元(isFacility)を削除し、バッジを安全に表示 */}
-                          {categoryMap[h.biz_type] && (
-                            <span style={{ 
-                              fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px',
-                              background: h.biz_type === 'foot' ? '#4285f4' : '#d34817',
-                              color: '#fff', fontWeight: '900'
-                            }}>
-                              {categoryMap[h.biz_type].slice(0, 4)}
-                            </span>
-                          )}
-
-                          {isToday && <span style={{ background: themeColor, color: '#fff', padding: '1px 6px', borderRadius: '4px', fontSize: '0.6rem' }}>今回</span>}
                         </div>
-                        
-                        {/* 💰 🆕 追加：予定金額を (予) 付きで表示 */}
-                        <div style={{ color: isFuture ? '#94a3b8' : '#d34817', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                          {isFuture ? '---' : (() => {
-                            const displayPrice = calculateInitialPrice(h);
-                            const isConfirmed = h.status === 'completed' && h.total_price > 0;
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                          {group.visits.sort((a,b) => a.start_time.localeCompare(b.start_time)).map((v) => {
+                            const date = new Date(v.start_time);
+                            const dayNames = ['日','月','火','水','木','金','土'];
                             return (
-                              <>
-                                ¥{displayPrice.toLocaleString()}
-                                {!isConfirmed && <span style={{ fontSize: '0.6rem', marginLeft: '2px' }}>(予)</span>}
-                              </>
+                              <div key={v.id} style={{ 
+                                background: '#f8fafc', border: '1px solid #cbd5e1', color: '#4b2c85',
+                                padding: '6px 12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '800',
+                                display: 'flex', alignItems: 'center', gap: '4px'
+                              }}>
+                                <Calendar size={14} style={{ opacity: 0.6 }} />
+                                {date.getDate()}日<span style={{ fontSize: '0.7rem', fontWeight: 'bold', opacity: 0.7 }}>({dayNames[date.getDay()]})</span>
+                              </div>
                             );
-                          })()}
+                          })}
                         </div>
                       </div>
+                    ));
+                  }
 
-                      {/* 💡 来店間隔の表示（今日/今回の行のみ） */}
-                      {isToday && dayDiff !== null && (
-                        <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '4px 0 8px 0', background: '#fff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #eee', width: 'fit-content', fontWeight: 'bold' }}>
-                          🗓 前回から <span style={{ color: themeColor }}>{dayDiff}日ぶり</span>
+                  // 🚀 2. 個人の場合：従来通りの1件ずつの詳細表示
+                  return customerHistory.map((h, idx) => {
+                    const hDate = new Date(h.start_time);
+                    const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
+                    const isFuture = hDate > new Date() && !isToday;
+                    
+                    let dayDiff = null;
+                    if (customerHistory[idx + 1]) {
+                      const prevDate = new Date(customerHistory[idx + 1].start_time);
+                      dayDiff = Math.floor((hDate - prevDate) / (1000 * 60 * 60 * 24));
+                    }
+
+                    return (
+                      <div 
+                        key={h.id} 
+                        style={{ 
+                          padding: '15px', 
+                          background: isToday ? '#fff' : (isFuture ? '#f0f9ff' : '#f8fafc'), 
+                          borderRadius: '16px', 
+                          border: isToday ? `2px solid ${themeColor}` : (isFuture ? '1px dashed #0ea5e9' : '1px solid #f1f5f9'),
+                          boxShadow: isToday ? `0 4px 15px ${themeColor}33` : 'none',
+                          position: 'relative',
+                          animation: isToday ? 'pulseGlow 2s infinite' : 'none'
+                        }}
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '4px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            <span style={{ color: isToday ? themeColor : (isFuture ? '#0ea5e9' : '#1e293b') }}>
+                              📅 {hDate.toLocaleDateString('ja-JP')}
+                            </span>
+                            
+                            {/* 🚀 🆕 修正：エラーの元(isFacility)を削除し、バッジを安全に表示 */}
+                            {categoryMap[h.biz_type] && (
+                              <span style={{ 
+                                fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px',
+                                background: h.biz_type === 'foot' ? '#4285f4' : '#d34817',
+                                color: '#fff', fontWeight: '900'
+                              }}>
+                                {categoryMap[h.biz_type].slice(0, 4)}
+                              </span>
+                            )}
+
+                            {isToday && <span style={{ background: themeColor, color: '#fff', padding: '1px 6px', borderRadius: '4px', fontSize: '0.6rem' }}>今回</span>}
+                          </div>
+                          
+                          {/* 💰 🆕 追加：予定金額を (予) 付きで表示 */}
+                          <div style={{ color: isFuture ? '#94a3b8' : '#d34817', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                            {isFuture ? '---' : (() => {
+                              const displayPrice = calculateInitialPrice(h);
+                              const isConfirmed = h.status === 'completed' && h.total_price > 0;
+                              return (
+                                <>
+                                  ¥{displayPrice.toLocaleString()}
+                                  {!isConfirmed && <span style={{ fontSize: '0.6rem', marginLeft: '2px' }}>(予)</span>}
+                                </>
+                              );
+                            })()}
+                          </div>
                         </div>
-                      )}
 
-                      <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold', paddingLeft: '2px' }}>
-                        {h.menu_name || 'メニュー記録なし'}
+                        {/* 💡 来店間隔の表示（今日/今回の行のみ） */}
+                        {isToday && dayDiff !== null && (
+                          <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '4px 0 8px 0', background: '#fff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #eee', width: 'fit-content', fontWeight: 'bold' }}>
+                            🗓 前回から <span style={{ color: themeColor }}>{dayDiff}日ぶり</span>
+                          </div>
+                        )}
+
+                        <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold', paddingLeft: '2px' }}>
+                          {h.menu_name || 'メニュー記録なし'}
+                        </div>
                       </div>
-                    </div>
-                  );
-                }) : (
-                  <div style={{ textAlign: 'center', padding: '30px', background: '#f8fafc', borderRadius: '12px', color: '#94a3b8', fontSize: '0.85rem' }}>
-                    来店履歴はありません
-                  </div>
-                )}
+                    );
+                  });
+                })()}
               </div>
               </motion.div>
           </div>
