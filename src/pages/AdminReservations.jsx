@@ -138,7 +138,6 @@ const [privateTaskFields, setPrivateTaskFields] = useState({ title: '', note: ''
   // 他のStateと一緒に定義してください
 const [mergeCandidate, setMergeCandidate] = useState(null); // 重複が見つかった「大造」さん候補
 const [showMergeConfirm, setShowMergeConfirm] = useState(false); // 3択モーダルの表示フラグ
-  const [customerFullHistory, setCustomerFullHistory] = useState([]);
 
 /* 🆕 ここから追記：施設訪問名簿用のポップアップ管理 */
 const [showVisitDetailModal, setShowVisitDetailModal] = useState(false);
@@ -378,21 +377,31 @@ const { data: resData } = await supabase
   }, [searchTerm, shopId]);
 
   const openCustomerDetail = async (customer) => {
+    // 🆕 1. 別の人の履歴が残らないよう、まず箱を空にする
+    setCustomerHistory([]); 
+    
     setSelectedCustomer(customer);
-setEditFields({ 
-      // 管理名があればそれを、なければ本人名をセット
+    setEditFields({ 
       name: customer.name || '', 
-      // マスタ側に電話番号があればそれを、なければ今回の予約時のものを優先
-      phone: customer.phone || selectedRes?.customer_phone || '', 
-      // 🆕 ここが重要！マスタにメールがなくても、予約時のメールがあればそれを表示に活かす
-      email: customer.email || selectedRes?.customer_email || '', 
+      admin_name: customer.admin_name || '',
+      furigana: customer.furigana || '', 
+      phone: customer.phone || '', 
+      email: customer.email || '', 
       memo: customer.memo || '',
-      line_user_id: customer.line_user_id || selectedRes?.line_user_id || null 
+      line_user_id: customer.line_user_id || null 
     });
-        setSearchTerm('');
+    setSearchTerm('');
     setSelectedIndex(-1);
-    const { data } = await supabase.from('reservations').select('*').eq('shop_id', shopId).eq('customer_name', customer.name).order('start_time', { ascending: false });
-    setCustomerFullHistory(data || []);
+
+    // 🆕 2. 保存先を customerHistory に統一し、IDか名前のどちらかで検索
+    const { data } = await supabase
+      .from('reservations')
+      .select('*')
+      .eq('shop_id', shopId)
+      .or(`customer_id.eq.${customer.id},customer_name.eq.${customer.name}`) 
+      .order('start_time', { ascending: false });
+
+    setCustomerHistory(data || []); 
     setShowCustomerModal(true);
   };
 
@@ -468,7 +477,9 @@ const openDetail = async (res) => {
 };
   // 🆕 共通処理：詳細モーダルを表示するための確定処理
   const finalizeOpenDetail = (res, cust) => {
-    // 💡 予約時に入力された詳細データ（住所やカスタム質問回答など）を取得
+    // 🆕 前に見ていた人の履歴をリセットする
+    setCustomerHistory([]);
+
     const visitInfo = res.options?.visit_info || {};
 
     // 🆕 修正：全項目 ＆ カスタム質問の回答を State (editFields) に集約して読み込む

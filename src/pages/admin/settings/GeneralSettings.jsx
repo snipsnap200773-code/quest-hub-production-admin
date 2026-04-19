@@ -299,35 +299,42 @@ const GeneralSettings = () => {
 </section>
 
       {/* 📱 🆕 プッシュ通知設定カード */}
-      <section style={{ ...cardStyle, borderLeft: `8px solid #f59e0b`, background: '#fffbeb' }}>
-        <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#b45309', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+      <section style={{ 
+        ...cardStyle, 
+        borderLeft: `8px solid #94a3b8`, // グレーに変更
+        background: '#f8fafc',           // 薄いグレーに変更
+        opacity: 0.6,                   // 少し透かせて「無効感」を出す
+        pointerEvents: 'none'           // ⚡️ カード全体をクリック不可にする
+      }}>
+        <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#475569', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
           <Bell size={20} /> アプリ内プッシュ通知
         </h3>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ flex: 1, paddingRight: '15px' }}>
             <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
-              新着予約の通知を受け取る
+              新着予約の通知を受け取る（調整中）
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#b45309', lineHeight: '1.4' }}>
-              スマホへ直接「新着予約」をお知らせします。iPhoneの方は「ホーム画面に追加」してご利用ください。
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+              現在メンテナンス中のため、通知はメール・LINEのみとなります。
             </div>
           </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'default' }}>
             <input 
               type="checkbox" 
-              checked={isPushEnabled} 
-              onChange={(e) => handlePushToggle(e.target.checked)} 
+              checked={false} // 強制OFF
+              disabled        // ⚡️ スイッチ自体を無効化
+              readOnly
               style={{ opacity: 0, width: 0, height: 0 }} 
             />
             <span style={{
               position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-              backgroundColor: isPushEnabled ? '#f59e0b' : '#cbd5e1',
-              transition: '.3s', borderRadius: '34px'
+              backgroundColor: '#cbd5e1', // 常にオフのグレー
+              borderRadius: '34px'
             }}>
               <span style={{
                 position: 'absolute', content: '""', height: '18px', width: '18px',
-                left: isPushEnabled ? '28px' : '4px', bottom: '4px',
-                backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
+                left: '4px', bottom: '4px',
+                backgroundColor: 'white', borderRadius: '50%'
               }}></span>
             </span>
           </label>

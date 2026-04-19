@@ -243,10 +243,11 @@ function AdminManagement() {
     // ✅ 幽霊データを防ぐため、reservationsではなく「customers名簿」だけを検索
     const { data, error } = await supabase
       .from('customers')
-      .select('id, name, phone') // 電話番号も取得しておくと後で便利です
+      .select('id, name, admin_name, phone') // admin_nameも取得
       .eq('shop_id', cleanShopId)
-      .ilike('name', `%${val}%`) // あいまい検索
-      .limit(5); // 候補は5件まで
+      // 🆕 本人名(name)か管理名(admin_name)のどちらかにヒットすればOKにする
+      .or(`name.ilike.%${val}%,admin_name.ilike.%${val}%`) 
+      .limit(5);
     
     if (error) console.error("Search Error:", error);
     setSearchResults(data || []);
@@ -797,27 +798,32 @@ const completePayment = async () => {
       return;
     }
 
+    // 1. 【重要】別の人の履歴が残らないよう、開く瞬間に箱を空にする
+    setPastVisits([]);
+    setIsCustomerInfoOpen(true); 
+    setIsCheckoutOpen(false);
+
     try {
-      // 🚀 🆕 修正：名前の空白などで検索に失敗しないよう、正規化した名前で検索
+      // 名前を正規化
       const searchName = res.customer_name.replace(/　/g, ' ').trim();
       
-      // 🚀 1. IDがある場合はIDで、なければ名前で検索（名寄せの精度アップ）
+      // 顧客マスタから情報を取得
       let query = supabase.from('customers').select('*').eq('shop_id', cleanShopId);
       if (res.customer_id) {
         query = query.eq('id', res.customer_id);
       } else {
         query = query.eq('name', searchName);
       }
-      
       const { data: customer } = await query.maybeSingle();
 
-      // ...施設情報の取得（既存通り）...
+      // 施設情報の取得
       let facilityDetail = null;
       if (customer?.is_facility) {
         const { data: fData } = await supabase.from('facility_users').select('*').eq('facility_name', customer.name).maybeSingle();
         facilityDetail = fData;
       }
 
+      // 表示フィールドの組み立て
       const visitInfo = res.options?.visit_info || {};
       const allFields = {
         is_facility: customer?.is_facility || false,
@@ -834,7 +840,6 @@ const completePayment = async () => {
         symptoms: customer?.symptoms || visitInfo.symptoms || '',
         request_details: customer?.request_details || visitInfo.request_details || '',
         first_arrival_date: customer?.first_arrival_date || '',
-        // 🚀 🆕 2. ここが重要！ DBから読み込んだ「is_blocked」の状態をセットする
         is_blocked: !!customer?.is_blocked, 
         memo: customer?.memo || '',
         line_user_id: customer?.line_user_id || res.line_user_id || null,
@@ -842,15 +847,27 @@ const completePayment = async () => {
       };
 
       setSelectedCustomer(customer || { name: res.customer_name });
-      setEditFields(allFields); // 🚀 これで画面上のボタンが正しい状態で開く
+      setEditFields(allFields);
       setSelectedRes(res);
       
-      // ...来店履歴の取得（既存通り）...
-      const { data: visits } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', cleanShopId).eq('customer_name', res.customer_name).in('status', ['completed', 'canceled']).order('start_time', { ascending: false });
+      // 2. 【重要】来店履歴の取得を「IDまたは名前」の最強ロジックに更新
+      const historyQuery = supabase
+        .from('reservations')
+        .select('*, staffs(name)')
+        .eq('shop_id', cleanShopId)
+        .in('status', ['completed', 'canceled']);
+
+      if (customer?.id) {
+        // IDがあるなら、ID一致 または 名前一致 のどちらでも拾う（名寄せ対応）
+        historyQuery.or(`customer_id.eq.${customer.id},customer_name.eq.${searchName}`);
+      } else {
+        // IDがない場合は名前で検索
+        historyQuery.eq('customer_name', searchName);
+      }
+
+      const { data: visits } = await historyQuery.order('start_time', { ascending: false });
       setPastVisits(visits || []);
       
-      setIsCustomerInfoOpen(true);
-      setIsCheckoutOpen(false);
     } catch (err) {
       console.error("Customer Info Error:", err);
     }
