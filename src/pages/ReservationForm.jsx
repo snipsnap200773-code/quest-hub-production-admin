@@ -5,7 +5,7 @@ import { supabase, supabaseAnon } from '../supabaseClient';
 // 💡 重要：LINEログイン（LIFF）を操作するためのSDK
 import liff from '@line/liff';
 // ✅ アイコンとボタン部品を追加
-import { MapPin, CheckCircle2, ChevronRight } from 'lucide-react';
+import { MapPin, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
 
 function ReservationForm() {
   const { shopId } = useParams();
@@ -662,13 +662,44 @@ const handleNextStep = () => {
         {/* --- 店舗説明文 --- */}
         {displayBranding.desc && (
           <p style={{ fontSize: '0.9rem', color: '#475569', lineHeight: '1.6' }}>
-  {displayBranding.desc && displayBranding.desc.split('/').map((line, idx) => (
-    <React.Fragment key={idx}>
-      {line.trim()}
-      {idx < displayBranding.desc.split('/').length - 1 && <br />}
-    </React.Fragment>
-  ))}
-</p>
+            {displayBranding.desc.split('/').map((line, idx) => (
+              <React.Fragment key={idx}>
+                {line.trim()}
+                {idx < displayBranding.desc.split('/').length - 1 && <br />}
+              </React.Fragment>
+            ))}
+          </p>
+        )}
+
+        {/* 🆕 追記：注意事項（Notes）の表示セクション */}
+        {shop?.notes && (
+          <div style={{ 
+            marginTop: '20px', 
+            padding: '15px', 
+            background: '#fff5f5', // ほんのり赤い背景で「注意」を促す
+            border: '1px solid #feb2b2', 
+            borderRadius: '12px' 
+          }}>
+            <h3 style={{ 
+              margin: '0 0 8px 0', 
+              fontSize: '0.85rem', 
+              color: '#c53030', 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '6px',
+              fontWeight: 'bold'
+            }}>
+              <AlertCircle size={16} /> ご予約に関する注意事項
+            </h3>
+            <div style={{ 
+              fontSize: '0.8rem', 
+              color: '#742a2a', 
+              lineHeight: '1.6', 
+              whiteSpace: 'pre-wrap' // 👈 これで改行がそのまま表示されます
+            }}>
+              {shop.notes}
+            </div>
+          </div>
         )}
       </div>
 
