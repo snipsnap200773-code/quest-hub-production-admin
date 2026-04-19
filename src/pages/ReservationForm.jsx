@@ -676,7 +676,7 @@ const handleNextStep = () => {
       {(!isVisitService || isAddressFixed || isAdminMode) ? (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
           <h3 style={{ fontSize: '1rem', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', marginBottom: '20px' }}>
-            {people.length === 0 ? "2. メニューを選択" : `${people.length + 1}人目のメニューを選択`}
+            {people.length === 0 ? "メニューを選択" : `${people.length + 1}人目のメニューを選択`}
           </h3>
           
           {categories
