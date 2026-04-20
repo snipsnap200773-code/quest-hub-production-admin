@@ -393,8 +393,20 @@ const { data: resData } = await supabase
       .from('customers')
       .select('*')
       .eq('shop_id', shopId)
-      .order('furigana', { ascending: true }); // 💡 ここで50音順にソート
-    setAllCustomers(data || []);
+      .order('furigana', { ascending: true });
+
+    if (data) {
+      // 💡 名前で重複を排除し、常に最新（一番新しいID）のデータを残す
+      const uniqueMap = new Map();
+      data.forEach(c => {
+        const nameKey = (c.name || "").trim();
+        // すでに登録があっても、より情報（住所など）が入っている、または新しいIDを優先
+        if (!uniqueMap.has(nameKey) || (c.address && !uniqueMap.get(nameKey).address)) {
+          uniqueMap.set(nameKey, c);
+        }
+      });
+      setAllCustomers(Array.from(uniqueMap.values()));
+    }
   };
 
   useEffect(() => {
@@ -641,17 +653,27 @@ const openDetail = async (res) => {
       const normalizedName = editFields.name.replace(/　/g, ' ').trim();
       if (!normalizedName) { alert("お名前を入力してください。"); return; }
 
-      // 1. 名簿（Master）用データの整理
+      // 🚀 🆕 修正：保存前に「同じ名前の人」がいないか再チェック（名寄せの徹底）
+      const { data: matchedMasters } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('shop_id', shopId)
+        .eq('name', normalizedName);
+
+      // すでにその名前の人がいれば、そのIDを使う（新規作成して重複させない）
+      const finalTargetId = selectedCustomer?.id || (matchedMasters && matchedMasters.length > 0 ? matchedMasters[0].id : null);
+
       const customerPayload = {
+        id: finalTargetId, // 👈 これがあれば上書き、なければ新規
         shop_id: shopId,
         name: normalizedName,
         admin_name: normalizedName,
         furigana: editFields.furigana,
         phone: editFields.phone,
         email: editFields.email,
-        address: editFields.address, // 👈 住所
+        address: editFields.address,
         zip_code: editFields.zip_code,
-        parking: editFields.parking,   // 👈 駐車場
+        parking: editFields.parking,
         building_type: editFields.building_type,
         care_notes: editFields.care_notes,
         company_name: editFields.company_name,
@@ -661,7 +683,7 @@ const openDetail = async (res) => {
         line_user_id: editFields.line_user_id || selectedRes?.line_user_id || null,
         updated_at: new Date().toISOString()
       };
-
+      
       // 2. 名簿（customersテーブル）を更新
       const { data: savedCust, error: custError } = await supabase
         .from('customers')
@@ -2630,6 +2652,7 @@ return (
 
             {/* 📜 メイン：顧客リスト（スクロールエリア） */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
+              {/* 🚀 🆕 修正：allCustomers（名寄せ済み）を使って表示する */}
               {allCustomers
                 .filter(c => 
                   (c.admin_name || c.name || '').includes(searchTerm) || 
