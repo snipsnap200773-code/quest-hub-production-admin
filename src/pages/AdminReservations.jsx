@@ -415,37 +415,51 @@ const { data: resData } = await supabase
   }, [searchTerm, shopId]);
 
   const openCustomerDetail = async (customer) => {
-    setCustomerHistory([]); // 残像クリア
+    setCustomerHistory([]); // 履歴をクリア
 
-    // 🆕 施設かどうかを判定（名簿のフラグ または 名前で判定）
-    const isFac = customer.is_facility || customer.res_type === 'facility_visit';
+    // 1. DBからこのお客様の最新情報を取得（住所や駐車場を確実にするため）
+    const { data: latestCust, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('id', customer.id)
+      .maybeSingle();
 
+    if (error || !latestCust) {
+      alert("最新情報の取得に失敗しました。");
+      return;
+    }
+
+    // 2. 施設判定
+    const isFac = latestCust.is_facility === true;
+
+    // 3. 入力項目（editFields）を最新データでセット
     setEditFields({ 
-      is_facility: isFac, // 🚩 旗を立てる
-      name: customer.name || '', 
-      admin_name: customer.admin_name || '',
-      furigana: customer.furigana || '', 
-      phone: customer.phone || '', 
-      email: customer.email || '', 
-      memo: customer.memo || '',
-      line_user_id: customer.line_user_id || null 
+      is_facility: isFac,
+      name: latestCust.name || '', 
+      admin_name: latestCust.admin_name || '',
+      furigana: latestCust.furigana || '', 
+      phone: latestCust.phone || '', 
+      email: latestCust.email || '', 
+      address: latestCust.address || '',    // 👈 これで住所が反映される
+      zip_code: latestCust.zip_code || '',
+      parking: latestCust.parking || '',    // 👈 これで駐車場が反映される
+      memo: latestCust.memo || '',
+      line_user_id: latestCust.line_user_id || null 
     });
+
+    // 4. 以降の履歴取得ロジックは「予約から開く時」と同じ finalizeOpenDetail の中身を流用
+    setSelectedCustomer(latestCust);
+    setSelectedRes(null); // 検索からの場合は特定の「今日の予約」はないので null
 
     let historyData = [];
     if (isFac) {
-      // 🚀 施設の場合：visitRequests（読み込み済みState）から、名前が一致するものを探す
       historyData = visitRequests
-        .filter(v => 
-          v.facility_users?.facility_name === customer.name || 
-          v.facility_id === customer.id ||
-          v.customer_name === customer.name
-        )
-        .map(v => ({ ...v, start_time: v.scheduled_date })) // キー名変換
+        .filter(v => v.facility_id === latestCust.id || v.customer_name === latestCust.name)
+        .map(v => ({ ...v, start_time: v.scheduled_date }))
         .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
     } else {
-      // 個人の場合
       const { data } = await supabase.from('reservations').select('*').eq('shop_id', shopId)
-        .or(`customer_id.eq.${customer.id},customer_name.eq.${customer.name}`)
+        .or(`customer_id.eq.${latestCust.id},customer_name.eq.${latestCust.name}`)
         .order('start_time', { ascending: false });
       historyData = data || [];
     }
@@ -453,7 +467,7 @@ const { data: resData } = await supabase
     setCustomerHistory(historyData);
     setSearchTerm('');
     setSelectedIndex(-1);
-    setShowCustomerModal(true);
+    setShowCustomerModal(true); // モーダルを表示
   };
 
   // キーボード操作用ハンドラー
@@ -528,58 +542,48 @@ const openDetail = async (res) => {
 };
   // 🆕 共通処理：詳細モーダルを表示するための確定処理
   const finalizeOpenDetail = (res, cust) => {
-    setCustomerHistory([]); // 残像クリア
+    setCustomerHistory([]); // 履歴をクリア
 
-    // 🆕 施設判定を強化
     const isFac = cust?.is_facility || res.res_type === 'facility_visit';
+    // 予約伝票側に保存されているスナップショット情報
+    const visitSnapshot = res.options?.visit_info || {};
 
-    const visitInfo = res.options?.visit_info || {};
+    // 💡 常に「名簿(cust)のデータ」を優先し、名簿が空なら「予約時のデータ」を入れる
     const allFields = {
       is_facility: isFac, 
       name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
-      furigana: cust?.furigana || res.customers?.furigana || visitInfo.furigana || '',
+      furigana: cust?.furigana || visitSnapshot.furigana || '',
       phone: cust?.phone || res.customer_phone || '',
       email: cust?.email || res.customer_email || '',
-      zip_code: cust?.zip_code || visitInfo.zip_code || '',
-      address: cust?.address || visitInfo.address || '',
-      parking: cust?.parking || visitInfo.parking || '',
-      building_type: cust?.building_type || visitInfo.building_type || '',
-      care_notes: cust?.care_notes || visitInfo.care_notes || '',
-      company_name: cust?.company_name || visitInfo.company_name || '',
-      symptoms: cust?.symptoms || visitInfo.symptoms || '',
-      request_details: cust?.request_details || visitInfo.request_details || '',
+      zip_code: cust?.zip_code || visitSnapshot.zip_code || '',
+      address: cust?.address || visitSnapshot.address || '', // 👈 名簿を優先
+      parking: cust?.parking || visitSnapshot.parking || '', // 👈 名簿を優先
+      building_type: cust?.building_type || visitSnapshot.building_type || '',
+      care_notes: cust?.care_notes || visitSnapshot.care_notes || '',
+      company_name: cust?.company_name || visitSnapshot.company_name || '',
+      symptoms: cust?.symptoms || visitSnapshot.symptoms || '',
+      request_details: cust?.request_details || visitSnapshot.request_details || '',
       memo: res.res_type === 'private_task' ? (res.note || '') : (cust?.memo || ''),
       line_user_id: cust?.line_user_id || res.line_user_id || null,
-      custom_answers: visitInfo.custom_answers || cust?.custom_answers || {}
+      custom_answers: cust?.custom_answers || visitSnapshot.custom_answers || {}
     };
 
     setEditFields(allFields);
     setSelectedCustomer(cust || null);
 
-    // 🆕 履歴の抽出
+    // 履歴抽出（既存どおり）
     let history = [];
     if (isFac) {
-      // 🚀 施設の場合：名前 または ID で visitRequests から探す
       const targetName = allFields.name;
       history = visitRequests
-        .filter(v => 
-          v.facility_users?.facility_name === targetName || 
-          v.customer_name === targetName ||
-          v.facility_id === cust?.id
-        )
+        .filter(v => v.facility_users?.facility_name === targetName || v.customer_name === targetName || v.facility_id === cust?.id)
         .map(v => ({ ...v, start_time: v.scheduled_date }))
         .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
     } else {
-      // 個人の場合
       history = reservations
-        .filter(r => 
-          r.shop_id === shopId && 
-          r.res_type === 'normal' && 
-          (r.customer_name === res.customer_name || (cust?.id && r.customer_id === cust.id))
-        )
+        .filter(r => r.shop_id === shopId && r.res_type === 'normal' && (r.customer_name === res.customer_name || (cust?.id && r.customer_id === cust.id)))
         .sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
     }
-
     setCustomerHistory(history);
     setShowDetailModal(true);
   };
@@ -635,65 +639,30 @@ const openDetail = async (res) => {
   const handleUpdateCustomer = async () => {
     try {
       const normalizedName = editFields.name.replace(/　/g, ' ').trim();
-      if (!normalizedName) {
-        alert("お名前を入力してください。");
-        return;
-      }
+      if (!normalizedName) { alert("お名前を入力してください。"); return; }
 
-      // 💡 A: ブロック枠(blocked) または プライベート予定(private_task) の場合
-      if (selectedRes?.res_type === 'blocked' || selectedRes?.res_type === 'private_task') {
-        const isPrivate = selectedRes.res_type === 'private_task';
-        const targetTable = isPrivate ? 'private_tasks' : 'reservations';
-        const updateData = isPrivate 
-          ? { title: normalizedName, note: editFields.memo } 
-          : { customer_name: normalizedName };
-
-        const { error } = await supabase.from(targetTable).update(updateData).eq('id', selectedRes.id);
-        if (error) throw error;
-        showMsg('予定を更新しました！');
-        setShowDetailModal(false);
-        fetchData();
-        return;
-      }
-
-      // 💡 B: 通常予約または名簿からの直接編集（名簿マスタと連動）
-      
-      // 1. まず名簿データを取得
-      const { data: currentMaster } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', shopId)
-        .eq('name', normalizedName)
-        .maybeSingle();
-
-      const finalTargetId = currentMaster?.id || selectedCustomer?.id;
-
-      // 2. 顧客マスタ用データの作成（🚀 selectedRes?. に修正して安全に！）
+      // 1. 名簿（Master）用データの整理
       const customerPayload = {
         shop_id: shopId,
         name: normalizedName,
         admin_name: normalizedName,
-        furigana: editFields.furigana || '', 
-        phone: editFields.phone || currentMaster?.phone || selectedRes?.customer_phone || '',
-        email: editFields.email || currentMaster?.email || selectedRes?.customer_email || '',
-        address: editFields.address || currentMaster?.address || '',
-        zip_code: editFields.zip_code || currentMaster?.zip_code || '',
-        parking: editFields.parking || currentMaster?.parking || '',
-        building_type: editFields.building_type || currentMaster?.building_type || '',
-        care_notes: editFields.care_notes || currentMaster?.care_notes || '',
-        company_name: editFields.company_name || currentMaster?.company_name || '',
-        symptoms: editFields.symptoms || currentMaster?.symptoms || '',
-        request_details: editFields.request_details || currentMaster?.request_details || '',
-        memo: editFields.memo || currentMaster?.memo || '',
-        line_user_id: editFields.line_user_id || currentMaster?.line_user_id || selectedRes?.line_user_id || null,
+        furigana: editFields.furigana,
+        phone: editFields.phone,
+        email: editFields.email,
+        address: editFields.address, // 👈 住所
+        zip_code: editFields.zip_code,
+        parking: editFields.parking,   // 👈 駐車場
+        building_type: editFields.building_type,
+        care_notes: editFields.care_notes,
+        company_name: editFields.company_name,
+        symptoms: editFields.symptoms,
+        request_details: editFields.request_details,
+        memo: editFields.memo,
+        line_user_id: editFields.line_user_id || selectedRes?.line_user_id || null,
         updated_at: new Date().toISOString()
       };
 
-      if (finalTargetId) {
-        customerPayload.id = finalTargetId;
-      }
-
-      // 3. 名簿（customers）を更新
+      // 2. 名簿（customersテーブル）を更新
       const { data: savedCust, error: custError } = await supabase
         .from('customers')
         .upsert(customerPayload, { onConflict: 'id' })
@@ -703,36 +672,45 @@ const openDetail = async (res) => {
       if (custError) throw custError;
       const finalCustomerId = savedCust.id;
 
-      // 4. 同じ名前の過去予約も一気に紐付け（カレンダー用）
-      await supabase
-        .from('reservations')
-        .update({ customer_id: finalCustomerId })
-        .eq('shop_id', shopId)
-        .eq('customer_name', normalizedName)
-        .is('customer_id', null);
-
-      // 🚀 5. 今の予約データも最新化（予約枠から開いたときだけ実行）
+      // 3. 今の予約データ（reservationsテーブル）も最新情報で同期する
       if (selectedRes?.id) {
-        await supabase
+        const currentOptions = selectedRes.options || {};
+        // 💡 予約データ内の visit_info（ConfirmReservationで使用する場所）を直接書き換える
+        const updatedVisitInfo = {
+          ...(currentOptions.visit_info || {}),
+          address: editFields.address,
+          parking: editFields.parking,
+          furigana: editFields.furigana,
+          zip_code: editFields.zip_code
+        };
+
+        const { error: resUpdateError } = await supabase
           .from('reservations')
           .update({ 
             customer_name: normalizedName,
-            customer_phone: customerPayload.phone,
-            customer_email: customerPayload.email,
+            customer_phone: editFields.phone,
+            customer_email: editFields.email,
             customer_id: finalCustomerId,
-            memo: null 
+            options: { ...currentOptions, visit_info: updatedVisitInfo } // 👈 これで次回開いた時も残る！
           })
           .eq('id', selectedRes.id);
+
+        if (resUpdateError) throw resUpdateError;
       }
 
+      // 🚀 🆕 修正：保存が成功したら、検索リストのデータも最新にする
       showMsg('情報を保存しました！✨'); 
-      setShowDetailModal(false); 
-      fetchData(); 
+      setShowDetailModal(false);   // 詳細モーダルを閉じる
+      setShowCustomerModal(false); // 👈 追加：検索から開いていた場合も閉じる
+      
+      fetchAllCustomersForSearch(); // 👈 追加：検索用の50音順リストをDBから再取得
+      
+      fetchData(); // カレンダー表示を更新
     } catch (err) {
       console.error(err);
       alert('保存エラー: ' + err.message);
     }
-  }; 
+  };
 
   // 🆕 追加：プライベート予定(private_tasksテーブル)を保存する関数
   const handleSavePrivateTask = async (slots) => {

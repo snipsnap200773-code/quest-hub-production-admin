@@ -267,14 +267,14 @@ function AdminManagement() {
     setIsSearchLoading(false);
   };
 
-  // 検索結果の候補をクリックした時の処理
+  // 🚀 🆕 修正：名前だけでなく ID も一緒に渡すように変更
   const selectSearchResult = (cust) => {
-    // 幽霊データを防ぐため、ダミーの予約オブジェクト形式にしてカルテ関数に渡す
-    openCustomerInfo({ customer_name: cust.name });
+    // 💡 IDを渡すことで、openCustomerInfo が正確にDBから最新データを引けるようになります
+    openCustomerInfo({ customer_name: cust.name, customer_id: cust.id });
     
-    // 検索窓をきれいにする
     setSearchTerm('');
     setSearchResults([]);
+    setShowSearchModal(false); // 👈 モーダルを閉じる
   };
 
 // 🆕 キーボード操作（上下、エンター、エスケープ）を制御する
@@ -813,83 +813,77 @@ const sortedAllCustomers = useMemo(() => {
 
   // 🆕 修正後：お客様詳細（カルテ）を開く関数（400エラー回避・高速版）
   const openCustomerInfo = async (res) => {
-    if (!res || !res.customer_name) {
-      alert("顧客名が記録されていないため、カルテを開けません。");
+    if (!res || (!res.customer_name && !res.customer_id)) {
+      alert("顧客情報を特定できません。");
       return;
     }
 
-    // 1. お掃除 ＆ パネル表示（反応を速く見せる）
-    setPastVisits([]);
+    setPastVisits([]); // 履歴を一旦クリア
     setIsCustomerInfoOpen(true); 
     setIsCheckoutOpen(false);
 
     try {
-      const searchName = res.customer_name.replace(/　/g, ' ').trim();
-      
-      // 顧客マスタから情報を取得
+      // 💡 修正ポイント：searchName を try の直後で作ることで、関数全体で使えるようにします
+      const searchName = (res.customer_name || '').replace(/　/g, ' ').trim();
+
+      // 1. DBからこのお客様の「一番新しい情報」を取得する
       let query = supabase.from('customers').select('*').eq('shop_id', cleanShopId);
+      
       if (res.customer_id) {
-        query = query.eq('id', res.customer_id);
+        query = query.eq('id', res.customer_id); // IDがあれば最優先
       } else {
         query = query.eq('name', searchName);
       }
+      
       const { data: customer } = await query.maybeSingle();
+      const currentCustomer = customer || { name: res.customer_name };
 
-      // 🆕 施設かどうかを確実に判定（マスタのフラグ、または予約時のタイプから）
-      const isFac = customer?.is_facility || res.task_type === 'facility' || res.res_type === 'facility_visit';
+      // 2. 施設かどうか判定
+      const isFac = currentCustomer.is_facility === true || res.task_type === 'facility';
 
-      // 施設情報の取得（既存通り）
-      let facilityDetail = null;
-      if (customer?.is_facility) {
-        const { data: fData } = await supabase.from('facility_users').select('*').eq('facility_name', customer.name).maybeSingle();
-        facilityDetail = fData;
-      }
-
-      const visitInfo = res.options?.visit_info || {};
+      // 3. 入力項目（editFields）をセット
       const allFields = {
-        is_facility: isFac, // 🚩 ここで旗を立てる
-        name: customer?.name || res.customer_name || '',
-        furigana: facilityDetail?.contact_name || customer?.furigana || visitInfo.furigana || '',
-        phone: facilityDetail?.tel || customer?.phone || res.customer_phone || '',
-        email: facilityDetail?.email || customer?.email || res.customer_email || '',
-        zip_code: customer?.zip_code || visitInfo.zip_code || '',
-        address: facilityDetail?.address || customer?.address || visitInfo.address || '',
-        parking: customer?.parking || visitInfo.parking || '',
-        building_type: customer?.building_type || visitInfo.building_type || '',
-        care_notes: customer?.care_notes || visitInfo.care_notes || '',
-        company_name: customer?.company_name || visitInfo.company_name || '',
-        symptoms: customer?.symptoms || visitInfo.symptoms || '',
-        request_details: customer?.request_details || visitInfo.request_details || '',
-        first_arrival_date: customer?.first_arrival_date || '',
-        is_blocked: !!customer?.is_blocked, 
-        memo: customer?.memo || '',
-        line_user_id: customer?.line_user_id || res.line_user_id || null,
-        custom_answers: visitInfo.custom_answers || customer?.custom_answers || {}
+        is_facility: isFac,
+        name: currentCustomer.name || '',
+        furigana: currentCustomer.furigana || '',
+        phone: currentCustomer.phone || '',
+        email: currentCustomer.email || '',
+        zip_code: currentCustomer.zip_code || '',
+        address: currentCustomer.address || '',
+        parking: currentCustomer.parking || '',
+        building_type: currentCustomer.building_type || '',
+        care_notes: currentCustomer.care_notes || '',
+        company_name: currentCustomer.company_name || '',
+        symptoms: currentCustomer.symptoms || '',
+        request_details: currentCustomer.request_details || '',
+        first_arrival_date: currentCustomer.first_arrival_date || '',
+        is_blocked: !!currentCustomer.is_blocked, 
+        memo: currentCustomer.memo || '',
+        line_user_id: currentCustomer.line_user_id || null,
+        custom_answers: currentCustomer.custom_answers || {}
       };
 
-      setSelectedCustomer(customer || { name: res.customer_name });
+      setSelectedCustomer(currentCustomer);
       setEditFields(allFields);
-      setSelectedRes(res);
-      
-      // 🚀 2. 【大幅変更】DBに通信せず、手元にある「allReservations」から履歴を抜き出す
+
+      // 🚀 4. 履歴を抽出（ここで searchName を使ってももうエラーになりません）
       let historyData = [];
 
       if (isFac) {
-        // 🏢 施設の場合：すでに fetchInitialData で取得済みの allReservations から
-        // 名前 または 施設ID が一致するものをフィルタリング
+        // 🏢 施設の場合：allReservations から抽出
         historyData = allReservations
           .filter(r => 
             r.task_type === 'facility' && 
-            (r.customer_name === searchName || r.facility_id === customer?.id)
+            (r.customer_name === searchName || r.facility_id === currentCustomer?.id)
           )
           .sort((a, b) => b.start_time.localeCompare(a.start_time));
       } else {
-        // 👤 個人の場合：個人は reservations テーブルなので、従来通り通信して取得
+        // 👤 個人の場合：DBから取得
         const { data } = await supabase
           .from('reservations')
           .select('*, staffs(name)')
           .eq('shop_id', cleanShopId)
-          .or(`customer_id.eq.${customer?.id},customer_name.eq.${searchName}`)
+          .or(`customer_id.eq.${currentCustomer?.id},customer_name.eq.${searchName}`)
           .in('status', ['completed', 'canceled'])
           .order('start_time', { ascending: false });
         historyData = data || [];
@@ -964,9 +958,13 @@ const sortedAllCustomers = useMemo(() => {
         }).eq('facility_name', normalizedName);
       }
 
-      alert("情報を更新しました。"); 
-      fetchInitialData();
-      setIsCustomerInfoOpen(false); 
+      alert("情報を更新しました！✨"); 
+      setIsCustomerInfoOpen(false); // ポップアップを閉じる
+      
+      // 💡 これを呼ぶことで、画面全体のリスト（allCustomers）が最新になり、
+      // 次に検索ボタンを押した時に「新しい住所」が反映されています。
+      fetchInitialData(); 
+
     } catch (err) { 
       console.error("Save Error:", err);
       alert("保存に失敗しました: " + (err.message || "エラーが発生しました")); 
