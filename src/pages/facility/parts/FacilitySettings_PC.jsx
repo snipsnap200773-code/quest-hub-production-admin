@@ -186,6 +186,16 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
             <label style={labelStyle}>施設名 <span style={readOnlyLabel}>※変更は運営まで</span></label>
             <input style={{...inputStyle, background: '#f8f9fa', color: '#999'}} value={facility?.facility_name || ''} readOnly />
           </div>
+          {/* 🚀 🆕 施設名のふりがな欄を追加 */}
+          <div style={inputGroup}>
+            <label style={labelStyle}>施設名のふりがな</label>
+            <input 
+              style={inputStyle} 
+              placeholder="例：まりあのおか"
+              value={facility?.furigana || ''} 
+              onChange={e => setFacility({...facility, furigana: e.target.value})} 
+            />
+          </div>
           <div style={inputGroup}><label style={labelStyle}>担当者名</label><input style={inputStyle} value={facility?.contact_name || ''} onChange={e => setFacility({...facility, contact_name: e.target.value})} /></div>
           <div style={inputGroup}><label style={labelStyle}>住所</label><input style={inputStyle} value={facility?.address || ''} onChange={e => setFacility({...facility, address: e.target.value})} /></div>
           <div style={inputGroup}><label style={labelStyle}>電話番号</label><input style={inputStyle} value={facility?.tel || ''} onChange={(e) => setFacility({...facility, tel: e.target.value})} /></div>
@@ -193,7 +203,16 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
           <div style={inputGroup}><label style={labelStyle}>通知用メールアドレス</label><input style={inputStyle} value={facility?.email || ''} onChange={(e) => setFacility({...facility, email: e.target.value})} /></div>
           
           <button style={saveBtnStyle} onClick={async () => {
-              await supabase.from('facility_users').update({ contact_name: facility.contact_name, address: facility.address, tel: facility.tel, official_url: facility.official_url, email: facility.email }).eq('id', facilityId);
+              // 🚀 🆕 更新データに furigana を追加
+              await supabase.from('facility_users').update({ 
+                furigana: facility.furigana, // 👈 これを追加
+                contact_name: facility.contact_name, 
+                address: facility.address, 
+                tel: facility.tel, 
+                official_url: facility.official_url, 
+                email: facility.email 
+              }).eq('id', facilityId);
+              
               alert('設定を保存しました！');
           }}><Save size={18} /> 設定を保存する</button>
         </div>

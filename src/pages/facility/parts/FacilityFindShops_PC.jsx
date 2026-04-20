@@ -14,6 +14,7 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [myConnections, setMyConnections] = useState([]);
+  const [myFacility, setMyFacility] = useState(null);
 
   // 🚀 訪問サービスのサブカテゴリリストを取得
   const visitingSubCategories = INDUSTRY_PRESETS.visiting.subCategories;
@@ -22,6 +23,10 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
 
   const fetchShops = async () => {
     setLoading(true);
+    
+    // 🚀 🆕 追加：自分の施設情報を取得（ふりがな含む）
+    const { data: fData } = await supabase.from('facility_users').select('facility_name, furigana, email').eq('id', facilityId).single();
+    if (fData) setMyFacility(fData);
     
     // 🚀 1. 大カテゴリが「訪問サービス」かつ「施設検索公開ON」の店舗のみ取得
     const { data: profiles } = await supabase
@@ -42,12 +47,48 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
   };
 
   const handleRequest = async (shopId) => {
-    const confirmReq = window.confirm("この店舗に提携リクエストを送信しますか？");
+    const targetShop = shops.find(s => s.id === shopId);
+    const confirmReq = window.confirm(`「${targetShop?.business_name}」様に提携リクエストを送信しますか？`);
     if (!confirmReq) return;
-    const { error } = await supabase.from('shop_facility_connections').insert([
-      { facility_user_id: facilityId, shop_id: shopId, status: 'pending', created_by_type: 'facility' }
-    ]);
-    if (!error) { alert("リクエストを送信しました！"); fetchShops(); }
+
+    try {
+      // 1. データベースにリクエストを登録（申請中ステータス）
+      const { error } = await supabase.from('shop_facility_connections').insert([
+        { 
+          facility_user_id: facilityId, 
+          shop_id: shopId, 
+          status: 'pending', 
+          created_by_type: 'facility' 
+        }
+      ]);
+
+      if (error) throw error;
+
+      // 🚀 2. 店舗さんへ通知メールを送信（★ここにふりがなを含める）
+      await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
+        method: 'POST',
+        headers: { 
+          'Content-Type': 'application/json', 
+          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` 
+        },
+        body: JSON.stringify({
+          type: 'partnership_requested', // 新しい通知タイプ
+          shopName: targetShop?.business_name,
+          shopEmail: targetShop?.email_contact || targetShop?.email,
+          facilityName: myFacility?.facility_name,
+          facilityFurigana: myFacility?.furigana, // 💡 これが店舗側の名簿の「ふりがな」になります
+          facilityEmail: myFacility?.email,
+          shopId: shopId,
+          facilityId: facilityId
+        })
+      });
+
+      alert("リクエストを送信しました！店舗さんからの返信をお待ちください。");
+      fetchShops(); // 表示を更新（申請中に変わる）
+    } catch (err) {
+      console.error("リクエスト送信エラー:", err);
+      alert("リクエストの送信に失敗しました。");
+    }
   };
 
   const filteredShops = shops.filter(shop => {

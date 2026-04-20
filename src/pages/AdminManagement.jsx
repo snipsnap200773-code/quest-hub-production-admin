@@ -6,8 +6,19 @@ import {
   Tag, ChevronDown, RefreshCw, ChevronLeft, ChevronRight, Settings, Users, Percent, Plus, Minus, X, CheckCircle, User, FileText, History, ShoppingBag, Edit3, BarChart3,
   AlertCircle,
   ReceiptText,
-  Scissors
+  Scissors,
+  Search
 } from 'lucide-react';
+
+// 🚀 🆕 エラー解消！ スタイルの定義を関数（AdminManagement）の外、かつ上に移動します
+const inputStyle = { 
+  width: '100%', 
+  boxSizing: 'border-box', 
+  padding: '12px', 
+  borderRadius: '12px', 
+  border: '1px solid #cbd5e1', 
+  outline: 'none' 
+};
 
 function AdminManagement() {
   const { shopId } = useParams();
@@ -71,6 +82,7 @@ function AdminManagement() {
   const [selectedMonthData, setSelectedMonthData] = useState(null);   // ポップアップで表示する月のデータ
   // --- 顧客情報（カルテ）パネル用State ---
   const [isCustomerInfoOpen, setIsCustomerInfoOpen] = useState(false);
+  const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editName, setEditName] = useState('');
   const [editPhone, setEditPhone] = useState('');
@@ -716,7 +728,14 @@ const completePayment = async () => {
   return months;
 }, [allReservations, salesRecords, viewYear, categoryMap, shop]);
 
-  // 🆕 🚀 ここから追加！！ ==========================================
+// 🚀 🆕 追加：全顧客を50音順（フリガナ順）にソートしたリストを作成
+const sortedAllCustomers = useMemo(() => {
+  return [...allCustomers]
+    // 💡 臨時休業などのブロック用データは名簿リストから除外
+    .filter(c => !['臨時休業', '管理者ブロック'].includes(c.name))
+    // 💡 フリガナで比較して並び替える（フリガナがない人は後ろへ）
+    .sort((a, b) => (a.furigana || 'ー').localeCompare(b.furigana || 'ー', 'ja'));
+}, [allCustomers]);
   // 選択中の顧客（施設）に関連する「利用者一覧」を売上データから抽出する
   const managedFacilityMembers = useMemo(() => {
     if (!selectedCustomer) return [];
@@ -1282,61 +1301,29 @@ return (
 )}
               </div>
 <div style={{ display: 'flex', gap: '6px', alignItems: 'center', position: 'relative' }}>
-  {/* 🔍 検索入力エリア */}
-  <div style={{ position: 'relative' }}>
-    <input 
-      type="text" 
-      placeholder="顧客検索..." 
-      value={searchTerm}
-      onChange={(e) => {
-        handleSearch(e.target.value);
-        setSelectedIndex(-1);
-      }}
-      onKeyDown={handleKeyDown}
-      style={{ 
-        padding: '5px 10px', 
-        borderRadius: '6px', 
-        border: 'none', 
-        fontSize: '0.8rem', 
-        width: isPC ? '150px' : '100px',
-        marginRight: '10px',
-        outline: 'none'
-      }} 
-    />
-
-    {/* 検索結果のドロップダウン（スッキリ版に統合） */}
-    {searchResults.length > 0 && (
-      <div style={{ 
-        position: 'absolute', top: '35px', left: 0, width: '220px', 
-        background: '#fff', color: '#333', borderRadius: '8px', 
-        boxShadow: '0 10px 25px rgba(0,0,0,0.2)', zIndex: 100,
-        overflow: 'hidden', border: '1px solid #ddd'
-      }}>
-        {searchResults.map((cust, index) => (
-          <div 
-            key={cust.id} 
-            onClick={() => selectSearchResult(cust)}
-            onMouseEnter={() => setSelectedIndex(index)}
-            style={{ 
-              padding: '12px 15px', 
-              borderBottom: '1px solid #f1f5f9', 
-              cursor: 'pointer', 
-              fontSize: '0.85rem',
-              background: selectedIndex === index ? '#f3f0ff' : '#fff',
-              color: selectedIndex === index ? '#4b2c85' : '#333',
-            }}
-          >
-            <div style={{ fontWeight: 'bold' }}>{cust.name} 様</div>
-            {cust.phone && (
-              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '2px' }}>
-                📞 {cust.phone}
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    )}
-  </div>
+  
+  {/* 🚀 🆕 修正：PC・スマホ共通の「名簿検索ボタン」を設置 */}
+  <button 
+    onClick={() => {
+      // fetchAllCustomersForSearch(); // もし関数があれば呼ぶ。なければそのままでOK
+      setShowSearchModal(true); 
+    }} 
+    style={{ 
+      ...headerBtnSmall, 
+      display: 'flex', 
+      alignItems: 'center', 
+      gap: '6px', 
+      padding: '6px 15px',
+      marginRight: '10px',
+      background: 'rgba(255,255,255,0.15)', 
+      border: '1px solid rgba(255,255,255,0.4)'
+    }}
+  >
+    <Search size={16} />
+    <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>
+      {isPC ? '顧客名簿から検索' : '検索'}
+    </span>
+  </button>
 
   <button onClick={() => handleDateChangeUI(-1)} style={headerBtnSmall}>前日</button>
                   <button onClick={() => setSelectedDate(new Date().toLocaleDateString('sv-SE'))} style={headerBtnSmall}>今日</button>
@@ -2808,6 +2795,158 @@ return (
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 🆕 追加：50音順 顧客検索モーダル（台帳画面Ver） */}
+      {showSearchModal && (
+        <div style={modalOverlayStyle} onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}>
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              ...modalContentStyle, 
+              maxWidth: '450px', 
+              height: '80vh', 
+              padding: '0', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              overflow: 'hidden',
+              borderRadius: '30px'
+            }}
+          >
+            {/* ポップアップヘッダー */}
+            <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', background: '#f8fafc', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>👤 顧客名簿 (50音順)</h3>
+            </div>
+
+            {/* 📜 メイン：顧客リスト（スクロールエリア） */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
+              {sortedAllCustomers
+                .filter(c => 
+                  (c.admin_name || c.name || '').includes(searchTerm) || 
+                  (c.furigana || '').includes(searchTerm) || 
+                  (c.phone || '').includes(searchTerm)
+                )
+                .map((c) => (
+                <div 
+                  key={c.id} 
+                  onClick={() => {
+                    openCustomerInfo({ customer_name: c.name }); // 顧客カルテを開く
+                    setShowSearchModal(false);
+                    setSearchTerm('');
+                  }}
+                  style={{ 
+                    padding: '16px', 
+                    background: '#fff', 
+                    borderRadius: '12px', 
+                    marginBottom: '8px', 
+                    border: '1px solid #f1f5f9', 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    cursor: 'pointer',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                  }}
+                >
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
+                      {c.name} 様
+                      {c.is_blocked && <span style={{ marginLeft: '6px', color: '#ef4444' }}>🚫</span>}
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>
+                      {c.furigana || '---'} / {c.phone || '電話未登録'}
+                    </div>
+                  </div>
+                  <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
+                </div>
+              ))}
+              {sortedAllCustomers.length === 0 && (
+                <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>顧客データを読み込んでいます...</div>
+              )}
+            </div>
+
+            {/* 🔍 フッター：検索バーと閉じるボタンを固定 */}
+            <div style={{ padding: '20px', background: '#fff', borderTop: '1px solid #f1f5f9', boxShadow: '0 -10px 20px rgba(0,0,0,0.05)', flexShrink: 0 }}>
+              <div style={{ position: 'relative', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  autoComplete="one-time-code"
+                  placeholder="名前・フリガナ・電話番号で絞り込み..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ 
+                    ...inputStyle, 
+                    marginBottom: 0, 
+                    paddingLeft: '40px', 
+                    background: '#f8fafc',
+                    border: `1px solid #e2e8f0`
+                  }}
+                />
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '13px', color: '#94a3b8' }} />
+              </div>
+              <button 
+                onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}
+                style={{ ...completeBtnStyle, background: '#1e293b', padding: '15px', borderRadius: '15px' }}
+              >
+                閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 🆕 追加：50音順 顧客検索モーダル（台帳画面Ver） */}
+      {showSearchModal && (
+        <div style={modalOverlayStyle} onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}>
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              ...modalContentStyle, 
+              maxWidth: '450px', 
+              height: '80vh', 
+              padding: '0', 
+              display: 'flex', 
+              flexDirection: 'column', 
+              overflow: 'hidden',
+              borderRadius: '30px'
+            }}
+          >
+            {/* ポップアップヘッダー */}
+            <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', background: '#f8fafc', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>👤 顧客名簿 (50音順)</h3>
+            </div>
+
+            {/* 📜 メイン：顧客リスト */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
+              {sortedAllCustomers
+                .filter(c => (c.name || '').includes(searchTerm) || (c.furigana || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
+                .map((c) => (
+                <div key={c.id} onClick={() => { openCustomerInfo({ customer_name: c.name }); setShowSearchModal(false); setSearchTerm(''); }} style={{ padding: '16px', background: '#fff', borderRadius: '12px', marginBottom: '8px', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <div style={{ flex: 1 }}>
+                    <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{c.name} 様 {c.is_blocked && <span style={{color:'#ef4444'}}>🚫</span>}</div>
+                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>{c.furigana || '---'} / {c.phone || '電話未登録'}</div>
+                  </div>
+                  <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
+                </div>
+              ))}
+            </div>
+
+            {/* 🔍 フッター：固定検索バー */}
+            <div style={{ padding: '20px', background: '#fff', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
+              <div style={{ position: 'relative', marginBottom: '15px' }}>
+                <input 
+                  type="text" 
+                  autoComplete="one-time-code"
+                  placeholder="名前・フリガナ・電話で絞り込み..." 
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  style={{ ...inputStyle, marginBottom: 0, paddingLeft: '40px', background: '#f8fafc' }}
+                />
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '12px', color: '#94a3b8' }} />
+              </div>
+              <button onClick={() => { setShowSearchModal(false); setSearchTerm(''); }} style={{ ...completeBtnStyle, background: '#1e293b', padding: '15px', borderRadius: '15px' }}>閉じる</button>
             </div>
           </div>
         </div>

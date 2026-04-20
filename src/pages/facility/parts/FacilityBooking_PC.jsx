@@ -9,6 +9,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   const [shopInfo, setShopInfo] = useState(null);
   const [facilityName, setFacilityName] = useState('');
   const [facilityEmail, setFacilityEmail] = useState('');
+  const [facilityFurigana, setFacilityFurigana] = useState('');
 
   // 🚀 🆕 【ここを確実に！】定期キープ ＆ すでに予約済みのState
   const [manualKeeps, setManualKeeps] = useState([]);
@@ -25,7 +26,14 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
     // 1. 基本情報の取得
     const { data: draftData } = await supabase.from('visit_list_drafts').select('*, members(*)').eq('facility_user_id', facilityId);
     const { data: connData } = await supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').single();
-    const { data: facData } = await supabase.from('facility_users').select('facility_name, email').eq('id', facilityId).single();
+    const { data: facData } = await supabase.from('facility_users').select('facility_name, email, furigana').eq('id', facilityId).single();
+    
+    if (facData) {
+      setFacilityName(facData.facility_name || '');
+      setFacilityEmail(facData.email || '');
+      // 🚀 🆕 Stateにセット
+      setFacilityFurigana(facData.furigana || '');
+    }
 
     // 🚀 🆕 【ここを追加！】今月の既存予約（完了分も含む）を取得
     const { data: visitDatesRes } = await supabase
@@ -169,6 +177,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
           shopName: shopInfo.business_name,
           shopEmail: shopInfo.email_contact,
           facilityName: facilityName,
+          facilityFurigana: facilityFurigana,
           facilityEmail: facilityEmail,
           scheduledDates: formattedDatesForMail, 
           residentCount: drafts.length,

@@ -45,7 +45,13 @@ const FacilityManagement = () => {
 
   // フォームState（既存システムをベースに tenant_id を追加）
   const [formData, setFormData] = useState({ 
-    facility_name: '', 
+    name: '',          // 💡 facility_name から name に統一（handleSaveの仕様に合わせる）
+    furigana: '',      // 👈 追加
+    email: '',         // 👈 追加（不足分）
+    tel: '',           // 👈 追加（不足分）
+    address: '',       // 👈 追加（不足分）
+    pw: '',            // 👈 追加（不足分）
+    login_id: '',      // 👈 追加（不足分）
     regular_rules: [], 
     tenant_id: shopId 
   });
@@ -134,6 +140,7 @@ const handleSave = async (e) => {
         .from('facility_users')
         .update({
           facility_name: formData.name,
+          furigana: formData.furigana,
           login_id: formData.login_id || formData.name, // ログインID（無ければ名前を代用）
           password: formData.pw,
           email: formData.email,
@@ -163,6 +170,7 @@ const handleSave = async (e) => {
         .from('facility_users')
         .insert([{
           facility_name: formData.name,
+          furigana: formData.furigana,
           login_id: formData.login_id || formData.email, 
           password: formData.pw,
           email: formData.email,
@@ -320,9 +328,15 @@ const handleSave = async (e) => {
 
   const openEdit = (f) => {
     setEditingId(f.id);
-    // 🆕 店舗が触る必要のないIDやPWなどはStateに入れない
+    // 🚀 🆕 修正：既存の全プロフィール情報をセット（furigana含む）
     setFormData({ 
-      facility_name: f.facility_name || '', 
+      name: f.facility_name || '', 
+      furigana: f.furigana || '',      // 👈 追加
+      email: f.email || '', 
+      tel: f.tel || '', 
+      address: f.address || '', 
+      pw: f.password || '', 
+      login_id: f.login_id || '',
       regular_rules: f.regular_rules || [], 
       tenant_id: shopId 
     });
@@ -331,7 +345,11 @@ const handleSave = async (e) => {
 
   const resetForm = () => {
     setEditingId(null);
-    setFormData({ facility_name: '', regular_rules: [], tenant_id: shopId });
+    // 🚀 🆕 修正：全項目を空でリセット（furigana含む）
+    setFormData({ 
+      name: '', furigana: '', email: '', tel: '', address: '', pw: '', login_id: '', 
+      regular_rules: [], tenant_id: shopId 
+    });
     setSelMonthType(0);
   };
 
@@ -611,6 +629,35 @@ const handleSave = async (e) => {
               <form onSubmit={handleSave} style={formContainerStyle}>
                 <div style={scrollAreaStyle}>
                   <div style={formGridStyle}>
+                    {/* 🚀 🆕 追加：施設プロフィールの入力セクション */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
+                      <label style={labelStyle}>施設名
+                        <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={inputStyle} required />
+                      </label>
+
+                      <label style={labelStyle}>施設名のふりがな
+                        <input 
+                          type="text" 
+                          placeholder="例：まりあのおか" 
+                          value={formData.furigana} 
+                          onChange={e => setFormData({...formData, furigana: e.target.value})} 
+                          style={inputStyle} 
+                        />
+                      </label>
+
+                      <label style={labelStyle}>住所
+                        <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} style={inputStyle} />
+                      </label>
+
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                        <label style={labelStyle}>電話番号
+                          <input type="tel" value={formData.tel} onChange={e => setFormData({...formData, tel: e.target.value})} style={inputStyle} />
+                        </label>
+                        <label style={labelStyle}>メールアドレス
+                          <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} style={inputStyle} />
+                        </label>
+                      </div>
+                    </div>
 
                     {/* 定期ルール設定（既存ロジックを維持） */}
                     <div style={ruleConfigBoxStyle}>

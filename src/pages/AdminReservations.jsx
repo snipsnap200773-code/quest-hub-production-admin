@@ -276,7 +276,19 @@ const isPC = windowWidth > 1024;
 
   // ラベル名を取得するヘルパー（既存のものを流用・整理）
   const getFieldLabel = (key) => {
-    return shop?.form_config?.[key]?.label || key;
+    const customLabel = shop?.form_config?.[key]?.label;
+    if (customLabel) return customLabel;
+
+    // デフォルトの日本語名
+    const defaults = {
+      name: editFields.is_facility ? '施設名' : 'お名前',
+      furigana: editFields.is_facility ? '施設名のふりがな' : 'ふりがな',
+      email: 'メールアドレス',
+      phone: '電話番号',
+      address: '住所',
+      zip_code: '郵便番号'
+    };
+    return defaults[key] || key;
   };
 
 // 🆕 location.search を追加することで、予約完了後にURLが変わった瞬間に再取得が走るようにします
@@ -523,9 +535,9 @@ const openDetail = async (res) => {
 
     const visitInfo = res.options?.visit_info || {};
     const allFields = {
-      is_facility: isFac, // 🚩 ここで旗を立てることでJSXの切り替えが動く
+      is_facility: isFac, 
       name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
-      furigana: cust?.furigana || visitInfo.furigana || '',
+      furigana: cust?.furigana || res.customers?.furigana || visitInfo.furigana || '',
       phone: cust?.phone || res.customer_phone || '',
       email: cust?.email || res.customer_email || '',
       zip_code: cust?.zip_code || visitInfo.zip_code || '',
@@ -661,7 +673,7 @@ const openDetail = async (res) => {
         shop_id: shopId,
         name: normalizedName,
         admin_name: normalizedName,
-        furigana: editFields.furigana || currentMaster?.furigana || '',
+        furigana: editFields.furigana || '', 
         phone: editFields.phone || currentMaster?.phone || selectedRes?.customer_phone || '',
         email: editFields.email || currentMaster?.email || selectedRes?.customer_email || '',
         address: editFields.address || currentMaster?.address || '',
@@ -1279,41 +1291,27 @@ return (
                 <button onClick={goPrev} style={headerBtnStylePC}>前週</button>
                 <button onClick={goNext} style={headerBtnStylePC}>次週</button>
               </div>
-              <div style={{ position: 'relative', marginLeft: '10px', width: '300px' }}>
-                <input 
-  type="text" 
-  autoComplete="off" // 👈 これで「勝手に出さないで」と命令
-  name="search-no-autofill" // 👈 ブラウザが推測できない名前にする
-  placeholder="👤 顧客を検索..." 
-  value={searchTerm} 
-  onChange={(e) => setSearchTerm(e.target.value)} 
-  onKeyDown={handleKeyDown} 
-  style={{ width: '100%', padding: '12px 15px 12px 40px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.9rem' }} 
-/>
-                <span style={{ position: 'absolute', left: '12px', top: '12px', opacity: 0.4 }}>🔍</span>
-                {customers.length > 0 && (
-                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', borderRadius: '12px', marginTop: '5px', zIndex: 1000, border: '1px solid #eee' }}>
-                    {customers.map((c, index) => (
-                      <div 
-                        key={c.id} 
-                        onClick={() => openCustomerDetail(c)} 
-                        style={{ 
-                          padding: '12px', 
-                          borderBottom: '1px solid #f8fafc', 
-                          cursor: 'pointer',
-                          fontSize: '0.9rem',
-                          background: index === selectedIndex ? themeColorLight : 'transparent'
-                        }}
-                      >
-<div style={{ fontWeight: 'bold', fontSize: '0.9rem' }}>
-  {c.admin_name || c.name} 様 {c.admin_name && c.admin_name !== c.name ? `(${c.name})` : ''}
-</div>
-                        <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{c.phone || '電話未登録'}</div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
+
+              {/* 🚀 🆕 修正：入力欄を消して、ポップアップを呼ぶボタンを設置 */}
+              <button 
+                onClick={() => {
+                  fetchAllCustomersForSearch(); // 50音順リストをDBから取得
+                  setShowMobileSearchModal(true); // ポップアップを開く
+                }} 
+                style={{ 
+                  ...headerBtnStylePC, 
+                  marginLeft: '10px', 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  gap: '8px', 
+                  padding: '10px 20px',
+                  background: '#f8fafc',
+                  color: themeColor
+                }}
+              >
+                <Search size={18} />
+                <span>顧客を検索</span>
+              </button>
               <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
             </div>
 ) : (
