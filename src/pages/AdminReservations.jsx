@@ -116,13 +116,14 @@ const resIndexStyle = (color) => ({
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [targetTime, setTargetTime] = useState('');
   const [showDetailModal, setShowDetailModal] = useState(false);
-const [selectedRes, setSelectedRes] = useState(null);
-const [showSlotListModal, setShowSlotListModal] = useState(false);
+  const [selectedRes, setSelectedRes] = useState(null);
+  const [showSlotListModal, setShowSlotListModal] = useState(false);
+  const [showBlockEndSelector, setShowBlockEndSelector] = useState(false);
 
 // 🆕 プライベート予定用のState
-const [privateTasks, setPrivateTasks] = useState([]);
-const [showPrivateModal, setShowPrivateModal] = useState(false);
-const [privateTaskFields, setPrivateTaskFields] = useState({ title: '', note: '' });
+  const [privateTasks, setPrivateTasks] = useState([]);
+  const [showPrivateModal, setShowPrivateModal] = useState(false);
+  const [privateTaskFields, setPrivateTaskFields] = useState({ title: '', note: '' });
   // --- ✨ 修正後：現在時刻保持用のStateを追加 ---
   const [selectedSlotReservations, setSelectedSlotReservations] = useState([]);
   const [customerHistory, setCustomerHistory] = useState([]);
@@ -693,7 +694,7 @@ const openDetail = async (res) => {
   }; 
 
   // 🆕 追加：プライベート予定(private_tasksテーブル)を保存する関数
-  const handleSavePrivateTask = async () => {
+  const handleSavePrivateTask = async (slots) => {
     if (!privateTaskFields.title) {
       alert("予定の内容（タイトル）を入力してください。");
       return;
@@ -702,7 +703,8 @@ const openDetail = async (res) => {
     try {
       const start = new Date(`${selectedDate}T${targetTime}:00`);
       const interval = shop.slot_interval_min || 15;
-      const end = new Date(start.getTime() + interval * 60000);
+      // 💡 選ばれたコマ数（slots）を掛けて終了時間を計算する
+      const end = new Date(start.getTime() + (interval * slots) * 60000);
 
       const { error } = await supabase.from('private_tasks').insert([{
         shop_id: shopId,
@@ -717,8 +719,8 @@ const openDetail = async (res) => {
       // 成功したらリセットして閉じる
       setShowPrivateModal(false);
       setPrivateTaskFields({ title: '', note: '' });
-      showMsg("プライベート予定を追加しました☕️");
-      fetchData(); // 画面を再読み込みしてカレンダーに反映
+      showMsg(`「${privateTaskFields.title}」を 〜${end.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'})} まで追加しました☕️`);
+      fetchData(); // カレンダーに反映
     } catch (err) {
       console.error("保存エラー:", err.message);
       alert("保存に失敗しました。");
@@ -1046,33 +1048,33 @@ const getStatusAt = (dateStr, timeStr) => {
     // ...
     return null;
   };
-  const handleBlockTime = async () => {
-    // 🆕 1. 予定の名前を入力してもらう小窓を出す
-    const reason = window.prompt("予定名（例：打ち合わせ、忘年会）を入力してください", "管理者ブロック");
-    
-    // 🆕 2. 「キャンセル」を押されたら何もしない
-    if (reason === null) return; 
-
-    const start = new Date(`${selectedDate}T${targetTime}:00`);
+  const executeBlockTime = async (slots) => {
     const interval = shop.slot_interval_min || 15;
-    const end = new Date(start.getTime() + interval * 60000);
+    const start = new Date(`${selectedDate}T${targetTime}:00`);
+    const end = new Date(start.getTime() + (interval * slots) * 60000);
     
-const insertData = {
-  shop_id: shopId, 
-  customer_name: reason, 
-  res_type: 'blocked',
-  is_block: true, // 🚀 🆕 「これは予約枠のブロックです」という印を付ける
-  start_time: start.toISOString(), 
-  end_time: end.toISOString(),
-  total_slots: 1, 
-  customer_email: null, 
-  customer_phone: '---', 
-  options: { type: 'admin_block' }
-};
+    const insertData = {
+      shop_id: shopId, 
+      customer_name: '管理者ブロック', 
+      res_type: 'blocked',
+      is_block: true, 
+      start_time: start.toISOString(), 
+      end_time: end.toISOString(),
+      total_slots: slots, 
+      customer_email: null, 
+      customer_phone: '---', 
+      options: { type: 'admin_block' }
+    };
     
     const { error } = await supabase.from('reservations').insert([insertData]);
-    if (error) alert(`エラー: ${error.message}`); 
-    else { setShowMenuModal(false); fetchData(); }
+    if (error) {
+      alert(`エラー: ${error.message}`); 
+    } else { 
+      setShowMenuModal(false); 
+      setShowBlockEndSelector(false); 
+      fetchData(); 
+      showMsg(`${slots}コマ分（〜${end.toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit'})}）を「✕」にしました`); 
+    }
   };
 
   const handleBlockFullDay = async () => {
@@ -1390,7 +1392,7 @@ return (
                 ) : [];
                 const isStart = startingHere.length > 0;
 
-                const colors = getCustomerColor(firstRes?.customer_name);
+                const colors = getCustomerColor(firstRes?.customer_name, firstRes?.res_type);
                 const isOtherShop = isArray && resAt.some(r => r.shop_id !== shopId);
                 const isBlocked = (isArray && resAt.some(r => r.res_type === 'blocked')) || (firstRes?.res_type === 'blocked');
                 const isRegularHoliday = !isArray && firstRes?.isRegularHoliday;
@@ -2150,75 +2152,168 @@ return (
 
 {/* ⚙️ 3. 管理メニューModal (本家再現：ねじ込み予約・ブロック) */}
       {showMenuModal && (
-        <div onClick={() => setShowMenuModal(false)} style={overlayStyle}>
+        <div onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={overlayStyle}>
           <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', padding: '35px', borderRadius: '30px', width: '90%', maxWidth: '340px', textAlign: 'center', position: 'relative' }}>
-            <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
-            <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 30px 0' }}>{targetTime}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-<button 
-  onClick={() => navigate(`/shop/${shopId}/reserve`, { 
-    state: { 
-      adminDate: selectedDate, 
-      adminTime: targetTime, 
-      fromView: 'calendar', // ✅ カレンダーから来た目印
-      isAdminMode: true,
-      adminStaffId: staffs.length === 1 ? staffs[0].id : null
-    } 
-  })} 
-  style={{ padding: '22px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem' }}
->
-  予約を入れる
-</button>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <button onClick={handleBlockTime} style={{ padding: '15px', background: '#fff', color: themeColor, border: `2px solid ${themeColorLight}`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem' }}>「✕」または予定</button>
-                <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem' }}>今日を休みにする</button>
+            
+            {showBlockEndSelector ? (
+              /* ==========================================
+                 🕒 終了時間選択モード（✕専用）
+                 ========================================== */
+              <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <h3 style={{ margin: '0 0 5px 0', color: '#ef4444', fontSize: '1.1rem', fontWeight: '900' }}>何時まで「✕」にしますか？</h3>
+                <p style={{ fontWeight: 'bold', color: '#64748b', marginBottom: '20px', fontSize: '0.85rem' }}>開始: {targetTime} 〜</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', padding: '5px' }}>
+                  {/* timeSlotsから、選んだ時間の「次」以降の時間をリストアップ */}
+                  {timeSlots.slice(timeSlots.indexOf(targetTime) + 1).map((endTime, idx) => {
+                    const slotsCount = idx + 1;
+                    return (
+                      <button
+                        key={endTime}
+                        onClick={() => executeBlockTime(slotsCount)}
+                        style={{
+                          padding: '16px', background: '#f8fafc', border: '2px solid #e2e8f0',
+                          borderRadius: '16px', color: '#1e293b', fontWeight: 'bold', fontSize: '1rem',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer'
+                        }}
+                      >
+                        <span>〜 {endTime} まで</span>
+                        <span style={{ color: '#ef4444', fontSize: '0.8rem', background: '#fee2e2', padding: '2px 8px', borderRadius: '6px' }}>
+                          {slotsCount}コマ
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button onClick={() => setShowBlockEndSelector(false)} style={{ marginTop: '15px', padding: '10px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold' }}>
+                  ◀ 戻る
+                </button>
               </div>
-<button onClick={() => setShowMenuModal(false)} style={{ padding: '15px', border: 'none', background: 'none', color: '#94a3b8' }}>キャンセル</button>
-            </div>
+            ) : (
+              /* ==========================================
+                 ⚙️ 基本メニューモード（4ボタン）
+                 ========================================== */
+              <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
+                <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 25px 0' }}>{targetTime}</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {/* 🟢 1. 予約を入れる */}
+                  <button 
+                    onClick={() => {
+                      setShowBlockEndSelector(false);
+                      navigate(`/shop/${shopId}/reserve`, { 
+                        state: { 
+                          adminDate: selectedDate, adminTime: targetTime, 
+                          fromView: 'calendar', isAdminMode: true,
+                          adminStaffId: staffs.length === 1 ? staffs[0].id : null
+                        } 
+                      });
+                    }} 
+                    style={{ padding: '20px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', boxShadow: `0 4px 10px ${themeColor}44` }}
+                  >
+                    予約を入れる
+                  </button>
+
+                  {/* ☕️ 2. プライベート予定（営業時間内でも追加可能に！） */}
+                  <button 
+                    onClick={() => {
+                      setShowMenuModal(false); 
+                      setShowBlockEndSelector(false);
+                      setPrivateTaskFields({ title: '', note: '' });
+                      setShowPrivateModal(true); 
+                    }} 
+                    style={{ padding: '15px', background: '#f8fafc', color: '#475569', border: '2px solid #cbd5e1', borderRadius: '20px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    ☕️ プライベート予定
+                  </button>
+
+                  {/* 🔴 3. ✕ と 休み */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                    <button 
+                      onClick={() => setShowBlockEndSelector(true)} 
+                      style={{ padding: '15px', background: '#fff', color: '#ef4444', border: `2px solid #fca5a5`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}
+                    >
+                      ✕ (枠を閉じる)
+                    </button>
+                    <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
+                      今日を休みにする
+                    </button>
+                  </div>
+
+                  <button onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={{ padding: '10px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold', marginTop: '5px' }}>
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
+
             {!isPC && (
-              <button onClick={() => setShowMenuModal(false)} style={{ position: 'fixed', bottom: '30px', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', color: '#fff', border: 'none', padding: '12px 40px', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)', zIndex: 4000 }}>閉じる ✕</button>
+              <button onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={{ position: 'fixed', bottom: '30px', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', color: '#fff', border: 'none', padding: '12px 40px', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)', zIndex: 4000 }}>閉じる ✕</button>
             )}
           </div>
         </div>
-)}
+      )}
 
-      {/* 🆕 追加：プライベート予定入力用モーダル */}
+      {/* ⬇️⬇️⬇️ ここに以下のコードを貼り付けて復活させてください！ ⬇️⬇️⬇️ */}
+
+      {/* ☕️ 復活：プライベート予定入力用モーダル */}
       {showPrivateModal && (
         <div style={overlayStyle} onClick={() => setShowPrivateModal(false)}>
           <div 
             onClick={(e) => e.stopPropagation()} 
-            style={{ ...modalContentStyle, maxWidth: '400px', textAlign: 'center', position: 'relative', padding: '35px' }}
+            style={{ ...modalContentStyle, maxWidth: '400px', textAlign: 'center', position: 'relative', padding: '30px 20px', display: 'flex', flexDirection: 'column', maxHeight: '90vh' }}
           >
-            <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>🕒</div>
+            <div style={{ fontSize: '2.5rem', marginBottom: '5px' }}>☕️</div>
             <h3 style={{ margin: '0 0 5px 0', color: themeColor, fontWeight: '900' }}>プライベート予定</h3>
-            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '25px' }}>{selectedDate.replace(/-/g, '/')} {targetTime}</p>
+            <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '15px' }}>開始: {selectedDate.replace(/-/g, '/')} {targetTime} 〜</p>
             
-            <div style={{ textAlign: 'left', marginBottom: '20px' }}>
+            <div style={{ textAlign: 'left', marginBottom: '15px', flexShrink: 0 }}>
               <label style={labelStyle}>予定の内容（必須）</label>
               <input 
                 type="text" 
                 placeholder="例：休憩、買い出し、銀行など" 
                 value={privateTaskFields.title}
                 onChange={(e) => setPrivateTaskFields({ ...privateTaskFields, title: e.target.value })}
-                style={inputStyle}
+                style={{ ...inputStyle, marginBottom: '10px' }}
               />
-              
               <label style={labelStyle}>メモ (任意)</label>
               <textarea 
                 placeholder="詳細な内容があれば入力してください"
                 value={privateTaskFields.note}
                 onChange={(e) => setPrivateTaskFields({ ...privateTaskFields, note: e.target.value })}
-                style={{ ...inputStyle, height: '100px', lineHeight: '1.5' }}
+                style={{ ...inputStyle, height: '60px', lineHeight: '1.5', marginBottom: '0' }}
               />
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <button 
-                onClick={handleSavePrivateTask}
-                style={{ width: '100%', padding: '18px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '18px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}
-              >
-                予定を保存する
-              </button>
+            {/* 🚀 終了時間を選ぶリスト（スクロール可能） */}
+            <div style={{ textAlign: 'left', flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column' }}>
+              <label style={{ ...labelStyle, color: themeColor }}>何時まで？（タップして確定）</label>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto', padding: '5px' }}>
+                {timeSlots.slice(timeSlots.indexOf(targetTime) + 1).map((endTime, idx) => {
+                  const slotsCount = idx + 1;
+                  return (
+                    <button
+                      key={endTime}
+                      onClick={() => handleSavePrivateTask(slotsCount)}
+                      style={{
+                        padding: '14px', background: '#f8fafc', border: '2px solid #e2e8f0',
+                        borderRadius: '12px', color: '#1e293b', fontWeight: 'bold', fontSize: '0.95rem',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer'
+                      }}
+                    >
+                      <span>〜 {endTime} まで</span>
+                      <span style={{ color: '#475569', fontSize: '0.75rem', background: '#e2e8f0', padding: '2px 8px', borderRadius: '6px' }}>
+                        {slotsCount}コマ
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '15px', flexShrink: 0 }}>
               <button 
                 onClick={() => setShowPrivateModal(false)} 
                 style={{ padding: '12px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold' }}
@@ -2233,6 +2328,8 @@ return (
           </div>
         </div>
       )}
+
+      {/* ⬆️⬆️⬆️ ここまで ⬆️⬆️⬆️ */}
 
       {/* 🆕 ここから追記：🏢 施設訪問詳細（名簿）モーダル本体 */}
 {showVisitDetailModal && (
