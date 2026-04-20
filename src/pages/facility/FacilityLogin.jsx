@@ -38,7 +38,7 @@ const FacilityLogin = () => {
           sessionStorage.setItem(`auth_${profile.id}`, 'true');
           navigate(profile.role === 'super_admin' 
             ? '/super-admin-216-midote-snipsnap-dmaaaahkmm' 
-            : `/admin/${profile.id}/dashboard`
+            : `/admin/${profile.id}/reservations` // 🚀 dashboard から reservations へ
           );
           return;
         }
@@ -96,7 +96,7 @@ const FacilityLogin = () => {
           } else {
             setIsProcessing(false);
             // ポップアップなしで即移動
-            navigate(`/admin/${profile.id}/dashboard`);
+            navigate(`/admin/${profile.id}/reservations`);
           }
           return;
         }
@@ -139,7 +139,8 @@ const FacilityLogin = () => {
         }
 
         setIsProcessing(false);
-        navigate(`/admin/${shopUser.id}/dashboard`);
+        // 🚀 救済処理後も予約状況へ
+        navigate(`/admin/${shopUser.id}/reservations`); 
         return;
       } else {
         alert('ログインIDまたはパスワードが正しくありません。');
