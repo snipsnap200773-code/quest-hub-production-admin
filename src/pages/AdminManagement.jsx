@@ -730,10 +730,18 @@ const completePayment = async () => {
 
 // 🚀 🆕 追加：全顧客を50音順（フリガナ順）にソートしたリストを作成
 const sortedAllCustomers = useMemo(() => {
-  return [...allCustomers]
-    // 💡 臨時休業などのブロック用データは名簿リストから除外
+  const uniqueMap = new Map();
+  
+  allCustomers.forEach(c => {
+    const nameKey = (c.name || "").trim();
+    // 💡 すでに同じ名前がいても、住所があるデータや最新のIDを優先して残す
+    if (!uniqueMap.has(nameKey) || (!uniqueMap.get(nameKey).address && c.address)) {
+      uniqueMap.set(nameKey, c);
+    }
+  });
+
+  return Array.from(uniqueMap.values())
     .filter(c => !['臨時休業', '管理者ブロック'].includes(c.name))
-    // 💡 フリガナで比較して並び替える（フリガナがない人は後ろへ）
     .sort((a, b) => (a.furigana || 'ー').localeCompare(b.furigana || 'ー', 'ja'));
 }, [allCustomers]);
   // 選択中の顧客（施設）に関連する「利用者一覧」を売上データから抽出する
@@ -870,22 +878,27 @@ const sortedAllCustomers = useMemo(() => {
       let historyData = [];
 
       if (isFac) {
-        // 🏢 施設の場合：allReservations から抽出
+        // 🏢 施設の場合（略：既存どおり）
         historyData = allReservations
-          .filter(r => 
-            r.task_type === 'facility' && 
-            (r.customer_name === searchName || r.facility_id === currentCustomer?.id)
-          )
+          .filter(r => r.task_type === 'facility' && (r.customer_name === searchName || r.facility_id === currentCustomer?.id))
           .sort((a, b) => b.start_time.localeCompare(a.start_time));
       } else {
-        // 👤 個人の場合：DBから取得
-        const { data } = await supabase
+        // 👤 個人の場合：IDの有無で検索条件を分ける
+        let resQuery = supabase
           .from('reservations')
           .select('*, staffs(name)')
           .eq('shop_id', cleanShopId)
-          .or(`customer_id.eq.${currentCustomer?.id},customer_name.eq.${searchName}`)
           .in('status', ['completed', 'canceled'])
           .order('start_time', { ascending: false });
+
+        // 💡 修正：IDが undefined（未定義）だとエラーになるので、ある時だけ使う
+        if (currentCustomer.id) {
+          resQuery = resQuery.or(`customer_id.eq.${currentCustomer.id},customer_name.eq.${searchName}`);
+        } else {
+          resQuery = resQuery.eq('customer_name', searchName);
+        }
+        
+        const { data } = await resQuery;
         historyData = data || [];
       }
 
@@ -903,23 +916,20 @@ const sortedAllCustomers = useMemo(() => {
     const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
 
     try {
-      let targetId = selectedCustomer.id;
+      // 🚀 🆕 修正：ここ！ 保存前に「同じ名前の人」がいないかDBを再チェックします
+      const { data: existingCust } = await supabase
+        .from('customers')
+        .select('id')
+        .eq('shop_id', cleanShopId)
+        .eq('name', normalizedName)
+        .maybeSingle();
 
-      // 1. IDがない場合、名前で既存顧客をチェック
-      if (!targetId) {
-        const { data: existingCust } = await supabase
-          .from('customers')
-          .select('id')
-          .eq('shop_id', cleanShopId)
-          .eq('name', normalizedName)
-          .maybeSingle();
-        
-        if (existingCust) {
-          targetId = existingCust.id;
-        }
-      }
-      
+      // 💡 今開いているデータのID、またはDBで見つかった同一名データのIDを特定
+      // これを targetId に入れることで、新規作成ではなく「上書き」になります
+      const targetId = selectedCustomer?.id || existingCust?.id;
+
       const payload = { 
+        id: targetId, // 👈 重要：これを入れることで、既存の氏家さんに上書きされます！
         shop_id: cleanShopId, 
         name: normalizedName, 
         admin_name: normalizedName,
@@ -1705,12 +1715,10 @@ return (
                 gridTemplateColumns: isPC ? 'repeat(auto-fill, minmax(300px, 1fr))' : '1fr', 
                 gap: '15px' 
               }}>
-                {allCustomers
-  // 🚀 🆕 ブロック用の名前（臨時休業、管理者ブロック）を持つ顧客は名簿に表示しない
-  .filter(c => !['臨時休業', '管理者ブロック'].includes(c.name)) 
+{sortedAllCustomers
   .filter(c => (c.name || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
   .map(cust => {
-                    // 🆕 修正：ここでお客様ごとの「完了済み予約」をリアルタイムに計算します
+                        // 🆕 修正：ここでお客様ごとの「完了済み予約」をリアルタイムに計算します
                     const realVisitCount = allReservations.filter(r => 
   (r.customer_name === cust.name || r.customer_id === cust.id) && 
   r.status === 'completed' && 
