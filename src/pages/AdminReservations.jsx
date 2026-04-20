@@ -119,6 +119,7 @@ const resIndexStyle = (color) => ({
   const [selectedRes, setSelectedRes] = useState(null);
   const [showSlotListModal, setShowSlotListModal] = useState(false);
   const [showBlockEndSelector, setShowBlockEndSelector] = useState(false);
+  const [isTargetOutsideHours, setIsTargetOutsideHours] = useState(false);
 
 // 🆕 プライベート予定用のState
   const [privateTasks, setPrivateTasks] = useState([]);
@@ -1326,24 +1327,33 @@ return (
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
   <AnimatePresence mode="wait" initial={false}>
     <motion.div
-      key={startDate.toISOString()}
-      ref={scrollContainerRef}
-      initial={{ opacity: 0, x: 10 }}
-      animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ type: "spring", stiffness: 400, damping: 30, mass: 0.2, opacity: { duration: 0.1 } }}
-      drag="x"
-      dragDirectionLock={true}
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0}
-      onDragEnd={(e, { offset }) => {
-        const swipeThreshold = 50;
-        if (offset.x > swipeThreshold) goPrev();
-        else if (offset.x < -swipeThreshold) goNext();
-      }}
-      style={{ flex: 1, width: '100%', overflowY: 'auto', overflowX: isPC ? 'auto' : 'hidden', cursor: 'grab', touchAction: 'pan-y' }}
-      whileTap={{ cursor: 'grabbing' }}
-    >
+        key={startDate.toISOString()}
+        ref={scrollContainerRef}
+        initial={{ opacity: 0, x: 10 }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0 }}
+        transition={{ type: "spring", stiffness: 400, damping: 30, mass: 0.2, opacity: { duration: 0.1 } }}
+        drag="x"
+        dragDirectionLock={true}
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0}
+        onDragEnd={(e, { offset }) => {
+          const swipeThreshold = 50;
+          if (offset.x > swipeThreshold) goPrev();
+          else if (offset.x < -swipeThreshold) goNext();
+        }}
+        // 🚀 styleの中に paddingBottom を追加しました
+        style={{ 
+          flex: 1, 
+          width: '100%', 
+          overflowY: 'auto', 
+          overflowX: isPC ? 'auto' : 'hidden', 
+          cursor: 'grab', 
+          touchAction: 'pan-y',
+          paddingBottom: isPC ? '20px' : '120px' // 👈 スマホ時に120pxの余白を作り、ボトムナビを避けます
+        }}
+        whileTap={{ cursor: 'grabbing' }}
+      >
 
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: isPC ? '900px' : '100%' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff' }}>
@@ -1376,7 +1386,6 @@ return (
                 const firstRes = isArray ? resAt[0] : resAt;
                 const reservationCount = isArray ? resAt.length : 0;
 
-                // 🆕 判定時間を10秒に延長（新着予約の点滅用）
                 const isNew = isArray && resAt.some(r => {
                   if (!r.created_at) return false;
                   return (new Date().getTime() - new Date(r.created_at).getTime()) < 10000;
@@ -1401,27 +1410,28 @@ return (
                 return (
                   <td 
                     key={`${dStr}-${time}`} 
-                    // 🚀 🆕 async を追加して、中で await を使えるようにします
+                    /* 🚀 🆕 【ここから修正箇所】 */
                     onClick={async () => { 
                       setSelectedDate(dStr); 
                       setTargetTime(time);
                       
-                      // 🆕 定休日やシステムブロックかどうかを先に判定します
                       const firstItem = Array.isArray(resAt) ? resAt[0] : resAt;
-                      const isBgBlock = firstItem?.isRegularHoliday || firstItem?.res_type === 'system_blocked';
+                      
+                      // 💡 判定用：定休日、システムブロック、または施設日のステルスブロックか
+                      const isBgBlock = firstItem?.isRegularHoliday || 
+                                        firstItem?.res_type === 'system_blocked' || 
+                                        firstItem?.res_type === 'facility_day_stealth';
 
-                      // --- 1. データが何もない、または「定休日」枠の場合 ---
+                      // --- 1. データが完全に空、または「背景色が付いているだけの枠」の場合 ---
                       if (!hasRes || isBgBlock) {
-                        if (isStandardTime && !isRegularHoliday) {
-                          setShowMenuModal(true);
-                        } else {
-                          setPrivateTaskFields({ title: '', note: '' });
-                          setShowPrivateModal(true); 
-                        }
+                        // 🚀 ここで「時間外か定休日か」を判定して記録
+                        setIsTargetOutsideHours(!isStandardTime || firstItem?.isRegularHoliday);
+                        // 🚀 どんな背景（定休日・施設日・時間外）でも、まずは2択/4択メニューを開く！
+                        setShowMenuModal(true);
                         return;
                       }
 
-                      // --- 2. 実際の予約データがある場合 ---
+                      // --- 2. 実際の予約・確定済みデータ（実体）がある場合 ---
                       const items = Array.isArray(resAt) ? resAt : [resAt];
 
                       if (items.length > 1) {
@@ -1432,49 +1442,29 @@ return (
 
                       const activeTask = items[0];
 
-                      // 🚀 🆕 【施設訪問のプロテクト ＆ 複数日対応】
+                      // 🚀 施設訪問の本予約（実体）への対応
                       if (activeTask.res_type === 'facility_visit') {
-                        
-                        // ✨ 1. 訪問自体が「完了」ステータスなら、即座に詳細を開く（絶対安全）
-                        if (activeTask.visitData?.status === 'completed') {
-                          openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
-                          return; 
-                        }
-
-                        // ✨ 2. 複数日訪問（2日目以降）に対応するため、親IDを取得
                         const targetIdForCount = activeTask.visitData?.parent_id || activeTask.visitId;
-
-                        // 3. 名簿に一人でも完了者がいるかチェック（親IDで検索）
                         const { count } = await supabase
                           .from('visit_request_residents')
                           .select('id', { count: 'exact', head: true })
-                          .eq('visit_request_id', targetIdForCount) // 👈 親IDを使うのがポイント
+                          .eq('visit_request_id', targetIdForCount)
                           .eq('status', 'completed');
 
-                        if (count > 0) {
-                          // 一人でも終わっていれば詳細へ
+                        if (count > 0 || activeTask.visitData?.status === 'completed') {
                           openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
                         } else {
-                          // 全員未完了（空振りの予約など）の場合のみ、削除確認を出す
                           handleDeleteVisit(activeTask.visitId, dStr, activeTask.customer_name);
                         }
                       } 
                       else if (activeTask.res_type === 'facility_keep') {
                         handleCancelKeep(activeTask.facility_user_id, dStr, activeTask.customer_name.replace(' 予定', ''));
                       }
-                      // 💡 ここでは「背景の定休日」は除外されているので、手動で入れたブロックや予約だけが詳細に飛びます
                       else if (activeTask.res_type === 'normal' || activeTask.res_type === 'blocked' || activeTask.res_type === 'private_task') {
                         openDetail(activeTask); 
                       }
-                      else if (activeTask.res_type === 'facility_day_stealth') {
-                        if (isStandardTime && !isRegularHoliday) {
-                          setShowMenuModal(true);
-                        } else {
-                          setPrivateTaskFields({ title: '', note: '' });
-                          setShowPrivateModal(true);
-                        }
-                      }
                     }}
+                    /* 🚀 🆕 【ここまで修正箇所】 */
                     style={{ 
                       borderRight: '0.1px solid #cbd5e1', 
                       borderBottom: '0.1px solid #cbd5e1', 
@@ -1482,10 +1472,8 @@ return (
                       cursor: 'pointer', 
                       background: isStandardTime ? '#fff' : '#fffff3',
                       
-                      // 🚀 🆕 ここを追加：今の時間枠の左側だけ赤く太くする
                       ...(applyCurrentTimeMarker(dStr, time) && {
                         borderLeft: '3px solid #14a9d7',
-                        // 💡 赤い棒が枠線に隠れないように zIndex を指定
                         zIndex: 10 
                       })
                     }}
@@ -2157,14 +2145,13 @@ return (
             
             {showBlockEndSelector ? (
               /* ==========================================
-                 🕒 終了時間選択モード（✕専用）
+                 🕒 A：終了時間選択モード（✕専用）
                  ========================================== */
               <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
                 <h3 style={{ margin: '0 0 5px 0', color: '#ef4444', fontSize: '1.1rem', fontWeight: '900' }}>何時まで「✕」にしますか？</h3>
                 <p style={{ fontWeight: 'bold', color: '#64748b', marginBottom: '20px', fontSize: '0.85rem' }}>開始: {targetTime} 〜</p>
                 
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '280px', overflowY: 'auto', padding: '5px' }}>
-                  {/* timeSlotsから、選んだ時間の「次」以降の時間をリストアップ */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', padding: '5px' }}>
                   {timeSlots.slice(timeSlots.indexOf(targetTime) + 1).map((endTime, idx) => {
                     const slotsCount = idx + 1;
                     return (
@@ -2191,7 +2178,7 @@ return (
               </div>
             ) : (
               /* ==========================================
-                 ⚙️ 基本メニューモード（4ボタン）
+                 ⚙️ B：基本メニューモード（2択 or 4択）
                  ========================================== */
               <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
@@ -2215,7 +2202,7 @@ return (
                     予約を入れる
                   </button>
 
-                  {/* ☕️ 2. プライベート予定（営業時間内でも追加可能に！） */}
+                  {/* ☕️ 2. プライベート予定 */}
                   <button 
                     onClick={() => {
                       setShowMenuModal(false); 
@@ -2228,18 +2215,20 @@ return (
                     ☕️ プライベート予定
                   </button>
 
-                  {/* 🔴 3. ✕ と 休み */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                    <button 
-                      onClick={() => setShowBlockEndSelector(true)} 
-                      style={{ padding: '15px', background: '#fff', color: '#ef4444', border: `2px solid #fca5a5`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}
-                    >
-                      ✕ (枠を閉じる)
-                    </button>
-                    <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
-                      今日を休みにする
-                    </button>
-                  </div>
+                  {/* 🔴 3. ✕ と 休み（営業時間内 && 定休日でない場合のみ表示） */}
+                  {!isTargetOutsideHours && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', animation: 'fadeIn 0.3s' }}>
+                      <button 
+                        onClick={() => setShowBlockEndSelector(true)} // 🚀 ここで時間選択リストへ！
+                        style={{ padding: '15px', background: '#fff', color: '#ef4444', border: `2px solid #fca5a5`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}
+                      >
+                        ✕ (枠を閉じる)
+                      </button>
+                      <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        今日を休みにする
+                      </button>
+                    </div>
+                  )}
 
                   <button onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={{ padding: '10px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold', marginTop: '5px' }}>
                     キャンセル
