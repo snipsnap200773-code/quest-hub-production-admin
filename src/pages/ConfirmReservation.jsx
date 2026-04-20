@@ -229,6 +229,7 @@ useEffect(() => {
     setCustomerData({
       ...customerData,
       name: c.name,
+      furigana: c.furigana || '',
       phone: c.phone || '',
       email: c.email || '',
       address: c.address || '' // 住所データがあればそれもセット
@@ -488,17 +489,18 @@ const handleReserve = async () => {
 
 // --- 298行目付近：修正版 ---
       if (finalCustomerId) {
-        // 🆕 修正ポイント：マスタ（三土手 大造さん）の大切な情報を「汚さない」ためのガード
+        // 🚀 🆕 修正：既存顧客の情報を更新する際、入力がある場合のみ上書きする
         const updatePayload = {
-          // 訪問回数を1増やす（既存データがあれば加算、なければ1）
           total_visits: (existingCust?.total_visits || 0) + 1,
-          // 最終来店日時を今回の予約時間に更新
           last_arrival_at: startDateTime.toISOString(),
           updated_at: new Date().toISOString()
         };
 
-        // 🆕 Google IDやLINE IDが未紐付けなら、このタイミングでこっそり紐付けておく
-        // （これにより、次回の「3択ポップアップ」がより正確に動きます。名前は変えません）
+        // 💡 もし画面で「ふりがな」が入力されていたら、マスタも最新の名前に更新する
+        if (customerData.furigana) {
+          updatePayload.furigana = customerData.furigana;
+        }
+
         if (authUserProfile?.id && !existingCust?.auth_id) {
           updatePayload.auth_id = authUserProfile.id;
         }
@@ -506,7 +508,7 @@ const handleReserve = async () => {
           updatePayload.line_user_id = lineUser.userId;
         }
 
-        // ⚠️ customerPayload（ハム太郎という名前を含む全データ）は使わず、実績データのみ更新
+        // 実績データと、入力があった項目だけを更新
         await supabase.from('customers').update(updatePayload).eq('id', finalCustomerId);
 
       } else {
