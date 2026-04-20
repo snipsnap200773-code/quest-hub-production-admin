@@ -902,6 +902,62 @@ const openDetail = async (res) => {
     return shop.special_holidays.some(h => dStr >= h.start && dStr <= h.end);
   };
 
+  // 🚀 🆕 修正：カレンダー表示用の状態判定（一番早い予定の名前を取得するように強化）
+  const getDayEventSummary = (date) => {
+    if (!date) return { isHoliday: false, firstEntry: null, types: [] };
+    const dStr = getJapanDateStr(date);
+
+    const isRegHoliday = checkIsRegularHoliday(date);
+    const isSpecHoliday = checkIsSpecialHoliday(date);
+
+    // その日の全予定をかき集める
+    const dayEntries = [];
+
+    // ① 一般予約・ねじ込み
+    reservations.forEach(r => {
+      if (r.start_time.startsWith(dStr) && r.res_type === 'normal' && r.status !== 'canceled') {
+        dayEntries.push({ time: r.start_time, name: r.customer_name, type: 'normal' });
+      }
+    });
+
+    // ② 施設（確定・手動キープ）
+    visitRequests.forEach(v => {
+      if ((v.scheduled_date === dStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => (typeof d === 'string' ? d : d.date) === dStr))) && v.status !== 'canceled') {
+        dayEntries.push({ time: `${dStr}T${v.start_time || '09:00'}`, name: v.facility_users?.facility_name || '施設', type: 'facility' });
+      }
+    });
+    manualKeeps.forEach(k => {
+      if (k.date === dStr) {
+        dayEntries.push({ time: `${dStr}T${k.start_time || '09:00'}`, name: k.facility_users?.facility_name || '施設予定', type: 'facility' });
+      }
+    });
+
+    // ③ 施設の定期キープ
+    const rKeep = checkIsRegularKeep(date);
+    if (rKeep) {
+      dayEntries.push({ time: `${dStr}T${rKeep.time}`, name: rKeep.name, type: 'facility' });
+    }
+
+    // ④ プライベート予定
+    privateTasks.forEach(p => {
+      if (p.start_time.startsWith(dStr)) {
+        dayEntries.push({ time: p.start_time, name: p.title, type: 'private' });
+      }
+    });
+
+    // 時間順に並び替えて一番早いものを特定
+    dayEntries.sort((a, b) => a.time.localeCompare(b.time));
+    const first = dayEntries[0] || null;
+
+    return { 
+      isHoliday: isRegHoliday || isSpecHoliday, 
+      firstEntry: first,
+      hasReservation: dayEntries.some(e => e.type === 'normal'),
+      hasFacility: dayEntries.some(e => e.type === 'facility'),
+      hasPrivate: dayEntries.some(e => e.type === 'private')
+    };
+  };
+
   const weekDays = useMemo(() => {
     const days = [];
     const base = new Date(startDate);
@@ -2486,14 +2542,20 @@ return (
   </div>
 )}
 
-      {/* 🚀 🆕 追加：スマホ用日付ジャンプカレンダーモーダル */}
+      {/* 🚀 🆕 修正：スマホ用カレンダー（予定名表示 ＆ 横幅拡大版） */}
       {showMobileCalendar && (
         <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
           <div 
             onClick={(e) => e.stopPropagation()} 
-            style={{ ...modalContentStyle, maxWidth: '350px', padding: '25px', borderRadius: '30px' }}
+            style={{ 
+              ...modalContentStyle, 
+              maxWidth: '95%', // 👈 横幅をいっぱいまで広げる
+              width: '450px',
+              padding: '20px 10px', 
+              borderRadius: '30px' 
+            }}
           >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '0 15px' }}>
               <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#1e293b' }}>
                 {viewMonth.getFullYear()}年 {viewMonth.getMonth() + 1}月
               </span>
@@ -2503,7 +2565,7 @@ return (
               </div>
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '5px', textAlign: 'center' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', textAlign: 'center' }}>
               {['月','火','水','木','金','土','日'].map(d => (
                 <div key={d} style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '10px' }}>{d}</div>
               ))}
@@ -2512,6 +2574,13 @@ return (
                 const dStr = getJapanDateStr(date);
                 const isSelected = dStr === selectedDate;
                 const isToday = dStr === getJapanDateStr(new Date());
+                const summary = getDayEventSummary(date);
+
+                // 🎨 予定に応じた丸の色を決定
+                let circleColor = 'transparent';
+                if (summary.hasReservation) circleColor = themeColor; // 予約
+                else if (summary.hasFacility) circleColor = '#4f46e5'; // 施設
+                else if (summary.hasPrivate) circleColor = '#64748b'; // プライベート
 
                 return (
                   <div 
@@ -2523,13 +2592,37 @@ return (
                       setViewMonth(new Date(date.getFullYear(), date.getMonth(), 1));
                     }}
                     style={{ 
-                      padding: '12px 0', cursor: 'pointer', borderRadius: '12px', fontSize: '1rem', fontWeight: 'bold',
-                      background: isSelected ? themeColor : (isToday ? themeColorLight : 'none'),
-                      color: isSelected ? '#fff' : (isToday ? themeColor : '#475569'),
-                      border: isToday ? `1px solid ${themeColor}44` : 'none'
+                      padding: '5px 0 10px', cursor: 'pointer', borderRadius: '12px',
+                      background: summary.isHoliday ? '#f1f5f9' : 'none', // 休日グレー
+                      opacity: summary.isHoliday ? 0.6 : 1,
+                      minHeight: '65px' // 👈 高さを固定して名前が入っても崩れないようにする
                     }}
                   >
-                    {date.getDate()}
+                    {/* 💡 日付の丸囲み部分 */}
+                    <div style={{
+                      width: '28px', height: '28px', margin: '0 auto',
+                      borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1rem', fontWeight: 'bold',
+                      background: isSelected ? themeColor : (isToday ? themeColorLight : 'none'),
+                      color: isSelected ? '#fff' : (isToday ? themeColor : (summary.isHoliday ? '#94a3b8' : '#1e293b')),
+                      border: !isSelected && circleColor !== 'transparent' ? `2px solid ${circleColor}` : 'none'
+                    }}>
+                      {date.getDate()}
+                    </div>
+
+                    {/* 💡 予定の名前を小さく表示 */}
+                    <div style={{ 
+                      fontSize: '0.55rem', 
+                      fontWeight: 'bold', 
+                      marginTop: '4px', 
+                      color: circleColor === 'transparent' ? '#94a3b8' : circleColor,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      padding: '0 2px'
+                    }}>
+                      {summary.firstEntry ? summary.firstEntry.name.slice(0, 4) : ''}
+                    </div>
                   </div>
                 );
               })}
@@ -2537,7 +2630,7 @@ return (
 
             <button 
               onClick={() => setShowMobileCalendar(false)}
-              style={{ width: '100%', marginTop: '25px', padding: '15px', background: '#f1f5f9', border: 'none', borderRadius: '15px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
+              style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#f1f5f9', border: 'none', borderRadius: '15px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
             >
               閉じる
             </button>
