@@ -396,82 +396,115 @@ const { data: resData } = await supabase
       .order('furigana', { ascending: true });
 
     if (data) {
-      // 💡 名前で重複を排除し、常に最新（一番新しいID）のデータを残す
       const uniqueMap = new Map();
       data.forEach(c => {
         const nameKey = (c.name || "").trim();
-        // すでに登録があっても、より情報（住所など）が入っている、または新しいIDを優先
         if (!uniqueMap.has(nameKey) || (c.address && !uniqueMap.get(nameKey).address)) {
           uniqueMap.set(nameKey, c);
         }
       });
-      setAllCustomers(Array.from(uniqueMap.values()));
+
+      // 💡 修正：お客様ではない特定の名前を除外してセットする
+      const blockNames = ['臨時休業', '管理者ブロック', '休憩', '銀行', '買い出し', '移動'];
+      const filteredCustomers = Array.from(uniqueMap.values()).filter(c => 
+        !blockNames.includes(c.name)
+      );
+
+      setAllCustomers(filteredCustomers);
     }
   };
 
   useEffect(() => {
     const searchCustomers = async () => {
       if (!searchTerm) { setCustomers([]); setSelectedIndex(-1); return; }
-// 🆕 name（本人名）か admin_name（管理名）のどちらかにヒットすればOK
+
+      // 💡 修正：検索クエリに「ブロック名を除外する」条件を追加
+      const blockNamesStr = '("臨時休業","管理者ブロック","休憩","銀行","買い出し","移動")';
+
       const { data } = await supabase
         .from('customers')
         .select('*')
         .eq('shop_id', shopId)
         .or(`name.ilike.%${searchTerm}%,admin_name.ilike.%${searchTerm}%`)
+        .not('name', 'in', blockNamesStr) // 👈 これで検索から消えます！
         .limit(5);
-              setCustomers(data || []);
-      setSelectedIndex(-1); // 検索ワードが変わったら選択位置をリセット
+
+      setCustomers(data || []);
+      setSelectedIndex(-1); 
     };
     const timer = setTimeout(searchCustomers, 300);
     return () => clearTimeout(timer);
   }, [searchTerm, shopId]);
 
-  const openCustomerDetail = async (customer) => {
-    setCustomerHistory([]); // 履歴をクリア
-
-    // 1. DBからこのお客様の最新情報を取得（住所や駐車場を確実にするため）
-    const { data: latestCust, error } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', customer.id)
-      .maybeSingle();
-
-    if (error || !latestCust) {
-      alert("最新情報の取得に失敗しました。");
+  // 🚀 ❶【ここから openDetail を追加：エラーを解消します】
+  const openDetail = async (res) => {
+    if (res.shop_id && res.shop_id !== shopId) {
+      alert(`こちらは他店舗の予約です。`);
       return;
     }
+    setSelectedRes(res);
 
-    // 2. 施設判定
+    let cust = null;
+    if (res.customer_id) {
+      const { data: matched } = await supabase.from('customers').select('*').eq('id', res.customer_id).maybeSingle();
+      cust = matched;
+    }
+    if (!cust) {
+      const orConditions = [];
+      if (res.customer_phone && res.customer_phone !== '---') orConditions.push(`phone.eq.${res.customer_phone}`);
+      if (res.customer_email) orConditions.push(`email.eq.${res.customer_email}`);
+      if (orConditions.length > 0) {
+        const { data: matched } = await supabase.from('customers').select('*').eq('shop_id', shopId).or(orConditions.join(',')).maybeSingle();
+        cust = matched;
+      }
+    }
+    finalizeOpenDetail(res, cust);
+  };
+
+  // 🚀 ❷【openCustomerDetail：履歴を確実に復活させる修正版】
+  const openCustomerDetail = async (customer) => {
+    setCustomerHistory([]); 
+
+    const { data: latestCust } = await supabase.from('customers').select('*').eq('id', customer.id).maybeSingle();
+    if (!latestCust) return;
+
+    let facData = null;
+    if (latestCust.is_facility) {
+      const { data } = await supabase.from('facility_users').select('*').eq('facility_name', latestCust.name).maybeSingle();
+      facData = data;
+    }
+
     const isFac = latestCust.is_facility === true;
+    const searchName = (latestCust.name || "").trim(); // 💡 空白を除去して確実にヒットさせる
 
-    // 3. 入力項目（editFields）を最新データでセット
     setEditFields({ 
       is_facility: isFac,
       name: latestCust.name || '', 
       admin_name: latestCust.admin_name || '',
-      furigana: latestCust.furigana || '', 
-      phone: latestCust.phone || '', 
-      email: latestCust.email || '', 
-      address: latestCust.address || '',    // 👈 これで住所が反映される
+      furigana: facData?.furigana || latestCust.furigana || '',
+      phone: facData?.tel || latestCust.phone || '',
+      email: facData?.email || latestCust.email || '', 
+      address: facData?.address || latestCust.address || '',
       zip_code: latestCust.zip_code || '',
-      parking: latestCust.parking || '',    // 👈 これで駐車場が反映される
+      parking: latestCust.parking || '', 
       memo: latestCust.memo || '',
       line_user_id: latestCust.line_user_id || null 
     });
 
-    // 4. 以降の履歴取得ロジックは「予約から開く時」と同じ finalizeOpenDetail の中身を流用
     setSelectedCustomer(latestCust);
-    setSelectedRes(null); // 検索からの場合は特定の「今日の予約」はないので null
+    setSelectedRes(null);
 
     let historyData = [];
     if (isFac) {
+      // 🏢 施設名または本人名で過去の訪問名簿(visitRequests)を検索
       historyData = visitRequests
-        .filter(v => v.facility_id === latestCust.id || v.customer_name === latestCust.name)
+        .filter(v => (v.facility_users?.facility_name === searchName || v.customer_name === searchName))
         .map(v => ({ ...v, start_time: v.scheduled_date }))
-        .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
+        .sort((a, b) => b.start_time.localeCompare(a.start_time));
     } else {
-      const { data } = await supabase.from('reservations').select('*').eq('shop_id', shopId)
-        .or(`customer_id.eq.${latestCust.id},customer_name.eq.${latestCust.name}`)
+      // 👤 個人名またはIDで過去の予約(reservations)を検索
+      const { data } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', shopId)
+        .or(`customer_id.eq.${latestCust.id},customer_name.eq.${searchName}`)
         .order('start_time', { ascending: false });
       historyData = data || [];
     }
@@ -479,97 +512,32 @@ const { data: resData } = await supabase
     setCustomerHistory(historyData);
     setSearchTerm('');
     setSelectedIndex(-1);
-    setShowCustomerModal(true); // モーダルを表示
+    setShowCustomerModal(true);
   };
 
-  // キーボード操作用ハンドラー
-  const handleKeyDown = (e) => {
-    if (customers.length === 0) return;
-
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev < customers.length - 1 ? prev + 1 : prev));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === 'Enter') {
-      if (selectedIndex >= 0) {
-        e.preventDefault();
-        openCustomerDetail(customers[selectedIndex]);
-      }
-    } else if (e.key === 'Escape') {
-      setSearchTerm('');
-      setCustomers([]);
-    }
-  };
-
-// 🆕 修正後：名寄せスカウター搭載版
-const openDetail = async (res) => {
-  if (res.shop_id && res.shop_id !== shopId) {
-    alert(`こちらは他店舗...`);
-    return;
-  }
-  setSelectedRes(res);
-
-  let cust = null;
-
-  // 🆕 修正ポイント：まず、予約データに紐付いている顧客IDがあるか確認
-  if (res.customer_id) {
-    const { data: matched } = await supabase
-      .from('customers')
-      .select('*')
-      .eq('id', res.customer_id)
-      .maybeSingle();
-    cust = matched;
-  }
-
-  // もしIDでヒットしなかった場合のみ、電話・メールでスカウターを回す
-  if (!cust) {
-    const orConditions = [];
-    if (res.customer_phone && res.customer_phone !== '---') orConditions.push(`phone.eq.${res.customer_phone}`);
-    if (res.customer_email) orConditions.push(`email.eq.${res.customer_email}`);
-
-    if (orConditions.length > 0) {
-      const { data: matched } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', shopId)
-        .or(orConditions.join(','))
-        .maybeSingle();
-      cust = matched;
-    }
-  }
-
-  // 以降の統合チェックロジックへ...
-  if (cust) {
-    if (cust.id === res.customer_id) {
-      finalizeOpenDetail(res, cust);
-      return;
-    }
-    setMergeCandidate(cust);
-    setShowMergeConfirm(true);
-    return;
-  }
-  finalizeOpenDetail(res, cust);
-};
-  // 🆕 共通処理：詳細モーダルを表示するための確定処理
-  const finalizeOpenDetail = (res, cust) => {
-    setCustomerHistory([]); // 履歴をクリア
+  // 🚀 ❸【finalizeOpenDetail：施設情報の同期 ＆ 履歴復活】
+  const finalizeOpenDetail = async (res, cust) => {
+    setCustomerHistory([]); 
 
     const isFac = cust?.is_facility || res.res_type === 'facility_visit';
-    // 予約伝票側に保存されているスナップショット情報
+    const searchName = (cust?.name || res.customer_name || "").trim(); 
     const visitSnapshot = res.options?.visit_info || {};
 
-    // 💡 常に「名簿(cust)のデータ」を優先し、名簿が空なら「予約時のデータ」を入れる
-    const allFields = {
+    let facData = null;
+    if (isFac) {
+      const { data } = await supabase.from('facility_users').select('*').eq('facility_name', searchName).maybeSingle();
+      facData = data;
+    }
+
+    setEditFields({
       is_facility: isFac, 
       name: cust ? (cust.admin_name || cust.name || res.customer_name) : res.customer_name,
-      furigana: cust?.furigana || visitSnapshot.furigana || '',
-      phone: cust?.phone || res.customer_phone || '',
-      email: cust?.email || res.customer_email || '',
+      furigana: facData?.furigana || cust?.furigana || visitSnapshot.furigana || '',
+      phone: facData?.tel || cust?.phone || res.customer_phone || '',
+      email: facData?.email || cust?.email || res.customer_email || '',
       zip_code: cust?.zip_code || visitSnapshot.zip_code || '',
-      address: cust?.address || visitSnapshot.address || '', // 👈 名簿を優先
-      parking: cust?.parking || visitSnapshot.parking || '', // 👈 名簿を優先
+      address: facData?.address || cust?.address || visitSnapshot.address || '',
+      parking: cust?.parking || visitSnapshot.parking || '',
       building_type: cust?.building_type || visitSnapshot.building_type || '',
       care_notes: cust?.care_notes || visitSnapshot.care_notes || '',
       company_name: cust?.company_name || visitSnapshot.company_name || '',
@@ -578,22 +546,17 @@ const openDetail = async (res) => {
       memo: res.res_type === 'private_task' ? (res.note || '') : (cust?.memo || ''),
       line_user_id: cust?.line_user_id || res.line_user_id || null,
       custom_answers: cust?.custom_answers || visitSnapshot.custom_answers || {}
-    };
+    });
 
-    setEditFields(allFields);
     setSelectedCustomer(cust || null);
 
-    // 履歴抽出（既存どおり）
     let history = [];
     if (isFac) {
-      const targetName = allFields.name;
-      history = visitRequests
-        .filter(v => v.facility_users?.facility_name === targetName || v.customer_name === targetName || v.facility_id === cust?.id)
+      history = visitRequests.filter(v => (v.facility_users?.facility_name === searchName || v.customer_name === searchName))
         .map(v => ({ ...v, start_time: v.scheduled_date }))
-        .sort((a, b) => b.scheduled_date.localeCompare(a.scheduled_date));
+        .sort((a, b) => b.start_time.localeCompare(a.start_time));
     } else {
-      history = reservations
-        .filter(r => r.shop_id === shopId && r.res_type === 'normal' && (r.customer_name === res.customer_name || (cust?.id && r.customer_id === cust.id)))
+      history = reservations.filter(r => r.shop_id === shopId && r.res_type === 'normal' && (r.customer_name === searchName || (cust?.id && r.customer_id === cust.id)))
         .sort((a, b) => new Date(b.start_time) - new Date(a.start_time));
     }
     setCustomerHistory(history);
@@ -653,6 +616,25 @@ const openDetail = async (res) => {
       const normalizedName = editFields.name.replace(/　/g, ' ').trim();
       if (!normalizedName) { alert("お名前を入力してください。"); return; }
 
+      // --- 🚀 ここから追加 ---
+      // 💡 A: ブロック枠 または プライベート予定 の場合（メモは 'note' カラムに保存）
+      if (selectedRes?.res_type === 'blocked' || selectedRes?.res_type === 'private_task') {
+        const isPrivate = selectedRes.res_type === 'private_task';
+        const targetTable = isPrivate ? 'private_tasks' : 'reservations';
+        const updateData = isPrivate 
+          ? { title: normalizedName, note: editFields.memo } // 👈 editFields.memo を note に保存
+          : { customer_name: normalizedName };
+
+        const { error } = await supabase.from(targetTable).update(updateData).eq('id', selectedRes.id);
+        if (error) throw error;
+        
+        showMsg('予定を更新しました！✨');
+        setShowDetailModal(false);
+        fetchData();
+        return; // プライベート予定の時はここで終了
+      }
+      // --- ここまで追加 ---
+
       // 1. まず同じ名前の人がいないかDBをチェック（名寄せ）
       const { data: existingCust } = await supabase
         .from('customers')
@@ -695,7 +677,11 @@ const openDetail = async (res) => {
       if (custError) throw custError;
       const finalCustomerId = savedCust.id;
 
-      // 4. 【重要】もし「予約枠」から開いているなら、その日の予約票の中身も書き換える
+      // 🚩 🚀 【ここが変更点！】
+      // 以前提案した facility_users への update 処理は「まるごと削除」してください。
+      // これにより、施設様側の情報を勝手に書き換えることはなくなります。
+
+      // 4. 以降、予約データの更新やリフレッシュ処理へと続く...
       if (selectedRes?.id && selectedRes.res_type === 'normal') {
         const currentOptions = selectedRes.options || {};
         const updatedVisitInfo = {
@@ -1963,24 +1949,28 @@ return (
 
       {/* 💡 入力欄はスッキリ配置 */}
       {key === 'parking' ? (
-        <select 
-          value={editFields[key] || ''} 
-          onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-          style={inputStyle}
-        >
-          <option value="">未選択</option>
-          <option value="あり">あり</option>
-          <option value="なし">なし</option>
-        </select>
-      ) : (
-        <input 
-          type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} 
-          value={editFields[key] || ''} 
-          onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-          style={inputStyle} // 💡 以前入れた paddingRight 50px は不要なので削除
-          placeholder="未登録"
-        />
-      )}
+    <select 
+      disabled={editFields.is_facility} // 👈 施設なら選択不可
+      value={editFields[key] || ''} 
+      onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+      style={{ ...inputStyle, background: editFields.is_facility ? '#f1f5f9' : '#fff' }}
+    >
+      {/* optionタグ略 */}
+    </select>
+  ) : (
+    <input 
+      type="text" 
+      readOnly={editFields.is_facility} // 👈 施設なら入力不可
+      value={editFields[key] || ''} 
+      onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+      style={{ 
+        ...inputStyle, 
+        background: editFields.is_facility ? '#f1f5f9' : '#fff', // 👈 グレーアウト
+        cursor: editFields.is_facility ? 'not-allowed' : 'text'   // 👈 禁止マーク
+      }} 
+      placeholder="未登録"
+    />
+  )}
     </div>
   );
 });
