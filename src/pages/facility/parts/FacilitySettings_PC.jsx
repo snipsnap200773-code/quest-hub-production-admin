@@ -149,7 +149,7 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
           <h3 style={panelTitle}><Mail size={20} /> 通知設定</h3>
           <div style={settingRow}>
             <span style={{fontSize: '0.9rem'}}>メールでの新着通知</span>
-            <input type="checkbox" style={checkboxStyle} checked={facility?.email_notifications_enabled ?? true} onChange={(e) => updateStatus('email_notifications_enabled', e.target.checked)} />
+            <input type="checkbox" style={checkboxStyle} checked={facility?.email_notification ?? true} onChange={(e) => updateStatus('email_notification', e.target.checked)} />
           </div>
         </section>
 
@@ -202,19 +202,54 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
           <div style={inputGroup}><label style={labelStyle}>公式サイトURL</label><input style={inputStyle} value={facility?.official_url || ''} onChange={(e) => setFacility({...facility, official_url: e.target.value})} /></div>
           <div style={inputGroup}><label style={labelStyle}>通知用メールアドレス</label><input style={inputStyle} value={facility?.email || ''} onChange={(e) => setFacility({...facility, email: e.target.value})} /></div>
           
-          <button style={saveBtnStyle} onClick={async () => {
-              // 🚀 🆕 更新データに furigana を追加
-              await supabase.from('facility_users').update({ 
-                furigana: facility.furigana, // 👈 これを追加
-                contact_name: facility.contact_name, 
-                address: facility.address, 
-                tel: facility.tel, 
-                official_url: facility.official_url, 
-                email: facility.email 
-              }).eq('id', facilityId);
-              
-              alert('設定を保存しました！');
-          }}><Save size={18} /> 設定を保存する</button>
+          <button 
+            style={{ ...saveBtnStyle, opacity: isUpdating ? 0.7 : 1 }} 
+            disabled={isUpdating}
+            onClick={async () => {
+  setIsUpdating(true);
+  try {
+    console.log("保存実行 ID:", facilityId); // 👈 IDが正しいかコンソールで確認
+    console.log("保存内容:", facility);      // 👈 送る直前のデータを確認
+
+    // 1. facility_usersを更新し、そのまま更新後のデータを取得(.select())
+    const { data, error } = await supabase
+      .from('facility_users')
+      .update({ 
+        furigana: facility.furigana || null,
+        contact_name: facility.contact_name || null, 
+        address: facility.address || null, 
+        tel: facility.tel || null, 
+        official_url: facility.official_url || null, 
+        email: facility.email || null 
+      })
+      .eq('id', facilityId)
+      .select(); // 👈 これを追加！
+
+    if (error) throw error;
+
+    if (!data || data.length === 0) {
+      // 🚩 IDが見つからなかった場合はここに入る
+      console.error("更新対象のIDが見つかりませんでした。IDを確認してください。");
+      alert("保存に失敗しました。この施設のデータが見つかりません（ID不一致）。");
+      return;
+    }
+
+    console.log("DB更新成功:", data[0]);
+    
+    // 2. fetchData()を呼ばず、DBから返ってきた最新データをステートに入れる（確実！）
+    setFacility(data[0]);
+    alert('施設情報を保存しました！✨');
+
+  } catch (err) {
+    console.error("エラー詳細:", err);
+    alert('保存失敗: ' + err.message); 
+  } finally {
+    setIsUpdating(false);
+  }
+}}
+          >
+            <Save size={18} /> {isUpdating ? '保存中...' : '設定を保存する'}
+          </button>
         </div>
       </section>
     </div>

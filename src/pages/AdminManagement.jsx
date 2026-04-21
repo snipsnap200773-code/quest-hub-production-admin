@@ -254,12 +254,14 @@ function AdminManagement() {
 
     setIsSearchLoading(true);
     // ✅ 幽霊データを防ぐため、reservationsではなく「customers名簿」だけを検索
+    const blockNamesStr = '("臨時休業","管理者ブロック","休憩","銀行","買い出し","移動")';
+
     const { data, error } = await supabase
       .from('customers')
-      .select('id, name, admin_name, phone') // admin_nameも取得
+      .select('id, name, admin_name, phone')
       .eq('shop_id', cleanShopId)
-      // 🆕 本人名(name)か管理名(admin_name)のどちらかにヒットすればOKにする
-      .or(`name.ilike.%${val}%,admin_name.ilike.%${val}%`) 
+      .or(`name.ilike.%${val}%,admin_name.ilike.%${val}%`)
+      .not('name', 'in', blockNamesStr) // 👈 これを追加！
       .limit(5);
     
     if (error) console.error("Search Error:", error);
@@ -740,8 +742,11 @@ const sortedAllCustomers = useMemo(() => {
     }
   });
 
+  // 🚀 🆕 修正：名簿リストからプライベートな予定名をすべて排除する
+  const blockNames = ['臨時休業', '管理者ブロック', '休憩', '銀行', '買い出し', '移動'];
+
   return Array.from(uniqueMap.values())
-    .filter(c => !['臨時休業', '管理者ブロック'].includes(c.name))
+    .filter(c => !blockNames.includes(c.name)) // 👈 フィルターを強化
     .sort((a, b) => (a.furigana || 'ー').localeCompare(b.furigana || 'ー', 'ja'));
 }, [allCustomers]);
   // 選択中の顧客（施設）に関連する「利用者一覧」を売上データから抽出する
@@ -826,38 +831,38 @@ const sortedAllCustomers = useMemo(() => {
       return;
     }
 
-    setPastVisits([]); // 履歴を一旦クリア
+    setPastVisits([]); 
     setIsCustomerInfoOpen(true); 
     setIsCheckoutOpen(false);
 
     try {
-      // 💡 修正ポイント：searchName を try の直後で作ることで、関数全体で使えるようにします
       const searchName = (res.customer_name || '').replace(/　/g, ' ').trim();
 
-      // 1. DBからこのお客様の「一番新しい情報」を取得する
+      // 1. DBから顧客情報を取得
       let query = supabase.from('customers').select('*').eq('shop_id', cleanShopId);
-      
-      if (res.customer_id) {
-        query = query.eq('id', res.customer_id); // IDがあれば最優先
-      } else {
-        query = query.eq('name', searchName);
-      }
+      if (res.customer_id) query = query.eq('id', res.customer_id);
+      else query = query.eq('name', searchName);
       
       const { data: customer } = await query.maybeSingle();
       const currentCustomer = customer || { name: res.customer_name };
 
-      // 2. 施設かどうか判定
+      // 🚩 2. 【施設同期】施設なら facility_users からも引く
+      let facData = null;
       const isFac = currentCustomer.is_facility === true || res.task_type === 'facility';
+      if (isFac) {
+        const { data } = await supabase.from('facility_users').select('*').eq('facility_name', currentCustomer.name).maybeSingle();
+        facData = data;
+      }
 
-      // 3. 入力項目（editFields）をセット
+      // 3. 入力項目をセット（施設データがあれば優先し、入力不可にする）
       const allFields = {
         is_facility: isFac,
         name: currentCustomer.name || '',
-        furigana: currentCustomer.furigana || '',
-        phone: currentCustomer.phone || '',
-        email: currentCustomer.email || '',
+        furigana: facData?.furigana || currentCustomer.furigana || '',
+        phone: facData?.tel || currentCustomer.phone || '',
+        email: facData?.email || currentCustomer.email || '',
         zip_code: currentCustomer.zip_code || '',
-        address: currentCustomer.address || '',
+        address: facData?.address || currentCustomer.address || '',
         parking: currentCustomer.parking || '',
         building_type: currentCustomer.building_type || '',
         care_notes: currentCustomer.care_notes || '',
@@ -874,36 +879,20 @@ const sortedAllCustomers = useMemo(() => {
       setSelectedCustomer(currentCustomer);
       setEditFields(allFields);
 
-      // 🚀 4. 履歴を抽出（ここで searchName を使ってももうエラーになりません）
+      // --- 4. 履歴の抽出 (以前直した 400エラー対策を維持) ---
       let historyData = [];
-
       if (isFac) {
-        // 🏢 施設の場合（略：既存どおり）
         historyData = allReservations
           .filter(r => r.task_type === 'facility' && (r.customer_name === searchName || r.facility_id === currentCustomer?.id))
           .sort((a, b) => b.start_time.localeCompare(a.start_time));
       } else {
-        // 👤 個人の場合：IDの有無で検索条件を分ける
-        let resQuery = supabase
-          .from('reservations')
-          .select('*, staffs(name)')
-          .eq('shop_id', cleanShopId)
-          .in('status', ['completed', 'canceled'])
-          .order('start_time', { ascending: false });
-
-        // 💡 修正：IDが undefined（未定義）だとエラーになるので、ある時だけ使う
-        if (currentCustomer.id) {
-          resQuery = resQuery.or(`customer_id.eq.${currentCustomer.id},customer_name.eq.${searchName}`);
-        } else {
-          resQuery = resQuery.eq('customer_name', searchName);
-        }
-        
+        let resQuery = supabase.from('reservations').select('*, staffs(name)').eq('shop_id', cleanShopId).in('status', ['completed', 'canceled']).order('start_time', { ascending: false });
+        if (currentCustomer.id) resQuery = resQuery.or(`customer_id.eq.${currentCustomer.id},customer_name.eq.${searchName}`);
+        else resQuery = resQuery.eq('customer_name', searchName);
         const { data } = await resQuery;
         historyData = data || [];
       }
-
       setPastVisits(historyData);
-      
     } catch (err) {
       console.error("Customer Info Error:", err);
     }
@@ -958,17 +947,11 @@ const sortedAllCustomers = useMemo(() => {
 
       if (error) throw error;
 
-      // 3. 施設の場合、同期更新
-      if (editFields.is_facility) {
-        await supabase.from('facility_users').update({
-          contact_name: editFields.furigana || null,
-          tel: editFields.phone || null,
-          email: editFields.email || null,
-          address: editFields.address || null
-        }).eq('facility_name', normalizedName);
-      }
+      // 🚩 🚀 【ここが変更点！】
+      // 以前の facility_users への update 処理は「削除」しました。
+      // 店舗側の名簿(customers)は更新しますが、施設側の共通アカウント情報は守られます。
 
-      alert("情報を更新しました！✨"); 
+      alert("情報を更新しました！✨");
       setIsCustomerInfoOpen(false); // ポップアップを閉じる
       
       // 💡 これを呼ぶことで、画面全体のリスト（allCustomers）が最新になり、
@@ -2246,17 +2229,30 @@ return (
                           </div>
                           
                           {key === 'parking' ? (
-                            <select value={editFields[key] || ''} onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} style={editInputStyle}>
+                            <select 
+                              disabled={editFields.is_facility} // 👈 施設なら選択不可
+                              value={editFields[key] || ''} 
+                              onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+                              style={{ 
+                                ...editInputStyle, 
+                                background: editFields.is_facility ? '#f1f5f9' : '#fff' // 👈 グレーアウト
+                              }}
+                            >
                               <option value="">未選択</option>
                               <option value="あり">あり</option>
                               <option value="なし">なし</option>
                             </select>
                           ) : (
                             <input 
+                              readOnly={editFields.is_facility} // 👈 施設なら入力不可
                               type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} 
                               value={editFields[key] || ''} 
                               onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-                              style={editInputStyle} 
+                              style={{ 
+                                ...editInputStyle, 
+                                background: editFields.is_facility ? '#f1f5f9' : '#fff', // 👈 グレーアウト
+                                cursor: editFields.is_facility ? 'not-allowed' : 'text'  // 👈 禁止マーク
+                              }} 
                               placeholder="未登録" 
                             />
                           )}

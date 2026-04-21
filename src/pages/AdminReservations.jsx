@@ -2553,26 +2553,52 @@ return (
 
       {/* 🚀 🆕 修正：スマホ用カレンダー（予定名表示 ＆ 横幅拡大版） */}
       {showMobileCalendar && (
-        <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              ...modalContentStyle, 
-              maxWidth: '95%', // 👈 横幅をいっぱいまで広げる
-              width: '450px',
-              padding: '20px 10px', 
-              borderRadius: '30px' 
-            }}
-          >
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', padding: '0 15px' }}>
-              <span style={{ fontWeight: '900', fontSize: '1.2rem', color: '#1e293b' }}>
-                {viewMonth.getFullYear()}年 {viewMonth.getMonth() + 1}月
-              </span>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() - 1)))} style={{ ...miniBtnStyle, fontSize: '1.2rem', padding: '5px' }}>◀</button>
-                <button onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() + 1)))} style={{ ...miniBtnStyle, fontSize: '1.2rem', padding: '5px' }}>▶</button>
-              </div>
-            </div>
+  <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
+    <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '95%', width: '450px', padding: '20px 10px', borderRadius: '30px' }}>
+      
+      {/* 🚩 ここから下の「年月ナビ」を差し替えます！ */}
+      <div style={{ 
+        display: 'flex', 
+        justifyContent: 'space-between', 
+        alignItems: 'center', 
+        marginBottom: '20px', 
+        padding: '10px 5px',
+        background: '#f8fafc', 
+        borderRadius: '15px'
+      }}>
+        {/* 前の月ボタン */}
+        <button 
+          onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() - 1)))} 
+          style={{ 
+            border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+            borderRadius: '12px', width: '50px', height: '50px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.2rem', color: themeColor, cursor: 'pointer'
+          }}
+        >
+          ◀
+        </button>
+
+        {/* 年月表示 */}
+        <div style={{ textAlign: 'center', flex: 1 }}>
+          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold' }}>{viewMonth.getFullYear()}年</div>
+          <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b' }}>{viewMonth.getMonth() + 1}月</div>
+        </div>
+
+        {/* 次の月ボタン */}
+        <button 
+          onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() + 1)))} 
+          style={{ 
+            border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
+            borderRadius: '12px', width: '50px', height: '50px',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontSize: '1.2rem', color: themeColor, cursor: 'pointer'
+          }}
+        >
+          ▶
+        </button>
+      </div>
+      {/* 🚩 ここまで差し替え */}
 
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', textAlign: 'center' }}>
               {['月','火','水','木','金','土','日'].map(d => (
