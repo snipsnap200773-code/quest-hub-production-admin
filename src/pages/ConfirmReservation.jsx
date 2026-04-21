@@ -214,7 +214,7 @@ useEffect(() => {
         .from('customers')
         .select('*')
         .eq('shop_id', shopId)
-        .ilike('name', `%${customerData.name}%`)
+        .or(`name.ilike.%${customerData.name}%,furigana.ilike.%${customerData.name}%`)
         .limit(5);
       
       setSuggestedCustomers(data || []);
@@ -449,7 +449,7 @@ const handleReserve = async () => {
 
         const { data: matched } = await supabase
           .from('customers')
-          .select('id, name, admin_name, total_visits')
+          .select('*') // 👈 '*' にすることで、既存のふりがな等もすべて把握します
           .or(orConditions.length > 0 ? orConditions.join(',') : `name.eq.${customerData.name}`)
           .eq('shop_id', shopId)
           .maybeSingle();
@@ -489,16 +489,35 @@ const handleReserve = async () => {
 
 // --- 298行目付近：修正版 ---
       if (finalCustomerId) {
-        // 🚀 🆕 修正：既存顧客の情報を更新する際、入力がある場合のみ上書きする
+        // 1. まず共通の更新（来店回数など）を作成
         const updatePayload = {
           total_visits: (existingCust?.total_visits || 0) + 1,
           last_arrival_at: startDateTime.toISOString(),
           updated_at: new Date().toISOString()
         };
 
-        // 💡 もし画面で「ふりがな」が入力されていたら、マスタも最新の名前に更新する
-        if (customerData.furigana) {
+        // 🚀 🆕 修正：店舗ねじ込み予約（isAdminEntry）の場合の保護ロジック
+        // 「入力ボックスが空文字でない」かつ「既存データと違う」場合のみ、上書きを許可します
+        
+        // ふりがなの保護
+        if (customerData.furigana && customerData.furigana.trim() !== "") {
           updatePayload.furigana = customerData.furigana;
+        }
+        
+        // 電話番号の保護（ねじ込みで空欄にしても、既存の番号が消えないようにする）
+        if (customerData.phone && customerData.phone.trim() !== "") {
+          const cleanPhone = customerData.phone.replace(/[^0-9]/g, '');
+          if (cleanPhone !== "") updatePayload.phone = cleanPhone;
+        }
+
+        // メールアドレスの保護
+        if (customerData.email && customerData.email.trim() !== "") {
+          updatePayload.email = customerData.email;
+        }
+
+        // 住所の保護
+        if (customerData.address && customerData.address.trim() !== "") {
+          updatePayload.address = customerData.address;
         }
 
         if (authUserProfile?.id && !existingCust?.auth_id) {
@@ -508,7 +527,7 @@ const handleReserve = async () => {
           updatePayload.line_user_id = lineUser.userId;
         }
 
-        // 実績データと、入力があった項目だけを更新
+        // 2. 構築した「変更があった項目だけ」をDBに送る
         await supabase.from('customers').update(updatePayload).eq('id', finalCustomerId);
 
       } else {
