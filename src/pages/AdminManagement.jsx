@@ -20,6 +20,23 @@ const inputStyle = {
   outline: 'none' 
 };
 
+// 🚀 🆕 ここに追加！：フリガナから「あ行・か行...」を判定する関数
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-おア-オ]/)) return "あ行";
+  if (firstChar.match(/[か-こカ-コ]/)) return "か行";
+  if (firstChar.match(/[さ-そサ-ソ]/)) return "さ行";
+  if (firstChar.match(/[た-とタ-ト]/)) return "た行";
+  if (firstChar.match(/[な-のナ-ノ]/)) return "な行";
+  if (firstChar.match(/[は-ほハ-ホ]/)) return "は行";
+  if (firstChar.match(/[ま-もマ-モ]/)) return "ま行";
+  if (firstChar.match(/[や-よヤ-ヨ]/)) return "や行";
+  if (firstChar.match(/[ら-ろラ-ロ]/)) return "ら行";
+  if (firstChar.match(/[わ-をワ-ヲ]/)) return "わ行";
+  return "その他";
+};
+
 function AdminManagement() {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -1651,14 +1668,13 @@ return (
         )}
 
         {activeMenu === 'customers' && (
-  <div style={{ 
-    display: 'flex', 
-    flexDirection: 'column', 
-    height: '100%', 
-    background: '#f0f2f5',
-    // 🆕 修正：スマホの時だけ下を80px空けて、ボトムナビを避ける
-    paddingBottom: isPC ? '0' : '80px' 
-  }}>
+          <div style={{ 
+            display: 'flex', 
+            flexDirection: 'column', 
+            height: '100%', 
+            background: '#f0f2f5',
+            paddingBottom: isPC ? '0' : '80px' 
+          }}>
             {/* ヘッダー：青系のデザインで名簿らしさを演出 */}
             <div style={{ 
               background: '#4285f4', 
@@ -1695,97 +1711,111 @@ return (
               flex: 1, 
               overflowY: 'auto', 
               padding: isPC ? '20px' : '10px',
-              paddingBottom: isPC ? '20px' : '100px' // スマホ時は下タブの分余白を作る
+              paddingBottom: isPC ? '20px' : '100px' 
             }}>
-              <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: isPC ? 'repeat(auto-fill, minmax(300px, 1fr))' : '1fr', 
-                gap: '15px' 
-              }}>
-{sortedAllCustomers
-  .filter(c => (c.name || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
-  .map(cust => {
-                        // 🆕 修正：ここでお客様ごとの「完了済み予約」をリアルタイムに計算します
-                    const realVisitCount = allReservations.filter(r => 
-  (r.customer_name === cust.name || r.customer_id === cust.id) && 
-  r.status === 'completed' && 
-  // ✅ res_type ではなく task_type または存在確認で判定する
-  (r.task_type === 'individual' || r.task_type === 'facility')
-).length;
+              {/* 🚀 🆕 修正：見出しを横いっぱいに広げるため、Grid から Flex 形式に変更 */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {(() => {
+                  let lastLabel = ""; // 直前のグループ（あ行など）を記憶
+                  
+                  return sortedAllCustomers
+                    .filter(c => (c.name || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
+                    .map((cust) => {
+                      // 🚀 🆕 行見出し（あ行など）を判定
+                      const currentLabel = getKanaGroup(cust.furigana);
+                      const isNewGroup = currentLabel !== lastLabel;
+                      lastLabel = currentLabel;
 
-                    return (
-                      <div 
-                        key={cust.id} 
-                        onClick={() => openCustomerInfo({ customer_name: cust.name })} 
-                        style={{ 
-                          background: '#fff', 
-                          padding: '18px', 
-                          borderRadius: '16px', 
-                          boxShadow: '0 4px 6px rgba(0,0,0,0.05)', 
-                          cursor: 'pointer', 
-                          border: '1px solid #e2e8f0', 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          alignItems: 'center',
-                          transition: 'transform 0.1s',
-                        }}
-                        onMouseEnter={(e) => isPC && (e.currentTarget.style.transform = 'translateY(-2px)')}
-                        onMouseLeave={(e) => isPC && (e.currentTarget.style.transform = 'translateY(0)')}
-                      >
-                        <div>
-                          <div style={{ 
-                            fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b',
-                            display: 'flex', alignItems: 'center', gap: '5px' // 🚀 🆕 横並びの調整
-                          }}>
-                            {cust.name} 様
-                            
-                            {/* 🚀 🆕 1. ブロック(出禁)フラグがあれば 🚫 を表示 */}
-                            {cust.is_blocked && <span style={{ color: '#ef4444' }} title="ブロック中">🚫</span>}
+                      // 完了済み予約のカウント
+                      const realVisitCount = allReservations.filter(r => 
+                        (r.customer_name === cust.name || r.customer_id === cust.id) && 
+                        r.status === 'completed' && 
+                        (r.task_type === 'individual' || r.task_type === 'facility')
+                      ).length;
 
-                            {/* 🚀 🆕 2. キャンセル回数が3回以上なら‼️を表示 */}
-                            {(cust.cancel_count >= 3 || allReservations.filter(r => 
-                              (r.customer_name === cust.name || r.customer_id === cust.id) && r.status === 'canceled'
-                            ).length >= 3) && <span style={{ color: '#ef4444' }}>‼️</span>}
-                          </div>
+                      return (
+                        <React.Fragment key={cust.id}>
+                          {/* 🚀 🆕 グループが変わった瞬間にだけ「あ行」などの見出しを表示 */}
+                          {isNewGroup && (
+                            <div style={{
+                              padding: '15px 10px 5px',
+                              fontSize: '0.9rem',
+                              fontWeight: '900',
+                              color: '#4285f4', // 顧客名簿タブは青系の色
+                              borderBottom: '2px solid #e2e8f0',
+                              marginBottom: '8px',
+                              background: 'linear-gradient(to right, #f0f2f5, #fff)',
+                              position: 'sticky', // スクロール時に見出しが画面上に残る設定
+                              top: 0,
+                              zIndex: 2
+                            }}>
+                              {currentLabel}
+                            </div>
+                          )}
 
-                          <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
-                          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
-                            最終来店: {cust.last_arrival_at ? new Date(cust.last_arrival_at).toLocaleDateString() : '記録なし'}
-                          </div>
-                        </div>
-                        <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                          <div>
-                            <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
-                            <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
-                              {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
+                          <div 
+                            onClick={() => openCustomerInfo({ customer_name: cust.name })} 
+                            style={{ 
+                              background: cust.is_active === false ? '#f1f5f9' : '#fff', // 👈 前回の「灰色」ロジックも合流！
+                              opacity: cust.is_active === false ? 0.6 : 1,
+                              padding: '18px', 
+                              borderRadius: '16px', 
+                              boxShadow: '0 4px 6px rgba(0,0,0,0.05)', 
+                              cursor: 'pointer', 
+                              border: '1px solid #e2e8f0', 
+                              display: 'flex', 
+                              justifyContent: 'space-between', 
+                              alignItems: 'center',
+                              maxWidth: isPC ? '700px' : '100%', // PCで横に伸びすぎないように制限
+                              transition: 'transform 0.1s',
+                            }}
+                            onMouseEnter={(e) => isPC && (e.currentTarget.style.transform = 'translateY(-2px)')}
+                            onMouseLeave={(e) => isPC && (e.currentTarget.style.transform = 'translateY(0)')}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                {cust.name} 様
+                                {cust.is_blocked && <span style={{ color: '#ef4444' }} title="ブロック中">🚫</span>}
+                                {(cust.cancel_count >= 3) && <span style={{ color: '#ef4444' }}>‼️</span>}
+                              </div>
+                              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
+                                最終来店: {cust.last_arrival_at ? new Date(cust.last_arrival_at).toLocaleDateString() : '記録なし'}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                              <div>
+                                <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
+                                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
+                                  {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
+                                </div>
+                              </div>
+                              
+                              {cust.is_facility === true && (
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setInvoiceTarget({ id: cust.id, name: cust.name });
+                                    setShowInvoiceModal(true);
+                                  }}
+                                  style={{ 
+                                    padding: '4px 10px', background: '#f3f0ff', color: '#4b2c85', 
+                                    border: '1px solid #4b2c85', borderRadius: '6px', fontSize: '0.7rem', 
+                                    fontWeight: 'bold', cursor: 'pointer', marginTop: '5px'
+                                  }}
+                                >
+                                  <ReceiptText size={12} style={{marginRight:'3px'}} /> 請求書発行
+                                </button>
+                              )}
                             </div>
                           </div>
-                          
-                          {/* 🚀 🆕 スッキリ！DBの施設フラグが true の顧客のみボタンを表示 */}
-                          {cust.is_facility === true && (
-                            <button 
-                              onClick={(e) => {
-                                e.stopPropagation();
-                setInvoiceTarget({ id: cust.id, name: cust.name });
-                setShowInvoiceModal(true);
-              }}
-              style={{ 
-                padding: '4px 10px', background: '#f3f0ff', color: '#4b2c85', 
-                border: '1px solid #4b2c85', borderRadius: '6px', fontSize: '0.7rem', 
-                fontWeight: 'bold', cursor: 'pointer', marginTop: '5px'
-              }}
-            >
-              <ReceiptText size={12} style={{marginRight:'3px'}} /> 請求書発行
-            </button>
-          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                }
+                        </React.Fragment>
+                      );
+                    });
+                })()}
               </div>
-              
-              {allCustomers.filter(c => c.name.includes(searchTerm) || (c.phone && c.phone.includes(searchTerm))).length === 0 && (
+
+              {allCustomers.filter(c => (c.name || '').includes(searchTerm) || (c.phone && c.phone.includes(searchTerm))).length === 0 && (
                 <div style={{ textAlign: 'center', padding: '50px', color: '#94a3b8' }}>一致するお客様が見つかりません</div>
               )}
             </div>
@@ -2934,17 +2964,52 @@ return (
 
             {/* 📜 メイン：顧客リスト */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
-              {sortedAllCustomers
-                .filter(c => (c.name || '').includes(searchTerm) || (c.furigana || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
-                .map((c) => (
-                <div key={c.id} onClick={() => { openCustomerInfo({ customer_name: c.name }); setShowSearchModal(false); setSearchTerm(''); }} style={{ padding: '16px', background: '#fff', borderRadius: '12px', marginBottom: '8px', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{c.name} 様 {c.is_blocked && <span style={{color:'#ef4444'}}>🚫</span>}</div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>{c.furigana || '---'} / {c.phone || '電話未登録'}</div>
-                  </div>
-                  <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
-                </div>
-              ))}
+              {(() => {
+                let lastLabel = ""; // 🚀 直前のグループを記憶
+                
+                return sortedAllCustomers
+                  .filter(c => (c.name || '').includes(searchTerm) || (c.furigana || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
+                  .map((c) => {
+                    // 🚀 🆕 修正：今回のお客様が何行か判定
+                    const currentLabel = getKanaGroup(c.furigana);
+                    const isNewGroup = currentLabel !== lastLabel;
+                    lastLabel = currentLabel;
+
+                    return (
+                      <React.Fragment key={c.id}>
+                        {/* 🚀 🆕 グループが変わった瞬間にだけ「あ行」などの見出しを表示 */}
+                        {isNewGroup && (
+                          <div style={{
+                            padding: '15px 10px 5px',
+                            fontSize: '0.8rem',
+                            fontWeight: '900',
+                            color: '#4b2c85',
+                            borderBottom: '1px solid #eee',
+                            marginBottom: '10px',
+                            background: 'linear-gradient(to right, #fcfcfc, #fff)',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 2
+                          }}>
+                            {currentLabel}
+                          </div>
+                        )}
+
+                        <div key={c.id} onClick={() => { openCustomerInfo({ customer_name: c.name }); setShowSearchModal(false); setSearchTerm(''); }} style={{ padding: '16px', background: '#fff', borderRadius: '12px', marginBottom: '8px', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
+                              {c.name} 様 {c.is_blocked && <span style={{color:'#ef4444'}}>🚫</span>}
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>
+                              {c.furigana || '---'} / {c.phone || '電話未登録'}
+                            </div>
+                          </div>
+                          <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  });
+              })()}
             </div>
 
             {/* 🔍 フッター：固定検索バー */}

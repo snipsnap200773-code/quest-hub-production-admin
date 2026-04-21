@@ -25,6 +25,23 @@ const getCustomerColor = (name, type) => { // 💡 typeを引数に追加
   };
 };
 
+// 🚀 🆕 ここに追加！：フリガナから「あ行・か行...」を判定する関数
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-お]/)) return "あ行";
+  if (firstChar.match(/[か-こ]/)) return "か行";
+  if (firstChar.match(/[さ-そ]/)) return "さ行";
+  if (firstChar.match(/[た-と]/)) return "た行";
+  if (firstChar.match(/[な-の]/)) return "な行";
+  if (firstChar.match(/[は-ほ]/)) return "は行";
+  if (firstChar.match(/[ま-も]/)) return "ま行";
+  if (firstChar.match(/[や-よ]/)) return "や行";
+  if (firstChar.match(/[ら-ろ]/)) return "ら行";
+  if (firstChar.match(/[わ-を]/)) return "わ行";
+  return "その他";
+};
+
 const parseReservationDetails = (res) => {
   if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [] };
   const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
@@ -2694,34 +2711,63 @@ return (
 
             {/* 📜 メイン：顧客リスト（スクロールエリア） */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
-              {/* 🚀 🆕 修正：allCustomers（名寄せ済み）を使って表示する */}
-              {allCustomers
-                .filter(c => 
-                  (c.admin_name || c.name || '').includes(searchTerm) || 
-                  (c.furigana || '').includes(searchTerm) || 
-                  (c.phone || '').includes(searchTerm)
-                )
-                .map((c) => (
-                <div 
-                  key={c.id} 
-                  onClick={() => {
-                    openCustomerDetail(c); // カルテ（詳細）を開く
-                    setShowMobileSearchModal(false);
-                    setSearchTerm('');
-                  }}
-                  style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: '#fff', borderRadius: '12px', marginBottom: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
-                      {c.admin_name || c.name} 様
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
-                      {c.furigana || '---'} / {c.phone || '電話未登録'}
-                    </div>
-                  </div>
-                  <div style={{ color: themeColor, opacity: 0.3 }}>〉</div>
-                </div>
-              ))}
+              {(() => {
+                let lastLabel = ""; // 🚀 直前のグループを記憶する変数
+                
+                return allCustomers
+                  .filter(c => 
+                    (c.admin_name || c.name || '').includes(searchTerm) || 
+                    (c.furigana || '').includes(searchTerm) || 
+                    (c.phone || '').includes(searchTerm)
+                  )
+                  .map((c) => {
+                    // 🚀 🆕 修正：今回のお客様が何行か判定
+                    const currentLabel = getKanaGroup(c.furigana);
+                    const isNewGroup = currentLabel !== lastLabel;
+                    lastLabel = currentLabel;
+
+                    return (
+                      <React.Fragment key={c.id}>
+                        {/* 🚀 🆕 グループが変わった瞬間にだけ「あ行」などの見出しを表示 */}
+                        {isNewGroup && (
+                          <div style={{
+                            padding: '12px 10px 4px',
+                            fontSize: '0.8rem',
+                            fontWeight: '900',
+                            color: themeColor,
+                            borderBottom: '1px solid #eee',
+                            marginBottom: '8px',
+                            background: 'linear-gradient(to right, #fcfcfc, #fff)',
+                            position: 'sticky',
+                            top: 0,
+                            zIndex: 2
+                          }}>
+                            {currentLabel}
+                          </div>
+                        )}
+
+                        <div 
+                          onClick={() => {
+                            openCustomerDetail(c); // カルテ（詳細）を開く
+                            setShowMobileSearchModal(false);
+                            setSearchTerm('');
+                          }}
+                          style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: '#fff', borderRadius: '12px', marginBottom: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}
+                        >
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
+                              {c.admin_name || c.name} 様
+                            </div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>
+                              {c.furigana || '---'} / {c.phone || '電話未登録'}
+                            </div>
+                          </div>
+                          <div style={{ color: themeColor, opacity: 0.3 }}>〉</div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  });
+              })()}
               {allCustomers.length === 0 && <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>顧客データを読み込んでいます...</div>}
             </div>
 
