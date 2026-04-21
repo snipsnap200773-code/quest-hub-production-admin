@@ -653,38 +653,39 @@ const openDetail = async (res) => {
       const normalizedName = editFields.name.replace(/　/g, ' ').trim();
       if (!normalizedName) { alert("お名前を入力してください。"); return; }
 
-      // 🚀 🆕 修正：保存前に「同じ名前の人」がいないか再チェック（名寄せの徹底）
-      const { data: matchedMasters } = await supabase
+      // 1. まず同じ名前の人がいないかDBをチェック（名寄せ）
+      const { data: existingCust } = await supabase
         .from('customers')
         .select('id')
         .eq('shop_id', shopId)
-        .eq('name', normalizedName);
+        .eq('name', normalizedName)
+        .maybeSingle();
 
-      // すでにその名前の人がいれば、そのIDを使う（新規作成して重複させない）
-      const finalTargetId = selectedCustomer?.id || (matchedMasters && matchedMasters.length > 0 ? matchedMasters[0].id : null);
+      const finalTargetId = selectedCustomer?.id || existingCust?.id;
 
+      // 2. 保存用データの作成（フォームの全項目を名簿のカラムにマッピング）
       const customerPayload = {
-        id: finalTargetId, // 👈 これがあれば上書き、なければ新規
+        id: finalTargetId,
         shop_id: shopId,
         name: normalizedName,
         admin_name: normalizedName,
-        furigana: editFields.furigana,
-        phone: editFields.phone,
-        email: editFields.email,
-        address: editFields.address,
-        zip_code: editFields.zip_code,
-        parking: editFields.parking,
-        building_type: editFields.building_type,
-        care_notes: editFields.care_notes,
-        company_name: editFields.company_name,
-        symptoms: editFields.symptoms,
-        request_details: editFields.request_details,
-        memo: editFields.memo,
+        furigana: editFields.furigana || null,
+        phone: editFields.phone || null,
+        email: editFields.email || null,
+        address: editFields.address || null, // 👈 住所を名簿に保存
+        zip_code: editFields.zip_code || null,
+        parking: editFields.parking || null, // 👈 駐車場を名簿に保存
+        building_type: editFields.building_type || null,
+        care_notes: editFields.care_notes || null,
+        company_name: editFields.company_name || null,
+        symptoms: editFields.symptoms || null,
+        request_details: editFields.request_details || null,
+        memo: editFields.memo || null,
         line_user_id: editFields.line_user_id || selectedRes?.line_user_id || null,
         updated_at: new Date().toISOString()
       };
-      
-      // 2. 名簿（customersテーブル）を更新
+
+      // 3. 【最重要】顧客名簿（customersテーブル）を更新
       const { data: savedCust, error: custError } = await supabase
         .from('customers')
         .upsert(customerPayload, { onConflict: 'id' })
@@ -694,10 +695,9 @@ const openDetail = async (res) => {
       if (custError) throw custError;
       const finalCustomerId = savedCust.id;
 
-      // 3. 今の予約データ（reservationsテーブル）も最新情報で同期する
-      if (selectedRes?.id) {
+      // 4. 【重要】もし「予約枠」から開いているなら、その日の予約票の中身も書き換える
+      if (selectedRes?.id && selectedRes.res_type === 'normal') {
         const currentOptions = selectedRes.options || {};
-        // 💡 予約データ内の visit_info（ConfirmReservationで使用する場所）を直接書き換える
         const updatedVisitInfo = {
           ...(currentOptions.visit_info || {}),
           address: editFields.address,
@@ -706,26 +706,24 @@ const openDetail = async (res) => {
           zip_code: editFields.zip_code
         };
 
-        const { error: resUpdateError } = await supabase
+        await supabase
           .from('reservations')
           .update({ 
             customer_name: normalizedName,
             customer_phone: editFields.phone,
-            customer_email: editFields.email,
             customer_id: finalCustomerId,
-            options: { ...currentOptions, visit_info: updatedVisitInfo } // 👈 これで次回開いた時も残る！
+            options: { ...currentOptions, visit_info: updatedVisitInfo } // 👈 予約票側の住所も同期
           })
           .eq('id', selectedRes.id);
-
-        if (resUpdateError) throw resUpdateError;
       }
 
-      // 🚀 🆕 修正：保存が成功したら、検索リストのデータも最新にする
-      showMsg('情報を保存しました！✨'); 
-      setShowDetailModal(false);   // 詳細モーダルを閉じる
-      setShowCustomerModal(false); // 👈 追加：検索から開いていた場合も閉じる
+      // 5. 画面の表示を最新にする
+      showMsg('名簿情報を更新しました！✨'); 
+      setShowDetailModal(false); 
+      setShowCustomerModal(false); // 👈 検索モーダルも確実に閉じる
       
-      fetchAllCustomersForSearch(); // 👈 追加：検索用の50音順リストをDBから再取得
+      // 💡 保存した瞬間に「検索用の全顧客リスト」を最新に作り直す
+      await fetchAllCustomersForSearch(); 
       
       fetchData(); // カレンダー表示を更新
     } catch (err) {
@@ -1078,8 +1076,26 @@ const getStatusAt = (dateStr, timeStr) => {
     const resMatches = reservations.filter(r => {
       const start = new Date(r.start_time).getTime();
       const end = new Date(r.end_time).getTime();
+      
+      // 基本的な時間一致判定
       const isTimeMatch = currentSlotStart >= start && currentSlotStart < end;
+      
       if (isTimeMatch) {
+        // 🚀 🆕 修正：optionsの奥深く（peopleの中）にあるメニュー情報まで探りに行く
+        const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
+        const items = opt.people && Array.isArray(opt.people) 
+                        ? opt.people.flatMap(p => p.services || []) 
+                        : (opt.services || []);
+                        
+        // メニューの中に「1日貸切（is_full_day: true）」が含まれているかチェック
+        const isFullDay = opt.isFullDay === true || items.some(s => s.is_full_day === true);
+        
+        if (isFullDay) {
+          // 💡 貸切なら、開始時間の「最初の1コマ」だけを表示する
+          return currentSlotStart === start;
+        }
+
+        // ブロック枠の判定（既存のまま）
         if (r.res_type === 'blocked') return r.staff_id === null;
         return true;
       }

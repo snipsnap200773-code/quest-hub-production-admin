@@ -383,27 +383,97 @@ const checkAvailability = (date, timeStr) => {
 
 // ✅ 🆕 修正：カレンダーの一部を残してゆっくりスクロールする
   const handleDateClick = (date) => {
-    const isHoliday = checkIsRegularHoliday(date);
     const isPast = date < new Date(new Date().setHours(0,0,0,0));
-    if (isHoliday || isPast) return;
+    if (isPast) return; // 過去日は何もしない
 
+    const dateStr = date.toLocaleDateString('sv-SE');
+
+    // 1. 長期休暇のチェック
+    if (shop?.special_holidays && Array.isArray(shop.special_holidays)) {
+      const specialHoliday = shop.special_holidays.find(h => dateStr >= h.start && dateStr <= h.end);
+      if (specialHoliday) {
+        alert(specialHoliday.name); // 例：「夏季休業」「年末年始のお休み」
+        return;
+      }
+    }
+
+    // 2. 定休日のチェック
+    if (checkIsRegularHoliday(date)) {
+      alert("定休日");
+      return;
+    }
+
+    // 3. 臨時休業（1日ブロック）のチェック
+    const isTempClosed = existingReservations.some(r => r.start_time.startsWith(dateStr) && r.res_type === 'blocked' && r.customer_name === '臨時休業');
+    if (isTempClosed) {
+      alert("臨時休業");
+      return;
+    }
+
+    // 4. 直近の予約制限（リードタイム制限）のチェック
+    const limitDays = Math.floor((shop.min_lead_time_hours || 0) / 24);
+    const limitDate = new Date();
+    limitDate.setHours(0,0,0,0);
+    limitDate.setDate(limitDate.getDate() + limitDays);
+    if (date < limitDate) {
+      alert("ごめんなさい！この日は予約がいっぱいです。");
+      return;
+    }
+
+    // 5. 満席（空き枠が1つもない）または 1日貸切のチェック
+    let hasAvailableSlot = false;
+    let hasFullDayReservation = false;
+
+    for (let i = 0; i < timeSlots.length; i++) {
+      const time = timeSlots[i];
+      const resStatus = checkAvailability(date, time).status;
+      
+      // 空き枠が1つでもあればフラグを立てる
+      if (!['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(resStatus)) {
+        hasAvailableSlot = true;
+      }
+
+      // 「1日貸切」の予約が入っているかチェック
+      const currentSlotStart = new Date(`${dateStr}T${time}:00`).getTime();
+      const fullDayRes = existingReservations.find(r => {
+        const rStart = new Date(r.start_time).getTime();
+        const rEnd = new Date(r.end_time).getTime();
+        const isTimeMatch = currentSlotStart >= rStart && currentSlotStart < rEnd;
+        if (isTimeMatch) {
+          const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
+          const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
+          return opt.isFullDay === true || items.some(s => s.is_full_day === true);
+        }
+        return false;
+      });
+
+      if (fullDayRes) {
+        hasFullDayReservation = true;
+        break; // 貸切が見つかればそれ以上探さなくてOK
+      }
+    }
+
+    // 空き枠がない、または貸切予約がある場合
+    if (!hasAvailableSlot || hasFullDayReservation) {
+      alert("ごめんなさい！この日は予約がいっぱいです。");
+      return;
+    }
+
+    // --- 6. すべてのチェックを通過したら、日付を選択してスクロール ---
     setSelectedDate(date);
     
-    // 💡 日付を変えてから表示が切り替わるのを少し待つ
     setTimeout(() => {
       const element = timeSlotsRef.current;
       if (element) {
-        // 🆕 止まる位置の調整（180pxほど上に余白を作ることでカレンダーを見せる）
         const offset = 180; 
         const bodyRect = document.body.getBoundingClientRect().top;
         const elementRect = element.getBoundingClientRect().top;
         const elementPosition = elementRect - bodyRect;
         const offsetPosition = elementPosition - offset;
 
-        // 指定した位置へスムーズにスクロール
         window.scrollTo({
           top: offsetPosition,
-          behavior: 'smooth' // 💡 これでゆっくり動きます
+          behavior: 'smooth' 
         });
       }
     }, 100);
@@ -491,20 +561,18 @@ const checkAvailability = (date, timeStr) => {
               return (
 <div 
   key={date.toString()} 
-  onClick={() => !isHoliday && !isPast && handleDateClick(date)} // 休みならクリックを無効化
+  // 🚀 🆕 修正：クリック判定をすべて handleDateClick に任せるため、条件を外す
+  onClick={() => handleDateClick(date)} 
   style={{
     padding: '10px 0', 
     borderRadius: '12px', 
-    // 🆕 休みや過去日は「禁止マーク」のカーソルにする
-    cursor: isHoliday || isPast ? 'not-allowed' : 'pointer',
-    // 🆕 休みや過去日は背景を薄いグレーにする
+    cursor: isPast ? 'not-allowed' : 'pointer',
     background: isSelected ? themeColor : (isHoliday || isPast ? '#f1f5f9' : 'transparent'),
-    // 🆕 文字色をさらに薄くする
     color: isSelected ? '#fff' : (isHoliday || isPast ? '#94a3b8' : '#1e293b'),
     fontWeight: isSelected ? 'bold' : 'normal',
     position: 'relative',
-    // 🆕 休みや過去日はクリックを物理的に通さない
-    pointerEvents: isHoliday || isPast ? 'none' : 'auto'
+    // 🚀 🆕 修正：メッセージを出せるように、クリックを許可する（過去日以外）
+    pointerEvents: isPast ? 'none' : 'auto'
   }}
 >
   {date.getDate()}
