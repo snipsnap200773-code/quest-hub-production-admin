@@ -937,7 +937,6 @@ const sortedAllCustomers = useMemo(() => {
       const targetId = selectedCustomer?.id || existingCust?.id;
 
       const payload = { 
-        id: targetId, // 👈 重要：これを入れることで、既存の氏家さんに上書きされます！
         shop_id: cleanShopId, 
         name: normalizedName, 
         admin_name: normalizedName,
@@ -960,6 +959,8 @@ const sortedAllCustomers = useMemo(() => {
       };
       
       // 2. IDがあるなら更新、なければ新規作成
+      // 💡 update の時は .eq('id', targetId) で IDを指定しているので、
+      // 💡 payload の中身に id が入っていなくても正しく動きます！
       const { error } = targetId 
         ? await supabase.from('customers').update(payload).eq('id', targetId)
         : await supabase.from('customers').insert([payload]);
