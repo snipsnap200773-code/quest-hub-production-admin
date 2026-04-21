@@ -1618,7 +1618,7 @@ return (
     // --- 👤 個人・プライベート予定の場合 ---
     const masterName = res.res_type === 'private_task' ? res.customer_name : (res.customers?.name || res.customer_name);
     const name = masterName?.split(/[\s　]+/)[0] || "名前なし";
-    const countSuffix = reservationCount > 1 ? ` (${reservationCount}名)` : " 様";
+    const countSuffix = reservationCount > 1 ? ` (${reservationCount}名)` : (res.res_type === 'private_task' ? "" : " 様");
 
     // 🚀 🆕 追加：biz_type（識別キー）を使って、専用屋号を取得する
     const brandLabel = categoryMap[res.biz_type];
@@ -2198,7 +2198,10 @@ return (
                 <div key={res.id || idx} onClick={() => { setShowSlotListModal(false); openDetail(res); }} style={{ background: '#fff', padding: '18px', borderRadius: '18px', border: `1px solid #e2e8f0`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
                   <div style={{ textAlign: 'left', flex: 1 }}>
 <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b', marginBottom: '4px' }}>
-  {res.res_type === 'blocked' ? `🚫 ${res.customer_name}` : `👤 ${res.customers?.admin_name || res.customer_name} 様`}
+  {/* 🚀 🆕 修正：プライベート予定(private_task)の時も「様」を外す */}
+  {(res.res_type === 'blocked' || res.res_type === 'private_task') 
+    ? `${res.res_type === 'blocked' ? '🚫' : '☕️'} ${res.customer_name}` 
+    : `👤 ${res.customers?.admin_name || res.customer_name} 様`}
 </div>
 <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
   {res.res_type === 'normal' ? (

@@ -32,6 +32,9 @@ function TimeSelectionCalendar() {
   const [loading, setLoading] = useState(true);
   const [isAuthReady, setIsAuthReady] = useState(false); // 🆕 認証同期完了フラグ
 
+  // 🚀 🆕 追加：プライベート予定を入れる箱を用意する
+  const [privateTasks, setPrivateTasks] = useState([]);
+
   // --- 🚀 🆕 祝日データを保存する箱を追加 ---
   const [holidays, setHolidays] = useState({});
 
@@ -86,19 +89,22 @@ function TimeSelectionCalendar() {
       }
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
-      const [resRes, visitRes, keepRes, connRes, exclRes] = await Promise.all([
+      const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
         supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds),
         supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled'),
         supabase.from('keep_dates').select('date').in('shop_id', targetShopIds),
         // 定期ルール
         supabase.from('shop_facility_connections').select('regular_rules').in('shop_id', targetShopIds).eq('status', 'active'),
         // ルール除外日
-        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds)
+        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds),
+        // 🚀 🆕 追加：プライベート予定もデータベースから取ってくる
+        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds)
       ]);
         
       setExistingReservations(resRes.data || []);
       setRegularKeepRules(connRes.data || []);
       setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
+      setPrivateTasks(privRes.data || []); // 🚀 🆕 取得したデータを箱に入れる
 
       // 確定・手動キープを一つのリストに（終日ブロック用）
       const fDates = [
@@ -154,6 +160,7 @@ function TimeSelectionCalendar() {
 
   // --- ⚙️ エンジンロジック（三土手さんのロジックを完全継承） ---
   const checkIsRegularHoliday = (date) => {
+    // 💡 修正：正しくお店の設定から定休日データを読み取る
     if (!shop?.business_hours?.regular_holidays) return false;
     const regularHolidaysSettings = shop.business_hours.regular_holidays;
 
@@ -169,20 +176,28 @@ function TimeSelectionCalendar() {
     // ------------------------------------------
 
     const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-    const dayName = dayNames[date.getDay()];
+    const dayName = dayNames[date.getDay()]; // 例: 'mon'
     const dom = date.getDate();
-    const nthWeek = Math.ceil(dom / 7);
+    const nthWeek = Math.ceil(dom / 7); // 第何週か
+
     const tempDate = new Date(date);
     const currentMonth = tempDate.getMonth();
+    
+    // 最終週かどうかの判定
     const checkLast = new Date(date);
     checkLast.setDate(dom + 7);
     const isLastWeek = checkLast.getMonth() !== currentMonth;
+    
+    // 最後から2番目の週かどうかの判定
     const checkSecondLast = new Date(date);
     checkSecondLast.setDate(dom + 14);
     const isSecondToLastWeek = (checkSecondLast.getMonth() !== currentMonth) && !isLastWeek;
-    if (holidays[`${nthWeek}-${dayName}`]) return true;
-    if (isLastWeek && holidays[`L1-${dayName}`]) return true;
-    if (isSecondToLastWeek && holidays[`L2-${dayName}`]) return true;
+
+    // 💡 修正：判定ロジックをシンプルにして確実にヒットさせる
+    if (regularHolidaysSettings[`${nthWeek}-${dayName}`] === true) return true;
+    if (isLastWeek && regularHolidaysSettings[`L1-${dayName}`] === true) return true;
+    if (isSecondToLastWeek && regularHolidaysSettings[`L2-${dayName}`] === true) return true;
+
     return false;
   };
 
@@ -311,7 +326,14 @@ const checkAvailability = (date, timeStr) => {
       return currentSlotTime >= s && currentSlotTime < e;
     });
 
-    if (isBlockedByAdmin) return { status: 'booked', label: '×', remaining: 0 };
+    // 🚀 🆕 追加：プライベート予定もブロック対象にする
+    const isPrivateBlocked = privateTasks.some(p => {
+      const s = new Date(p.start_time).getTime();
+      const e = new Date(p.end_time).getTime();
+      return currentSlotTime >= s && currentSlotTime < e;
+    });
+
+    if (isBlockedByAdmin || isPrivateBlocked) return { status: 'booked', label: '×', remaining: 0 };
 
     /* ==========================================
        🚀 6. 以降、既存の貫通チェックや空き枠計算
@@ -338,6 +360,14 @@ const checkAvailability = (date, timeStr) => {
     for (let t = targetDateTime.getTime(); t < potentialEndTime.getTime(); t += interval * 60 * 1000) {
       const checkTStr = new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false });
       if (isInsideRest(checkTStr)) return { status: 'booked', label: '×', remaining: 0 };
+      
+      // 🚀 🆕 追加：予約の途中でプライベート予定にぶつからないかチェック
+      const hitPrivate = privateTasks.some(p => {
+        const s = new Date(p.start_time).getTime();
+        const e = new Date(p.end_time).getTime();
+        return t >= s && t < e;
+      });
+      if (hitPrivate) return { status: 'booked', label: '×', remaining: 0 };
     }
 
     // 閉店時間を過ぎていないか
@@ -400,7 +430,7 @@ const checkAvailability = (date, timeStr) => {
     // 1. 長期休暇
     if (shop?.special_holidays && Array.isArray(shop.special_holidays)) {
       const specialHoliday = shop.special_holidays.find(h => dateStr >= h.start && dateStr <= h.end);
-      if (specialHoliday) return specialHoliday.name; // 例: 夏季休業
+      if (specialHoliday) return specialHoliday.name;
     }
 
     // 2. 定休日
@@ -417,17 +447,20 @@ const checkAvailability = (date, timeStr) => {
     limitDate.setDate(limitDate.getDate() + limitDays);
     if (date < limitDate) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    // 5. 1日貸切予約の有無
+    // 5. 1日貸切予約の有無 (ねじ込みや一般予約)
     let hasFullDayReservation = false;
     for (let i = 0; i < timeSlots.length; i++) {
       const time = timeSlots[i];
       const currentSlotStart = new Date(`${dateStr}T${time}:00`).getTime();
       const fullDayRes = existingReservations.find(r => {
+        if (r.status === 'canceled') return false; // キャンセルは除外
         const rStart = new Date(r.start_time).getTime();
         const rEnd = new Date(r.end_time).getTime();
+        // 予約時間内に重なっているか
         if (currentSlotStart >= rStart && currentSlotStart < rEnd) {
           const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
           const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
+          // 貸切フラグを持っているか
           return opt.isFullDay === true || items.some(s => s.is_full_day === true);
         }
         return false;
@@ -439,29 +472,32 @@ const checkAvailability = (date, timeStr) => {
     }
     if (hasFullDayReservation) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    // 6. すべての枠が埋まっているか
-    const allSlotsBooked = timeSlots.length > 0 && timeSlots.every(t => ['none', 'closed', 'rest', 'past', 'booked', 'gap'].includes(checkAvailability(date, t).status));
+    // 6. すべての枠が埋まっているか（時間枠が1つもなく、かつ全滅の場合）
+    const allSlotsBooked = timeSlots.length > 0 && timeSlots.every(t => ['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(checkAvailability(date, t).status));
     if (allSlotsBooked) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    return null; // 予約可能！
+    return null; // メッセージなし＝予約可能！
   };
 
-  // 🚀 🆕 修正：アラートを消し、日付を選択して下へスクロールするだけの処理に戻す
+  // 🚀 🆕 修正：カレンダーの一部を残してゆっくりスクロールする
   const handleDateClick = (date) => {
     const isPast = date < new Date(new Date().setHours(0,0,0,0));
     if (isPast) return;
 
     setSelectedDate(date);
     
+    // 💡 日付を変えてから表示が切り替わるのを少し待つ
     setTimeout(() => {
       const element = timeSlotsRef.current;
       if (element) {
+        // 🆕 止まる位置の調整（180pxほど上に余白を作ることでカレンダーを見せる）
         const offset = 180; 
         const bodyRect = document.body.getBoundingClientRect().top;
         const elementRect = element.getBoundingClientRect().top;
         const elementPosition = elementRect - bodyRect;
         const offsetPosition = elementPosition - offset;
 
+        // 指定した位置へスムーズにスクロール
         window.scrollTo({
           top: offsetPosition,
           behavior: 'smooth' 
@@ -547,29 +583,36 @@ const checkAvailability = (date, timeStr) => {
             {calendarDays.map((date, i) => {
               if (!date) return <div key={`empty-${i}`} />;
               const isSelected = selectedDate?.toDateString() === date.toDateString();
-              // 💡 修正：定休日に加えて、長期休暇もグレーにする
-              const isHoliday = checkIsRegularHoliday(date) || checkIsSpecialHoliday(date);
+              
+              // 🚀 🆕 修正：メッセージがあればグレーアウトする
+              const unavailMsg = getUnavailabilityMessage(date);
+              const isUnavailable = unavailMsg !== null;
+              
               const isPast = date < new Date(new Date().setHours(0,0,0,0));
+
               return (
-<div 
-  key={date.toString()} 
-  // 🚀 🆕 修正：過去日以外はすべてクリック可能にする（タップしてメッセージを見せるため）
-  onClick={() => !isPast && handleDateClick(date)}
-  style={{
-    padding: '10px 0', 
-    borderRadius: '12px', 
-    cursor: isPast ? 'not-allowed' : 'pointer',
-    background: isSelected ? themeColor : (isHoliday || isPast ? '#f1f5f9' : 'transparent'),
-    color: isSelected ? '#fff' : (isHoliday || isPast ? '#94a3b8' : '#1e293b'),
-    fontWeight: isSelected ? 'bold' : 'normal',
-    position: 'relative'
-  }}
->
-  {date.getDate()}
-  {!isHoliday && !isPast && (
-    <div style={{ width: '4px', height: '4px', background: isSelected ? '#fff' : themeColor, borderRadius: '50%', margin: '2px auto 0' }} />
-  )}
-</div>
+                <div 
+                  key={date.toString()} 
+                  // 🚀 🆕 修正：休みでもクリックさせてメッセージを表示するため、isPast 以外はクリック可能に
+                  onClick={() => !isPast && handleDateClick(date)}
+                  style={{
+                    padding: '10px 0', 
+                    borderRadius: '12px', 
+                    cursor: isPast ? 'not-allowed' : 'pointer',
+                    background: isSelected ? themeColor : (isUnavailable || isPast ? '#f1f5f9' : 'transparent'),
+                    color: isSelected ? '#fff' : (isUnavailable || isPast ? '#94a3b8' : '#1e293b'),
+                    fontWeight: isSelected ? 'bold' : 'normal',
+                    position: 'relative',
+                    // 🚀 🆕 修正：過去日以外はクリックイベントを通す
+                    pointerEvents: isPast ? 'none' : 'auto'
+                  }}
+                >
+                  {date.getDate()}
+                  {/* 予約可能ならドットを表示 */}
+                  {!isUnavailable && !isPast && (
+                    <div style={{ width: '4px', height: '4px', background: isSelected ? '#fff' : themeColor, borderRadius: '50%', margin: '2px auto 0' }} />
+                  )}
+                </div>
               );
             })}
           </div>
@@ -577,6 +620,7 @@ const checkAvailability = (date, timeStr) => {
       </div>
       
       <div style={{ padding: '0 15px 20px' }}>
+        {/* ✅ 🆕 ここに ref={timeSlotsRef} を追加して目印にします */}
         <h4 ref={timeSlotsRef} style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <CalendarIcon size={16} /> {selectedDate.getMonth()+1}月{selectedDate.getDate()}日
         </h4>
@@ -658,6 +702,7 @@ const checkAvailability = (date, timeStr) => {
 
       {selectedTime && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', padding: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'center', zIndex: 100, boxShadow: '0 -10px 20px rgba(0,0,0,0.05)' }}>
+      // ...（確定ボタンの表示部分）...
           <div style={{ marginBottom: '12px', fontSize: '0.95rem' }}>
             選択中：<span style={{ fontWeight: 'bold', color: themeColor }}>{selectedDate.toLocaleDateString('ja-JP')} {selectedTime}〜</span>
           </div>

@@ -1553,16 +1553,18 @@ return (
 
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px', paddingLeft: '8px' }}>
                             <div 
-                              onClick={() => openCustomerInfo(res)} 
-                              style={{ 
-                                flex: 1, fontSize: '1.1rem', fontWeight: 'bold', 
-                                color: isCanceled ? '#94a3b8' : '#1e293b', 
-                                textDecoration: isCanceled ? 'line-through' : 'underline', // 🚀 キャンセルなら名前に斜線
-                                textDecorationColor: '#cbd5e1' 
-                              }}
-                            >
-                              {res.customer_name || '名前なし'} 様
-                            </div>
+  onClick={() => (res.res_type === 'private_task' || res.res_type === 'blocked') ? openDetail(res) : openCustomerInfo(res)} 
+  style={{ 
+    flex: 1, fontSize: '1.1rem', fontWeight: 'bold', 
+    color: isCanceled ? '#94a3b8' : '#1e293b', 
+    textDecoration: isCanceled ? 'line-through' : 'underline', 
+    textDecorationColor: '#cbd5e1' 
+  }}
+>
+  {(res.res_type === 'private_task' || res.res_type === 'blocked')
+    ? (res.customer_name || '予定') 
+    : `${res.customer_name || '名前なし'} 様`}
+</div>
                             
                             {/* 🚀 2. 「レジへ」ボタンの無効化 ＆ テキスト変更 */}
                             <button 
