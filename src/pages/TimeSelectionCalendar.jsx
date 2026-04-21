@@ -271,8 +271,20 @@ const checkAvailability = (date, timeStr) => {
     const isFacilityDay = facilitySchedules.includes(dateStr); // 🏢 施設が手動キープまたは予約済
     const isRegularKeep = checkIsRegularKeepDay(date); // 🏢 定期キープ（第n曜日のルール）
 
-    // どれか一つでも該当すれば、即座に「休」を返して終了
-    if (isSpecialHoliday || isRegularHoliday || isFacilityDay || isRegularKeep) {
+    // 🚀 🆕 追加：その日に「1日貸切」の予約が1件でも入っているかチェック
+    const isFullDayReserved = existingReservations.some(r => {
+      // その日の予約かチェック
+      if (r.start_time.startsWith(dateStr) && r.status !== 'canceled') {
+        const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
+        const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
+        // options.isFullDay か、メニュー自体に is_full_day があるか
+        return opt.isFullDay === true || items.some(s => s.is_full_day === true);
+      }
+      return false;
+    });
+
+    // 💡 修正：貸切予約がある場合も「休」として扱い、すべての枠をブロックする
+    if (isSpecialHoliday || isRegularHoliday || isFacilityDay || isRegularKeep || isFullDayReserved) {
       return { status: 'closed', label: '休', remaining: 0 };
     }
 
@@ -381,85 +393,64 @@ const checkAvailability = (date, timeStr) => {
     return { status: 'available', label: '◎', remaining: minRemaining };
   };
 
-// ✅ 🆕 修正：カレンダーの一部を残してゆっくりスクロールする
-  const handleDateClick = (date) => {
-    const isPast = date < new Date(new Date().setHours(0,0,0,0));
-    if (isPast) return; // 過去日は何もしない
-
+  // 🚀 🆕 追加：その日が「なぜ予約できないか」の理由メッセージを取得する
+  const getUnavailabilityMessage = (date) => {
     const dateStr = date.toLocaleDateString('sv-SE');
 
-    // 1. 長期休暇のチェック
+    // 1. 長期休暇
     if (shop?.special_holidays && Array.isArray(shop.special_holidays)) {
       const specialHoliday = shop.special_holidays.find(h => dateStr >= h.start && dateStr <= h.end);
-      if (specialHoliday) {
-        alert(specialHoliday.name); // 例：「夏季休業」「年末年始のお休み」
-        return;
-      }
+      if (specialHoliday) return specialHoliday.name; // 例: 夏季休業
     }
 
-    // 2. 定休日のチェック
-    if (checkIsRegularHoliday(date)) {
-      alert("定休日");
-      return;
-    }
+    // 2. 定休日
+    if (checkIsRegularHoliday(date)) return "定休日";
 
-    // 3. 臨時休業（1日ブロック）のチェック
+    // 3. 臨時休業
     const isTempClosed = existingReservations.some(r => r.start_time.startsWith(dateStr) && r.res_type === 'blocked' && r.customer_name === '臨時休業');
-    if (isTempClosed) {
-      alert("臨時休業");
-      return;
-    }
+    if (isTempClosed) return "臨時休業";
 
-    // 4. 直近の予約制限（リードタイム制限）のチェック
-    const limitDays = Math.floor((shop.min_lead_time_hours || 0) / 24);
+    // 4. 直近の予約制限 (例: 当日予約不可)
+    const limitDays = Math.floor((shop?.min_lead_time_hours || 0) / 24);
     const limitDate = new Date();
     limitDate.setHours(0,0,0,0);
     limitDate.setDate(limitDate.getDate() + limitDays);
-    if (date < limitDate) {
-      alert("ごめんなさい！この日は予約がいっぱいです。");
-      return;
-    }
+    if (date < limitDate) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    // 5. 満席（空き枠が1つもない）または 1日貸切のチェック
-    let hasAvailableSlot = false;
+    // 5. 1日貸切予約の有無
     let hasFullDayReservation = false;
-
     for (let i = 0; i < timeSlots.length; i++) {
       const time = timeSlots[i];
-      const resStatus = checkAvailability(date, time).status;
-      
-      // 空き枠が1つでもあればフラグを立てる
-      if (!['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(resStatus)) {
-        hasAvailableSlot = true;
-      }
-
-      // 「1日貸切」の予約が入っているかチェック
       const currentSlotStart = new Date(`${dateStr}T${time}:00`).getTime();
       const fullDayRes = existingReservations.find(r => {
         const rStart = new Date(r.start_time).getTime();
         const rEnd = new Date(r.end_time).getTime();
-        const isTimeMatch = currentSlotStart >= rStart && currentSlotStart < rEnd;
-        if (isTimeMatch) {
+        if (currentSlotStart >= rStart && currentSlotStart < rEnd) {
           const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
           const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
           return opt.isFullDay === true || items.some(s => s.is_full_day === true);
         }
         return false;
       });
-
       if (fullDayRes) {
         hasFullDayReservation = true;
-        break; // 貸切が見つかればそれ以上探さなくてOK
+        break;
       }
     }
+    if (hasFullDayReservation) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    // 空き枠がない、または貸切予約がある場合
-    if (!hasAvailableSlot || hasFullDayReservation) {
-      alert("ごめんなさい！この日は予約がいっぱいです。");
-      return;
-    }
+    // 6. すべての枠が埋まっているか
+    const allSlotsBooked = timeSlots.length > 0 && timeSlots.every(t => ['none', 'closed', 'rest', 'past', 'booked', 'gap'].includes(checkAvailability(date, t).status));
+    if (allSlotsBooked) return "ごめんなさい！\nこの日は予約がいっぱいです。";
 
-    // --- 6. すべてのチェックを通過したら、日付を選択してスクロール ---
+    return null; // 予約可能！
+  };
+
+  // 🚀 🆕 修正：アラートを消し、日付を選択して下へスクロールするだけの処理に戻す
+  const handleDateClick = (date) => {
+    const isPast = date < new Date(new Date().setHours(0,0,0,0));
+    if (isPast) return;
+
     setSelectedDate(date);
     
     setTimeout(() => {
@@ -556,13 +547,14 @@ const checkAvailability = (date, timeStr) => {
             {calendarDays.map((date, i) => {
               if (!date) return <div key={`empty-${i}`} />;
               const isSelected = selectedDate?.toDateString() === date.toDateString();
-              const isHoliday = checkIsRegularHoliday(date);
+              // 💡 修正：定休日に加えて、長期休暇もグレーにする
+              const isHoliday = checkIsRegularHoliday(date) || checkIsSpecialHoliday(date);
               const isPast = date < new Date(new Date().setHours(0,0,0,0));
               return (
 <div 
   key={date.toString()} 
-  // 🚀 🆕 修正：クリック判定をすべて handleDateClick に任せるため、条件を外す
-  onClick={() => handleDateClick(date)} 
+  // 🚀 🆕 修正：過去日以外はすべてクリック可能にする（タップしてメッセージを見せるため）
+  onClick={() => !isPast && handleDateClick(date)}
   style={{
     padding: '10px 0', 
     borderRadius: '12px', 
@@ -570,13 +562,10 @@ const checkAvailability = (date, timeStr) => {
     background: isSelected ? themeColor : (isHoliday || isPast ? '#f1f5f9' : 'transparent'),
     color: isSelected ? '#fff' : (isHoliday || isPast ? '#94a3b8' : '#1e293b'),
     fontWeight: isSelected ? 'bold' : 'normal',
-    position: 'relative',
-    // 🚀 🆕 修正：メッセージを出せるように、クリックを許可する（過去日以外）
-    pointerEvents: isPast ? 'none' : 'auto'
+    position: 'relative'
   }}
 >
   {date.getDate()}
-  {/* 🆕 休みや過去日には「予約可能ドット」を表示しない（ここは既存通りですが再確認！） */}
   {!isHoliday && !isPast && (
     <div style={{ width: '4px', height: '4px', background: isSelected ? '#fff' : themeColor, borderRadius: '50%', margin: '2px auto 0' }} />
   )}
@@ -588,71 +577,83 @@ const checkAvailability = (date, timeStr) => {
       </div>
       
       <div style={{ padding: '0 15px 20px' }}>
-        {/* ✅ 🆕 ここに ref={timeSlotsRef} を追加して目印にします */}
         <h4 ref={timeSlotsRef} style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <CalendarIcon size={16} /> {selectedDate.getMonth()+1}月{selectedDate.getDate()}日の空き時間
+          <CalendarIcon size={16} /> {selectedDate.getMonth()+1}月{selectedDate.getDate()}日
         </h4>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-          {(() => {
-            // 💡 今選んでいるメニューの中に「制限時間あり」のものがあるか判定
-            const selectedServices = (people || []).flatMap(p => p.services || []);
-            const hasRestrictedMenu = selectedServices.some(s => s.restricted_hours && s.restricted_hours.length > 0);
+        
+        {(() => {
+          // 🚀 🆕 修正：まず、この日のメッセージを取得する
+          const unavailMessage = getUnavailabilityMessage(selectedDate);
+          
+          // 💡 メッセージがあれば、枠を出さずにメッセージだけを表示する
+          if (unavailMessage) {
+            return (
+              <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: '20px', color: '#94a3b8', border: '1px solid #e2e8f0', fontWeight: 'bold', lineHeight: '1.6' }}>
+                {unavailMessage.split('\n').map((line, i) => (
+                  <React.Fragment key={i}>
+                    {line}
+                    {i === 0 && <br/>}
+                  </React.Fragment>
+                ))}
+              </div>
+            );
+          }
 
-            // ✅ 🆕 修正：前詰め判定（制限メニューがある場合は mode を false 扱いにする）
-            let firstValidTime = null;
-            // 「店舗設定がON」 かつ 「制限メニューを選んでいない」 時だけ前詰めを適用
-            const shouldApplyStrictFill = shop?.is_strict_fill_mode && !hasRestrictedMenu;
+          // --- 💡 以下、メッセージがない（空きがある）場合の通常表示 ---
+          return (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+              {(() => {
+                const selectedServices = (people || []).flatMap(p => p.services || []);
+                const hasRestrictedMenu = selectedServices.some(s => s.restricted_hours && s.restricted_hours.length > 0);
 
-            if (shouldApplyStrictFill) {
-              firstValidTime = timeSlots.find(time => {
-                const res = checkAvailability(selectedDate, time);
-                return !['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status);
-              });
-            }
+                let firstValidTime = null;
+                const shouldApplyStrictFill = shop?.is_strict_fill_mode && !hasRestrictedMenu;
 
-            return timeSlots.map(time => {
-              const res = checkAvailability(selectedDate, time);
-              
-              if (['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status)) return null;
+                if (shouldApplyStrictFill) {
+                  firstValidTime = timeSlots.find(time => {
+                    const res = checkAvailability(selectedDate, time);
+                    return !['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status);
+                  });
+                }
 
-              // ✅ 🆕 修正：shouldApplyStrictFill が true の時だけ一番最初以外を隠す
-              if (shouldApplyStrictFill && firstValidTime && time !== firstValidTime) {
-                return null;
-              }
+                return timeSlots.map(time => {
+                  const res = checkAvailability(selectedDate, time);
+                  if (['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status)) return null;
 
-              const isSelected = selectedTime === time;
-              const isSolo = (shop?.max_capacity || 1) === 1;
+                  if (shouldApplyStrictFill && firstValidTime && time !== firstValidTime) {
+                    return null;
+                  }
 
-              return (
-                <button
-                  key={time}
-                  onClick={() => setSelectedTime(time)}
-                  style={{
-                    padding: '15px', borderRadius: '16px', border: '2px solid',
-                    borderColor: isSelected ? themeColor : '#fff',
-                    background: isSelected ? `${themeColor}11` : '#fff',
-                    textAlign: 'left', cursor: 'pointer', transition: '0.2s',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                  }}
-                >
-                  <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: isSelected ? themeColor : '#1e293b' }}>{time}</div>
-                  {isSolo ? (
-                    <div style={{ fontSize: '0.7rem', color: themeColor, marginTop: '4px' }}>予約可能</div>
-                  ) : (
-                    <div style={{ fontSize: '0.7rem', color: res.remaining === 1 ? '#ef4444' : '#10b981', marginTop: '4px' }}>
-                      {res.remaining === 1 ? '残り1枠！' : `残り${res.remaining}枠`}
-                    </div>
-                  )}
-                </button>
-              );
-            });
-          })()}
-        </div>
-        {timeSlots.every(t => ['none', 'closed', 'rest', 'past', 'booked', 'gap'].includes(checkAvailability(selectedDate, t).status)) && (
-          <div style={{ textAlign: 'center', padding: '40px', background: '#fff', borderRadius: '20px', color: '#94a3b8' }}>
-            ごめんなさい！<br/>この日は予約がいっぱいです。
-          </div>
-        )}
+                  const isSelected = selectedTime === time;
+                  const isSolo = (shop?.max_capacity || 1) === 1;
+
+                  return (
+                    <button
+                      key={time}
+                      onClick={() => setSelectedTime(time)}
+                      style={{
+                        padding: '15px', borderRadius: '16px', border: '2px solid',
+                        borderColor: isSelected ? themeColor : '#fff',
+                        background: isSelected ? `${themeColor}11` : '#fff',
+                        textAlign: 'left', cursor: 'pointer', transition: '0.2s',
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
+                      }}
+                    >
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: isSelected ? themeColor : '#1e293b' }}>{time}</div>
+                      {isSolo ? (
+                        <div style={{ fontSize: '0.7rem', color: themeColor, marginTop: '4px' }}>予約可能</div>
+                      ) : (
+                        <div style={{ fontSize: '0.7rem', color: res.remaining === 1 ? '#ef4444' : '#10b981', marginTop: '4px' }}>
+                          {res.remaining === 1 ? '残り1枠！' : `残り${res.remaining}枠`}
+                        </div>
+                      )}
+                    </button>
+                  );
+                });
+              })()}
+            </div>
+          );
+        })()}
       </div>
 
       {selectedTime && (
