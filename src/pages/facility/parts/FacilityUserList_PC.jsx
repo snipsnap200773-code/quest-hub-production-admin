@@ -38,7 +38,13 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
   const fetchResidents = async () => {
     setLoading(true);
-    const { data } = await supabase.from('members').select('*').eq('facility_user_id', facilityId);
+    // 🚀 🆕 is_active が true（現役）の人だけを取得するように変更
+    const { data } = await supabase
+      .from('members')
+      .select('*')
+      .eq('facility_user_id', facilityId)
+      .eq('is_active', true); 
+      
     setResidents(data || []);
     setLoading(false);
   };
@@ -73,8 +79,48 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
     setNewNotes(res.notes || ''); 
     setIsBedCut(!!res.isBedCut);
     setIsFormOpen(true);
-    setDetailMember(null); // 詳細ポップアップが開いていたら閉じる
+    setDetailMember(null); 
     window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  // 🚀 🆕 スマート削除ロジック（ここに追加！）
+  const handleDeleteMember = async (memberId, memberName) => {
+    if (!window.confirm(`「${memberName}」様を名簿から削除しますか？`)) return;
+
+    try {
+      // 1. 全店舗を通じた利用実績があるかチェック
+      const { count, error: countErr } = await supabase
+        .from('visit_request_residents')
+        .select('*', { count: 'exact', head: true })
+        .eq('member_id', memberId);
+
+      if (countErr) throw countErr;
+
+      if (count > 0) {
+        // 🏥 パターンA：実績あり ➔ 論理削除（非表示にするだけ）
+        const { error: upErr } = await supabase
+          .from('members')
+          .update({ is_active: false })
+          .eq('id', memberId);
+
+        if (upErr) throw upErr;
+        alert("過去の利用実績があるため、データを保護した状態で名簿から外しました。");
+      } else {
+        // 🧹 パターンB：実績なし ➔ 物理削除（DBから完全に消す）
+        const { error: delErr } = await supabase
+          .from('members')
+          .delete()
+          .eq('id', memberId);
+
+        if (delErr) throw delErr;
+        alert("名簿から完全に削除しました。");
+      }
+
+      fetchResidents(); // リストを更新
+    } catch (err) {
+      console.error(err);
+      alert("削除処理中にエラーが発生しました: " + err.message);
+    }
   };
 
   const sortedResidents = [...residents].sort((a, b) => {
@@ -231,7 +277,10 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
                     <td style={{textAlign:'center'}}>
                       <div style={btnActions}>
                         <button onClick={() => startEdit(u)} style={pcActionBtn}><Edit2 size={14}/></button>
-                        <button onClick={() => { if(window.confirm('削除しますか？')) supabase.from('members').delete().eq('id', u.id).then(() => fetchResidents()) }} style={pcDelBtn}><Trash2 size={14}/></button>
+                        {/* 🚀 🆕 修正：上で作った handleDeleteMember を呼び出す形に変更 */}
+                        <button onClick={() => handleDeleteMember(u.id, u.name)} style={pcDelBtn}>
+                          <Trash2 size={14}/>
+                        </button>
                       </div>
                     </td>
                   </tr>

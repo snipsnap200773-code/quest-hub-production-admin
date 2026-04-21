@@ -772,7 +772,9 @@ const sortedAllCustomers = useMemo(() => {
       const memberInfo = allMembers.find(m => m.name === name); 
       return {
         name: name,
-        // ひらがなを正規化（カタカナをひらがなに変換して「あいうえお順」を確実にする）
+        // 🚀 🆕 追加：DBのフラグを見て「現役かどうか」を判定
+        // DBに値がない（null）場合は true とみなします
+        isActive: memberInfo ? memberInfo.is_active !== false : true,
         kana: (memberInfo?.kana || memberInfo?.furigana || name)
           .replace(/[\u30a1-\u30f6]/g, s => String.fromCharCode(s.charCodeAt(0) - 0x60)), 
         lastVisit: val.date
@@ -2164,9 +2166,17 @@ return (
                             
                             <div 
                               onClick={() => openCustomerInfo({ customer_name: m.name })}
-                              style={memberRowStyle}
+                              style={{
+                                ...memberRowStyle,
+                                // 🚀 🆕 亡くなった（非アクティブな）方は背景を灰色にし、文字を薄くする
+                                background: m.isActive ? '#fff' : '#f1f5f9',
+                                opacity: m.isActive ? 1 : 0.6,
+                                border: m.isActive ? '1px solid #e0e7ff' : '1px dashed #cbd5e1'
+                              }}
                             >
-                              <span style={{ fontWeight: 'bold' }}>{m.name} 様</span>
+                              <span style={{ fontWeight: 'bold' }}>
+                                {m.name} 様 {!m.isActive && '(退去/除籍済)'} 
+                              </span>
                               <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
                                 {m.lastVisit ? `最終: ${m.lastVisit.replace(/-/g, '/')}` : '記録なし'}
                               </span>

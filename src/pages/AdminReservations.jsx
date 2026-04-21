@@ -1949,15 +1949,22 @@ return (
 
       {/* 💡 入力欄はスッキリ配置 */}
       {key === 'parking' ? (
-    <select 
-      disabled={editFields.is_facility} // 👈 施設なら選択不可
-      value={editFields[key] || ''} 
-      onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-      style={{ ...inputStyle, background: editFields.is_facility ? '#f1f5f9' : '#fff' }}
-    >
-      {/* optionタグ略 */}
-    </select>
-  ) : (
+  <select 
+    disabled={editFields.is_facility} 
+    value={editFields[key] || ''} 
+    onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+    style={{ 
+      ...inputStyle, 
+      background: editFields.is_facility ? '#f1f5f9' : '#fff',
+      cursor: editFields.is_facility ? 'not-allowed' : 'pointer'
+    }}
+  >
+    {/* 🚀 ここに具体的な選択肢を復活させます */}
+    <option value="">未選択</option>
+    <option value="あり">あり</option>
+    <option value="なし">なし</option>
+  </select>
+) : (
     <input 
       type="text" 
       readOnly={editFields.is_facility} // 👈 施設なら入力不可
