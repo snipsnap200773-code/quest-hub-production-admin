@@ -178,8 +178,8 @@ const fetchTodayTasks = async () => {
     // 💡 シンプルに「自分の店舗ID」で予約を検索するだけ！
     const { data: resData, error: resError } = await supabase
       .from('reservations')
-      .select('*, customers(name, admin_name)') 
-      .eq('shop_id', shopId) // 👈 .in ではなく .eq に変更
+      .select('*, customers(name, admin_name, memo)') // 👈 memo を追加
+      .eq('shop_id', shopId)
       .gte('start_time', `${dateStr} 00:00:00`)
       .lte('start_time', `${dateStr} 23:59:59`)
       .or('is_block.is.null,is_block.eq.false')
@@ -410,38 +410,46 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
     const normalizedName = (editFields.name || selectedTask.customer_name).replace(/　/g, ' ').trim();
     const newMenuName = selectedServices.map(s => s.name).join(', ');
 
-    // --- ステップA：顧客マスタ（名簿）の更新（常に自店） ---
+    // --- ステップA：顧客マスタ（名簿）の更新 ---
     let targetCustomerId = selectedTask.customer_id;
     if (!targetCustomerId) {
       const { data: existingCust } = await supabase.from('customers').select('id').eq('shop_id', shopId).eq('name', normalizedName).maybeSingle();
       targetCustomerId = existingCust?.id;
     }
 
+    // 🚀 🆕 修正：既存データを「空っぽ」で上書きしないためのスマート・ペイロード作成
     const customerPayload = {
       shop_id: shopId,
       name: normalizedName,
       updated_at: new Date().toISOString()
     };
 
-    // 入力がある場合のみ、保存対象に加える（これで既存のふりがなが守られます）
+    // 【重要】各項目において、入力がある時だけ上書き対象に加える（これで既存データが守られます）
     if (editFields.furigana?.trim()) customerPayload.furigana = editFields.furigana;
     if (editFields.email?.trim()) customerPayload.email = editFields.email;
     if (editFields.address?.trim()) customerPayload.address = editFields.address;
-    if (editFields.memo?.trim()) customerPayload.memo = editFields.memo;
     
-    // 電話番号は数字のみ抽出して、入力があれば更新
+    // 💡 メモの保護：入力があれば採用、なければ既存名簿のメモを維持
+    if (editFields.memo?.trim()) {
+      customerPayload.memo = editFields.memo;
+    } else if (selectedTask.customers?.memo) {
+      customerPayload.memo = selectedTask.customers.memo;
+    }
+
+    // 電話番号の保護：入力があれば採用、なければ既存を維持
     const inputPhone = editFields.phone?.replace(/[^0-9]/g, '');
     if (inputPhone) {
       customerPayload.phone = inputPhone;
     } else if (selectedTask.customer_phone && selectedTask.customer_phone !== '---') {
-      // 入力がないが、予約データ側に電話番号があればそれを維持
       customerPayload.phone = selectedTask.customer_phone.replace(/[^0-9]/g, '');
     }
 
+    // LINE連携情報の維持
     if (editFields.line_user_id || selectedTask.line_user_id) {
       customerPayload.line_user_id = editFields.line_user_id || selectedTask.line_user_id;
     }
 
+    // 保存実行
     if (targetCustomerId) customerPayload.id = targetCustomerId;
     const { data: savedCust } = await supabase.from('customers').upsert(customerPayload, { onConflict: 'id' }).select().single();
     const finalCustomerId = savedCust?.id || targetCustomerId;
@@ -476,9 +484,9 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
 
     if (resError) throw resError;
 
-    // --- ステップD：売上データ（sales）の記録（シンプル版！） ---
+    // --- ステップD：売上データ（sales）の記録 ---
     const salePayload = {
-      shop_id: shopId, // 💡 常に自分の店舗ID
+      shop_id: shopId,
       reservation_id: selectedTask.id,
       customer_id: finalCustomerId,
       total_amount: finalPrice,
@@ -491,7 +499,6 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
       }
     };
 
-    // 💡 RPCを使わず、直接 sales テーブルへ書き込みます
     const { error: saleError } = await supabase
       .from('sales')
       .upsert(salePayload, { onConflict: 'reservation_id' });
@@ -643,45 +650,47 @@ const handleAutoBatchProcess = async () => {
     🆕 お客様の詳細情報（名簿マスタからメモを取得 ＆ 履歴を名前でも検索）
    ========================================== */
 const openCustomerInfo = async (task) => {
-  setSelectedTask(task); // 現在のタスクを保持
-  let cust = null;
+    setSelectedTask(task);
+    let cust = null;
+    const searchName = task.customer_name;
 
-  try {
-    // 1. まず予約データに customer_id が紐付いているか確認
-    if (task.customer_id) {
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('id', task.customer_id)
-        .maybeSingle();
-      cust = data;
-    }
+    try {
+      // 1. まずIDで検索
+      if (task.customer_id) {
+        const { data } = await supabase.from('customers').select('*').eq('id', task.customer_id).maybeSingle();
+        cust = data;
+      }
 
-    // 2. 紐付けがない場合、電話番号かメールで名簿をガサ入れ（名寄せ）
-    if (!cust) {
-      const orConditions = [];
-      if (task.customer_phone && task.customer_phone !== '---') orConditions.push(`phone.eq.${task.customer_phone}`);
-      if (task.customer_email) orConditions.push(`email.eq.${task.customer_email}`);
+      // 2. IDで見つからない、または施設の場合は「名前」で名簿を検索
+      if (!cust && searchName) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('shop_id', shopId)
+          .eq('name', searchName) // 👈 名前でガサ入れ！
+          .maybeSingle();
+        cust = data;
+      }
 
-      if (orConditions.length > 0) {
-        const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', shopId)
-        .or(orConditions.join(','))
-        .maybeSingle();
-        cust = data;
-      }
-    }
+      // 3. それでも見つからない場合（電話・メール検索）
+      if (!cust && (task.customer_phone || task.customer_email)) {
+        const orConditions = [];
+        if (task.customer_phone && task.customer_phone !== '---') orConditions.push(`phone.eq.${task.customer_phone.replace(/[^0-9]/g, '')}`);
+        if (task.customer_email) orConditions.push(`email.eq.${task.customer_email}`);
+        if (orConditions.length > 0) {
+          const { data } = await supabase.from('customers').select('*').eq('shop_id', shopId).or(orConditions.join(',')).maybeSingle();
+          cust = data;
+        }
+      }
 
-    // 状態をセット
-    if (cust) {
-      setSelectedCustomer(cust);
-      setCustomerMemo(cust.memo || '');
-    } else {
-      setSelectedCustomer({ name: task.customer_name, id: null });
-      setCustomerMemo('');
-    }
+      // 結果をセット
+      if (cust) {
+        setSelectedCustomer(cust);
+        setCustomerMemo(cust.memo || '');
+      } else {
+        setSelectedCustomer({ name: searchName, id: null });
+        setCustomerMemo('');
+      }
 
     // 3. 🆕 過去の来店履歴を取得（AdminReservationsのロジックを移植）
     const searchId = cust?.id || task.customer_id;
@@ -743,51 +752,48 @@ const openCustomerInfo = async (task) => {
     🆕 顧客メモを保存（マスタ共通 ＆ 予約と名簿を紐付け）
    ========================================== */
 const handleSaveMemo = async () => {
-  setIsSavingMemo(true);
-  try {
-    let targetId = selectedCustomer?.id;
+    setIsSavingMemo(true);
+    try {
+      // 1. 保存用データを作成（名簿テーブルに存在する項目だけに絞る）
+      const customerPayload = {
+        shop_id: shopId,
+        name: selectedCustomer?.name || selectedTask.customer_name,
+        memo: customerMemo, // 最新のメモ内容
+        updated_at: new Date().toISOString()
+      };
 
-    // 1. 名簿（customers）を更新または新規作成（upsert）
-    const customerPayload = {
-      shop_id: shopId,
-      name: selectedCustomer?.name || selectedTask.customer_name,
-      memo: customerMemo,
-      updated_at: new Date().toISOString()
-    };
+      if (selectedCustomer?.id) customerPayload.id = selectedCustomer.id;
 
-    // 既存客ならIDを指定して上書き
-    if (targetId) customerPayload.id = targetId;
+      // 2. 顧客マスタ（customers）を更新
+      const { data: savedCust, error: custError } = await supabase
+        .from('customers')
+        .upsert(customerPayload, { onConflict: 'id' })
+        .select()
+        .single();
 
-    const { data: savedCust, error: custError } = await supabase
-      .from('customers')
-      .upsert(customerPayload, { onConflict: 'id' })
-      .select()
-      .single();
+      if (custError) throw custError;
 
-    if (custError) throw custError;
-    targetId = savedCust.id;
+      // 🚀 🆕 修正：個人予約（individual）の場合のみ紐付けを更新
+      // 施設（visit_requests）はカラムがないので、この処理をスキップしてエラーを回避します
+      if (selectedTask.task_type === 'individual') {
+        await supabase
+          .from('reservations')
+          .update({ customer_id: savedCust.id, memo: null })
+          .eq('id', selectedTask.id);
+      }
 
-    // 2. 今の予約データ（reservations）に名簿IDを書き込み、予約側のメモを空にする
-    const { error: resError } = await supabase
-      .from('reservations')
-      .update({ 
-        customer_id: targetId,
-        memo: null // マスタに一本化したので予約側のメモは消去
-      })
-      .eq('id', selectedTask.id);
+      // 3. 画面の表示を更新
+      setSelectedCustomer(savedCust);
+      await fetchTodayTasks(); // 背景のリストも最新にする
+      showMsg("名簿の共通メモを更新しました！✨");
 
-    if (resError) throw resError;
-
-    // 画面の状態を更新
-    setSelectedCustomer(savedCust);
-    showMsg("名簿の共通メモを更新しました！✨");
-    fetchTodayTasks(); // リスト側も最新の紐付け状態に更新
-  } catch (err) {
-    alert("保存エラー: " + err.message);
-  } finally {
-    setIsSavingMemo(false);
-  }
-};
+    } catch (err) {
+      console.error("Save Error:", err.message);
+      alert("保存失敗: " + err.message);
+    } finally {
+      setIsSavingMemo(false);
+    }
+  };
   const themeColor = shopData?.theme_color || '#2563eb';
 
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
@@ -1488,35 +1494,30 @@ const handleSaveMemo = async () => {
         {showCustomerModal && (
           <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 4000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }} onClick={() => setShowCustomerModal(false)}>
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 20 }} onClick={e => e.stopPropagation()} style={{ background: '#fff', width: '100%', maxWidth: '500px', borderRadius: '25px', padding: '25px', maxHeight: '85vh', overflowY: 'auto' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900' }}>👤 {selectedCustomer?.name} 様</h3>
+              
+              {/* ヘッダー：お名前のみ */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '25px', borderBottom: '1px solid #f1f5f9', paddingBottom: '15px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', color: '#1e293b' }}>
+                  👤 {selectedCustomer?.name} 様
+                </h3>
                 <button onClick={() => setShowCustomerModal(false)} style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#94a3b8' }}>✕</button>
               </div>
 
-              {/* ✍️ メモエリア：AdminReservations / AdminManagement と共通です [cite: 2026-03-08] */}
-              <div style={{ marginBottom: '25px' }}>
-                <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>📝 顧客メモ（マスタ共通）</label>
-                <textarea 
-                  value={customerMemo} 
-                  onChange={(e) => setCustomerMemo(e.target.value)} 
-                  style={{ width: '100%', height: '100px', padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', background: '#f8fafc', fontSize: '0.9rem', boxSizing: 'border-box', lineHeight: '1.5' }}
-                  placeholder="カラーの配合や、前回の会話内容、注意事項など..."
-                />
-                <button onClick={handleSaveMemo} disabled={isSavingMemo} style={{ width: '100%', marginTop: '8px', padding: '10px', background: themeColor, color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}>
-                  {isSavingMemo ? '保存中...' : 'メモを保存する'}
-                </button>
+              {/* 🕒 履歴エリア（ここがメインになります） */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
+                <div style={{ width: '4px', height: '18px', background: themeColor, borderRadius: '2px' }} />
+                <h4 style={{ margin: 0, fontSize: '1rem', color: '#1e293b', fontWeight: 'bold' }}>🕒 来店履歴 ＆ 予定</h4>
               </div>
 
-              {/* 🕒 履歴エリア：売上金額付き [cite: 2026-03-08] */}
-              <h4 style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '12px', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', fontWeight: 'bold' }}>🕒 来店履歴 ＆ 予定</h4>
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {(() => {
                   if (customerHistory.length === 0) {
-                    return <div style={{ textAlign: 'center', padding: '30px', background: '#f8fafc', borderRadius: '12px', color: '#94a3b8', fontSize: '0.85rem' }}>来店履歴はありません</div>;
+                    return <div style={{ textAlign: 'center', padding: '40px', background: '#f8fafc', borderRadius: '20px', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold' }}>履歴はありません</div>;
                   }
 
-                  // 🚀 1. 施設の場合：月ごとにカードを分けて「実施日」をバッジ表示
+                  // 🏢 施設か個人の判別
                   const isFac = selectedTask?.task_type === 'facility' || selectedCustomer?.is_facility;
+
                   if (isFac) {
                     const groups = {};
                     customerHistory.forEach(v => {
@@ -1528,28 +1529,17 @@ const handleSaveMemo = async () => {
                     });
 
                     return Object.values(groups).map((group) => (
-                      <div key={group.month} style={{ 
-                        background: '#fff', border: '1px solid #e2e8f0', borderRadius: '18px', 
-                        padding: '18px', marginBottom: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' 
-                      }}>
+                      <div key={group.month} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '18px', marginBottom: '12px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                           <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.05rem' }}>{group.month}度 訪問実績</span>
-                          <span style={{ fontSize: '0.65rem', background: '#f0fdf4', color: '#166534', padding: '4px 10px', borderRadius: '100px', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>
-                            COMPLETE
-                          </span>
+                          <span style={{ fontSize: '0.65rem', background: '#f0fdf4', color: '#166534', padding: '4px 10px', borderRadius: '100px', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>COMPLETE</span>
                         </div>
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '12px' }}>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                           {group.visits.sort((a,b) => a.start_time.localeCompare(b.start_time)).map((v) => {
                             const date = new Date(v.start_time);
-                            const dayNames = ['日','月','火','水','木','金','土'];
                             return (
-                              <div key={v.id} style={{ 
-                                background: '#f8fafc', border: '1px solid #cbd5e1', color: '#4b2c85',
-                                padding: '6px 12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '800',
-                                display: 'flex', alignItems: 'center', gap: '4px'
-                              }}>
-                                <Calendar size={14} style={{ opacity: 0.6 }} />
-                                {date.getDate()}日<span style={{ fontSize: '0.7rem', fontWeight: 'bold', opacity: 0.7 }}>({dayNames[date.getDay()]})</span>
+                              <div key={v.id} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', color: '#4b2c85', padding: '6px 12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '800' }}>
+                                {date.getDate()}日
                               </div>
                             );
                           })}
@@ -1558,104 +1548,42 @@ const handleSaveMemo = async () => {
                     ));
                   }
 
-                  // 🚀 2. 個人の場合：従来通りの1件ずつの詳細表示
-                  return customerHistory.map((h, idx) => {
+                  // 👤 個人の場合
+                  return customerHistory.map((h) => {
                     const hDate = new Date(h.start_time);
                     const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                    const isFuture = hDate > new Date() && !isToday;
-                    
-                    let dayDiff = null;
-                    if (customerHistory[idx + 1]) {
-                      const prevDate = new Date(customerHistory[idx + 1].start_time);
-                      dayDiff = Math.floor((hDate - prevDate) / (1000 * 60 * 60 * 24));
-                    }
+                    const details = parseReservationDetails(h);
 
                     return (
-                      <div 
-                        key={h.id} 
-                        style={{ 
-                          padding: '15px', 
-                          background: isToday ? '#fff' : (isFuture ? '#f0f9ff' : '#f8fafc'), 
-                          borderRadius: '16px', 
-                          border: isToday ? `2px solid ${themeColor}` : (isFuture ? '1px dashed #0ea5e9' : '1px solid #f1f5f9'),
-                          boxShadow: isToday ? `0 4px 15px ${themeColor}33` : 'none',
-                          position: 'relative',
-                          animation: isToday ? 'pulseGlow 2s infinite' : 'none'
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '4px' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                            <span style={{ color: isToday ? themeColor : (isFuture ? '#0ea5e9' : '#1e293b') }}>
-                              📅 {hDate.toLocaleDateString('ja-JP')}
-                            </span>
-                            
-                            {/* 🚀 🆕 修正：エラーの元(isFacility)を削除し、バッジを安全に表示 */}
-                            {categoryMap[h.biz_type] && (
-                              <span style={{ 
-                                fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px',
-                                background: h.biz_type === 'foot' ? '#4285f4' : '#d34817',
-                                color: '#fff', fontWeight: '900'
-                              }}>
-                                {categoryMap[h.biz_type].slice(0, 4)}
-                              </span>
-                            )}
-
-                            {isToday && <span style={{ background: themeColor, color: '#fff', padding: '1px 6px', borderRadius: '4px', fontSize: '0.6rem' }}>今回</span>}
-                          </div>
-                          
-                          {/* 💰 🆕 追加：予定金額を (予) 付きで表示 */}
-                          <div style={{ color: isFuture ? '#94a3b8' : '#d34817', fontWeight: 'bold', fontSize: '0.85rem' }}>
-                            {isFuture ? '---' : (() => {
-                              const displayPrice = calculateInitialPrice(h);
-                              const isConfirmed = h.status === 'completed' && h.total_price > 0;
-                              return (
-                                <>
-                                  ¥{displayPrice.toLocaleString()}
-                                  {!isConfirmed && <span style={{ fontSize: '0.6rem', marginLeft: '2px' }}>(予)</span>}
-                                </>
-                              );
-                            })()}
-                          </div>
+                      <div key={h.id} style={{ padding: '15px', background: isToday ? '#fff' : '#f8fafc', borderRadius: '16px', border: isToday ? `2px solid ${themeColor}` : '1px solid #f1f5f9', boxShadow: isToday ? `0 4px 15px ${themeColor}33` : 'none' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>
+                          <span style={{ color: isToday ? themeColor : '#1e293b' }}>📅 {hDate.toLocaleDateString('ja-JP')}</span>
+                          <div style={{ color: '#d34817', fontWeight: 'bold' }}>¥{calculateInitialPrice(h).toLocaleString()}</div>
                         </div>
-
-                        {/* 💡 来店間隔の表示（今日/今回の行のみ） */}
-                        {isToday && dayDiff !== null && (
-                          <div style={{ fontSize: '0.7rem', color: '#64748b', margin: '4px 0 8px 0', background: '#fff', padding: '4px 8px', borderRadius: '6px', border: '1px solid #eee', width: 'fit-content', fontWeight: 'bold' }}>
-                            🗓 前回から <span style={{ color: themeColor }}>{dayDiff}日ぶり</span>
+                        <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold' }}>{h.menu_name || 'メニュー記録なし'}</div>
+                        
+                        {/* 商品 ＆ 調整の表示 */}
+                        {details.products?.length > 0 && (
+                          <div style={{ marginTop: '5px', fontSize: '0.75rem', color: '#008000', fontWeight: 'bold' }}>
+                            🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
                           </div>
                         )}
-
-                        <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold', paddingLeft: '2px' }}>
-                          {h.menu_name || 'メニュー記録なし'}
-                        </div>
-
-                        {/* 🚀 🆕 修正：商品購入 ＆ ⚙️ 調整 の表示を追加 */}
-                        {(() => {
-                          const details = parseReservationDetails(h);
-                          return (
-                            <>
-                              {/* 🛍 商品リスト */}
-                              {details.products?.length > 0 && (
-                                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '2px' }}>
-                                  🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
-                                </div>
-                              )}
-
-                              {/* ⚙️ 調整リスト（値引き・加算） */}
-                              {details.adjustments?.length > 0 && (
-                                <div style={{ marginTop: '3px', fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '2px' }}>
-                                  <span>⚙️ 調整: {details.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
-                                </div>
-                              )}
-                            </>
-                          );
-                        })()}
+                        {details.adjustments?.length > 0 && (
+                          <div style={{ marginTop: '3px', fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold' }}>
+                            ⚙️ 調整: {details.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}
+                          </div>
+                        )}
                       </div>
                     );
                   });
                 })()}
               </div>
-              </motion.div>
+
+              {/* 閉じるボタン */}
+              <button onClick={() => setShowCustomerModal(false)} style={{ width: '100%', marginTop: '25px', padding: '15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}>
+                詳細を閉じる
+              </button>
+            </motion.div>
           </div>
         )}
       </AnimatePresence>
