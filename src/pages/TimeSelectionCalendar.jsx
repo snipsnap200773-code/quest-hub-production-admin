@@ -647,26 +647,65 @@ const checkAvailability = (date, timeStr) => {
           return (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
               {(() => {
-                const selectedServices = (people || []).flatMap(p => p.services || []);
-                const hasRestrictedMenu = selectedServices.some(s => s.restricted_hours && s.restricted_hours.length > 0);
+          const selectedServices = (people || []).flatMap(p => p.services || []);
+          const hasRestrictedMenu = selectedServices.some(s => s.restricted_hours && s.restricted_hours.length > 0);
+          const dateStr = selectedDate.toLocaleDateString('sv-SE');
 
-                let firstValidTime = null;
-                const shouldApplyStrictFill = shop?.is_strict_fill_mode && !hasRestrictedMenu;
+          // 🚀 🆕 A: その日の「忙しい時間（予約・ブロック・休憩・予定）」をリスト化
+          const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
+          const busyTimes = [
+            ...existingReservations.filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled').map(r => ({ s: r.start_time.slice(11,16), e: r.end_time.slice(11,16) })),
+            ...privateTasks.filter(p => p.start_time.startsWith(dateStr)).map(p => ({ s: p.start_time.slice(11,16), e: p.end_time.slice(11,16) })),
+            ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), e: shop.business_hours[dayOfWeek].rest_end.slice(0,5) }] : [])
+          ];
 
-                if (shouldApplyStrictFill) {
-                  firstValidTime = timeSlots.find(time => {
-                    const res = checkAvailability(selectedDate, time);
-                    return !['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status);
-                  });
-                }
+          const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
 
-                return timeSlots.map(time => {
-                  const res = checkAvailability(selectedDate, time);
-                  if (['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status)) return null;
+          // 🚀 🆕 B: 「自動詰め（隙間防止）」判定関数
+          const isFillingSlot = (time) => {
+            // 💡 設定OFF、または複数人（同時受付）なら制限なしで全部出す
+            if (!shop?.auto_fill_logic || shop?.max_capacity > 1) return true; 
+            // 💡 予定が全く無い日は、自由に選ばせてOK（または一日の最初だけに絞るのもあり）
+            if (busyTimes.length === 0) return true; 
+            
+            // ① 営業開始時間ぴったりか？
+            if (time === openTime) return true;
+            // ② 既にある予定の「終了時間」とぴったり重なるか？
+            const isAfterBusy = busyTimes.some(b => b.e === time);
+            if (isAfterBusy) return true;
 
-                  if (shouldApplyStrictFill && firstValidTime && time !== firstValidTime) {
-                    return null;
-                  }
+            // ③ 今回の予約の「終了時間」が、既存予定の「開始時間」とぴったり重なるか？
+            const interval = shop?.slot_interval_min || 15;
+            const myDuration = totalSlotsNeeded * interval;
+            const myEndMs = new Date(`${dateStr}T${time}:00`).getTime() + (myDuration * 60000);
+            const isBeforeBusy = busyTimes.some(b => new Date(`${dateStr}T${b.s}:00`).getTime() === myEndMs);
+            
+            return isBeforeBusy;
+          };
+
+          let firstValidTime = null;
+          const shouldApplyStrictFill = shop?.is_strict_fill_mode && !hasRestrictedMenu;
+
+          if (shouldApplyStrictFill) {
+            firstValidTime = timeSlots.find(time => {
+              const res = checkAvailability(selectedDate, time);
+              return !['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status);
+            });
+          }
+
+          return timeSlots.map(time => {
+            const res = checkAvailability(selectedDate, time);
+            // 基本の予約不可（満席など）は除外
+            if (['none', 'closed', 'rest', 'past', 'booked', 'gap', 'short'].includes(res.status)) return null;
+
+            // 🚀 🆕 C: 自動詰め制限の適用
+            // 「前詰め強制（Strict）」がOFFのとき、この「自動詰め」チェックを行います
+            if (!shouldApplyStrictFill && !isFillingSlot(time)) return null;
+
+            // D: 前詰め強制（Strict）の適用
+            if (shouldApplyStrictFill && firstValidTime && time !== firstValidTime) {
+              return null;
+            }
 
                   const isSelected = selectedTime === time;
                   const isSolo = (shop?.max_capacity || 1) === 1;
