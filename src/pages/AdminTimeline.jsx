@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
-  X, Clipboard, User, FileText, History, CheckCircle, Trash2 
+  X, Clipboard, User, FileText, History, CheckCircle, Trash2,
+  ShoppingBag
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -25,40 +26,58 @@ const getCustomerColor = (name) => {
 
 // 🚀 🆕 追加：予約メニューから合計金額を計算するロジック（AdminReservationsから移植）
 const parseReservationDetails = (res) => {
-  if (!res) return { menuName: '', totalPrice: 0, products: [] };
-  const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
-  
-  // 🚀 🆕 商品（店販）データの抽出
-  const products = opt.products || [];
-  
-  let items = [];
-  let subItems = [];
+    if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], savedAdjustments: [], savedProducts: [] };
+    const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+    
+    // 🚀 1. 商品と調整データの抽出
+    const products = opt.products || [];
+    const adjustments = opt.adjustments || [];
 
-  if (opt.people && Array.isArray(opt.people)) {
-    items = opt.people.flatMap(p => p.services || []);
-    subItems = opt.people.flatMap(p => Object.values(p.options || {}));
-  } else {
-    items = opt.services || [];
-    subItems = Object.values(opt.options || {});
-  }
+    let items = [];
+    let subItems = [];
 
-  // 🚀 🆕 メニュー名も構築して返すように強化
-  const baseNames = items.map(s => s.name).join(', ');
-  const optionNames = subItems.map(o => o.option_name).join(', ');
-  const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
+    // 🚀 2. メニューと枝分かれの抽出
+    if (opt.people && Array.isArray(opt.people)) {
+      items = opt.people.flatMap(p => p.services || []);
+      subItems = opt.people.flatMap(p => Object.values(p.options || {}));
+    } else {
+      items = opt.services || [];
+      subItems = Object.values(opt.options || {});
+    }
 
-  let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
-  const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
-  
-  // 🚀 🆕 商品代金の合算 (単価 × 個数)
-  const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+    const baseNames = items.map(s => s.name).join(', ');
+    const optionNames = subItems.map(o => o.option_name).join(', ');
+    const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
-  return { 
-    menuName: fullMenuName,
-    totalPrice: basePrice + optPrice + productPrice, 
-    products // 🚀 🆕 商品リストも返す
+    // 🚀 3. 金額の集計
+    let basePrice = items.reduce((sum, item) => {
+      let p = Number(item.price);
+      if (!p || p === 0) {
+        const master = services.find(s => s.id === item.id || s.name === item.name);
+        p = master ? Number(master.price) : 0;
+      }
+      return sum + p;
+    }, 0);
+
+    const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+    const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+
+    // 🚀 4. 調整金額の計算（割引・加算）
+    let adjAmount = 0;
+    adjustments.forEach(a => {
+      if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+      else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
+    });
+
+    return { 
+      menuName: fullMenuName, 
+      totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
+      items, 
+      subItems, 
+      savedAdjustments: adjustments, 
+      savedProducts: products 
+    };
   };
-};
 
 // 🆕 追加：定休日かどうかを判定するヘルパー関数（エラー解決用）
 const isShopHoliday = (shop, date) => {
@@ -1211,21 +1230,27 @@ const timeSlots = useMemo(() => {
                             {h.menu_name}
                           </div>
 
-                          {/* 🚀 🆕 商品購入履歴を表示 */}
+                          {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
                           {(() => {
+                            // すでに上部に定義されている parseReservationDetails で解析
                             const details = parseReservationDetails(h);
-                            return details.products?.length > 0 && (
-                              <div style={{ 
-                                marginTop: '6px', 
-                                fontSize: '0.75rem', 
-                                color: isCanceled ? '#cbd5e1' : '#008000', 
-                                fontWeight: 'bold',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '4px'
-                              }}>
-                                🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
-                              </div>
+                            return (
+                              <>
+                                {/* 🛍 商品リスト（緑色） */}
+                                {details.savedProducts?.length > 0 && (
+                                  <div style={{ marginTop: '5px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <ShoppingBag size={12} />
+                                    <span>商品: {details.savedProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
+                                  </div>
+                                )}
+                                
+                                {/* ⚙️ 調整リスト（赤色） */}
+                                {details.savedAdjustments?.length > 0 && (
+                                  <div style={{ marginTop: '3px', fontSize: '0.7rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span>⚙️ 調整: {details.savedAdjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                                  </div>
+                                )}
+                              </>
                             );
                           })()}
                         </div>

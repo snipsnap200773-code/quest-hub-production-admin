@@ -325,13 +325,14 @@ function AdminManagement() {
     if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], savedAdjustments: [], savedProducts: [] };
     const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
     
-    // 🚀 1. 商品（店販）データの抽出
+    // 🚀 1. 商品と調整データの抽出
     const products = opt.products || [];
+    const adjustments = opt.adjustments || [];
 
     let items = [];
     let subItems = [];
 
-    // 🚀 2. メニューと枝分かれの抽出（ここが消えていたのがエラーの原因です！）
+    // 🚀 2. メニューと枝分かれの抽出
     if (opt.people && Array.isArray(opt.people)) {
       items = opt.people.flatMap(p => p.services || []);
       subItems = opt.people.flatMap(p => Object.values(p.options || {}));
@@ -344,7 +345,7 @@ function AdminManagement() {
     const optionNames = subItems.map(o => o.option_name).join(', ');
     const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
-    // 🚀 3. 合計金額の計算（施術代）
+    // 🚀 3. 金額の集計
     let basePrice = items.reduce((sum, item) => {
       let p = Number(item.price);
       if (!p || p === 0) {
@@ -355,16 +356,21 @@ function AdminManagement() {
     }, 0);
 
     const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
-    
-    // 🚀 4. 商品代金の合算 (単価 × 個数)
     const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+
+    // 🚀 4. 調整金額の計算（割引・加算）
+    let adjAmount = 0;
+    adjustments.forEach(a => {
+      if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+      else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
+    });
 
     return { 
       menuName: fullMenuName, 
-      totalPrice: basePrice + optPrice + productPrice, 
+      totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
       items, 
       subItems, 
-      savedAdjustments: opt.adjustments || [], 
+      savedAdjustments: adjustments, 
       savedProducts: products 
     };
   };
@@ -506,12 +512,20 @@ const completePayment = async () => {
       const finalTargetId = currentMaster?.id || selectedCustomer?.id;
 
       const customerPayload = {
-        shop_id: cleanShopId, 
+        shop_id: cleanShopId,
         name: normalizedName,
         admin_name: normalizedName,
-        furigana: editFields.furigana || currentMaster?.furigana || '',
-        phone: editFields.phone || currentMaster?.phone || selectedRes.customer_phone || '',
-        email: editFields.email || currentMaster?.email || selectedRes.customer_email || '',
+        // 入力があれば採用、なければDBの既存データを維持（これで消えません！）
+        furigana: editFields.furigana?.trim() || currentMaster?.furigana || null,
+        phone: (editFields.phone?.replace(/[^0-9]/g, '')) || currentMaster?.phone || (selectedRes.customer_phone?.replace(/[^0-9]/g, '')) || null,
+        email: editFields.email?.trim() || currentMaster?.email || null,
+        address: editFields.address?.trim() || currentMaster?.address || null,
+        zip_code: editFields.zip_code?.trim() || currentMaster?.zip_code || null,
+        parking: editFields.parking || currentMaster?.parking || null,
+        building_type: editFields.building_type || currentMaster?.building_type || null,
+        care_notes: editFields.care_notes || currentMaster?.care_notes || null,
+        memo: editFields.memo || currentMaster?.memo || null,
+        custom_answers: editFields.custom_answers || currentMaster?.custom_answers || {},
         updated_at: new Date().toISOString()
       };
 
@@ -2448,58 +2462,55 @@ return (
                   }
                   // 🚀 3. 個人の場合：従来通りの1件ずつの詳細表示
                   return pastVisits.map(v => {
-                    const details = parseReservationDetails(v);
-                    const vBrandLabel = categoryMap[v.biz_type];
-                    const isCanceled = v.status === 'canceled';
+                        const details = parseReservationDetails(v);
+                        const vBrandLabel = categoryMap[v.biz_type];
+                        const isCanceled = v.status === 'canceled';
 
-                    return (
-                      <div key={v.id} style={{ 
-                        background: isCanceled ? '#fcfcfc' : '#fff', padding: '12px', 
-                        borderRadius: '10px', border: '1px solid #e2e8f0',
-                        opacity: isCanceled ? 0.7 : 1, position: 'relative'
-                      }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
-                              {v.start_time.split('T')[0].replace(/-/g, '/')}
-                            </b>
-                            {vBrandLabel && (
-                              <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: v.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
-                                {vBrandLabel.slice(0, 4)}
+                        return (
+                          <div key={v.id} style={{ 
+                            background: isCanceled ? '#fcfcfc' : '#fff', padding: '12px', 
+                            borderRadius: '10px', border: '1px solid #e2e8f0',
+                            opacity: isCanceled ? 0.7 : 1, position: 'relative'
+                          }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                                  {v.start_time.split('T')[0].replace(/-/g, '/')}
+                                </b>
+                                {vBrandLabel && (
+                                  <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: v.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
+                                    {vBrandLabel.slice(0, 4)}
+                                  </span>
+                                )}
+                                {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>キャンセル</span>}
+                              </div>
+                              <span style={{ color: isCanceled ? '#94a3b8' : '#d34817', fontWeight: 'bold', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                ¥{(v.total_price || details.totalPrice).toLocaleString()}
                               </span>
-                            )}
-                            {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>キャンセル</span>}
-                          </div>
-                          <span style={{ color: isCanceled ? '#94a3b8' : '#e11d48', fontWeight: 'bold', fontSize: '0.9rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>
-                            ¥{(v.total_price || parseReservationDetails(v).totalPrice).toLocaleString()}
-                          </span>
-                        </div>
-                        <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
-                          <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {v.staffs?.name || 'フリー'}</span>
-                          {v.menu_name || details.menuName}
-                        </p>
-
-                        {/* 🚀 🆕 修正：商品購入履歴を表示 */}
-                        {(() => {
-                          const details = parseReservationDetails(v);
-                          return details.savedProducts?.length > 0 && (
-                            <div style={{ 
-                              marginTop: '6px', 
-                              fontSize: '0.75rem', 
-                              color: isCanceled ? '#cbd5e1' : '#008000', 
-                              fontWeight: 'bold',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px'
-                            }}>
-                              <ShoppingBag size={12} />
-                              <span>商品: {details.savedProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
                             </div>
-                          );
-                        })()}
-                      </div>
-                    );
-                  });
+                            <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                              <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {v.staffs?.name || 'フリー'}</span>
+                              {v.menu_name || details.menuName}
+                            </p>
+
+                            {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
+                            {/* 🛍 商品リスト */}
+                            {details.savedProducts?.length > 0 && (
+                              <div style={{ marginTop: '5px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <ShoppingBag size={12} />
+                                <span>商品: {details.savedProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
+                              </div>
+                            )}
+
+                            {/* ⚙️ 調整リスト */}
+                            {details.savedAdjustments?.length > 0 && (
+                              <div style={{ marginTop: '3px', fontSize: '0.7rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                <span>⚙️ 調整: {details.savedAdjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      });
                 })()}
               </div>
             </div>

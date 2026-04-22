@@ -7,8 +7,40 @@ import {
   Calendar, CheckCircle, AlertCircle,
   PlusCircle,
   Minus,
-  Building2, ClipboardCheck
+  Building2, ClipboardCheck,
+  ShoppingBag // 🛍 アイコンも追加しておきます
 } from 'lucide-react';
+
+// 🚀 🆕 追加：予約データを解析して、商品や調整を取り出す道具箱
+const parseReservationDetails = (res) => {
+  if (!res) return { menuName: '', totalPrice: 0, products: [], adjustments: [] };
+  const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+  const products = opt.products || [];
+  const adjustments = opt.adjustments || [];
+  let items = opt.people ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
+  let subItems = opt.people ? opt.people.flatMap(p => Object.values(p.options || {})) : Object.values(opt.options || {});
+
+  const baseNames = items.map(s => s.name).join(', ');
+  const optionNames = subItems.map(o => o.option_name).join(', ');
+  const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
+
+  let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+  const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+  const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+
+  let adjAmount = 0;
+  adjustments.forEach(a => {
+    if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
+  });
+
+  return { 
+    menuName: fullMenuName, 
+    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
+    products, 
+    adjustments 
+  };
+};
 
 const TodayTasks = () => {
   const { shopId } = useParams();
@@ -386,16 +418,29 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
     }
 
     const customerPayload = {
-      shop_id: shopId, 
+      shop_id: shopId,
       name: normalizedName,
-      furigana: editFields.furigana,
-      phone: editFields.phone || selectedTask.customer_phone,
-      email: editFields.email || selectedTask.customer_email,
-      address: editFields.address,
-      memo: editFields.memo,
-      line_user_id: editFields.line_user_id || selectedTask.line_user_id,
       updated_at: new Date().toISOString()
     };
+
+    // 入力がある場合のみ、保存対象に加える（これで既存のふりがなが守られます）
+    if (editFields.furigana?.trim()) customerPayload.furigana = editFields.furigana;
+    if (editFields.email?.trim()) customerPayload.email = editFields.email;
+    if (editFields.address?.trim()) customerPayload.address = editFields.address;
+    if (editFields.memo?.trim()) customerPayload.memo = editFields.memo;
+    
+    // 電話番号は数字のみ抽出して、入力があれば更新
+    const inputPhone = editFields.phone?.replace(/[^0-9]/g, '');
+    if (inputPhone) {
+      customerPayload.phone = inputPhone;
+    } else if (selectedTask.customer_phone && selectedTask.customer_phone !== '---') {
+      // 入力がないが、予約データ側に電話番号があればそれを維持
+      customerPayload.phone = selectedTask.customer_phone.replace(/[^0-9]/g, '');
+    }
+
+    if (editFields.line_user_id || selectedTask.line_user_id) {
+      customerPayload.line_user_id = editFields.line_user_id || selectedTask.line_user_id;
+    }
 
     if (targetCustomerId) customerPayload.id = targetCustomerId;
     const { data: savedCust } = await supabase.from('customers').upsert(customerPayload, { onConflict: 'id' }).select().single();
@@ -1584,24 +1629,25 @@ const handleSaveMemo = async () => {
                           {h.menu_name || 'メニュー記録なし'}
                         </div>
 
-                        {/* 🚀 🆕 修正：商品購入履歴の表示を追加 */}
+                        {/* 🚀 🆕 修正：商品購入 ＆ ⚙️ 調整 の表示を追加 */}
                         {(() => {
-                          const opt = typeof h.options === 'string' ? JSON.parse(h.options) : (h.options || {});
-                          const historyProducts = opt.products || [];
-                          
-                          return historyProducts.length > 0 && (
-                            <div style={{ 
-                              marginTop: '6px', 
-                              fontSize: '0.75rem', 
-                              color: '#008000', // 商品は緑色系で見やすく
-                              fontWeight: 'bold',
-                              display: 'flex',
-                              alignItems: 'center',
-                              gap: '4px',
-                              paddingLeft: '2px'
-                            }}>
-                              🛍 商品: {historyProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
-                            </div>
+                          const details = parseReservationDetails(h);
+                          return (
+                            <>
+                              {/* 🛍 商品リスト */}
+                              {details.products?.length > 0 && (
+                                <div style={{ marginTop: '6px', fontSize: '0.75rem', color: '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '2px' }}>
+                                  🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
+                                </div>
+                              )}
+
+                              {/* ⚙️ 調整リスト（値引き・加算） */}
+                              {details.adjustments?.length > 0 && (
+                                <div style={{ marginTop: '3px', fontSize: '0.7rem', color: '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', paddingLeft: '2px' }}>
+                                  <span>⚙️ 調整: {details.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                                </div>
+                              )}
+                            </>
                           );
                         })()}
                       </div>

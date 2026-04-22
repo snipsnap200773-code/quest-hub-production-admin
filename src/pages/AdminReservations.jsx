@@ -43,13 +43,14 @@ const getKanaGroup = (kana) => {
 };
 
 const parseReservationDetails = (res) => {
-  if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], products: [] };
+  if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], products: [], adjustments: [] };
   const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+  
+  const products = opt.products || [];
+  const adjustments = opt.adjustments || []; // 🚀 🆕 調整項目を抽出
+
   let items = [];
   let subItems = [];
-
-  // 🚀 🆕 商品（店販）データの抽出
-  const products = opt.products || [];
 
   if (opt.people && Array.isArray(opt.people)) {
     items = opt.people.flatMap(p => p.services || []);
@@ -63,19 +64,29 @@ const parseReservationDetails = (res) => {
   const optionNames = subItems.map(o => o.option_name).join(', ');
   const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
-  // 合計金額の計算
+  // 金額計算
   let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
-  
-  // 🚀 🆕 商品代金の合算 (価格 × 個数)
   const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+
+  // 🚀 🆕 調整金額の計算
+  let adjAmount = 0;
+  adjustments.forEach(a => {
+    if (a.is_percent) {
+      // パーセント計算（簡易版：施術＋オプションの合計に対して）
+      adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    } else {
+      adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
+    }
+  });
 
   return { 
     menuName: fullMenuName, 
-    totalPrice: basePrice + optPrice + productPrice, // 👈 商品代も含める
+    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), // 👈 全合算
     items, 
     subItems,
-    products // 👈 商品リストも返す
+    products,
+    adjustments // 👈 調整リストも返す
   };
 };
 
@@ -2166,22 +2177,35 @@ return (
                               </span>
                             </div>
                             <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>{h.menu_name}</div>
-                            
-                            {/* 🚀 🆕 商品購入があれば表示する */}
+
+                            {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
                             {(() => {
+                              // 各履歴データ(h)を最新の解析ロジックで読み込む
                               const details = parseReservationDetails(h);
-                              return details.products?.length > 0 && (
-                                <div style={{ 
-                                  marginTop: '5px', 
-                                  fontSize: '0.75rem', 
-                                  color: isCanceled ? '#cbd5e1' : '#008000', // 商品は緑色系で見やすく
-                                  fontWeight: 'bold',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  gap: '4px'
-                                }}>
-                                  🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
-                                </div>
+                              return (
+                                <>
+                                  {/* 🛍 商品購入がある場合（緑色） */}
+                                  {details.products?.length > 0 && (
+                                    <div style={{ 
+                                      marginTop: '5px', fontSize: '0.75rem', 
+                                      color: isCanceled ? '#cbd5e1' : '#008000', 
+                                      fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' 
+                                    }}>
+                                      <span>🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
+                                    </div>
+                                  )}
+
+                                  {/* ⚙️ 調整（割引・加算）がある場合（赤色） */}
+                                  {details.adjustments?.length > 0 && (
+                                    <div style={{ 
+                                      marginTop: '3px', fontSize: '0.75rem', 
+                                      color: isCanceled ? '#cbd5e1' : '#ef4444', 
+                                      fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' 
+                                    }}>
+                                      <span>⚙️ 調整: {details.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                                    </div>
+                                  )}
+                                </>
                               );
                             })()}
                           </div>
