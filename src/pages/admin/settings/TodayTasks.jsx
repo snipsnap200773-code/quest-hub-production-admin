@@ -248,8 +248,12 @@ const calculateInitialPrice = (task) => {
   // 2. 枝分かれオプション（シャンプー等）の追加料金を集計
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
 
-// (126行目付近)
-  return basePrice + optPrice;
+  // 🚀 🆕 3. 商品（店販）代金の集計を追加
+  const productItems = opt.products || [];
+  const productPrice = productItems.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+
+  // 全てを合算して返す
+  return basePrice + optPrice + productPrice;
 };
 
 // 🆕 修正：追加
@@ -1579,6 +1583,27 @@ const handleSaveMemo = async () => {
                         <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold', paddingLeft: '2px' }}>
                           {h.menu_name || 'メニュー記録なし'}
                         </div>
+
+                        {/* 🚀 🆕 修正：商品購入履歴の表示を追加 */}
+                        {(() => {
+                          const opt = typeof h.options === 'string' ? JSON.parse(h.options) : (h.options || {});
+                          const historyProducts = opt.products || [];
+                          
+                          return historyProducts.length > 0 && (
+                            <div style={{ 
+                              marginTop: '6px', 
+                              fontSize: '0.75rem', 
+                              color: '#008000', // 商品は緑色系で見やすく
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px',
+                              paddingLeft: '2px'
+                            }}>
+                              🛍 商品: {historyProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   });

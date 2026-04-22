@@ -25,8 +25,12 @@ const getCustomerColor = (name) => {
 
 // 🚀 🆕 追加：予約メニューから合計金額を計算するロジック（AdminReservationsから移植）
 const parseReservationDetails = (res) => {
-  if (!res) return { menuName: '', totalPrice: 0 };
+  if (!res) return { menuName: '', totalPrice: 0, products: [] };
   const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+  
+  // 🚀 🆕 商品（店販）データの抽出
+  const products = opt.products || [];
+  
   let items = [];
   let subItems = [];
 
@@ -38,11 +42,21 @@ const parseReservationDetails = (res) => {
     subItems = Object.values(opt.options || {});
   }
 
+  // 🚀 🆕 メニュー名も構築して返すように強化
+  const baseNames = items.map(s => s.name).join(', ');
+  const optionNames = subItems.map(o => o.option_name).join(', ');
+  const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
+
   let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+  
+  // 🚀 🆕 商品代金の合算 (単価 × 個数)
+  const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
   return { 
-    totalPrice: basePrice + optPrice 
+    menuName: fullMenuName,
+    totalPrice: basePrice + optPrice + productPrice, 
+    products // 🚀 🆕 商品リストも返す
   };
 };
 
@@ -1196,6 +1210,24 @@ const timeSlots = useMemo(() => {
                           }}>
                             {h.menu_name}
                           </div>
+
+                          {/* 🚀 🆕 商品購入履歴を表示 */}
+                          {(() => {
+                            const details = parseReservationDetails(h);
+                            return details.products?.length > 0 && (
+                              <div style={{ 
+                                marginTop: '6px', 
+                                fontSize: '0.75rem', 
+                                color: isCanceled ? '#cbd5e1' : '#008000', 
+                                fontWeight: 'bold',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                              }}>
+                                🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
+                              </div>
+                            );
+                          })()}
                         </div>
                       );
                     })}

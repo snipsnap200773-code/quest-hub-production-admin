@@ -324,9 +324,14 @@ function AdminManagement() {
   const parseReservationDetails = (res) => {
     if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], savedAdjustments: [], savedProducts: [] };
     const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+    
+    // 🚀 1. 商品（店販）データの抽出
+    const products = opt.products || [];
+
     let items = [];
     let subItems = [];
 
+    // 🚀 2. メニューと枝分かれの抽出（ここが消えていたのがエラーの原因です！）
     if (opt.people && Array.isArray(opt.people)) {
       items = opt.people.flatMap(p => p.services || []);
       subItems = opt.people.flatMap(p => Object.values(p.options || {}));
@@ -339,6 +344,7 @@ function AdminManagement() {
     const optionNames = subItems.map(o => o.option_name).join(', ');
     const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
+    // 🚀 3. 合計金額の計算（施術代）
     let basePrice = items.reduce((sum, item) => {
       let p = Number(item.price);
       if (!p || p === 0) {
@@ -349,14 +355,17 @@ function AdminManagement() {
     }, 0);
 
     const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+    
+    // 🚀 4. 商品代金の合算 (単価 × 個数)
+    const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
     return { 
       menuName: fullMenuName, 
-      totalPrice: basePrice + optPrice, 
+      totalPrice: basePrice + optPrice + productPrice, 
       items, 
       subItems, 
       savedAdjustments: opt.adjustments || [], 
-      savedProducts: opt.products || [] 
+      savedProducts: products 
     };
   };
 
@@ -2461,14 +2470,33 @@ return (
                             )}
                             {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>キャンセル</span>}
                           </div>
-                          <span style={{ color: isCanceled ? '#94a3b8' : '#d34817', fontWeight: 'bold', textDecoration: isCanceled ? 'line-through' : 'none' }}>
-                            ¥{(v.total_price || details.totalPrice).toLocaleString()}
+                          <span style={{ color: isCanceled ? '#94a3b8' : '#e11d48', fontWeight: 'bold', fontSize: '0.9rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                            ¥{(v.total_price || parseReservationDetails(v).totalPrice).toLocaleString()}
                           </span>
                         </div>
                         <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
                           <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {v.staffs?.name || 'フリー'}</span>
                           {v.menu_name || details.menuName}
                         </p>
+
+                        {/* 🚀 🆕 修正：商品購入履歴を表示 */}
+                        {(() => {
+                          const details = parseReservationDetails(v);
+                          return details.savedProducts?.length > 0 && (
+                            <div style={{ 
+                              marginTop: '6px', 
+                              fontSize: '0.75rem', 
+                              color: isCanceled ? '#cbd5e1' : '#008000', 
+                              fontWeight: 'bold',
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '4px'
+                            }}>
+                              <ShoppingBag size={12} />
+                              <span>商品: {details.savedProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   });

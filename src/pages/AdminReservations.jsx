@@ -43,10 +43,13 @@ const getKanaGroup = (kana) => {
 };
 
 const parseReservationDetails = (res) => {
-  if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [] };
+  if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], products: [] };
   const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
   let items = [];
   let subItems = [];
+
+  // 🚀 🆕 商品（店販）データの抽出
+  const products = opt.products || [];
 
   if (opt.people && Array.isArray(opt.people)) {
     items = opt.people.flatMap(p => p.services || []);
@@ -63,12 +66,16 @@ const parseReservationDetails = (res) => {
   // 合計金額の計算
   let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+  
+  // 🚀 🆕 商品代金の合算 (価格 × 個数)
+  const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
   return { 
     menuName: fullMenuName, 
-    totalPrice: basePrice + optPrice, 
+    totalPrice: basePrice + optPrice + productPrice, // 👈 商品代も含める
     items, 
-    subItems 
+    subItems,
+    products // 👈 商品リストも返す
   };
 };
 
@@ -1887,8 +1894,18 @@ return (
         </div>
       )}
       
-      <label style={{ fontSize: '0.75rem', fontWeight: '900', color: themeColor, display: 'block', marginBottom: '10px' }}>📋 予約メニュー内訳</label>
+      <label style={{ fontSize: '0.75rem', fontWeight: '900', color: themeColor, display: 'block', marginBottom: '10px' }}>📋 予約・会計内訳</label>
       <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedRes?.menu_name || 'メニュー未設定'}</div>
+      
+      {/* 🚀 🆕 会計済みの商品があればここに表示 */}
+      {(() => {
+        const details = parseReservationDetails(selectedRes);
+        return details.products?.length > 0 && (
+          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(0,0,0,0.1)', fontSize: '0.85rem', color: '#008000', fontWeight: 'bold' }}>
+            🛍 購入商品: {details.products.map(p => `${p.name} (x${p.quantity})`).join(', ')}
+          </div>
+        );
+      })()}
     </div>
 
                     {/* 🆕 修正：ここから動的フォーム（順番固定版） */}
@@ -2149,6 +2166,24 @@ return (
                               </span>
                             </div>
                             <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>{h.menu_name}</div>
+                            
+                            {/* 🚀 🆕 商品購入があれば表示する */}
+                            {(() => {
+                              const details = parseReservationDetails(h);
+                              return details.products?.length > 0 && (
+                                <div style={{ 
+                                  marginTop: '5px', 
+                                  fontSize: '0.75rem', 
+                                  color: isCanceled ? '#cbd5e1' : '#008000', // 商品は緑色系で見やすく
+                                  fontWeight: 'bold',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '4px'
+                                }}>
+                                  🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}
+                                </div>
+                              );
+                            })()}
                           </div>
                         );
                       });
