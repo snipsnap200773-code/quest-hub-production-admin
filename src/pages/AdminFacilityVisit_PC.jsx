@@ -8,6 +8,38 @@ import {
   Edit2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-おア-オ]/)) return "あ行";
+  if (firstChar.match(/[か-こカ-コ]/)) return "か行";
+  if (firstChar.match(/[さ-そサ-ソ]/)) return "さ行";
+  if (firstChar.match(/[た-とタ-ト]/)) return "た行";
+  if (firstChar.match(/[な-のナ-ノ]/)) return "な行";
+  if (firstChar.match(/[は-ほハ-ホ]/)) return "は行";
+  if (firstChar.match(/[ま-もマ-モ]/)) return "ま行";
+  if (firstChar.match(/[や-よヤ-ヨ]/)) return "や行";
+  if (firstChar.match(/[ら-ろラ-ロ]/)) return "ら行";
+  if (firstChar.match(/[わ-をワ-ヲ]/)) return "わ行";
+  return "その他";
+};
+
+// 見出し札のデザイン
+const groupHeaderStyle = {
+  padding: '15px 10px 5px',
+  fontSize: '0.9rem',
+  fontWeight: '900',
+  color: '#4f46e5',
+  display: 'flex',
+  alignItems: 'center',
+  gap: '8px',
+  borderBottom: '2px solid #e0e7ff',
+  marginBottom: '10px',
+  background: 'linear-gradient(to right, #fff, #f8fafc)',
+  position: 'sticky',
+  top: 0,
+  zIndex: 2
+};
 
 const AdminFacilityVisit_PC = () => {
   const { shopId, visitId } = useParams();
@@ -499,88 +531,117 @@ const AdminFacilityVisit_PC = () => {
                 </button>
               </div>
               {/* --- A. 本日の施術リスト（タップ可能・通常デザイン） --- */}
-              {sortedTodayResidents.map((res) => (
-                <motion.div 
-                  key={res.id} 
-                  onClick={() => handleToggleStatus(res)}
-                  whileTap={{ scale: 0.97 }}
-                  style={resCard(res.status)}
-                >
-                  <div style={resLeft}>
-                    {/* ✅ 修正：階数表示（すでに F が付いていれば足さない） */}
-                    <div style={{
-                      background: '#e0e7ff', color: '#4f46e5', padding: '6px 10px', 
-                      borderRadius: '10px', fontSize: '0.8rem', fontWeight: '900', 
-                      minWidth: '40px', textAlign: 'center', border: '1px solid #c7d2fe'
-                    }}>
-                      {res.members?.floor ? (String(res.members.floor).includes('F') ? res.members.floor : `${res.members.floor}F`) : '--'}
-                    </div>
+              {(() => {
+                let lastLabel = ""; // 🚀 直前のグループ名を一時保存する変数
 
-                    <div>
-                      <div style={resName}>{res.members?.name} 様</div>
-                      
-                      {/* ✅ 修正：kana を表示 */}
-                      <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '-2px' }}>
-                        {res.members?.kana || "⚠️ふりがな未登録"}
-                      </div>
+                return sortedTodayResidents.map((res) => {
+                  // 🚀 1. 現在表示すべき見出し（階数 or あいうえお）を決定
+                  let currentLabel = "";
+                  if (listSortMode === 'floor') {
+                    currentLabel = res.members?.floor ? (String(res.members.floor).includes('F') ? res.members.floor : `${res.members.floor}F`) : "階数未設定";
+                  } else {
+                    currentLabel = getKanaGroup(res.members?.kana);
+                  }
 
-                      {/* 🆕 🚀 ここから：前回訪問日を表示！！ ================== */}
-                        {lastVisits[res.member_id] && (
-                          <span style={{ 
-                            fontSize: '0.7rem', color: '#94a3b8', marginLeft: '10px', 
-                            fontWeight: 'normal', background: '#f1f5f9', padding: '2px 6px', borderRadius: '4px' 
-                          }}>
-                            前回: {new Date(lastVisits[res.member_id]).getMonth() + 1}月{new Date(lastVisits[res.member_id]).getDate()}日
-                          </span>
-                        )}
-                        {/* 🏢 ここまで ======================================== */}
-                      
-                      {/* ✅ 🆕 メニューはボタンではなく「表記（ラベル）」にする */}
-                      <div 
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setTargetResident(res);
-                          setShowMenuSelector(true);
-                        }}
-                        style={{
-                          marginTop: '8px',
-                          padding: '6px 14px',
-                          background: res.status === 'completed' ? '#10b981' : '#004e26', // ✅ 完了は緑、待機は濃緑
-                          color: '#fff',
-                          borderRadius: '10px',
-                          fontSize: '0.85rem',
-                          fontWeight: 'bold',
-                          display: 'inline-flex',
-                          alignItems: 'center',
-                          gap: '6px',
-                          boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-                          cursor: 'pointer'
-                        }}
+                  // 🚀 2. 直前の人とグループが変わったか判定
+                  const isNewGroup = currentLabel !== lastLabel;
+                  lastLabel = currentLabel;
+
+                  return (
+                    <React.Fragment key={res.id}>
+                      {/* 🚀 3. グループが変わった瞬間にだけ見出しを表示 */}
+                      {isNewGroup && (
+                        <div style={groupHeaderStyle}>
+                          {currentLabel}
+                        </div>
+                      )}
+
+                      <motion.div 
+                        key={res.id} 
+                        onClick={() => handleToggleStatus(res)}
+                        whileTap={{ scale: 0.97 }}
+                        style={resCard(res.status)}
                       >
-                        {res.menu_name}
-                        {/* 🆕 🚀 アイコンを1本に集約！ 管理者用枝があればアイコンの種類を変えるのもアリですが、まずはシンプルに1本にします */}
-                        <Edit2 size={12} style={{ opacity: 0.9 }} />
-                      </div>
-                    </div>
-                  </div>
+                        <div style={resLeft}>
+                          {/* 階数表示 */}
+                          <div style={{
+                            background: '#e0e7ff', color: '#4f46e5', padding: '6px 10px', 
+                            borderRadius: '10px', fontSize: '0.8rem', fontWeight: '900', 
+                            minWidth: '40px', textAlign: 'center', border: '1px solid #c7d2fe'
+                          }}>
+                            {res.members?.floor ? (String(res.members.floor).includes('F') ? res.members.floor : `${res.members.floor}F`) : '--'}
+                          </div>
 
-                  <div style={statusBadge(res.status)}>
-                    {res.status === 'completed' ? (
-                      <div style={{color:'#10b981', display:'flex', alignItems:'center', gap:'4px'}}>
-                        <CheckCircle2 size={20} /> <span style={{fontSize:'0.85rem'}}>完了</span>
-                      </div>
-                    ) : res.status === 'cancelled' ? (
-                      <div style={{color:'#ef4444', display:'flex', alignItems:'center', gap:'4px'}}>
-                        <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>中止</span>
-                      </div>
-                    ) : (
-                      <div style={{color:'#cbd5e1', display:'flex', alignItems:'center', gap:'4px'}}>
-                        <Clock size={20} /> <span style={{fontSize:'0.85rem'}}>待機</span>
-                      </div>
-                    )}
-                  </div>
-                </motion.div>
-              ))}
+                          <div>
+  {/* 🚀 🆕 名前と前回日付を横並びにするコンテナ */}
+  <div style={{ display: 'flex', alignItems: 'baseline', gap: '10px', flexWrap: 'wrap' }}>
+    <div style={resName}>{res.members?.name} 様</div>
+    
+    {/* 🚀 🆕 前回訪問日をここに移動 */}
+    {lastVisits[res.member_id] && (
+      <span style={{ 
+        fontSize: '0.7rem', color: '#94a3b8', 
+        fontWeight: 'normal', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px',
+        border: '1px solid #e2e8f0'
+      }}>
+        前回: {new Date(lastVisits[res.member_id]).getMonth() + 1}月{new Date(lastVisits[res.member_id]).getDate()}日
+      </span>
+    )}
+  </div>
+  
+  {/* ふりがな（これは名前のすぐ下で見やすく維持） */}
+  <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '2px' }}>
+    {res.members?.kana || "⚠️ふりがな未登録"}
+  </div>
+                            
+                            {/* メニュー名の表示 */}
+                            <div 
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setTargetResident(res);
+                                setShowMenuSelector(true);
+                              }}
+                              style={{
+                                marginTop: '8px',
+                                padding: '6px 14px',
+                                background: res.status === 'completed' ? '#10b981' : '#004e26',
+                                color: '#fff',
+                                borderRadius: '10px',
+                                fontSize: '0.85rem',
+                                fontWeight: 'bold',
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                cursor: 'pointer'
+                              }}
+                            >
+                              {res.menu_name}
+                              <Edit2 size={12} style={{ opacity: 0.9 }} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div style={statusBadge(res.status)}>
+                          {res.status === 'completed' ? (
+                            <div style={{color:'#10b981', display:'flex', alignItems:'center', gap:'4px'}}>
+                              <CheckCircle2 size={20} /> <span style={{fontSize:'0.85rem'}}>完了</span>
+                            </div>
+                          ) : res.status === 'cancelled' ? (
+                            <div style={{color:'#ef4444', display:'flex', alignItems:'center', gap:'4px'}}>
+                              <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>中止</span>
+                            </div>
+                          ) : (
+                            <div style={{color:'#cbd5e1', display:'flex', alignItems:'center', gap:'4px'}}>
+                              <Clock size={20} /> <span style={{fontSize:'0.85rem'}}>待機</span>
+                            </div>
+                          )}
+                        </div>
+                      </motion.div>
+                    </React.Fragment>
+                  );
+                });
+              })()}
 
               {/* --- B. 別日完了済みリスト（タップ不可・灰色デザイン） --- */}
               {pastResidents.length > 0 && (
@@ -797,6 +858,82 @@ const AdminFacilityVisit_PC = () => {
               <button 
                 onClick={() => setShowSubMenuModal(false)}
                 style={{ width: '100%', marginTop: '16px', padding: '12px', border: 'none', background: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer' }}
+              >
+                キャンセル
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🚀 🆕 ここから追加：全メニュー選択ポップアップ */}
+      <AnimatePresence>
+        {showMenuSelector && targetResident && (
+          <div 
+            style={{ 
+              position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', 
+              zIndex: 3000, display: 'flex', alignItems: 'flex-end', 
+              backdropFilter: 'blur(4px)' 
+            }}
+            onClick={() => setShowMenuSelector(false)}
+          >
+            <motion.div 
+              initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              onClick={e => e.stopPropagation()}
+              style={{ 
+                background: '#fff', width: '100%', borderTopLeftRadius: '32px', 
+                borderTopRightRadius: '32px', padding: '32px 24px', 
+                maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)'
+              }}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', color: '#1e293b' }}>メニューを変更</h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
+                  {targetResident.members?.name} 様のメニューを選んでください
+                </p>
+              </div>
+
+              {/* 施設用メニューの一覧を表示（2列タイル） */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                {services.map(s => (
+                  <button
+                    key={s.id}
+                    onClick={() => {
+                      // 💡 管理者専用の「枝メニュー」があるか判定
+                      const adminOptions = options.filter(opt => opt.service_id === s.id && opt.is_admin_only);
+                      
+                      if (adminOptions.length > 0) {
+                        // 枝があれば詳細選択ポップアップ（リタッチ等）へバトンタッチ
+                        setPendingSelection({ 
+                          residentId: targetResident.id, 
+                          service: s, 
+                          adminOptions, 
+                          originalMenuName: s.name 
+                        });
+                        setShowMenuSelector(false);
+                        setShowSubMenuModal(true);
+                      } else {
+                        // 枝がなければこのままメニュー名を更新して終了
+                        updateResidentMenu(targetResident.id, s.name);
+                        setShowMenuSelector(false);
+                      }
+                    }}
+                    style={{
+                      padding: '20px 10px', borderRadius: '18px', border: '1px solid #e2e8f0',
+                      background: targetResident.menu_name.includes(s.name) ? `${themeColor}15` : '#f8fafc',
+                      color: targetResident.menu_name.includes(s.name) ? themeColor : '#1e293b',
+                      fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer'
+                    }}
+                  >
+                    {s.name}
+                  </button>
+                ))}
+              </div>
+
+              <button 
+                onClick={() => setShowMenuSelector(false)} 
+                style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#f1f5f9', border: 'none', borderRadius: '15px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
               >
                 キャンセル
               </button>
