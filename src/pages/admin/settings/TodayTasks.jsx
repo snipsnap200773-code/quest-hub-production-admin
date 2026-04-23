@@ -1760,7 +1760,7 @@ const handleSaveMemo = async () => {
                     </span>
                   </div>
                   {/* お名前を大きく表示 */}
-                  <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '900', color: '#1e293b', lineHeight: '1.2' }}>
+                  <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', color: '#1e293b', lineHeight: '1.2' }}>
                     {selectedTask.customer_name} <small style={{ fontSize: '1rem', fontWeight: 'bold' }}>様</small>
                   </h2>
                 </div>
@@ -1793,9 +1793,12 @@ const handleSaveMemo = async () => {
                             {isNewGroup && <div style={{ padding: '25px 10px 8px', fontSize: '0.85rem', fontWeight: '900', color: '#4f46e5', borderBottom: '2px solid #e0e7ff', background: '#fff', position: 'sticky', top: 0, zIndex: 10 }}>{currentLabel}</div>}
                             <div style={{ padding: '15px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                               <div>
-                                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>{res.members?.name} 様</div>
-                                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{res.members?.kana} / {res.members?.floor ? `${res.members.floor}F` : '-'}</div>
-                              </div>
+                            <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>{res.members?.name} 様</div>
+                            <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
+                              {/* 🚀 🆕 修正：Fの重複を防ぎ、大文字小文字を問わずチェックします */}
+                              {res.members?.kana} / {res.members?.floor ? (String(res.members.floor).toUpperCase().endsWith('F') ? res.members.floor : `${res.members.floor}F`) : '-'}
+                            </div>
+                          </div>
                               <div style={{ background: '#f3f4f6', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', color: '#4b5563' }}>{res.menu_name}</div>
                             </div>
                           </div>
