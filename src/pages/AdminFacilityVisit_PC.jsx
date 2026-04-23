@@ -49,6 +49,9 @@ const AdminFacilityVisit_PC = () => {
   const [residents, setResidents] = useState([]);
   const [shopData, setShopData] = useState(null);
 
+  const [message, setMessage] = useState('');
+  const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
+
   // 🆕 追加：入居者追加ポップアップ用
   const [showAddModal, setShowAddModal] = useState(false);
   const [availableMembers, setAvailableMembers] = useState([]);
@@ -104,6 +107,7 @@ const AdminFacilityVisit_PC = () => {
   const [services, setServices] = useState([]); 
   const [options, setOptions] = useState([]);
   const [isFinalizing, setIsFinalizing] = useState(false);
+  const [showFinalizeModal, setShowFinalizeModal] = useState(false);
 
   useEffect(() => { fetchData(); }, [visitId]);
 
@@ -314,47 +318,39 @@ const AdminFacilityVisit_PC = () => {
   };
 
   // 2. 確定ボタンを押した時の処理
-  const handleFinalizeSales = async () => {
+  const handleFinalizeSales = () => {
+    const total = calculateTodayTotal();
+    if (total === 0) {
+      alert("今日完了した施術がありません。名簿を「完了」にしてから確定してください。");
+      return;
+    }
+    // 💡 window.confirm は廃止して、自作モーダルを開く！
+    setShowFinalizeModal(true);
+  };
+
+  // 🚀 🆕 追加：パスワード不要で、モーダルから呼ばれる本当の確定処理
+  const executeFinalizeSales = async () => {
     const total = calculateTodayTotal();
     const todayStr = visit?.scheduled_date;
 
-    // ✅ 修正：金額を親＋枝で計算して抽出
     const targetDateMembers = residents
       .filter(r => r.status === 'completed' && r.completed_at?.startsWith(todayStr))
       .map(r => {
         const match = r.menu_name?.match(/^(.+?)（(.+?)）$/);
         const parentName = match ? match[1].trim() : r.menu_name?.trim();
         const optionName = match ? match[2].trim() : null;
-
         const master = services.find(s => s.name?.trim() === parentName);
         const basePrice = Number(master?.price) || 0;
-
         let extraPrice = 0;
         if (optionName && master) {
           const opt = options.find(o => o.service_id === master.id && o.option_name === optionName);
           extraPrice = Number(opt?.additional_price) || 0;
         }
-
-        return {
-          name: r.members?.name,
-          floor: r.members?.floor,
-          menu: r.menu_name,
-          price: basePrice + extraPrice // 💡 合計金額をセット
-        };
+        return { name: r.members?.name, floor: r.members?.floor, menu: r.menu_name, price: basePrice + extraPrice };
       });
-
-    if (targetDateMembers.length === 0) {
-      alert("今日完了した施術がありません。名簿を「完了」にしてから確定してください。");
-      return;
-    }
-
-    if (!window.confirm(`本日の売上 ¥${total.toLocaleString()} (${targetDateMembers.length}名分) を確定しますか？`)) {
-      return;
-    }
 
     setIsFinalizing(true);
     try {
-      // 顧客特定（施設）
       let customerId = null;
       const facilityName = visit?.facility_users?.facility_name;
       const { data: existingCust } = await supabase.from('customers').select('id').eq('shop_id', shopId).eq('name', facilityName).maybeSingle();
@@ -364,30 +360,20 @@ const AdminFacilityVisit_PC = () => {
         customerId = newCust.id;
       }
 
-      // 💡 売上テーブル(sales)に保存
-      const { error: saleErr } = await supabase
-        .from('sales')
-        .upsert([{
-          shop_id: shopId,
-          visit_request_id: visitId,
-          customer_id: customerId,
-          total_amount: total,
-          sale_date: visit.scheduled_date,
-          details: { 
-            is_facility: true,
-            residents_count: targetDateMembers.length,
-            // 🆕 これで18日の人と混ざらず、19日の人だけが保存されます！
-            members_list: targetDateMembers 
-          }
-        }], { onConflict: 'visit_request_id' });
+      const { error: saleError } = await supabase.from('sales').upsert([{
+        shop_id: shopId, visit_request_id: visitId, customer_id: customerId, total_amount: total, sale_date: visit.scheduled_date,
+        details: { is_facility: true, residents_count: targetDateMembers.length, members_list: targetDateMembers }
+      }], { onConflict: 'visit_request_id' });
 
-      if (saleErr) throw saleErr;
-
-      // 訪問ステータスを完了へ
+      if (saleError) throw saleError;
       await supabase.from('visit_requests').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', visitId);
 
-      alert("19日分の売上を確定しました！✨");
-      navigate(-1);
+      // 🚀 🆕 修正：モーダルを閉じてから、感謝のメッセージを出す！
+      setShowFinalizeModal(false); 
+      showMsg("本日の全データを台帳に記録しました！お疲れ様でした✨");
+      
+      // メッセージを出す時間を少し待ってから一覧に戻る
+      setTimeout(() => navigate(-1), 2000);
 
     } catch (err) {
       alert("確定失敗: " + err.message);
@@ -408,13 +394,31 @@ const AdminFacilityVisit_PC = () => {
 
   return (
     <div style={containerStyle}>
+      {/* 🚀 🆕 追加：通知メッセージを画面中央にふわっと出す設定 */}
+      <AnimatePresence>
+        {message && (
+          <motion.div 
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
+            style={{ 
+              position: 'fixed', top: '20px', left: '50%', 
+              background: '#10b981', color: '#fff', padding: '15px 30px', 
+              borderRadius: '50px', zIndex: 10000, fontWeight: 'bold',
+              boxShadow: '0 10px 25px rgba(0,0,0,0.2)', pointerEvents: 'none'
+            }}
+          >
+            {message}
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* 固定ヘッダー */}
       <header style={headerStyle}>
         <button onClick={() => navigate(-1)} style={backBtn}>
           <ArrowLeft size={20} /> 戻る
         </button>
         <div style={titleGroup}>
-          <div style={facilityLabel}><Building2 size={16} /> 施設訪問・現場実行</div>
+          <div style={facilityLabel}><Building2 size={16} /> 施設訪問・本日のタスク</div>
           <h2 style={facilityName}>{visit?.facility_users?.facility_name} 様</h2>
           <p style={dateText}>{visit?.scheduled_date?.replace(/-/g, '/')} 訪問分</p>
         </div>
@@ -439,7 +443,7 @@ const AdminFacilityVisit_PC = () => {
       <div style={finalizeCard}>
         <div style={finalizeHeader}>
           <ReceiptText size={18} color="#4f46e5" />
-          <span style={finalizeTitle}>本日の計上予定（マスター価格）</span>
+          <span style={finalizeTitle}>本日の計上予定</span>
         </div>
         <div style={finalizeAmount}>
           ¥ {calculateTodayTotal().toLocaleString()}
@@ -452,7 +456,7 @@ const AdminFacilityVisit_PC = () => {
           style={finalizeBtn(isFinalizing || residents.filter(r => r.status === 'completed').length === 0)}
         >
           {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
-          {isFinalizing ? '処理中...' : '本日の施術を終了して売上を確定'}
+          {isFinalizing ? '処理中...' : '本日のタスクを終了'}
         </button>
       </div>
 
@@ -467,7 +471,7 @@ const AdminFacilityVisit_PC = () => {
             boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.1)'
           }}
         >
-          <Plus size={18} strokeWidth={3} /> 予定外の方を追加
+          <Plus size={18} strokeWidth={3} /> 追加
         </button>
       </div>
       {/* 🏢 ここまで ====================================================== */}
@@ -690,7 +694,7 @@ const AdminFacilityVisit_PC = () => {
 
       <footer style={footerStyle}>
         <button onClick={() => navigate(-1)} style={finishBtn}>
-          作業を一時中断して一覧へ戻る
+          一時中断して戻る
         </button>
       </footer>
 
@@ -751,7 +755,7 @@ const AdminFacilityVisit_PC = () => {
                     color: sortMode === 'room' ? '#fff' : '#64748b', cursor: 'pointer'
                   }}
                 >
-                  部屋番号順
+                  階数順
                 </button>
               </div>
 
@@ -762,40 +766,79 @@ const AdminFacilityVisit_PC = () => {
                     追加可能なメンバーは全員リストに入っています。
                   </div>
                 ) : (
-                  // ✅ 修正：表示する前にソートをかける
-                  [...availableMembers].sort((a, b) => {
-                    if (sortMode === 'room') {
-                      // 部屋番号順：数字が混ざっていても正しく並ぶように（A9 < A10）
-                      return (a.room || "").localeCompare(b.room || "", undefined, { numeric: true, sensitivity: 'base' });
-                    }
-                    // あいいうえお（名前）順
-                    return (a.name || "").localeCompare(b.name || "", 'ja');
-                  }).map(m => (
-                    <button 
-                      key={m.id}
-                      onClick={() => handleAddMember(m)}
-                      disabled={isAdding}
-                      style={{ 
-                        width: '100%', padding: '20px', borderRadius: '20px', 
-                        border: '1px solid #e2e8f0', background: '#f8fafc', 
-                        textAlign: 'left', display: 'flex', justifyContent: 'space-between', 
-                        alignItems: 'center', cursor: 'pointer'
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                        <div style={{ background: '#e0e7ff', color: '#4f46e5', width: '45px', height: '45px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '0.8rem' }}>
-                          {m.room}
-                        </div>
-                        <div>
-                          <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b' }}>{m.name} 様</div>
-                          <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{m.floor ? `${m.floor}階 / ` : ''}{m.room}号室</div>
-                        </div>
-                      </div>
-                      <div style={{ background: '#4f46e5', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <Plus size={20} color="#fff" />
-                      </div>
-                    </button>
-                  ))
+                  (() => {
+                    let lastLabel = ""; // 🚀 直前のグループ名を記憶する変数
+
+                    // 1. まず、指定されたモードで並び替えを実行
+                    const sortedList = [...availableMembers].sort((a, b) => {
+                      if (sortMode === 'room') {
+                        // 【階数順】
+                        const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
+                        const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
+                        if (fA !== fB) return fA - fB;
+                        return (a.room || "").localeCompare(b.room || "", undefined, { numeric: true });
+                      } else {
+                        // 【あいうえお順】🚀 修正：必ず kana（ふりがな）を使って比較する
+                        const kanaA = (a.kana || a.name || "").trim();
+                        const kanaB = (b.kana || b.name || "").trim();
+                        return kanaA.localeCompare(kanaB, 'ja');
+                      }
+                    });
+
+                    // 2. ループを回して「見出し札」を挟みながら表示
+                    return sortedList.map((m) => {
+                      // 🚀 現在のラベルを決定（階数 or あ行）
+                      let currentLabel = "";
+                      if (sortMode === 'room') {
+                        currentLabel = m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : "階数未設定";
+                      } else {
+                        currentLabel = getKanaGroup(m.kana);
+                      }
+
+                      // 🚀 グループが変わったか判定
+                      const isNewGroup = currentLabel !== lastLabel;
+                      lastLabel = currentLabel;
+
+                      return (
+                        <React.Fragment key={m.id}>
+                          {/* 🚀 グループ見出しを表示 */}
+                          {isNewGroup && (
+                            <div style={groupHeaderStyle}>
+                              {currentLabel}
+                            </div>
+                          )}
+
+                          <button 
+                            onClick={() => handleAddMember(m)}
+                            disabled={isAdding}
+                            style={{ 
+                              width: '100%', padding: '20px', borderRadius: '20px', 
+                              border: '1px solid #e2e8f0', background: '#fff', 
+                              textAlign: 'left', display: 'flex', justifyContent: 'space-between', 
+                              alignItems: 'center', cursor: 'pointer',
+                              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
+                              marginTop: '4px'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              <div style={{ background: '#e0e7ff', color: '#4f46e5', width: '45px', height: '45px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '0.8rem' }}>
+                                {m.room}
+                              </div>
+                              <div>
+                                <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b' }}>{m.name} 様</div>
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                  {m.kana ? `${m.kana} / ` : ''}{m.floor ? `${m.floor}階` : '階数未設定'}
+                                </div>
+                              </div>
+                            </div>
+                            <div style={{ background: '#4f46e5', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <Plus size={20} color="#fff" />
+                            </div>
+                          </button>
+                        </React.Fragment>
+                      );
+                    });
+                  })()
                 )}
               </div>
             </motion.div>
@@ -941,6 +984,77 @@ const AdminFacilityVisit_PC = () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 🚀 🆕 ここから「今風」の売上確定確認モーダルを追加 */}
+      <AnimatePresence>
+        {showFinalizeModal && (
+          <div style={overlayStyle} onClick={() => setShowFinalizeModal(false)}>
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} 
+              animate={{ scale: 1, opacity: 1 }} 
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              onClick={e => e.stopPropagation()}
+              style={{ 
+                background: '#fff', 
+                width: '90%', 
+                maxWidth: '400px', 
+                borderRadius: '32px', 
+                padding: '35px', 
+                textAlign: 'center', 
+                boxShadow: '0 25px 50px rgba(0,0,0,0.2)' 
+              }}
+            >
+              {/* アイコン部分 */}
+              <div style={{ background: '#f5f3ff', width: '70px', height: '70px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                <ReceiptText size={35} color={themeColor} />
+              </div>
+
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: '900', color: '#1e293b' }}>
+                本日の締め処理
+              </h3>
+              <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>
+                {visit?.facility_users?.facility_name} 様<br />
+                本日の施術データを確定し、<br />売上台帳へ記録してもよろしいですか？
+              </p>
+
+              {/* 金額・人数のサマリーパネル */}
+              <div style={{ background: '#f8fafc', padding: '20px', borderRadius: '20px', marginBottom: '30px', border: '1px solid #e2e8f0' }}>
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 'bold', marginBottom: '5px' }}>
+                  計上金額（税込）
+                </div>
+                <div style={{ fontSize: '2.2rem', fontWeight: '900', color: '#1e293b' }}>
+                  ¥ {calculateTodayTotal().toLocaleString()}
+                </div>
+                <div style={{ fontSize: '0.8rem', color: themeColor, fontWeight: 'bold', marginTop: '5px' }}>
+                  完了: {residents.filter(r => r.status === 'completed').length} 名
+                </div>
+              </div>
+
+              {/* アクションボタン */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                <button 
+                  onClick={executeFinalizeSales}
+                  disabled={isFinalizing}
+                  style={{ 
+                    width: '100%', padding: '18px', background: themeColor, color: '#fff', 
+                    border: 'none', borderRadius: '18px', fontWeight: 'bold', fontSize: '1.1rem', 
+                    cursor: 'pointer', boxShadow: `0 8px 20px ${themeColor}44` 
+                  }}
+                >
+                  {isFinalizing ? <Loader2 className="animate-spin" /> : '確定して終了する'}
+                </button>
+                <button 
+                  onClick={() => setShowFinalizeModal(false)}
+                  style={{ padding: '12px', background: 'none', border: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  まだ修正がある（戻る）
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       {/* 🏢 ここまで ====================================================== */}
     </div>
   );
@@ -1001,4 +1115,15 @@ const sortTabStyle = (active) => ({
   color: active ? '#fff' : '#64748b',
   transition: '0.2s'
 });
+
+const overlayStyle = { 
+  position: 'fixed', 
+  inset: 0, 
+  background: 'rgba(0,0,0,0.7)', 
+  zIndex: 5000, 
+  display: 'flex', 
+  alignItems: 'center', 
+  justifyContent: 'center', 
+  backdropFilter: 'blur(8px)' 
+};
 export default AdminFacilityVisit_PC;

@@ -8,7 +8,10 @@ import {
   PlusCircle,
   Minus,
   Building2, ClipboardCheck,
-  ShoppingBag // 🛍 アイコンも追加しておきます
+  ShoppingBag,
+  X,
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 
 // 🚀 🆕 追加：予約データを解析して、商品や調整を取り出す道具箱
@@ -42,6 +45,23 @@ const parseReservationDetails = (res) => {
   };
 };
 
+// 五十音順のグループ判定用関数
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-おア-オ]/)) return "あ行";
+  if (firstChar.match(/[か-こカ-コ]/)) return "か行";
+  if (firstChar.match(/[さ-そサ-ソ]/)) return "さ行";
+  if (firstChar.match(/[た-とタ-ト]/)) return "た行";
+  if (firstChar.match(/[な-のナ-ノ]/)) return "な行";
+  if (firstChar.match(/[は-ほハ-ホ]/)) return "は行";
+  if (firstChar.match(/[ま-もマ-モ]/)) return "ま行";
+  if (firstChar.match(/[や-よヤ-ヨ]/)) return "や行";
+  if (firstChar.match(/[ら-ろラ-ロ]/)) return "ら行";
+  if (firstChar.match(/[わ-をワ-ヲ]/)) return "わ行";
+  return "その他";
+};
+
 const TodayTasks = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -67,6 +87,10 @@ const TodayTasks = () => {
 
   // 🆕 追加：レジ用の状態管理
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
+  const [showSummaryModal, setShowSummaryModal] = useState(false);
+  const [showRevertConfirm, setShowRevertConfirm] = useState(false);
+  const [facilityResidents, setFacilityResidents] = useState([]);
+  const [facilitySaleRecord, setFacilitySaleRecord] = useState(null);
   const [selectedTask, setSelectedTask] = useState(null);
   const [adjustments, setAdjustments] = useState([]);
   const [adjCategories, setAdjCategories] = useState([]);
@@ -583,42 +607,58 @@ const handleAutoBatchProcess = async () => {
   }
 };
 
-  // 🆕 修正：エラー解決のための「お会計戻し」関数（完成版）
-  const handleRevertTask = async (task) => {
+  // 🚀 🆕 修正：古い handleRevertTask をこれに差し替えます
+  // 事務的なアラートを無くし、処理後に自動で施設画面へジャンプする最新版です
+  const executeRevertAndJump = async () => {
+    // 💡 1. 選択中のタスクがない場合は何もしない
+    if (!selectedTask) return;
+    
+    const task = selectedTask;
     const isFacility = task.task_type === 'facility';
-    const msg = isFacility 
-      ? "施設訪問の売上確定を取り消しますか？"
-      : "この予約をお会計前の状態に戻しますか？";
-
-    if (!window.confirm(msg)) return;
-
+    
     try {
+      // ステータスを戻す先を決定
       const targetTable = isFacility ? 'visit_requests' : 'reservations';
+      const updatePayload = { status: isFacility ? 'confirmed' : 'pending' };
       
-      // 1. ステータスを「未完了」に戻し、保存された金額も「0」にリセットする
+      // 個人の時だけ金額を0にリセット
+      if (!isFacility) {
+        updatePayload.total_price = 0;
+      }
+
+      // 2. データベースのステータスを戻す
       const { error: statusError } = await supabase
         .from(targetTable)
-        .update({ 
-            status: 'pending',
-            total_price: 0 // 👈 これにより予約管理画面で（予）が復活します
-        })
+        .update(updatePayload)
         .eq('id', task.id);
 
       if (statusError) throw statusError;
 
-      // 2. 売上台帳（sales）からデータを削除する
+      // 3. 売上台帳（sales）からデータを削除する
       const deleteField = isFacility ? 'visit_request_id' : 'reservation_id';
       const { error: deleteError } = await supabase
         .from('sales')
         .delete()
         .eq(deleteField, task.id);
 
-      // 💡 もしここでも401エラーが出る場合は、削除用のRPCも必要ですが、
-      // まずはこれで売上データの紐付けが消えるか確認しましょう。
+      if (deleteError) throw deleteError;
 
-      showMsg("お会計を差し戻しました。金額もリセットされました。");
-      fetchTodayTasks(); 
+      // 4. 開いている確認モーダルをすべて閉じる
+      setShowRevertConfirm(false);
+      setShowSummaryModal(false);
+      
+      // 🚀 5. 【ここがポイント！】施設の場合は、そのまま名簿画面へジャンプ！
+      if (isFacility) {
+        // 施設訪問のポチポチ画面（AdminFacilityVisit_PC）へワープ
+        navigate(`/admin/${shopId}/visit-requests/${task.id}`);
+      } else {
+        // 個人の場合は今のリストを更新してメッセージを出すだけ
+        showMsg("お会計を差し戻しました。");
+        fetchTodayTasks();
+      }
+
     } catch (err) {
+      console.error("Revert Error:", err.message);
       alert("エラーが発生しました: " + err.message);
     }
   };
@@ -963,16 +1003,36 @@ const handleSaveMemo = async () => {
 
                   {/* 🚀 5. 右側のボタンエリアの出し分け */}
                   {isCanceled ? (
-                    // キャンセル済みなら「予約中止」の文字だけ出す（レジへ行かせない）
+                    // キャンセル済みなら「予約中止」の文字だけ出す
                     <div style={{ color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold', padding: '10px' }}>
                       予約中止
                     </div>
                   ) : task.status === 'completed' ? (
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '5px', color: '#10b981', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                        <CheckCircle size={20} /> 完了済み
-                      </div>
-                      <button onClick={() => handleRevertTask(task)} style={{ background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}>修正する</button>
+                    /* 🚀 🆕 修正：完了済みエリアを「内容確認ボタン」へアップグレード */
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '5px' }}>
+                      <button 
+                        onClick={async () => { 
+                          setSelectedTask(task); 
+                          if (task.task_type === 'facility') {
+                            // 🚀 🆕 修正：金額ではなく「ふりがな(kana)」を含めて施術者リストを取得する
+                            const { data } = await supabase
+                              .from('visit_request_residents')
+                              .select('*, members(name, kana, floor)')
+                              .eq('visit_request_id', task.id)
+                              .eq('status', 'completed');
+                            setFacilityResidents(data || []);
+                          }
+                          setShowSummaryModal(true); 
+                        }}
+                        style={{ 
+                          padding: '10px 18px', background: '#f0fdf4', color: '#10b981', 
+                          border: '2px solid #10b981', borderRadius: '14px', fontWeight: 'bold', 
+                          fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' 
+                        }}
+                      >
+                        <CheckCircle size={18} /> 内容を確認
+                      </button>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>お会計完了 ✓</span>
                     </div>
                   ) : (
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -1678,6 +1738,108 @@ const handleSaveMemo = async () => {
           </div>
         </div>
       )}
+
+      {/* 🚀 🆕 ここから追加：「お会計内容の確認」ポップアップ */}
+      <AnimatePresence>
+        {showSummaryModal && selectedTask && (
+          <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 5000, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            {/* スリムヘッダー */}
+            <div style={{ padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>施術完了 明細一覧</h2>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
+                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{selectedTask.customer_name} 様</span>
+                    <span style={{ fontSize: '0.75rem', background: '#f0fdf4', color: '#10b981', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>合計: {facilityResidents.length} 名</span>
+                  </div>
+                </div>
+                <button onClick={() => setShowSummaryModal(false)} style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={20} color="#94a3b8"/>
+                </button>
+              </div>
+            </div>
+
+            {/* メインリスト */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+              {selectedTask.task_type === 'facility' ? (
+                (() => {
+                  const sorted = [...facilityResidents].sort((a, b) => (a.members?.kana || "").localeCompare(b.members?.kana || "", 'ja'));
+                  let lastLabel = "";
+                  return sorted.map((res) => {
+                    const currentLabel = getKanaGroup(res.members?.kana);
+                    const isNewGroup = currentLabel !== lastLabel;
+                    lastLabel = currentLabel;
+                    return (
+                      <div key={res.id}>
+                        {isNewGroup && (
+                          <div style={{ padding: '15px 10px 8px', fontSize: '0.8rem', fontWeight: '900', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', background: '#fff', position: 'sticky', top: 0, zIndex: 10 }}>{currentLabel}</div>
+                        )}
+                        <div style={{ padding: '12px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                          <div>
+                            <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>{res.members?.name} 様</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{res.members?.kana} / {res.members?.floor ? `${res.members.floor}F` : '-'}</div>
+                          </div>
+                          <div style={{ background: '#f3f4f6', padding: '4px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: '#4b5563' }}>{res.menu_name}</div>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
+              ) : (
+                <div style={{ padding: '40px 20px', textAlign: 'center' }}><p style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{selectedTask.menu_name}</p></div>
+              )}
+            </div>
+
+            {/* フッター：確認ボタンを消し、やり直しボタンを押しやすく中央に */}
+            <div style={{ padding: '15px 20px 25px', background: '#fff', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
+              <button 
+                onClick={() => setShowRevertConfirm(true)} // 🚀 🆕 ここで新しい確認モーダルを呼ぶ
+                style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', textDecoration: 'underline' }}
+              >
+                内容を修正する（お会計をやり直す）
+              </button>
+            </div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 🚀 🆕 追加：今風の「やり直し確認」モーダル */}
+      <AnimatePresence>
+        {showRevertConfirm && (
+          <div 
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 6000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }}
+            onClick={() => setShowRevertConfirm(false)}
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{ background: '#fff', width: '100%', maxWidth: '360px', borderRadius: '32px', padding: '30px', textAlign: 'center', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}
+            >
+              <div style={{ background: '#fee2e2', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+                <RefreshCw size={30} color="#ef4444" />
+              </div>
+              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: '900' }}>お会計をやり直しますか？</h3>
+              <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>
+                売上確定を取り消し、<br /><b>施設訪問の実行画面</b>へ戻ります。<br />よろしいですか？
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <button 
+                  onClick={executeRevertAndJump}
+                  style={{ width: '100%', padding: '16px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
+                >
+                  はい、やり直します
+                </button>
+                <button 
+                  onClick={() => setShowRevertConfirm(false)}
+                  style={{ width: '100%', padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  キャンセル
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
     </div> // 👈 ファイルの最後、一番外側の div
   );
