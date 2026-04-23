@@ -1,10 +1,12 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
+// 🚀 🆕 motion, AnimatePresence を追加
+import { motion, AnimatePresence } from 'framer-motion'; 
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
-  ShoppingBag
+  ShoppingBag, Scissors // 👈 Scissorsも忘れずに
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -24,60 +26,45 @@ const getCustomerColor = (name) => {
   };
 };
 
-// 🚀 🆕 追加：予約メニューから合計金額を計算するロジック（AdminReservationsから移植）
+// 🚀 🆕 修正：レジ確定後のデータを最優先し、単価も保持する版
 const parseReservationDetails = (res) => {
-    if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], savedAdjustments: [], savedProducts: [] };
-    const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
-    
-    // 🚀 1. 商品と調整データの抽出
-    const products = opt.products || [];
-    const adjustments = opt.adjustments || [];
+  if (!res) return { menuName: '', totalPrice: 0, items: [], subItems: [], products: [], adjustments: [] };
+  const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
+  
+  const products = opt.products || [];
+  const adjustments = opt.adjustments || [];
+  let items = [];
+  let subItems = [];
 
-    let items = [];
-    let subItems = [];
+  // 💡 レジ確定データがあればそれを最優先で採用
+  if (opt.isUpdatedFromCheckout || opt.isUpdatedFromTodayTasks || !opt.people) {
+    items = opt.services || [];
+    subItems = Object.values(opt.options || {});
+  } else {
+    items = opt.people.flatMap(p => p.services || []);
+    subItems = opt.people.flatMap(p => Object.values(p.options || {}));
+  }
 
-    // 🚀 2. メニューと枝分かれの抽出
-    if (opt.people && Array.isArray(opt.people)) {
-      items = opt.people.flatMap(p => p.services || []);
-      subItems = opt.people.flatMap(p => Object.values(p.options || {}));
-    } else {
-      items = opt.services || [];
-      subItems = Object.values(opt.options || {});
-    }
+  const baseNames = items.map(s => s.name).join(', ');
+  const optionNames = subItems.map(o => o.option_name).join(', ');
+  const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
-    const baseNames = items.map(s => s.name).join(', ');
-    const optionNames = subItems.map(o => o.option_name).join(', ');
-    const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
+  let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+  const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+  const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
-    // 🚀 3. 金額の集計
-    let basePrice = items.reduce((sum, item) => {
-      let p = Number(item.price);
-      if (!p || p === 0) {
-        const master = services.find(s => s.id === item.id || s.name === item.name);
-        p = master ? Number(master.price) : 0;
-      }
-      return sum + p;
-    }, 0);
+  let adjAmount = 0;
+  adjustments.forEach(a => {
+    if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
+  });
 
-    const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
-    const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
-
-    // 🚀 4. 調整金額の計算（割引・加算）
-    let adjAmount = 0;
-    adjustments.forEach(a => {
-      if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
-      else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
-    });
-
-    return { 
-      menuName: fullMenuName, 
-      totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
-      items, 
-      subItems, 
-      savedAdjustments: adjustments, 
-      savedProducts: products 
-    };
+  return { 
+    menuName: fullMenuName, 
+    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
+    items, subItems, products, adjustments 
   };
+};
 
 // 🆕 追加：定休日かどうかを判定するヘルパー関数（エラー解決用）
 const isShopHoliday = (shop, date) => {
@@ -124,6 +111,9 @@ function AdminTimeline() {
   const [targetStaffId, setTargetStaffId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedRes, setSelectedRes] = useState(null);
+
+  const [showHistoryDetail, setShowHistoryDetail] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState(null);
 
   // 🆕 重複予約リスト用
   const [showSlotListModal, setShowSlotListModal] = useState(false);
@@ -179,6 +169,12 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   const isPC = windowWidth > 1024; 
 
   useEffect(() => { fetchData(); }, [shopId, selectedDate]);
+
+  // 🚀 🆕 追加：履歴カードをタップした時に詳細を開く命令
+  const openHistoryDetail = (visit) => {
+    setSelectedHistory(visit);
+    setShowHistoryDetail(true);
+  };
 
   const fetchData = async () => {
     setLoading(true);
@@ -1169,90 +1165,59 @@ const timeSlots = useMemo(() => {
                       const hDate = new Date(h.start_time);
                       const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
                       const hBrandLabel = categoryMap[h.biz_type];
-                      // 🚀 1. キャンセル判定
                       const isCanceled = h.status === 'canceled';
+                      
+                      // 🚀 🆕 詳細データは「中身」を計算するためだけに使い、表示はシンプルにします
+                      const d = parseReservationDetails(h);
 
                       return (
-                        <div key={h.id} style={{ 
-                          padding: '15px', 
-                          borderBottom: '1px solid #eee', 
-                          background: isCanceled ? '#fcfcfc' : '#fff', 
-                          borderRadius: isToday ? '12px' : '0', 
-                          border: isToday ? `2px solid ${themeColor}` : 'none',
-                          opacity: isCanceled ? 0.7 : 1 
-                        }}>
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
+                        <div 
+                          key={h.id} 
+                          onClick={() => !isCanceled && (setSelectedHistory(h), setShowHistoryDetail(true))}
+                          style={{ 
+                            padding: '15px', borderBottom: '1px solid #eee', 
+                            background: isCanceled ? '#fcfcfc' : '#fff', 
+                            borderRadius: isToday ? '12px' : '0', 
+                            border: isToday ? `2px solid ${themeColor}` : 'none',
+                            opacity: isCanceled ? 0.7 : 1, position: 'relative',
+                            cursor: isCanceled ? 'default' : 'pointer'
+                          }}
+                        >
+                          {/* 上段：日付と合計金額 */}
+                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              {/* 🚀 2. 日付に斜線を適用 */}
-                              <span style={{ 
-                                fontWeight: 'bold',
-                                color: isCanceled ? '#94a3b8' : '#1e293b',
-                                textDecoration: isCanceled ? 'line-through' : 'none' 
-                              }}>
+                              <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
                                 {hDate.toLocaleDateString('ja-JP')}
                               </span>
-                              
                               {hBrandLabel && (
-                                <span style={{ fontSize: '0.6rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap' }}>
+                                <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
                                   {hBrandLabel.slice(0, 5)}
                                 </span>
                               )}
-
-                              {/* 🚀 3. キャンセルバッジ */}
-                              {isCanceled && (
-                                <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', border: '1px solid #fecaca' }}>
-                                  キャンセル済
-                                </span>
-                              )}
                             </div>
-
-                            {(() => {
-                              const displayPrice = h.total_price > 0 ? h.total_price : parseReservationDetails(h).totalPrice;
-                              return (
-                                <span style={{ 
-                                  color: isCanceled ? '#cbd5e1' : '#e11d48', 
-                                  fontWeight: 'bold',
-                                  textDecoration: isCanceled ? 'line-through' : 'none' 
-                                }}>
-                                  ¥{displayPrice.toLocaleString()}
-                                  {h.total_price === 0 && <small style={{fontSize:'0.6rem', marginLeft:'2px'}}>(予)</small>}
-                                </span>
-                              );
-                            })()}
-                          </div>
-                          
-                          {/* 🚀 4. メニュー名にも斜線を適用 */}
-                          <div style={{ 
-                            color: isCanceled ? '#cbd5e1' : '#475569', 
-                            fontSize: '0.8rem',
-                            textDecoration: isCanceled ? 'line-through' : 'none'
-                          }}>
-                            {h.menu_name}
+                            <span style={{ color: isCanceled ? '#94a3b8' : '#e11d48', fontWeight: '900' }}>
+                              ¥{d.totalPrice.toLocaleString()}
+                            </span>
                           </div>
 
-                          {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
-                          {(() => {
-                            // すでに上部に定義されている parseReservationDetails で解析
-                            const details = parseReservationDetails(h);
-                            return (
-                              <>
-                                {/* 🛍 商品リスト（緑色） */}
-                                {details.savedProducts?.length > 0 && (
-                                  <div style={{ marginTop: '5px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <ShoppingBag size={12} />
-                                    <span>商品: {details.savedProducts.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
-                                  </div>
-                                )}
-                                
-                                {/* ⚙️ 調整リスト（赤色） */}
-                                {details.savedAdjustments?.length > 0 && (
-                                  <div style={{ marginTop: '3px', fontSize: '0.7rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                    <span>⚙️ 調整: {details.savedAdjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
-                                  </div>
-                                )}
-                              </>
-                            );
-                          })()}
+                          {/* 🚀 🆕 中段：メニュー名は1枚目画像のように「横並び」で表示 */}
+                          <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', marginBottom: '4px' }}>
+                            {h.menu_name || d.menuName}
+                          </div>
+
+                          {/* 下段：調整や商品があれば小さく表示 */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                            {d.adjustments?.length > 0 && (
+                              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
+                                ⚙️ 調整: {d.adjustments.map(a => a.name).join(', ')}
+                              </div>
+                            )}
+                            {d.products?.length > 0 && (
+                              <div style={{ fontSize: '0.7rem', color: '#008000', fontWeight: 'bold' }}>
+                                🛍 商品あり (詳細タップ)
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })}
@@ -1364,6 +1329,113 @@ const timeSlots = useMemo(() => {
           </div>
         </div>
       )}
+
+      {/* 🚀 🆕 ここから差し込む！：過去の履歴・詳細内訳ポップアップ本体（単価表示版） */}
+      <AnimatePresence>
+        {showHistoryDetail && selectedHistory && (
+          <div style={overlayStyle} onClick={() => setShowHistoryDetail(false)}>
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{ ...modalContentStyle, maxWidth: '400px', padding: '0', overflow: 'hidden', borderRadius: '32px' }}
+            >
+              {/* ヘッダー：管理画面と同じ紫のデザイン */}
+              <div style={{ background: '#4b2c85', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 'bold' }}>施術履歴の詳細内訳</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>
+                    {selectedHistory.start_time.split('T')[0].replace(/-/g, '/')} の記録
+                  </div>
+                </div>
+                <button onClick={() => setShowHistoryDetail(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff' }}>✕</button>
+              </div>
+
+              <div style={{ padding: '25px', maxHeight: '70vh', overflowY: 'auto' }}>
+                {(() => {
+                  const d = parseReservationDetails(selectedHistory);
+                  // 店販売上の計算
+                  const productTotal = (d.savedProducts || []).reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0);
+                  const technicalTotal = d.totalPrice - productTotal;
+
+                  return (
+                    <>
+                      {/* ✂️ 技術セクション：1項目ずつ金額を表示 */}
+                      <div style={{ marginBottom: '25px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4b2c85', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
+                          <Scissors size={16} /> 施術・技術メニュー
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* ① メインメニューの内訳（単価付き） */}
+                          {/* 🚀 🆕 修正：.map の前に ? を追加 */}
+                          {d.items?.map((item, i) => (
+                            <div key={`item-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>
+                              <span>{item.name}</span>
+                              <span>¥{Number(item.price || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+
+                          {/* ② 枝分かれオプション */}
+                          {/* 🚀 🆕 修正：.map の前に ? を追加 */}
+                          {d.subItems?.map((opt, i) => (
+                            <div key={`opt-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', paddingLeft: '15px' }}>
+                              <span>└ {opt.option_name}</span>
+                              <span>+¥{Number(opt.additional_price || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+
+                          {/* ③ メニュー調整（割引・加算） */}
+                          {/* 🚀 🆕 修正：.map の前に ? を追加 */}
+                          {d.savedAdjustments?.map((adj, i) => (
+                            <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
+                              <span>└ {adj.name}</span>
+                              <span>{adj.is_minus ? '-' : '+'}¥{Number(adj.price).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 🛍 店販商品セクション（ある場合のみ） */}
+                      {d.savedProducts?.length > 0 && (
+                        <div style={{ marginBottom: '25px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#008000', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
+                            <ShoppingBag size={16} /> 店販商品
+                          </div>
+                          {/* 🚀 🆕 修正：ここも .map の前に ? を追加 */}
+                          {d.savedProducts?.map((p, i) => (
+                            <div key={`prod-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', marginBottom: '8px', paddingLeft: '5px' }}>
+                              <span style={{ fontWeight: 'bold' }}>{p.name} <small style={{ color: '#94a3b8' }}>x{p.quantity}</small></span>
+                              <span style={{ fontWeight: '900' }}>¥{(p.price * p.quantity).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 💰 最終集計パネル */}
+                      <div style={{ marginTop: '30px', padding: '20px', background: '#f8fafc', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', marginBottom: '8px' }}>
+                          <span>技術計（調整込）</span>
+                          <span>¥{technicalTotal.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#008000', marginBottom: '15px' }}>
+                          <span>商品売上</span>
+                          <span>¥{productTotal.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '2px dashed #cbd5e1', paddingTop: '15px' }}>
+                          <span style={{ fontWeight: '900', color: '#1e293b' }}>総計</span>
+                          <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#d34817' }}>¥ {d.totalPrice.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      
+                      <button onClick={() => setShowHistoryDetail(false)} style={{ width: '100%', marginTop: '25px', padding: '15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}>詳細を閉じる</button>
+                    </>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

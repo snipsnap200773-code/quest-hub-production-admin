@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => { // 💡 typeを引数に追加
@@ -47,46 +47,40 @@ const parseReservationDetails = (res) => {
   const opt = typeof res.options === 'string' ? JSON.parse(res.options) : (res.options || {});
   
   const products = opt.products || [];
-  const adjustments = opt.adjustments || []; // 🚀 🆕 調整項目を抽出
-
+  const adjustments = opt.adjustments || [];
   let items = [];
   let subItems = [];
 
-  if (opt.people && Array.isArray(opt.people)) {
-    items = opt.people.flatMap(p => p.services || []);
-    subItems = opt.people.flatMap(p => Object.values(p.options || {}));
-  } else {
+  // 💡 レジ確定データがあればそちらを優先
+  if (opt.isUpdatedFromCheckout || opt.isUpdatedFromTodayTasks || !opt.people) {
     items = opt.services || [];
     subItems = Object.values(opt.options || {});
+  } else {
+    items = opt.people.flatMap(p => p.services || []);
+    subItems = opt.people.flatMap(p => Object.values(p.options || {}));
   }
 
   const baseNames = items.map(s => s.name).join(', ');
   const optionNames = subItems.map(o => o.option_name).join(', ');
   const fullMenuName = res.menu_name || (optionNames ? `${baseNames}（${optionNames}）` : (baseNames || 'メニューなし'));
 
-  // 金額計算
   let basePrice = items.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
   const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
-  // 🚀 🆕 調整金額の計算
   let adjAmount = 0;
   adjustments.forEach(a => {
-    if (a.is_percent) {
-      // パーセント計算（簡易版：施術＋オプションの合計に対して）
-      adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
-    } else {
-      adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
-    }
+    if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
   });
 
   return { 
     menuName: fullMenuName, 
-    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), // 👈 全合算
-    items, 
-    subItems,
-    products,
-    adjustments // 👈 調整リストも返す
+    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
+    items,      // 👈 個別のメニュー（カット等）
+    subItems,   // 👈 枝分かれ（シャンプー等）
+    products,   // 👈 商品
+    adjustments // 👈 調整
   };
 };
 
@@ -167,6 +161,9 @@ const resIndexStyle = (color) => ({
   const [showFacCancelModal, setShowFacCancelModal] = useState(false);
   const [facCancelTarget, setFacCancelTarget] = useState(null); // {id, date, name} を入れる
   const [facCancelPass, setFacCancelPass] = useState('');
+
+  const [showHistoryDetail, setShowHistoryDetail] = useState(false);
+  const [selectedHistory, setSelectedHistory] = useState(null);
 
 // 🆕 プライベート予定用のState
   const [privateTasks, setPrivateTasks] = useState([]);
@@ -326,6 +323,12 @@ const isPC = windowWidth > 1024;
 
 // 🆕 location.search を追加することで、予約完了後にURLが変わった瞬間に再取得が走るようにします
   useEffect(() => { fetchData(); }, [shopId, startDate, location.search]);
+
+  // 🚀 🆕 ここから追加：履歴のカードをタップした時に詳細ポップアップを開く命令
+  const openHistoryDetail = (visit) => {
+    setSelectedHistory(visit);
+    setShowHistoryDetail(true);
+  };
 
   // ✅ ツイン・カレンダー対応版 fetchData
   const fetchData = async () => {
@@ -846,6 +849,16 @@ const { data: resData } = await supabase
       fetchData(); // 再読み込み
       showMsg(isPrivate ? "予定を削除しました" : "予約を削除しました");
     }
+  };
+
+  // 開いているポップアップをすべて強制終了する「お掃除」関数
+  const closeAllPopups = () => {
+    setShowMenuModal(false);         // 時間枠クリックメニュー（2択/4択）
+    setShowDetailModal(false);       // 予約詳細・カルテ画面
+    setShowSlotListModal(false);     // 複数予約が重なった時の選択リスト
+    setShowMobileCalendar(false);    // スマホ用ミニカレンダー
+    setShowMobileSearchModal(false); // スマホ用50音検索ポップアップ
+    setShowHistoryDetail(false);     // 📜 今回新しく作った「履歴詳細」
   };
   
   // 🆕 定期キープ（施設とのお約束）の判定：エラー修正版
@@ -1704,29 +1717,41 @@ return (
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxShadow: '0 -4px 15px rgba(0,0,0,0.05)' 
         }}>
-          {/* 🆕 1. 設定（ダッシュボード）へ変更 */}
-          <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={mobileTabStyle(false, '#64748b')}>
+          {/* 🆕 1. 設定：移動前にお掃除を実行 */}
+          <button 
+            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/dashboard`); }} 
+            style={mobileTabStyle(false, '#64748b')}
+          >
             <Settings size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
           </button>
 
-          {/* 2. タスク（現場実行） */}
-          <button onClick={() => navigate(`/admin/${shopId}/today-tasks`)} style={mobileTabStyle(false, '#1e293b')}>
+          {/* 2. タスク：移動前にお掃除を実行 */}
+          <button 
+            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/today-tasks`); }} 
+            style={mobileTabStyle(false, '#1e293b')}
+          >
             <Clipboard size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>タスク</span>
           </button>
 
-          {/* 3. 今日（カレンダーの今日に戻る） */}
-          <button onClick={goToday} style={{ 
-            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
-            background: themeColorLight, border: `1px solid ${themeColor}33`, 
-            color: themeColor, borderRadius: '15px', padding: '8px 15px', cursor: 'pointer' 
-          }}>
+          {/* 3. 今日：関数 goToday の前にお掃除を実行 */}
+          <button 
+            onClick={() => { closeAllPopups(); goToday(); }} 
+            style={{ 
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+              background: themeColorLight, border: `1px solid ${themeColor}33`, 
+              color: themeColor, borderRadius: '15px', padding: '8px 15px', cursor: 'pointer' 
+            }}
+          >
             <span style={{ fontSize: '0.85rem', fontWeight: '900' }}>今日</span>
           </button>
 
-          {/* 4. 管理（名簿・売上） */}
-          <button onClick={() => navigate(`/admin/${shopId}/management`)} style={mobileTabStyle(false, '#008000')}>
+          {/* 4. 管理：移動前にお掃除を実行 */}
+          <button 
+            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/management`); }} 
+            style={mobileTabStyle(false, '#008000')}
+          >
             <BarChart3 size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>管理</span>
           </button>
@@ -2149,18 +2174,20 @@ return (
                       return customerHistory.map((h, idx) => {
                         const hDate = new Date(h.start_time);
                         const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                        const hBrandLabel = categoryMap[h.biz_type];
                         const isCanceled = h.status === 'canceled';
 
                         return (
                           <div 
                             key={h.id} 
+                            // 🚀 🆕 修正：キャンセル分以外はタップで詳細を開く
+                            onClick={() => !isCanceled && openHistoryDetail(h)}
                             style={{ 
                               padding: '15px', borderBottom: '1px solid #eee', 
                               background: isCanceled ? '#fcfcfc' : '#fff', 
                               borderRadius: isToday ? '12px' : '0', 
                               border: isToday ? `2px solid ${themeColor}` : 'none',
-                              opacity: isCanceled ? 0.7 : 1, position: 'relative'
+                              opacity: isCanceled ? 0.7 : 1, position: 'relative',
+                              cursor: isCanceled ? 'default' : 'pointer' // 👈 指マークを追加
                             }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
@@ -2872,6 +2899,108 @@ return (
           }
         }
       `}</style>
+      
+      {/* 🚀 🆕 ここから差し込む！：過去の履歴・詳細内訳ポップアップ本体 */}
+      <AnimatePresence>
+        {showHistoryDetail && selectedHistory && (
+          <div style={overlayStyle} onClick={() => setShowHistoryDetail(false)}>
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
+              onClick={e => e.stopPropagation()}
+              style={{ ...modalContentStyle, maxWidth: '400px', padding: '0', overflow: 'hidden', borderRadius: '32px' }}
+            >
+              <div style={{ background: '#4b2c85', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ fontSize: '0.7rem', opacity: 0.8, fontWeight: 'bold' }}>施術履歴の詳細内訳</div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>
+                    {selectedHistory.start_time.split('T')[0].replace(/-/g, '/')} の記録
+                  </div>
+                </div>
+                <button onClick={() => setShowHistoryDetail(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff' }}>✕</button>
+              </div>
+
+              <div style={{ padding: '25px', maxHeight: '70vh', overflowY: 'auto' }}>
+                {(() => {
+                  const d = parseReservationDetails(selectedHistory);
+                  const productTotal = d.products.reduce((sum, p) => sum + (Number(p.price) * Number(p.quantity)), 0);
+                  const technicalTotal = d.totalPrice - productTotal;
+
+                  return (
+                    <>
+                      {/* ✂️ 技術メニュー：1項目ずつ金額を表示 */}
+                      <div style={{ marginBottom: '25px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4b2c85', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
+                          <Scissors size={16} /> 施術・技術メニュー
+                        </div>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                          {/* ① メインメニューの内訳（カット・カラー等） */}
+                          {d.items.map((item, i) => (
+                            <div key={`item-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>
+                              <span>{item.name}</span>
+                              <span>¥{Number(item.price || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+
+                          {/* ② 枝分かれオプション（シャンプー等） */}
+                          {d.subItems.map((opt, i) => (
+                            <div key={`opt-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', paddingLeft: '15px' }}>
+                              <span>└ {opt.option_name}</span>
+                              <span>+¥{Number(opt.additional_price || 0).toLocaleString()}</span>
+                            </div>
+                          ))}
+
+                          {/* ③ 調整（割引・加算） */}
+                          {d.adjustments.map((adj, i) => (
+                            <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
+                              <span>└ {adj.name}</span>
+                              <span>{adj.is_minus ? '-' : '+'}¥{Number(adj.price).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 🛍 店販商品 */}
+                      {d.products.length > 0 && (
+                        <div style={{ marginBottom: '25px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#008000', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
+                            <ShoppingBag size={16} /> 店販商品
+                          </div>
+                          {d.products.map((p, i) => (
+                            <div key={`prod-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', marginBottom: '8px', paddingLeft: '5px' }}>
+                              <span style={{ fontWeight: 'bold' }}>{p.name} <small style={{ color: '#94a3b8' }}>x{p.quantity}</small></span>
+                              <span style={{ fontWeight: '900' }}>¥{(p.price * p.quantity).toLocaleString()}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* 最終集計 */}
+                      <div style={{ marginTop: '30px', padding: '20px', background: '#f8fafc', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#64748b', marginBottom: '8px' }}>
+                          <span>技術計（調整込）</span>
+                          <span>¥{technicalTotal.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#008000', marginBottom: '15px' }}>
+                          <span>商品売上</span>
+                          <span>¥{productTotal.toLocaleString()}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '2px dashed #cbd5e1', paddingTop: '15px' }}>
+                          <span style={{ fontWeight: '900', color: '#1e293b' }}>総計</span>
+                          <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#d34817' }}>¥ {d.totalPrice.toLocaleString()}</span>
+                        </div>
+                      </div>
+                      
+                      <button onClick={() => setShowHistoryDetail(false)} style={{ width: '100%', marginTop: '25px', padding: '15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}>閉じる</button>
+                    </>
+                  );
+                })()}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      {/* 🚀 🆕 ここまで差し込む！ */}
       
     </div> // コンポーネント全体の閉じ
   );

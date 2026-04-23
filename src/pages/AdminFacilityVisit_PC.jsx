@@ -388,9 +388,27 @@ const AdminFacilityVisit_PC = () => {
 
   if (loading) return <div style={centerStyle}><Loader2 className="animate-spin" /> 読込中...</div>;
 
-  const doneCount = residents.filter(r => r.status === 'completed').length;
-  const totalCount = residents.length;
-  const progress = totalCount > 0 ? (doneCount / totalCount) * 100 : 0;
+  // 🚀 🆕 修正：今日の状況を正確に把握するための計算
+  const todayStr = visit?.scheduled_date;
+
+  // ① 全体の累計完了数（前回まで＋今日）
+  const totalCumulativeDone = residents.filter(r => r.status === 'completed').length;
+
+  // ② 前日までに終わっている人数
+  const pastDoneCount = residents.filter(r => 
+    r.status === 'completed' && r.completed_at && !r.completed_at?.startsWith(todayStr)
+  ).length;
+
+  // ③ 「今日＋今後」の残り予定総数（55 - 13 = 42）
+  const remainingWorkload = residents.length - pastDoneCount;
+
+  // ④ 今日この現場で完了させた人数
+  const todayDoneCount = residents.filter(r => 
+    r.status === 'completed' && r.completed_at?.startsWith(todayStr)
+  ).length;
+
+  // 今日の進捗率（今日の残り分に対して何％終わったか）
+  const progress = remainingWorkload > 0 ? (todayDoneCount / remainingWorkload) * 100 : 0;
 
   return (
     <div style={containerStyle}>
@@ -427,8 +445,17 @@ const AdminFacilityVisit_PC = () => {
       {/* 進捗サマリーカード */}
       <div style={statsCard}>
         <div style={statsInfo}>
-          <span style={statsLabel}>本日の完了状況</span>
-          <span style={statsValue}>{doneCount} <small style={{fontSize:'0.9rem', color:'#94a3b8'}}>/ {totalCount} 名</small></span>
+          <div>
+            <span style={statsLabel}>本日の完了状況</span>
+            {/* 🚀 🆕 累計を補足として追加 */}
+            <div style={{ fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'bold', marginTop: '2px' }}>
+              累計完了：{totalCumulativeDone}名 / 全体：{residents.length}名
+            </div>
+          </div>
+          <span style={statsValue}>
+            {todayDoneCount} 
+            <small style={{ fontSize: '0.9rem', color: '#94a3b8' }}> / {remainingWorkload} 名</small>
+          </span>
         </div>
         <div style={progressBg}>
           <motion.div 
@@ -448,12 +475,13 @@ const AdminFacilityVisit_PC = () => {
         <div style={finalizeAmount}>
           ¥ {calculateTodayTotal().toLocaleString()}
         </div>
-        <p style={finalizeNote}>※ 完了 {residents.filter(r => r.status === 'completed').length} 名分の合計額</p>
+        {/* 🚀 🆕 修正：ここを「todayDoneCount」に変更して「本日完了」に書き換え */}
+        <p style={finalizeNote}>※ 本日完了 {todayDoneCount} 名分の合計額</p>
         
         <button 
           onClick={handleFinalizeSales} 
-          disabled={isFinalizing || residents.filter(r => r.status === 'completed').length === 0}
-          style={finalizeBtn(isFinalizing || residents.filter(r => r.status === 'completed').length === 0)}
+          disabled={isFinalizing || todayDoneCount === 0}
+          style={finalizeBtn(isFinalizing || todayDoneCount === 0)}
         >
           {isFinalizing ? <Loader2 className="animate-spin" /> : <CheckCircle size={20} />}
           {isFinalizing ? '処理中...' : '本日のタスクを終了'}
