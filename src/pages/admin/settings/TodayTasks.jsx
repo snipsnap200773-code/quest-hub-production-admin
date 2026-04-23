@@ -1739,104 +1739,145 @@ const handleSaveMemo = async () => {
         </div>
       )}
 
-      {/* 🚀 🆕 ここから追加：「お会計内容の確認」ポップアップ */}
+      {/* 🚀 🆕 修正：個人と施設でデザインを完全に出し分ける全画面明細 */}
       <AnimatePresence>
         {showSummaryModal && selectedTask && (
-          <div style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 5000, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* スリムヘッダー */}
-            <div style={{ padding: '12px 20px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <h2 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>施術完了 明細一覧</h2>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '2px' }}>
-                    <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{selectedTask.customer_name} 様</span>
-                    <span style={{ fontSize: '0.75rem', background: '#f0fdf4', color: '#10b981', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>合計: {facilityResidents.length} 名</span>
+          <div 
+            style={{ position: 'fixed', inset: 0, background: '#fff', zIndex: 5000, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+          >
+            {/* 1. 【スリムヘッダー】日付を右側に配置 */}
+            <div style={{ padding: '20px 25px', background: '#f8fafc', borderBottom: '1px solid #e2e8f0', flexShrink: 0 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  {/* タグ ＆ 日付の行 */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px', paddingRight: '15px' }}>
+                    <div style={{ fontSize: '0.8rem', color: themeColor, fontWeight: '900', letterSpacing: '1px' }}>
+                      {selectedTask.task_type === 'facility' ? '🏢 施設訪問・明細一覧' : '内容確認'}
+                    </div>
+                    {/* 🚀 🆕 日付を右側に小さく配置 */}
+                    <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                      {new Date(selectedTask.start_time).toLocaleDateString('ja-JP')}
+                    </span>
                   </div>
+                  {/* お名前を大きく表示 */}
+                  <h2 style={{ margin: 0, fontSize: '1.5rem', fontWeight: '900', color: '#1e293b', lineHeight: '1.2' }}>
+                    {selectedTask.customer_name} <small style={{ fontSize: '1rem', fontWeight: 'bold' }}>様</small>
+                  </h2>
                 </div>
-                <button onClick={() => setShowSummaryModal(false)} style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <X size={20} color="#94a3b8"/>
+                {/* ✕ ボタン */}
+                <button onClick={() => setShowSummaryModal(false)} style={{ background: '#f1f5f9', border: 'none', width: '44px', height: '44px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  <X size={24} color="#94a3b8"/>
                 </button>
               </div>
             </div>
 
-            {/* メインリスト */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 20px' }}>
+            {/* 2. 【メインエリア】 */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 25px' }}>
               {selectedTask.task_type === 'facility' ? (
+                /* --- 🏢 施設バージョンの表示 --- */
                 (() => {
                   const sorted = [...facilityResidents].sort((a, b) => (a.members?.kana || "").localeCompare(b.members?.kana || "", 'ja'));
                   let lastLabel = "";
-                  return sorted.map((res) => {
-                    const currentLabel = getKanaGroup(res.members?.kana);
-                    const isNewGroup = currentLabel !== lastLabel;
-                    lastLabel = currentLabel;
-                    return (
-                      <div key={res.id}>
-                        {isNewGroup && (
-                          <div style={{ padding: '15px 10px 8px', fontSize: '0.8rem', fontWeight: '900', color: '#4f46e5', borderBottom: '1px solid #e2e8f0', background: '#fff', position: 'sticky', top: 0, zIndex: 10 }}>{currentLabel}</div>
-                        )}
-                        <div style={{ padding: '12px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <div>
-                            <div style={{ fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>{res.members?.name} 様</div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{res.members?.kana} / {res.members?.floor ? `${res.members.floor}F` : '-'}</div>
-                          </div>
-                          <div style={{ background: '#f3f4f6', padding: '4px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: '#4b5563' }}>{res.menu_name}</div>
-                        </div>
+                  return (
+                    <div style={{ paddingBottom: '30px' }}>
+                      <div style={{ marginTop: '15px', background: '#f0fdf4', color: '#10b981', padding: '10px 15px', borderRadius: '12px', display: 'inline-flex', alignItems: 'center', gap: '8px' }}>
+                        <CheckCircle size={18} />
+                        <span style={{ fontSize: '1rem', fontWeight: '900' }}>本日合計：{facilityResidents.length} 名</span>
                       </div>
-                    );
-                  });
+                      {sorted.map((res) => {
+                        const currentLabel = getKanaGroup(res.members?.kana);
+                        const isNewGroup = currentLabel !== lastLabel;
+                        lastLabel = currentLabel;
+                        return (
+                          <div key={res.id}>
+                            {isNewGroup && <div style={{ padding: '25px 10px 8px', fontSize: '0.85rem', fontWeight: '900', color: '#4f46e5', borderBottom: '2px solid #e0e7ff', background: '#fff', position: 'sticky', top: 0, zIndex: 10 }}>{currentLabel}</div>}
+                            <div style={{ padding: '15px 10px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div>
+                                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>{res.members?.name} 様</div>
+                                <div style={{ fontSize: '0.8rem', color: '#94a3b8' }}>{res.members?.kana} / {res.members?.floor ? `${res.members.floor}F` : '-'}</div>
+                              </div>
+                              <div style={{ background: '#f3f4f6', padding: '6px 12px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', color: '#4b5563' }}>{res.menu_name}</div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
                 })()
               ) : (
-                <div style={{ padding: '40px 20px', textAlign: 'center' }}><p style={{ fontSize: '1.1rem', fontWeight: 'bold' }}>{selectedTask.menu_name}</p></div>
+                /* --- 👤 個人バージョンの表示（金額あり） --- */
+                (() => {
+                  const details = parseReservationDetails(selectedTask);
+                  return (
+                    <div style={{ padding: '30px 0' }}>
+                      {/* 確定メニュー */}
+                      <div style={{ marginBottom: '30px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: themeColor }}>
+                          <CheckCircle size={20} />
+                          <span style={{ fontSize: '1rem', fontWeight: '900' }}>確定メニュー</span>
+                        </div>
+                        <div style={{ padding: '20px', background: '#fff', borderRadius: '20px', border: `2px solid ${themeColor}22`, fontSize: '1.2rem', fontWeight: 'bold', color: '#1e293b', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.02)' }}>
+                          {details.menuName}
+                        </div>
+                      </div>
+
+                      {/* 調整項目 */}
+                      {details.adjustments?.length > 0 && (
+                        <div style={{ marginBottom: '30px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#ef4444' }}>
+                            <AlertCircle size={20} />
+                            <span style={{ fontSize: '1rem', fontWeight: '900' }}>メニュー調整</span>
+                          </div>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                            {details.adjustments.map((adj, i) => (
+                              <div key={i} style={{ padding: '12px 18px', background: '#fff5f5', color: '#ef4444', borderRadius: '15px', border: '1px solid #fee2e2', fontSize: '0.9rem', fontWeight: 'bold' }}>
+                                {adj.name}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 店販商品 */}
+                      {details.products?.length > 0 && (
+                        <div style={{ marginBottom: '30px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#008000' }}>
+                            <ShoppingBag size={20} />
+                            <span style={{ fontSize: '1rem', fontWeight: '900' }}>店販商品</span>
+                          </div>
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                            {details.products.map((prod, i) => (
+                              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '15px 20px', background: '#f0fdf4', color: '#166534', borderRadius: '18px', border: '1px solid #dcfce7', fontSize: '1rem', fontWeight: 'bold' }}>
+                                <span>{prod.name}</span>
+                                <span>x {prod.quantity}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* 💰 合計金額 */}
+                      <div style={{ marginTop: '20px', padding: '25px', background: '#f5f3ff', borderRadius: '25px', border: `2px solid ${themeColor}44`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: themeColor }}>最終会計合計</span>
+                        <span style={{ fontSize: '2rem', fontWeight: '900', color: '#1e293b' }}>
+                          ¥ {Number(selectedTask.total_price || details.totalPrice).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()
               )}
             </div>
 
-            {/* フッター：確認ボタンを消し、やり直しボタンを押しやすく中央に */}
-            <div style={{ padding: '15px 20px 25px', background: '#fff', borderTop: '1px solid #e2e8f0', textAlign: 'center' }}>
+            {/* 3. 【フッター】やり直しボタンのみ */}
+            <div style={{ padding: '15px 20px 30px', background: '#fff', borderTop: '1px solid #e2e8f0', textAlign: 'center', flexShrink: 0 }}>
               <button 
-                onClick={() => setShowRevertConfirm(true)} // 🚀 🆕 ここで新しい確認モーダルを呼ぶ
-                style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem', textDecoration: 'underline' }}
+                onClick={() => setShowRevertConfirm(true)}
+                style={{ background: 'none', border: 'none', color: '#ef4444', fontWeight: 'bold', cursor: 'pointer', fontSize: '1.1rem', textDecoration: 'underline' }}
               >
                 内容を修正する（お会計をやり直す）
               </button>
             </div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* 🚀 🆕 追加：今風の「やり直し確認」モーダル */}
-      <AnimatePresence>
-        {showRevertConfirm && (
-          <div 
-            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.8)', zIndex: 6000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(8px)', padding: '20px' }}
-            onClick={() => setShowRevertConfirm(false)}
-          >
-            <motion.div 
-              initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.9, opacity: 0 }}
-              onClick={e => e.stopPropagation()}
-              style={{ background: '#fff', width: '100%', maxWidth: '360px', borderRadius: '32px', padding: '30px', textAlign: 'center', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}
-            >
-              <div style={{ background: '#fee2e2', width: '60px', height: '60px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
-                <RefreshCw size={30} color="#ef4444" />
-              </div>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.2rem', fontWeight: '900' }}>お会計をやり直しますか？</h3>
-              <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.6', marginBottom: '25px' }}>
-                売上確定を取り消し、<br /><b>施設訪問の実行画面</b>へ戻ります。<br />よろしいですか？
-              </p>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <button 
-                  onClick={executeRevertAndJump}
-                  style={{ width: '100%', padding: '16px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(239, 68, 68, 0.3)' }}
-                >
-                  はい、やり直します
-                </button>
-                <button 
-                  onClick={() => setShowRevertConfirm(false)}
-                  style={{ width: '100%', padding: '12px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}
-                >
-                  キャンセル
-                </button>
-              </div>
-            </motion.div>
           </div>
         )}
       </AnimatePresence>
