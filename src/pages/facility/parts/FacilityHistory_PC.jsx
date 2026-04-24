@@ -223,43 +223,81 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate }) => {
           🚀 🆕 1. 印刷用の中身セクション（修正版）
           ========================================== */}
       <div id="print-area" className="print-only">
-        <h1 style={{ textAlign: 'center', marginBottom: '20px', fontSize: '24pt' }}>
-          訪問サービス実施報告書 ({year}年{month + 1}月分)
-        </h1>
-        <div style={{ textAlign: 'right', marginBottom: '30px', fontSize: '12pt' }}>
+        <div style={{ padding: '20px', border: '2px solid #333', marginBottom: '30px' }}>
+          <h1 style={{ textAlign: 'center', margin: '0 0 10px 0', fontSize: '22pt', letterSpacing: '2px' }}>
+            訪問サービス実施報告書
+          </h1>
+          <p style={{ textAlign: 'center', margin: 0, fontSize: '14pt', fontWeight: 'bold', color: '#666' }}>
+             対象期間：{year}年{month + 1}月度
+          </p>
+        </div>
+
+        <div style={{ textAlign: 'right', marginBottom: '40px', fontSize: '11pt' }}>
           作成日：{new Date().toLocaleDateString('ja-JP')}
         </div>
 
         {groupedHistory.map(g => (
-          <div key={g.shop.id} style={{ marginBottom: '40px', borderBottom: '2px solid #000', paddingBottom: '20px', pageBreakInside: 'avoid' }}>
-            <h2 style={{ borderLeft: '8px solid #333', paddingLeft: '15px', fontSize: '18pt', marginBottom: '10px' }}>
-              ■ {g.shop.business_name} ({g.shop.business_type})
-            </h2>
-            <p style={{ marginLeft: '25px', fontSize: '14pt', fontWeight: 'bold' }}>今月の実施人数：合計 {g.totalResidents} 名</p>
+          <div key={g.shop.id} style={{ marginBottom: '50px', pageBreakInside: 'avoid' }}>
+            {/* 業者名・ヘッダー */}
+            <div style={{ background: '#eee', padding: '10px 15px', borderLeft: '10px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h2 style={{ margin: 0, fontSize: '16pt' }}>
+                ■ {g.shop.business_name} <small style={{fontSize: '10pt', fontWeight: 'normal'}}>({g.shop.business_type})</small>
+              </h2>
+              <span style={{ fontSize: '12pt', fontWeight: 'bold' }}>当月実施合計：{g.totalResidents} 名</span>
+            </div>
             
             {g.visits.map(v => (
-              <div key={v.id} style={{ marginLeft: '30px', marginTop: '20px' }}>
-                <div style={{ fontSize: '13pt', fontWeight: 'bold', textDecoration: 'underline' }}>
-                  【{v.scheduled_date.replace(/-/g, '/')} 実施】
+              <div key={v.id} style={{ marginBottom: '25px', paddingLeft: '10px' }}>
+                <div style={{ fontSize: '12pt', fontWeight: 'bold', borderBottom: '1px solid #333', paddingBottom: '5px', marginBottom: '10px', display: 'flex', gap: '20px' }}>
+                  <span>【実施日：{v.scheduled_date.replace(/-/g, '/')}】</span>
+                  <span>実施人数：{v.residents.length} 名</span>
                 </div>
-                <div style={{ marginLeft: '10px', marginTop: '10px', fontSize: '12pt', lineHeight: '1.6' }}>
-                  {v.residents.map(r => `${r.members?.name}様 (${r.menu_name})`).join('、 ')}
+
+                {/* 🚀 🆕 箇条書きではなく、3カラム（または2カラム）で整列させる */}
+                <div style={{ 
+                  display: 'grid', 
+                  gridTemplateColumns: 'repeat(3, 1fr)', // 3人ずつ横に並べる
+                  gap: '8px', 
+                  fontSize: '11pt',
+                  lineHeight: '1.4'
+                }}>
+                  {v.residents.map(r => (
+                    <div key={r.id} style={{ padding: '4px 8px', border: '1px solid #eee', borderRadius: '4px', display: 'flex', justifyContent: 'space-between' }}>
+                      <span>
+                        <small style={{ fontSize: '8pt', color: '#666', marginRight: '5px' }}>
+                          {r.members?.floor?.toString().replace('F', '')}F
+                        </small>
+                        {r.members?.name}様
+                      </span>
+                      <span style={{ fontSize: '9pt', fontWeight: 'bold' }}>({r.menu_name})</span>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}
           </div>
         ))}
+
+        {/* 🚀 🆕 報告書の「印」や「確認欄」を追加してフォーマルに */}
+        <div style={{ marginTop: '100px', display: 'flex', justifyContent: 'flex-end', gap: '30px' }}>
+          <div style={{ width: '120px', height: '80px', border: '1px solid #ccc', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '5px' }}>
+            <div style={{ fontSize: '8pt', color: '#999' }}>施設確認印</div>
+            <div style={{ height: '50px' }}></div>
+          </div>
+          <div style={{ width: '120px', height: '80px', border: '1px solid #ccc', textAlign: 'center', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', padding: '5px' }}>
+            <div style={{ fontSize: '8pt', color: '#999' }}>業者担当印</div>
+            <div style={{ height: '50px' }}></div>
+          </div>
+        </div>
       </div>
 
       {/* ==========================================
           🚀 🆕 2. 印刷用CSSの修正
           ========================================== */}
       <style>{`
-        /* 通常の画面表示では隠しておく */
         @media screen {
           .print-only { display: none !important; }
         }
-        /* 印刷時だけ表示を切り替える */
         @media print {
           body * { visibility: hidden; }
           #print-area, #print-area * { visibility: visible; }
@@ -272,8 +310,9 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate }) => {
             color: #000 !important;
             background: #fff !important;
           }
-          /* 不要なパーツを完全に消す */
-          button, .no-print, header, nav, aside { display: none !important; }
+          /* 改ページの設定 */
+          h2 { page-break-after: avoid; }
+          .print-only { font-family: "MS Mincho", "Hiragino Mincho Pro", serif; }
         }
       `}</style>
 

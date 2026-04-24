@@ -6,7 +6,9 @@ import {
   Building2, Plus, MapPin, Calendar, Users, 
   ChevronRight, X, Save, User, ArrowLeft, Phone, Mail, Trash2, Edit3, Clock, Copy, Link2,
   Search, AlertCircle,
-  ArrowRight, CheckCircle2, Send, Filter, Store
+  ArrowRight, CheckCircle2, Send, Filter, Store,
+  // 🚀 🆕 重複を削除し、必要な2つを追加
+  ReceiptText, ChevronLeft 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -43,6 +45,14 @@ const FacilityManagement = () => {
   const [editingId, setEditingId] = useState(null);
   const visitingSubCategories = INDUSTRY_PRESETS.visiting.subCategories;
 
+  // 🚀 🆕 請求書発行用のStateを追加
+  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [invoiceTarget, setInvoiceTarget] = useState(null); // { customer_id, name }
+  const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
+  const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
+  const [salesRecords, setSalesRecords] = useState([]); // 売上データ保持用
+  const [allCustomers, setAllCustomers] = useState([]); // 施設名から顧客IDを特定するために使用
+
   // フォームState（既存システムをベースに tenant_id を追加）
   const [formData, setFormData] = useState({ 
     name: '',          // 💡 facility_name から name に統一（handleSaveの仕様に合わせる）
@@ -71,7 +81,7 @@ const FacilityManagement = () => {
     // ✅ 修正：振込先情報も一緒に取得するように変更
     const { data: profile } = await supabase
       .from('profiles')
-      .select('email_notifications_enabled, is_facility_searchable, sub_business_type, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder')
+      .select('business_name, zip_code, address, phone, email_notifications_enabled, is_facility_searchable, sub_business_type, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder')
       .eq('id', shopId)
       .single();
     
@@ -94,11 +104,19 @@ const FacilityManagement = () => {
       const formatted = data.map(item => ({
         ...item.facility_users,
         id: item.facility_users.id,
-        status: item.status, // 🆕 ステータス（active or pending）を保持
+        status: item.status,
         regular_rules: item.regular_rules || [],
         connection_id: item.id
       }));
       setFacilities(formatted);
+
+      // 🚀 🆕 売上台帳と顧客マスタも一緒に取得しておく（請求書計算用）
+      const [sRes, cRes] = await Promise.all([
+        supabase.from('sales').select('*').eq('shop_id', shopId),
+        supabase.from('customers').select('id, name').eq('shop_id', shopId).eq('is_facility', true)
+      ]);
+      setSalesRecords(sRes.data || []);
+      setAllCustomers(cRes.data || []);
     } else if (error) {
       console.error("取得エラー:", error);
     }
@@ -320,6 +338,160 @@ const handleSave = async (e) => {
     } else if (confirmName !== null) {
       alert('施設名が一致しません。処理を中断しました。');
     }
+  };
+
+  // 🚀 🆕 【追加】請求書・領収書の印刷実行ロジック
+  const handlePrintInvoice = (mode, data) => {
+    const printWin = window.open('', '_blank', 'width=900,height=1000');
+    
+    const members = data.flatMap(s => {
+      if (s.details?.members_list) {
+        return s.details.members_list.map(m => ({ ...m, date: s.sale_date }));
+      }
+      return [{
+        date: s.sale_date,
+        name: invoiceTarget.name,
+        floor: '-',
+        menu: '施設訪問 施術一式',
+        price: s.total_amount
+      }];
+    });
+
+    members.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const total = data.reduce((sum, s) => sum + Number(s.total_amount), 0);
+    
+    let content = `
+      <html>
+        <head>
+          <title>請求書発行</title>
+          <style>
+            /* 🚀 左右と上の余白を AdminManagement と同じ 10mm に短縮 */
+            @page { 
+              size: A4; 
+              margin: ${mode === 'full' ? '10mm 10mm' : '0'}; 
+            }
+            body { font-family: "MS Mincho", "Hiragino Mincho ProN", serif; margin: 0; padding: 0; background: white; color: black; }
+            
+            /* 🚀 コンテナのパディングを削除して左右いっぱいに広げる */
+            .page { width: 100%; box-sizing: border-box; padding: 0; }
+            
+            table { width: 100%; border-collapse: collapse; margin-top: 15px; border-top: 2px solid #000; table-layout: fixed; }
+            
+            /* 🚀 行の高さを少し詰め、20行入るように調整 */
+            th, td { padding: 8px 4px; border-bottom: 1px solid #ccc; font-size: 10pt; text-align: left; word-wrap: break-word; }
+            th { border-bottom: 1px solid #000; background: #fff; text-align: center; font-weight: bold; }
+            tbody tr:nth-child(even) { background-color: #f8fafc; }
+            
+            .summary-total-box { text-align: center; margin: 25px 0; }
+            .summary-total { font-size: 19pt; font-weight: 900; border-bottom: 3px double #000; padding: 5px 20px; display: inline-block; }
+            
+            .bank-info { border: 1px solid #000; padding: 12px; font-size: 10.5pt; margin-top: 15px; line-height: 1.5; }
+            
+            .ticket-page { width: 210mm; height: 297mm; display: flex; flex-wrap: wrap; align-content: flex-start; page-break-after: always; }
+            .ticket { width: 105mm; height: 74.25mm; padding: 10mm; box-sizing: border-box; border: 0.1mm dashed #ccc; position: relative; display: flex; flex-direction: column; }
+          </style>
+        </head>
+        <body>
+    `;
+
+    if (mode === 'full') {
+      content += `
+        <div class="page">
+          <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 30px;">
+            <div style="font-size: 20pt; font-weight: bold; border-bottom: 2px solid #000; padding-bottom: 5px; width: 350px;">
+              ${invoiceMonth}月度 請求明細書
+            </div>
+            <div style="text-align: right; line-height: 1.3; font-size: 10pt; width: 300px;">
+              <p style="font-weight: bold; font-size: 12pt; margin: 0 0 5px 0;">${shopSettings.business_name || ''}</p>
+              <p style="margin: 0;">〒${shopSettings.zip_code || ''}</p>
+              <p style="margin: 0;">${shopSettings.address || ''}</p>
+              <p style="margin: 0;">TEL: ${shopSettings.phone || ''}</p>
+            </div>
+          </div>
+          
+          <div style="text-align: left; margin-bottom: 25px;">
+             <div style="font-size: 21pt; font-weight: bold; border-bottom: 3px solid #000; display: inline-block; padding-bottom: 3px; min-width: 400px;">
+               ${invoiceTarget.name} 御中
+             </div>
+             <p style="margin: 10px 0 0 0; font-size: 11pt;">下記の通り、御請求申し上げます。</p>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 6%;">No</th>
+                <th style="width: 12%;">日付</th>
+                <th style="width: 9%;">階数</th>
+                <th style="width: 22%;">名前</th>
+                <th style="width: 38%;">メニュー</th>
+                <th style="width: 13%; text-align:right;">金額</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${members.map((m, i) => `
+                <tr>
+                  <td style="text-align:center;">${i+1}</td>
+                  <td style="text-align:center;">${m.date?.slice(5).replace('-', '/')}</td>
+                  <td style="text-align:center;">${m.floor?.toString().replace('F', '') || '-'}F</td>
+                  <td><strong>${m.name} 様</strong></td>
+                  <td style="font-size: 9pt;">${m.menu}</td>
+                  <td style="text-align:right; font-weight: bold;">¥${Number(m.price || 0).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          
+          <div class="summary-total-box">
+            <div class="summary-total">ご請求金額： ¥ ${total.toLocaleString()} - (税込)</div>
+          </div>
+
+          <div class="bank-info">
+            <span style="font-weight:bold; text-decoration:underline;">【お振込先】</span><br/>
+            ${shopSettings.bank_name || ''} ${shopSettings.bank_branch || ''} / ${shopSettings.bank_account_type || '普通'} ${shopSettings.bank_account_number || ''} / ${shopSettings.bank_account_holder || ''}
+          </div>
+        </div>
+      `;
+    } else {
+      // 8分割領収書（省略せず一貫性を保持）
+      const pages = Math.ceil(members.length / 8);
+      for (let p = 0; p < pages; p++) {
+        content += `<div class="ticket-page">`;
+        members.slice(p * 8, (p + 1) * 8).forEach((m, i) => {
+          content += `
+            <div class="ticket">
+              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 5px;">
+                <div style="font-size: 11pt;">領収書</div>
+                <div style="font-size: 10pt; font-weight: bold;">No. ${(p*8)+i+1}</div>
+              </div>
+              <div style="text-align: center; margin: 12px 0;">
+                <span style="font-size: 16pt; font-weight: bold; border-bottom: 1px solid #000; padding: 0 15px;">${m.name} 様</span>
+              </div>
+              
+              <div style="background: #eee !important; text-align: center; font-size: 19pt; font-weight: bold; padding: 8px; -webkit-print-color-adjust: exact; print-color-adjust: exact;">
+                ¥${Number(m.price || 0).toLocaleString()}
+              </div>
+
+              <div style="border-bottom: 1px solid #000; margin: 10px 0; font-size: 10pt;">但 ${m.menu} 代として</div>
+              
+              <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end;">
+                <span style="font-size: 12pt; font-weight: bold;">${m.date?.replace(/-/g, '/')}</span>
+                <div style="text-align: right; font-size: 9pt;">
+                  <strong>${shopSettings.business_name}</strong>
+                </div>
+              </div>
+            </div>`;
+        });
+        content += `</div>`;
+      }
+    }
+
+    content += `
+          <script>window.onload = function() { window.print(); window.close(); };</script>
+        </body>
+      </html>
+    `;
+    printWin.document.write(content);
+    printWin.document.close();
   };
 
   // 🆕 3. 表示用にリストを「承認待ち」と「提携済み」に分ける
@@ -596,9 +768,17 @@ const handleSave = async (e) => {
                     )}
                   </div>
 
-                  <Link to={`/admin/${shopId}/facilities/${f.id}/residents`} style={linkBtnStyle}>
-                    入居者名簿を確認 <ChevronRight size={18} />
-                  </Link>
+                  <button 
+    onClick={() => {
+      // 🚀 🆕 施設名から名簿側のIDを探してセットし、モーダルを開く
+      const cust = allCustomers.find(c => c.name === f.facility_name);
+      setInvoiceTarget({ id: cust?.id, name: f.facility_name });
+      setShowInvoiceModal(true);
+    }} 
+    style={{ ...linkBtnStyle, background: '#4f46e5', cursor: 'pointer', border: 'none' }}
+  >
+    <ReceiptText size={18} /> 請求書・領収書の発行 <ChevronRight size={18} />
+  </button>
                 </motion.div>
               ))}
             </div>
@@ -728,6 +908,53 @@ const handleSave = async (e) => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 🚀 🆕 ここから追加：請求書発行モーダル本体（移植版） */}
+      {showInvoiceModal && invoiceTarget && (
+        <div style={modalOverlayStyle} onClick={() => setShowInvoiceModal(false)}>
+          <div style={{ ...modalContentStyle, maxWidth: '600px', background: '#f8fafc' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px', borderBottom: '2px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>📄 請求書類 作成・発行</h3>
+              <button onClick={() => setShowInvoiceModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24}/></button>
+            </div>
+            <div style={{ padding: '25px' }}>
+              {/* 年月選択エリア */}
+              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px', marginBottom: '15px' }}>
+                  <button type="button" style={circleBtn} onClick={() => setInvoiceYear(y => y - 1)}>◀</button>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{invoiceYear}年</span>
+                  <button type="button" style={circleBtn} onClick={() => setInvoiceYear(y => y + 1)}>▶</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                    <button key={m} type="button" onClick={() => setInvoiceMonth(m)} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', fontWeight: 'bold', backgroundColor: invoiceMonth === m ? '#1e293b' : 'white', color: invoiceMonth === m ? 'white' : '#334155' }}>{m}月</button>
+                  ))}
+                </div>
+              </div>
+
+              {(() => {
+                const filteredSales = salesRecords.filter(s => {
+                  const d = new Date(s.sale_date);
+                  return s.customer_id === invoiceTarget.id && d.getFullYear() === invoiceYear && (d.getMonth() + 1) === invoiceMonth;
+                });
+                const total = filteredSales.reduce((sum, s) => sum + Number(s.total_amount), 0);
+
+                return (
+                  <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                    <p style={{ color: '#64748b', fontWeight: 'bold', marginBottom: '10px' }}>{invoiceTarget.name} 様 / {invoiceYear}年{invoiceMonth}月分</p>
+                    <div style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b' }}>合計：¥ {total.toLocaleString()}</div>
+                    <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '25px' }}>
+                      <button type="button" onClick={() => handlePrintInvoice('full', filteredSales)} style={{ ...saveBtnStyle, width: 'auto', padding: '12px 20px' }}>📄 明細請求書</button>
+                      <button type="button" onClick={() => handlePrintInvoice('tickets', filteredSales)} style={{ ...saveBtnStyle, width: 'auto', background: '#ed32ea', padding: '12px 20px' }}>✂️ 8分割領収書</button>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 🚀 🆕 ここまで追加 */}
     </div>
   );
 };
@@ -833,4 +1060,18 @@ const sliderStyle = {
 };
 const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '15px', border: '1px solid #eef2ff' };
 const toggleBtnStyle = (active) => ({ padding: '8px 20px', borderRadius: '20px', border: 'none', fontWeight: '900', cursor: 'pointer', background: active ? '#10b981' : '#cbd5e1', color: '#fff', fontSize: '0.8rem', transition: '0.3s' });
+const circleBtn = { 
+  width: '44px', 
+  height: '44px', 
+  borderRadius: '50%', 
+  border: '1px solid #cbd5e1', 
+  background: '#fff', 
+  cursor: 'pointer', 
+  display: 'flex', 
+  alignItems: 'center', 
+  justifyContent: 'center',
+  fontSize: '16px',
+  transition: 'all 0.2s'
+};
+
 export default FacilityManagement;
