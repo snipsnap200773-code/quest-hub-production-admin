@@ -487,19 +487,38 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
       .is('customer_id', null);
 
     // --- ステップC：今回の予約データを確定 ---
+    const autoTotal = calculateInitialPrice({ 
+      ...selectedTask, 
+      options: { services: selectedServices, options: selectedOptions, adjustments: selectedAdjustments, products: selectedProducts } 
+    });
+    
+    let finalAdjustmentsForDb = [...selectedAdjustments];
+    
+    if (isManualPrice && finalPrice !== autoTotal) {
+      const gap = finalPrice - autoTotal;
+      // 差額分を「手入力による調整」として内訳にねじ込む
+      finalAdjustmentsForDb.push({
+        id: 'manual-adjustment',
+        name: '手動入力による金額調整',
+        price: Math.abs(gap),
+        is_minus: gap < 0,
+        is_percent: false
+      });
+    }
+
     const { error: resError } = await supabase
       .from('reservations')
       .update({ 
         status: 'completed', 
         customer_id: finalCustomerId, 
-        customer_name: normalizedName,
+        customer_name: normalizedName, 
         total_price: finalPrice,
         menu_name: newMenuName,
         options: { 
           ...selectedTask.options, 
           services: selectedServices,
           options: selectedOptions,
-          adjustments: selectedAdjustments,
+          adjustments: finalAdjustmentsForDb, // 🚀 🆕 差額調整済みのリストを保存
           products: selectedProducts,
           isUpdatedFromTodayTasks: true 
         } 

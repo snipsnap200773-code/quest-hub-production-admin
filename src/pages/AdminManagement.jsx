@@ -6,7 +6,6 @@ import {
   Save, Clipboard, Calendar, FolderPlus, PlusCircle, Trash2, 
   Tag, ChevronDown, RefreshCw, ChevronLeft, ChevronRight, Settings, Users, Percent, Plus, Minus, X, CheckCircle, User, FileText, History, ShoppingBag, Edit3, BarChart3,
   AlertCircle,
-  ReceiptText,
   Scissors,
   Search
 } from 'lucide-react';
@@ -121,12 +120,6 @@ function AdminManagement() {
   const [showFacilityMembersModal, setShowFacilityMembersModal] = useState(false);
   const [selectedFacilitySale, setSelectedFacilitySale] = useState(null);
 
-  // 🆕 請求書用State
-  const [showInvoiceModal, setShowInvoiceModal] = useState(false);
-  const [invoiceTarget, setInvoiceTarget] = useState(null); // { customer_id, name }
-  // 🆕 追記：請求書の対象年月を管理（初期値は現在の年月）
-  const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
-  const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
   const [memberSortMode, setMemberSortMode] = useState('name');
   const [showHistoryDetail, setShowHistoryDetail] = useState(false); // 表示フラグ
   const [selectedHistory, setSelectedHistory] = useState(null);     // 選択した履歴データ
@@ -358,9 +351,16 @@ const parseReservationDetails = (res) => {
     else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
   });
 
+  let calculatedTotal = Math.round(basePrice + optPrice + productPrice + adjAmount);
+
+  // 🚀 🆕 計算が0円でも、DBに確定金額(res.total_price)が入っているならそちらを表示に使う
+  if (calculatedTotal === 0 && res.total_price > 0) {
+    calculatedTotal = res.total_price;
+  }
+
   return { 
     menuName: fullMenuName, 
-    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
+    totalPrice: Math.max(0, calculatedTotal), 
     items, 
     subItems, 
     savedAdjustments: adjustments, 
@@ -484,6 +484,35 @@ const completePayment = async () => {
     try {
       setIsSavingMemo(true);
 
+      // 🚀 🆕 追加：システム上の計算合計を算出
+      let systemTotal = 0;
+      systemTotal += checkoutServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      systemTotal += Object.values(checkoutOptions).reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
+      systemTotal += checkoutProducts.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
+      
+      // 既存の調整を計算
+      checkoutAdjustments.filter(a => !a.is_percent).forEach(a => {
+        systemTotal += a.is_minus ? -Number(a.price) : Number(a.price);
+      });
+      checkoutAdjustments.filter(a => a.is_percent).forEach(a => {
+        systemTotal = systemTotal * (1 - (Number(a.price) / 100));
+      });
+
+      // 🚀 🆕 電卓で上書きされていたら差額を「手動調整」として作成
+      let finalAdjustmentsForDb = [...checkoutAdjustments];
+      const roundedSystemTotal = Math.round(systemTotal);
+      
+      if (isManualPrice && finalPrice !== roundedSystemTotal) {
+        const gap = finalPrice - roundedSystemTotal;
+        finalAdjustmentsForDb.push({
+          id: 'manual-adjustment',
+          name: '手動入力による金額調整',
+          price: Math.abs(gap),
+          is_minus: gap < 0,
+          is_percent: false
+        });
+      }
+
       // 1. 基本情報の整理
       const totalSlots = checkoutServices.reduce((sum, s) => sum + (s.slots ?? 0), 0);
       const endTime = new Date(new Date(selectedRes.start_time).getTime() + totalSlots * (shop.slot_interval_min || 15) * 60000);
@@ -546,14 +575,14 @@ const completePayment = async () => {
         options: { 
           ...(selectedRes.options || {}),
           services: checkoutServices, 
-          adjustments: checkoutAdjustments, 
+          adjustments: finalAdjustmentsForDb, // 👈 🚀 🆕 差額調整済みのリストを保存
           products: checkoutProducts, 
           options: checkoutOptions,
           isUpdatedFromCheckout: true
         }
       }).eq('id', selectedRes.id);
 
-      // --- ステップD：売上データ（sales）の記録（シンプルupsert） ---
+      // --- ステップD：売上データ（sales）の記録 ---
       const salePayload = { 
         shop_id: cleanShopId, 
         reservation_id: selectedRes.id, 
@@ -564,7 +593,7 @@ const completePayment = async () => {
           services: checkoutServices, 
           options: checkoutOptions, 
           products: checkoutProducts, 
-          adjustments: checkoutAdjustments 
+          adjustments: finalAdjustmentsForDb // 👈 🚀 🆕 ここも書き換え
         } 
       };
 
@@ -968,7 +997,6 @@ const sortedAllCustomers = useMemo(() => {
         phone: editFields.phone || null, 
         email: editFields.email || null, 
         address: editFields.address || null,
-        is_facility: !!editFields.is_facility,
         zip_code: editFields.zip_code || null,
         parking: editFields.parking || null,
         building_type: editFields.building_type || null,
@@ -1037,194 +1065,6 @@ const sortedAllCustomers = useMemo(() => {
     setShowHistoryDetail(false);
   };
 
-  // 🆕 🚀 ここから差し込む！！ ==========================================
-  const handlePrintInvoice = (mode, data) => {
-    const printWin = window.open('', '_blank', 'width=900,height=1000');
-    
-    const members = data.flatMap(s => {
-      if (s.details?.members_list) {
-        return s.details.members_list.map(m => ({ ...m, date: s.sale_date }));
-      }
-      const baseNames = (s.details?.services || []).map(svc => svc.name).join(', ');
-      const optNames = s.details?.options ? Object.values(s.details.options).map(o => o.option_name).join(', ') : '';
-      const fullMenu = optNames ? `${baseNames}（${optNames}）` : (baseNames || 'メニューなし');
-      return [{
-        date: s.sale_date,
-        name: invoiceTarget.name,
-        floor: '-',
-        menu: fullMenu,
-        price: s.total_amount
-      }];
-    });
-
-    members.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
-    const total = data.reduce((sum, s) => sum + Number(s.total_amount), 0);
-    const displayMonth = invoiceMonth;
-
-    let content = `
-      <html>
-        <head>
-          <title> </title>
-          <style>
-            @page { 
-              size: A4; 
-              margin: ${mode === 'full' ? '20mm 15mm' : '0'}; 
-            }
-            body { 
-              font-family: "MS Mincho", "Hiragino Mincho ProN", serif; 
-              margin: 0; padding: 0; background: white; color: black;
-            }
-            .page { width: 100%; box-sizing: border-box; position: relative; }
-            .flex { display: flex; justify-content: space-between; align-items: flex-start; }
-            
-            /* テーブルデザイン：左右の線を消し、ストライプを導入 */
-            table { 
-              width: 100%; border-collapse: collapse; margin-top: 20px; table-layout: fixed;
-              border-top: 2px solid #000; 
-            }
-            th, td { 
-              padding: 10px 4px; text-align: left; font-size: 10.5pt; word-wrap: break-word; 
-              border: none; border-bottom: 1px solid #ccc; 
-            }
-            th { 
-              background: #fff; text-align: center; font-weight: bold; border-bottom: 1px solid #000; 
-            }
-            tbody tr:nth-child(even) { background-color: #f8fafc; }
-            thead { display: table-header-group; }
-            tr { page-break-inside: avoid; }
-            
-            .summary-total-container { margin-top: 30px; text-align: center; margin-bottom: 30px; }
-            .summary-total { font-size: 20pt; font-weight: 900; border-bottom: 3px double #000; padding: 10px 20px; display: inline-block; }
-            .bank-info { margin-top: 0px; border: 1px solid #000; padding: 15px; font-size: 11pt; line-height: 1.6; page-break-inside: avoid; }
-            .ticket-page { width: 210mm; height: 297mm; display: flex; flex-wrap: wrap; align-content: flex-start; page-break-after: always; }
-            .ticket { width: 105mm; height: 74.25mm; padding: 10mm; box-sizing: border-box; display: flex; flex-direction: column; border: 0.1mm dashed #ccc; position: relative; }
-          </style>
-        </head>
-        <body>
-    `;
-
-    if (mode === 'full') {
-      content += `
-        <div class="page">
-          
-          <div class="flex" style="margin-bottom: 40px; align-items: flex-start;">
-            <div style="font-size: 20pt; font-weight: bold; border-bottom: 2px solid #000; padding-bottom: 5px; width: 350px;">
-              ${displayMonth}月度 請求明細書
-            </div>
-            
-            <div style="text-align: right; line-height: 1.4; font-size: 10pt; width: 300px;">
-              <p style="font-weight: bold; font-size: 12pt; margin: 0 0 5px 0;">${shop?.business_name || '美容室名'}</p>
-              <p style="margin: 0;">〒${shop?.zip_code || ''}</p>
-              <p style="margin: 0;">${shop?.address || ''}</p>
-              <p style="margin: 0;">TEL: ${shop?.phone || ''}</p>
-            </div>
-          </div>
-
-          <div style="text-align: left; margin-bottom: 30px;">
-             <div style="font-size: 22pt; font-weight: bold; border-bottom: 3px solid #000; display: inline-block; padding-bottom: 5px; min-width: 400px; ">
-               ${invoiceTarget?.name} 御中
-             </div>
-             <p style="margin: 15px 0 0 0; font-size: 12pt;">下記の通り、御請求申し上げます。</p>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 5%;">No</th>
-                <th style="width: 12%;">日付</th>
-                <th style="width: 9%;">階数</th>
-                <th style="width: 22%;">名前</th>
-                <th style="width: 39%;">メニュー</th>
-                <th style="width: 13%; text-align:right;">金額</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${members.map((m, index) => {
-                const dateObj = m.date ? new Date(m.date) : null;
-                const formattedDate = dateObj ? `${dateObj.getMonth() + 1}/${dateObj.getDate()}` : '---';
-                return `
-                  <tr>
-                    <td style="text-align:center;">${index + 1}</td>
-                    <td style="text-align:center;">${formattedDate}</td>
-                    <td style="text-align:center;">${m.floor || '-'}</td>
-                    <td><strong>${m.name} 様</strong></td>
-                    <td style="font-size: 9.5pt;">${m.menu}</td>
-                    <td style="text-align:right; font-weight: bold;">¥${Number(m.price || 0).toLocaleString()}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <div class="summary-total-container">
-            <div class="summary-total">
-               ご請求金額： ¥ ${total.toLocaleString()} - (税込)
-            </div>
-          </div>
-
-          <div class="bank-info">
-            <span style="font-weight:bold; text-decoration:underline;">【お振込先】</span><br/>
-            ${shop?.bank_name || '---'} ${shop?.bank_branch || '---'} / ${shop?.bank_account_type || '普通'} ${shop?.bank_account_number || '---'} / ${shop?.bank_account_holder || '---'}
-          </div>
-        </div>
-      `;
-    } else {
-      // --- ✂️ 8分割領収書モード（デザイン修正版） ---
-      const pages = Math.ceil(members.length / 8);
-      
-      for (let p = 0; p < pages; p++) {
-        content += `<div class="ticket-page">`;
-        
-        // 1ページ内の8件分を処理
-        members.slice(p * 8, (p + 1) * 8).forEach((m, i) => {
-          // 🚀 全体での通し番号（No.）を計算
-          const absoluteNo = (p * 8) + i + 1;
-
-          content += `
-            <div class="ticket">
-              <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #000; padding-bottom: 2px; margin-bottom: 5px;">
-                <div style="font-size: 11pt;">領収書</div>
-                <div style="font-size: 10pt; font-weight: bold;">No. ${absoluteNo}</div>
-              </div>
-
-              <div style="text-align: center; margin: 12px 0;">
-                <span style="font-size: 16pt; font-weight: bold; border-bottom: 1px solid #000; padding: 0 15px;">
-                  ${m.name} 様
-                </span>
-              </div>
-
-              <div style="background: #eee; text-align: center; font-size: 20pt; font-weight: bold; padding: 8px; -webkit-print-color-adjust: exact;">
-                ¥${Number(m.price || 0).toLocaleString()}
-              </div>
-
-              <div style="border-bottom: 1px solid #000; margin: 10px 0; font-size: 10pt;">
-                但 ${m.menu} 代として
-              </div>
-
-              <div style="margin-top: auto; display: flex; justify-content: space-between; align-items: flex-end;">
-                <span style="font-size: 12pt; font-weight: bold;">
-                  ${m.date?.replace(/-/g, '/')}
-                </span>
-                <div style="text-align: right; font-size: 9pt;">
-                  <strong>${shop?.business_name}</strong>
-                </div>
-              </div>
-            </div>
-          `;
-        });
-        content += `</div>`;
-      }
-    }
-
-    content += `
-          <script>window.onload = function() { window.print(); window.close(); };</script>
-        </body>
-      </html>
-    `;
-    printWin.document.write(content);
-    printWin.document.close();
-  };
-  // 🏢 ここまで ======================================================
 
 return (
     <div style={fullPageWrapper} translate="no" className="notranslate">
@@ -1824,29 +1664,12 @@ return (
                             </div>
                             <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <div>
-                                <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
-                                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
-                                  {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
-                                </div>
-                              </div>
-                              
-                              {cust.is_facility === true && (
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setInvoiceTarget({ id: cust.id, name: cust.name });
-                                    setShowInvoiceModal(true);
-                                  }}
-                                  style={{ 
-                                    padding: '4px 10px', background: '#f3f0ff', color: '#4b2c85', 
-                                    border: '1px solid #4b2c85', borderRadius: '6px', fontSize: '0.7rem', 
-                                    fontWeight: 'bold', cursor: 'pointer', marginTop: '5px'
-                                  }}
-                                >
-                                  <ReceiptText size={12} style={{marginRight:'3px'}} /> 請求書発行
-                                </button>
-                              )}
-                            </div>
+                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
+                    {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
+                  </div>
+                </div>
+              </div>
                           </div>
                         </React.Fragment>
                       );
@@ -2282,23 +2105,6 @@ return (
               <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #eee', marginBottom: '20px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   
-                  {/* 🚀 🆕 施設でない（個人客の）場合のみ、提携チェックボックスを表示する */}
-                  {!editFields.is_facility && (
-                    <div style={{ background: '#f0fdf4', padding: '12px', borderRadius: '10px', border: '1px solid #bbf7d0', marginBottom: '10px' }}>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-                        <input 
-                          type="checkbox" 
-                          checked={editFields.is_facility || false}
-                          onChange={(e) => setEditFields({...editFields, is_facility: e.target.checked})}
-                          style={{ width: '18px', height: '18px' }}
-                        />
-                        <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#166534' }}>
-                          提携施設として登録（請求書発行機能を有効にする）
-                        </span>
-                      </label>
-                    </div>
-                  )}
-
                   {(() => {
                     const fieldOrder = [
                       'name', 'furigana', 'email', 'phone', 
@@ -2310,14 +2116,7 @@ return (
                     return fieldOrder.map((key) => {
                       if (!shouldShowInAdmin(key)) return null;
 
-                      // 🚀 🆕 ラベル名の出し分けロジック
-                      let label = getFieldLabel(key);
-                      if (editFields.is_facility) {
-                        if (key === 'name') label = '施設名';
-                        if (key === 'furigana') label = '施設担当者名';
-                        if (key === 'phone') label = '施設電話番号（代表）';
-                        if (key === 'address') label = '施設住所';
-                      }
+                      const label = getFieldLabel(key);
 
                       return (
                         <div key={key}>
@@ -2341,17 +2140,12 @@ return (
                             </select>
                           ) : (
                             <input 
-                              readOnly={editFields.is_facility} // 👈 施設なら入力不可
-                              type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} 
-                              value={editFields[key] || ''} 
-                              onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-                              style={{ 
-                                ...editInputStyle, 
-                                background: editFields.is_facility ? '#f1f5f9' : '#fff', // 👈 グレーアウト
-                                cursor: editFields.is_facility ? 'not-allowed' : 'text'  // 👈 禁止マーク
-                              }} 
-                              placeholder="未登録" 
-                            />
+      type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} 
+      value={editFields[key] || ''} 
+      onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+      style={editInputStyle} 
+      placeholder="未登録" 
+    />
                           )}
                         </div>
                       );
@@ -2858,313 +2652,6 @@ return (
       )}
       {/* 🏢 ここまでが先ほど追加した「メンバー内訳」 */}
 
-      {/* 🧾 ここから差し込む！！ ========================================== */}
-      {/* 🧾 【完全版】年月選択 ＆ 別ウィンドウ印刷対応 請求書モーダル */}
-      {showInvoiceModal && invoiceTarget && (
-        <div style={modalOverlayStyle} onClick={() => setShowInvoiceModal(false)}>
-          <div style={{ ...modalContentStyle, maxWidth: '800px', width: '95%', background: '#f8fafc' }} onClick={e => e.stopPropagation()}>
-            
-            <div style={{ padding: '20px', borderBottom: '2px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 style={{ margin: 0 }}>📄 請求書類 作成・発行</h3>
-              <button onClick={() => setShowInvoiceModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24}/></button>
-            </div>
-
-            <div style={{ padding: '25px' }}>
-              {/* --- ① 年月選択エリア（稼働中システムのUIを再現） --- */}
-              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px', marginBottom: '15px' }}>
-                  <button style={circleBtn} onClick={() => setInvoiceYear(y => y - 1)}>◀</button>
-                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{invoiceYear}年</span>
-                  <button style={circleBtn} onClick={() => setInvoiceYear(y => y + 1)}>▶</button>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
-                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
-                    <button 
-                      key={m} 
-                      onClick={() => setInvoiceMonth(m)}
-                      style={{
-                        padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', fontWeight: 'bold',
-                        backgroundColor: invoiceMonth === m ? '#1e293b' : 'white',
-                        color: invoiceMonth === m ? 'white' : '#334155'
-                      }}
-                    >{m}月</button>
-                  ))}
-                </div>
-              </div>
-
-              {/* --- ② プレビュー情報の集計 --- */}
-              {(() => {
-                const filteredSales = salesRecords.filter(s => {
-                  const d = new Date(s.sale_date);
-                  return s.customer_id === invoiceTarget.id && 
-                         d.getFullYear() === invoiceYear && 
-                         (d.getMonth() + 1) === invoiceMonth;
-                });
-                const total = filteredSales.reduce((sum, s) => sum + Number(s.total_amount), 0);
-
-                return (
-                  <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
-                    <p style={{ margin: '0 0 10px 0', color: '#64748b' }}>{invoiceTarget.name} 様 / {invoiceYear}年{invoiceMonth}月分</p>
-                    <div style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b' }}>
-                      合計金額：¥ {total.toLocaleString()} <small>(税込)</small>
-                    </div>
-                    
-                    {/* --- ③ 印刷実行ボタン（別ウィンドウ方式） --- */}
-                    <div style={{ display: 'flex', gap: '15px', justifyContent: 'center', marginTop: '25px' }}>
-                      <button 
-                        onClick={() => handlePrintInvoice('full', filteredSales)}
-                        style={{ ...completeBtnStyle, background: '#1e293b', width: 'auto', padding: '12px 25px', fontSize: '1rem' }}
-                      >
-                        📄 明細請求書を発行
-                      </button>
-                      <button 
-                        onClick={() => handlePrintInvoice('tickets', filteredSales)}
-                        style={{ ...completeBtnStyle, background: '#ed32ea', width: 'auto', padding: '12px 25px', fontSize: '1rem' }}
-                      >
-                        ✂️ 8分割領収書を発行
-                      </button>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚀 🆕 追加：50音順 顧客検索モーダル（台帳画面Ver） */}
-      {showSearchModal && (
-        <div style={modalOverlayStyle} onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}>
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              ...modalContentStyle, 
-              maxWidth: '450px', 
-              height: '80vh', 
-              padding: '0', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              overflow: 'hidden',
-              borderRadius: '30px'
-            }}
-          >
-            {/* ポップアップヘッダー */}
-            <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', background: '#f8fafc', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>👤 顧客名簿 (50音順)</h3>
-            </div>
-
-            {/* 📜 メイン：顧客リスト（スクロールエリア） */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
-              {sortedAllCustomers
-                .filter(c => 
-                  (c.admin_name || c.name || '').includes(searchTerm) || 
-                  (c.furigana || '').includes(searchTerm) || 
-                  (c.phone || '').includes(searchTerm)
-                )
-                .map((c) => (
-                <div 
-                  key={c.id} 
-                  onClick={() => {
-                    openCustomerInfo({ customer_name: c.name }); // 顧客カルテを開く
-                    setShowSearchModal(false);
-                    setSearchTerm('');
-                  }}
-                  style={{ 
-                    padding: '16px', 
-                    background: '#fff', 
-                    borderRadius: '12px', 
-                    marginBottom: '8px', 
-                    border: '1px solid #f1f5f9', 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center', 
-                    cursor: 'pointer',
-                    boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
-                  }}
-                >
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
-                      {c.name} 様
-                      {c.is_blocked && <span style={{ marginLeft: '6px', color: '#ef4444' }}>🚫</span>}
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>
-                      {c.furigana || '---'} / {c.phone || '電話未登録'}
-                    </div>
-                  </div>
-                  <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
-                </div>
-              ))}
-              {sortedAllCustomers.length === 0 && (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>顧客データを読み込んでいます...</div>
-              )}
-            </div>
-
-            {/* 🔍 フッター：検索バーと閉じるボタンを固定 */}
-            <div style={{ padding: '20px', background: '#fff', borderTop: '1px solid #f1f5f9', boxShadow: '0 -10px 20px rgba(0,0,0,0.05)', flexShrink: 0 }}>
-              <div style={{ position: 'relative', marginBottom: '15px' }}>
-                <input 
-                  type="text" 
-                  autoComplete="one-time-code"
-                  placeholder="名前・フリガナ・電話番号で絞り込み..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ 
-                    ...inputStyle, 
-                    marginBottom: 0, 
-                    paddingLeft: '40px', 
-                    background: '#f8fafc',
-                    border: `1px solid #e2e8f0`
-                  }}
-                />
-                <Search size={18} style={{ position: 'absolute', left: '12px', top: '13px', color: '#94a3b8' }} />
-              </div>
-              <button 
-                onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}
-                style={{ ...completeBtnStyle, background: '#1e293b', padding: '15px', borderRadius: '15px' }}
-              >
-                閉じる
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🚀 🆕 追加：50音順 顧客検索モーダル（台帳画面Ver） */}
-      {showSearchModal && (
-        <div style={modalOverlayStyle} onClick={() => { setShowSearchModal(false); setSearchTerm(''); }}>
-          <div 
-            onClick={(e) => e.stopPropagation()} 
-            style={{ 
-              ...modalContentStyle, 
-              maxWidth: '450px', 
-              height: '80vh', 
-              padding: '0', 
-              display: 'flex', 
-              flexDirection: 'column', 
-              overflow: 'hidden',
-              borderRadius: '30px'
-            }}
-          >
-            {/* ポップアップヘッダー */}
-            <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', background: '#f8fafc', flexShrink: 0 }}>
-              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>👤 顧客名簿 (50音順)</h3>
-            </div>
-
-            {/* 📜 メイン：顧客リスト */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
-              {(() => {
-                let lastLabel = ""; // 🚀 直前のグループを記憶
-                
-                return sortedAllCustomers
-                  .filter(c => (c.name || '').includes(searchTerm) || (c.furigana || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
-                  .map((c) => {
-                    // 🚀 🆕 修正：今回のお客様が何行か判定
-                    const currentLabel = getKanaGroup(c.furigana);
-                    const isNewGroup = currentLabel !== lastLabel;
-                    lastLabel = currentLabel;
-
-                    return (
-                      <React.Fragment key={c.id}>
-                        {/* 🚀 🆕 グループが変わった瞬間にだけ「あ行」などの見出しを表示 */}
-                        {isNewGroup && (
-                          <div style={{
-                            padding: '15px 10px 5px',
-                            fontSize: '0.8rem',
-                            fontWeight: '900',
-                            color: '#4b2c85',
-                            borderBottom: '1px solid #eee',
-                            marginBottom: '10px',
-                            background: 'linear-gradient(to right, #fcfcfc, #fff)',
-                            position: 'sticky',
-                            top: 0,
-                            zIndex: 2
-                          }}>
-                            {currentLabel}
-                          </div>
-                        )}
-
-                        <div key={c.id} onClick={() => { openCustomerInfo({ customer_name: c.name }); setShowSearchModal(false); setSearchTerm(''); }} style={{ padding: '16px', background: '#fff', borderRadius: '12px', marginBottom: '8px', border: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
-                          <div style={{ flex: 1 }}>
-                            <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>
-                              {c.name} 様 {c.is_blocked && <span style={{color:'#ef4444'}}>🚫</span>}
-                            </div>
-                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '3px' }}>
-                              {c.furigana || '---'} / {c.phone || '電話未登録'}
-                            </div>
-                          </div>
-                          <div style={{ color: '#4b2c85', opacity: 0.3 }}>〉</div>
-                        </div>
-                      </React.Fragment>
-                    );
-                  });
-              })()}
-            </div>
-
-            {/* 🔍 フッター：固定検索バー */}
-            <div style={{ padding: '20px', background: '#fff', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
-              <div style={{ position: 'relative', marginBottom: '15px' }}>
-                <input 
-                  type="text" 
-                  autoComplete="one-time-code"
-                  placeholder="名前・フリガナ・電話で絞り込み..." 
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  style={{ ...inputStyle, marginBottom: 0, paddingLeft: '40px', background: '#f8fafc' }}
-                />
-                <Search size={18} style={{ position: 'absolute', left: '12px', top: '12px', color: '#94a3b8' }} />
-              </div>
-              <button onClick={() => { setShowSearchModal(false); setSearchTerm(''); }} style={{ ...completeBtnStyle, background: '#1e293b', padding: '15px', borderRadius: '15px' }}>閉じる</button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 🆕 印刷用スタイル定義（レイアウト保護版） */}
-      <style>{`
-        @media print {
-          /* 1. 印刷に不要な要素を「物理的に」消す（visibilityではなくdisplayを使う） */
-          .no-print, 
-          header, 
-          nav, 
-          .sidebar, 
-          button, 
-          aside,
-          [role="navigation"] {
-            display: none !important;
-          }
-
-          /* 2. 画面全体の背景や固定配置をリセットして白紙にする */
-          html, body, #root {
-            background: white !important;
-            height: auto !important;
-            overflow: visible !important;
-          }
-
-          /* 3. 請求書エリアの重なりを解消し、正しく配置する */
-          #invoice-print-area {
-            display: block !important; /* flexからblockに変更して安定させる */
-            position: absolute !important;
-            top: 0 !important;
-            left: 0 !important;
-            width: 100% !important;
-            padding: 10mm !important; /* A4の余白 */
-            margin: 0 !important;
-            visibility: visible !important;
-          }
-
-          /* 4. 請求書内の横並び（タイトルと住所など）を印刷でも維持する */
-          #invoice-print-area div[style*="display: flex"] {
-            display: flex !important;
-            visibility: visible !important;
-          }
-
-          /* ブラウザのヘッダー・フッター（URLなど）を消す設定 */
-          @page {
-            margin: 0;
-          }
-        }
-      `}</style>
-      {/* 🧾 ここまで ====================================================== */}
 
       {/* 🆕 追加：レジ忘れアラート用の点滅アニメーション命令 */}
       <style>{`

@@ -74,13 +74,20 @@ const parseReservationDetails = (res) => {
     else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
   });
 
+  let calculatedTotal = Math.round(basePrice + optPrice + productPrice + adjAmount);
+
+  // 🚀 🆕 もし計算が0円になってしまっても、DBの確定金額(res.total_price)があるならそちらを採用する
+  if (calculatedTotal === 0 && res.total_price > 0) {
+    calculatedTotal = res.total_price;
+  }
+
   return { 
     menuName: fullMenuName, 
-    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
-    items,      // 👈 個別のメニュー（カット等）
-    subItems,   // 👈 枝分かれ（シャンプー等）
-    products,   // 👈 商品
-    adjustments // 👈 調整
+    totalPrice: Math.max(0, calculatedTotal), 
+    items, 
+    subItems,
+    products,
+    adjustments
   };
 };
 
