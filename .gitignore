@@ -26,3 +26,6 @@ dist-ssr
 .vercel
 .env*.local
 dev-dist/
+# Database Backups
+quest_hub_schema.sql
+quest_hub_data.sql
