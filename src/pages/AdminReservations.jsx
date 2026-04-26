@@ -1109,7 +1109,7 @@ const getStatusAt = (dateStr, timeStr) => {
     }
 
     // --- 🏆 優先度3：施設訪問日の「それ以外の時間」をステルスブロック ---
-    const currentSlotStart = new Date(`${dateStr}T${timeStr}:00`).getTime();
+    const currentSlotStart = new Date(`${dateStr}T${timeStr}:00+09:00`).getTime();
 
     // 1. お客様の予約（ねじ込み含む）
     const resMatches = reservations.filter(r => {
@@ -1538,8 +1538,13 @@ return (
 
                 // この枠でちょうど開始するか
                 const startingHere = isArray ? resAt.filter(r => 
-                  new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false }) === time
-                ) : [];
+  new Date(r.start_time).toLocaleTimeString('ja-JP', { 
+    hour: '2-digit', 
+    minute: '2-digit', 
+    hour12: false, 
+    timeZone: 'Asia/Tokyo' // 👈 ここに追加！
+  }) === time
+) : [];
                 const isStart = startingHere.length > 0;
 
                 const colors = getCustomerColor(firstRes?.customer_name, firstRes?.res_type);
