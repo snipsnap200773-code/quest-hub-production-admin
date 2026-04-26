@@ -654,10 +654,20 @@ const checkAvailability = (date, timeStr) => {
           // 🚀 🆕 A: その日の「忙しい時間（予約・ブロック・休憩・予定）」をリスト化
           const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
           const busyTimes = [
-            ...existingReservations.filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled').map(r => ({ s: r.start_time.slice(11,16), e: r.end_time.slice(11,16) })),
-            ...privateTasks.filter(p => p.start_time.startsWith(dateStr)).map(p => ({ s: p.start_time.slice(11,16), e: p.end_time.slice(11,16) })),
-            ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), e: shop.business_hours[dayOfWeek].rest_end.slice(0,5) }] : [])
-          ];
+  ...existingReservations
+    .filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled')
+    .map(r => ({ 
+      s: new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
+      e: new Date(r.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }) 
+    })),
+  ...privateTasks
+    .filter(p => p.start_time.startsWith(dateStr))
+    .map(p => ({ 
+      s: new Date(p.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
+      e: new Date(p.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }) 
+    })),
+  ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), e: shop.business_hours[dayOfWeek].rest_end.slice(0,5) }] : [])
+];
 
           const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
 
