@@ -741,7 +741,6 @@ const checkAvailability = (date, timeStr) => {
 
       {selectedTime && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', padding: '20px', borderTop: '1px solid #e2e8f0', textAlign: 'center', zIndex: 100, boxShadow: '0 -10px 20px rgba(0,0,0,0.05)' }}>
-      // ...（確定ボタンの表示部分）...
           <div style={{ marginBottom: '12px', fontSize: '0.95rem' }}>
             選択中：<span style={{ fontWeight: 'bold', color: themeColor }}>{selectedDate.toLocaleDateString('ja-JP')} {selectedTime}〜</span>
           </div>
