@@ -673,41 +673,45 @@ const checkAvailability = (date, timeStr) => {
 
           // 🚀 🆕 B: 「自動詰め（隙間防止）」判定関数
           const isFillingSlot = (time) => {
-    // 設定OFF、または複数人同時受付なら制限なし
+    // 1. 基本設定のチェック
     if (!shop?.auto_fill_logic || shop?.max_capacity > 1) return true; 
-    if (busyTimes.length === 0) return true; // 予定が一つもなければどこでもOK
+    if (busyTimes.length === 0) return true; 
 
-    const interval = shop?.slot_interval_min || 15; // 基本30分（三土手さんの設定）
-    const myDuration = totalSlotsNeeded * interval; // 今回の予約にかかる時間
+    // 🚀 🆕 判定に必要な「曜日」「開店時間」「閉店時間」をここで定義します
+    const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
+    const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
+    const closeTime = shop?.business_hours[dayOfWeek]?.close || "18:00";
+
+    const interval = shop?.slot_interval_min || 15; 
+    const myDuration = totalSlotsNeeded * interval; 
     const dateStr = selectedDate.toLocaleDateString('sv-SE');
-    const startMs = new Date(`${dateStr}T${time}:00`).getTime();
+    
+    // 💡 すべての時間計算に +09:00 を足して日本時間に統一します
+    const startMs = new Date(`${dateStr}T${time}:00+09:00`).getTime();
     const endMs = startMs + (myDuration * 60000);
 
-    // 1. 【前】との隙間チェック
-    // 自分より前に終わる一番遅い予定（または開店時間）を探す
+    // 2. 【前】との隙間チェック
     const prevTask = busyTimes
       .filter(b => b.e <= time)
       .sort((a, b) => b.e.localeCompare(a.e))[0];
 
     const gapBefore = prevTask
-      ? (startMs - new Date(`${dateStr}T${prevTask.e}:00`).getTime()) / 60000
-      : (startMs - new Date(`${dateStr}T${openTime}:00`).getTime()) / 60000;
+      ? (startMs - new Date(`${dateStr}T${prevTask.e}:00+09:00`).getTime()) / 60000
+      : (startMs - new Date(`${dateStr}T${openTime}:00+09:00`).getTime()) / 60000;
 
-    // 💡 隙間が「0分」でも「60分以上」でもない、
-    // つまり「中途半端な30分」ができてしまう場合はブロック！
+    // 30分の隙間（死に時間）ができるならブロック！
     if (gapBefore > 0 && gapBefore < 60) return false;
 
-    // 2. 【後】との隙間チェック
-    // 自分より後に始まる一番早い予定（または閉店時間）を探す
+    // 3. 【後】との隙間チェック
     const nextTask = busyTimes
-      .filter(b => b.s >= new Date(endMs).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false}))
+      .filter(b => b.s >= new Date(endMs).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone: 'Asia/Tokyo'}))
       .sort((a, b) => a.s.localeCompare(b.s))[0];
 
     const gapAfter = nextTask
-      ? (new Date(`${dateStr}T${nextTask.s}:00`).getTime() - endMs) / 60000
-      : (new Date(`${dateStr}T${closeTime}:00`).getTime() - endMs) / 60000;
+      ? (new Date(`${dateStr}T${nextTask.s}:00+09:00`).getTime() - endMs) / 60000
+      : (new Date(`${dateStr}T${closeTime}:00+09:00`).getTime() - endMs) / 60000;
 
-    // 💡 後ろに「中途半端な30分」ができてしまう場合もブロック！
+    // 後ろに30分の隙間ができるならブロック！
     if (gapAfter > 0 && gapAfter < 60) return false;
 
     return true;
