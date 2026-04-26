@@ -1057,12 +1057,11 @@ const sortedAllCustomers = useMemo(() => {
   // 🆕 修正：開いているポップアップをすべて強制終了する関数
   const closeAllPopups = () => {
     setIsCustomerInfoOpen(false); // 顧客カルテ
-    setIsCheckoutOpen(false);     // レジ
-    setIsMenuPopupOpen(false);     // メニュー変更
-    setStaffPickerRes(null);      // スタッフ選択
+    setIsCheckoutOpen(false);      // レジ
+    setIsMenuPopupOpen(false);      // メニュー変更
+    setStaffPickerRes(null);       // スタッフ選択
     setSelectedMonthData(null);    // 売上分析の詳細
-    setShowInvoiceModal(false);
-    setShowHistoryDetail(false);
+    if (typeof setShowHistoryDetail === 'function') setShowHistoryDetail(false);
   };
 
 
