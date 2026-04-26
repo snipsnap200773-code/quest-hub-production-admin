@@ -369,7 +369,7 @@ const handleReserve = async () => {
       // --- 3. 日時と終了バッファの計算 ---
       const targetDate = adminDate || date;
       const targetTime = adminTime || time;
-      const startDateTime = new Date(`${targetDate}T${targetTime}:00`);
+      const startDateTime = new Date(`${targetDate}T${targetTime}:00+09:00`);
       
 // 🆕 日時と終了バッファの計算（準備時間を確実に含める）
 // 🆕 1日貸切モード対応：終了時刻の算出ロジック
