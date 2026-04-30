@@ -1499,11 +1499,11 @@ return (
       <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: isPC ? '900px' : '100%' }}>
         <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#fff' }}>
           <tr>
-            <th style={{ width: isPC ? '80px' : '55px', borderBottom: '0.5px solid #cbd5e1' }}></th>
+            <th style={{ width: isPC ? '80px' : '55px', borderBottom: '1px solid #cbd5e1' }}></th>
             {weekDays.map(date => {
               const isToday = getJapanDateStr(new Date()) === getJapanDateStr(date);
               return (
-                <th key={date.toString()} style={{ padding: '4px 0', borderBottom: '0.5px solid #cbd5e1' }}>
+                <th key={date.toString()} style={{ padding: '4px 0', borderBottom: '1px solid #cbd5e1' }}>
                   <div style={{ fontSize: '0.6rem', color: isToday ? themeColor : '#666' }}>{['日','月','火','水','木','金','土'][date.getDay()]}</div>
                   <div style={{ fontSize: isPC ? '1.5rem' : '0.9rem', fontWeight: 'bold', color: isToday ? '#fff' : '#333', background: isToday ? themeColor : 'none', width: isPC ? '40px' : '22px', height: isPC ? '40px' : '22px', borderRadius: '50%', margin: '2px auto', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{date.getDate()}</div>
                 </th>
@@ -1515,7 +1515,7 @@ return (
           {timeSlots.map(time => (
             <tr key={time} style={{ height: '60px' }}>
               {/* 左端の時間軸 */}
-              <td style={{ borderRight: '0.5px solid #cbd5e1', borderBottom: '0.5px solid #cbd5e1', textAlign: 'center', background: '#f8fafc' }}>
+              <td style={{ borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', textAlign: 'center', background: '#f8fafc' }}>
                 <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{time}</span>
               </td>
 
@@ -1612,8 +1612,8 @@ return (
                     }}
                     /* 🚀 🆕 【ここまで修正箇所】 */
                     style={{ 
-                      borderRight: '0.1px solid #cbd5e1', 
-                      borderBottom: '0.1px solid #cbd5e1', 
+                      borderRight: '1px solid #e2e8f0', 
+                      borderBottom: '1px solid #e2e8f0', 
                       position: 'relative', 
                       cursor: 'pointer', 
                       background: isStandardTime ? '#fff' : '#fffff3',

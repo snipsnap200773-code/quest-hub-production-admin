@@ -616,7 +616,7 @@ const AdminFacilityVisit_PC = () => {
         fontWeight: 'normal', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px',
         border: '1px solid #e2e8f0'
       }}>
-        前回: {new Date(lastVisits[res.member_id]).getMonth() + 1}月{new Date(lastVisits[res.member_id]).getDate()}日
+         {new Date(lastVisits[res.member_id]).getMonth() + 1}月{new Date(lastVisits[res.member_id]).getDate()}日
       </span>
     )}
   </div>
