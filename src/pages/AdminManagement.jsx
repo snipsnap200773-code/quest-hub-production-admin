@@ -912,16 +912,13 @@ const sortedAllCustomers = useMemo(() => {
       const { data: customer } = await query.maybeSingle();
       const currentCustomer = customer || { name: res.customer_name };
 
-      // 🚩 2. 【施設同期】施設なら facility_users からも引く
+      // 🚩 2. 【施設判定】
       let facData = null;
-      const isFac = currentCustomer.is_facility === true || res.task_type === 'facility';
-      if (isFac) {
-        const { data } = await supabase.from('facility_users').select('*').eq('facility_name', currentCustomer.name).maybeSingle();
-        facData = data;
-      }
+      const { data: facilityCheck } = await supabase.from('facility_users').select('*').eq('facility_name', currentCustomer.name).maybeSingle();
+      const isFac = currentCustomer.is_facility === true || res.task_type === 'facility' || !!facilityCheck;
+      if (facilityCheck) facData = facilityCheck;
 
-      // 3. 入力項目をセット（施設データがあれば優先し、入力不可にする）
-      const allFields = {
+      setEditFields({
         is_facility: isFac,
         name: currentCustomer.name || '',
         furigana: facData?.furigana || currentCustomer.furigana || '',
@@ -940,18 +937,38 @@ const sortedAllCustomers = useMemo(() => {
         memo: currentCustomer.memo || '',
         line_user_id: currentCustomer.line_user_id || null,
         custom_answers: currentCustomer.custom_answers || {}
-      };
-
+      });
       setSelectedCustomer(currentCustomer);
-      setEditFields(allFields);
 
-      // --- 4. 履歴の抽出 (以前直した 400エラー対策を維持) ---
+      // --- 4. 履歴と売上の抽出（最強の紐付け方式） ---
       let historyData = [];
       if (isFac) {
+        // ① 施設訪問の履歴をまず集める
         historyData = allReservations
-          .filter(r => r.task_type === 'facility' && (r.customer_name === searchName || r.facility_id === currentCustomer?.id))
+          .filter(r => r.task_type === 'facility' && (r.customer_name === searchName || r.facility_user_id === facData?.id))
           .sort((a, b) => b.start_time.localeCompare(a.start_time));
+        
+        // ② 🚀 🆕 修正：この「訪問ID」たちに紐づく売上を、顧客IDを無視して直接取りに行く
+        const visitIds = historyData.map(v => v.id);
+        if (visitIds.length > 0) {
+          const { data: facSales } = await supabase
+            .from('sales')
+            .select('visit_request_id, total_amount, details')
+            .in('visit_request_id', visitIds);
+
+          if (facSales) {
+            historyData = historyData.map(v => {
+              const sale = facSales.find(s => s.visit_request_id === v.id);
+              return { 
+                ...v, 
+                total_price: sale ? sale.total_amount : 0,
+                sale_record: sale || null // 💡 これが2枚目画像（内訳ポップアップ）の種になります
+              };
+            });
+          }
+        }
       } else {
+        // 個人の履歴
         let resQuery = supabase.from('reservations').select('*, staffs(name)').eq('shop_id', cleanShopId).in('status', ['completed', 'canceled']).order('start_time', { ascending: false });
         if (currentCustomer.id) resQuery = resQuery.or(`customer_id.eq.${currentCustomer.id},customer_name.eq.${searchName}`);
         else resQuery = resQuery.eq('customer_name', searchName);
@@ -1605,11 +1622,19 @@ return (
                       lastLabel = currentLabel;
 
                       // 完了済み予約のカウント
-                      const realVisitCount = allReservations.filter(r => 
+                      const completedVisits = allReservations.filter(r => 
                         (r.customer_name === cust.name || r.customer_id === cust.id) && 
                         r.status === 'completed' && 
                         (r.task_type === 'individual' || r.task_type === 'facility')
-                      ).length;
+                      );
+
+                      // 🚀 🆕 2. 全データの中から「一番新しい日付」を探し出す
+                      const latestVisit = completedVisits.reduce((latest, current) => {
+                        const currentDate = new Date(current.start_time);
+                        return (!latest || currentDate > latest) ? currentDate : latest;
+                      }, null);
+
+                      const realVisitCount = completedVisits.length;
 
                       return (
                         <React.Fragment key={cust.id}>
@@ -1658,8 +1683,9 @@ return (
                               </div>
                               <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
                               <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
-                                最終来店: {cust.last_arrival_at ? new Date(cust.last_arrival_at).toLocaleDateString() : '記録なし'}
-                              </div>
+                            {/* 💡 DBの記録か、計算した最新日のどちらか新しい方を表示 */}
+                            最終来店: {latestVisit ? latestVisit.toLocaleDateString() : '記録なし'}
+                          </div>
                             </div>
                             <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                               <div>
@@ -2267,11 +2293,24 @@ return (
                             const date = new Date(v.start_time);
                             const dayNames = ['日','月','火','水','木','金','土'];
                             return (
-                              <div key={v.id} style={{ 
-                                background: '#f8fafc', border: '1px solid #cbd5e1', color: '#4b2c85',
-                                padding: '6px 12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '800',
-                                display: 'flex', alignItems: 'center', gap: '4px'
-                              }}>
+                              <div 
+                                key={v.id} 
+                                // 🚀 🆕 修正：タップしたら内訳ポップアップを開く命令を追加
+                                onClick={() => {
+                                  if (v.sale_record) {
+                                    setSelectedFacilitySale(v.sale_record);
+                                    setShowFacilityMembersModal(true);
+                                  } else {
+                                    alert("売上内訳データがありません。");
+                                  }
+                                }}
+                                style={{ 
+                                  background: '#f8fafc', border: '1px solid #cbd5e1', color: '#4b2c85',
+                                  padding: '6px 12px', borderRadius: '10px', fontSize: '0.9rem', fontWeight: '800',
+                                  display: 'flex', alignItems: 'center', gap: '4px',
+                                  cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' // 💡 指マークにする
+                                }}
+                              >
                                 <Calendar size={14} style={{ opacity: 0.6 }} />
                                 {date.getDate()}日<span style={{ fontSize: '0.7rem', fontWeight: 'bold', opacity: 0.7 }}>({dayNames[date.getDay()]})</span>
                               </div>
@@ -2279,9 +2318,16 @@ return (
                           })}
                         </div>
 
-                        {/* 下段：メニュー名の注釈 */}
-                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '5px', paddingLeft: '4px' }}>
-                          <Scissors size={13} /> {group.visits[0]?.menu_name || '施設訪問 施術一式'}
+                        {/* 下段：メニュー名と「その月の合計金額」 */}
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 4px' }}>
+                          <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
+                            <Scissors size={13} /> {group.visits[0]?.menu_name || '施設訪問 施術一式'}
+                          </div>
+                          
+                          {/* 🚀 🆕 修正：その月の全訪問の金額を合算して赤字で表示 */}
+                          <div style={{ fontWeight: 'bold', color: '#d34817', fontSize: '1rem' }}>
+                            ¥{group.visits.reduce((sum, v) => sum + (Number(v.total_price) || 0), 0).toLocaleString()}
+                          </div>
                         </div>
                       </div>
                     ));

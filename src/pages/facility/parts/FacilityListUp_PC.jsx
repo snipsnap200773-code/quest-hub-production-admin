@@ -12,6 +12,7 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
   const [draftList, setDraftList] = useState([]);
   const [completedMemberIds, setCompletedMemberIds] = useState([]);
   const [confirmedDates, setConfirmedDates] = useState([]);
+  const [lastVisitMap, setLastVisitMap] = useState({});
   const [manualKeeps, setManualKeeps] = useState([]);
   const [regularRules, setRegularRules] = useState([]);
   const [exclusions, setExclusions] = useState([]);
@@ -23,6 +24,7 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
   const [facilityName, setFacilityName] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
   const [sortMode, setSortMode] = useState('floor');
+  const [selectedIndex, setSelectedIndex] = useState(-1);
 
   // 🚀 🆕 【ここを修正！】「今日」固定ではなく、Stateで月を管理します
   const year = viewDate.getFullYear();
@@ -40,22 +42,44 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
       setLoading(false);
     };
     init();
-  }, [facilityId, viewDate]); // 💡 viewDate を追加
+  }, [facilityId, viewDate]);
 
+  // 🚀 🆕 ここから追加：検索ワードが変わるたびに、キーボードの選択位置をリセットする
+  useEffect(() => {
+    if (searchTerm) {
+      setSelectedIndex(0);  // 検索されたら、一番上の人を自動でフォーカス（黄色にする）
+    } else {
+      setSelectedIndex(-1); // 検索が空になったらフォーカスを外す
+    }
+  }, [searchTerm]);
+
+  // 以降、既存の fetchData 関数へ続く
   const fetchData = async (targetFacilityName) => {
     try {
       const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-      const [resData, draftData, connData, visitedRes, visitDatesRes] = await Promise.all([
+      const [resData, draftData, connData, visitedRes, visitDatesRes, allHistoryRes] = await Promise.all([
         supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
         supabase.from('visit_list_drafts').select('*, members(*)').eq('facility_user_id', facilityId),
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(business_name)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
-        // 今月の完了者取得（既存）
         supabase.from('visit_request_residents').select('member_id, visit_requests!inner(scheduled_date)').eq('status', 'completed').eq('visit_requests.facility_user_id', facilityId).gte('visit_requests.scheduled_date', startOfMonth).lte('visit_requests.scheduled_date', endOfMonth),
-        // 🚀 🆕 追加：今月の予約日程とそのステータスを取得
-        supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth)
+        supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth),
+        // 🚀 🆕 追加：全期間の完了履歴をすべて取得（ここから最新日を算出します）
+        supabase.from('visit_request_residents').select('member_id, visit_requests!inner(scheduled_date)').eq('status', 'completed').eq('visit_requests.facility_user_id', facilityId)
       ]);
+
+      // 🚀 🆕 各メンバーの「一番新しい訪問日」を割り出すロジック
+      const vMap = {};
+      allHistoryRes.data?.forEach(v => {
+        const mid = v.member_id;
+        const date = v.visit_requests.scheduled_date;
+        // まだ登録がない、または記録されている日付より新しい日付なら上書き
+        if (!vMap[mid] || date > vMap[mid]) {
+          vMap[mid] = date;
+        }
+      });
+      setLastVisitMap(vMap);
 
       setResidents(resData.data || []);
       setDraftList(draftData.data || []);
@@ -189,14 +213,39 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
     setDraftList(draftList.map(d => d.id === id ? { ...d, menu_name: menu } : d));
   };
 
+  // 🚀 🆕 ここから追加：キーボードの「↑」「↓」「Enter」入力を判定する関数
+  const handleKeyDown = (e) => {
+    // 候補が一人もいない時は何もしない
+    if (unselectedResidents.length === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      // ↓キー：一つ下の番号へ（最大値を超えないように制限）
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, unselectedResidents.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      // ↑キー：一つ上の番号へ（0より小さくならないように制限）
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      // Enterキー：現在フォーカスされている人をリストに追加
+      e.preventDefault();
+      if (selectedIndex >= 0 && unselectedResidents[selectedIndex]) {
+        addToList(unselectedResidents[selectedIndex]);
+      }
+    }
+  };
+
+  // 💡 以降、既存のフィルタリング処理へ続く
   const unselectedResidents = residents
     .filter(r => 
-      // 1. 今のドラフト（選択中）に入っていない
       !draftList.some(d => d.member_id === r.id) && 
-      // 🚀 2. 🆕 今月すでに「完了」していない人だけを表示
       !completedMemberIds.includes(r.id) &&
-      // 3. 検索ワードに一致する
-      (r.name.includes(searchTerm) || (r.room || '').includes(searchTerm))
+      // 🚀 🆕 修正：name, room に加えて kana（ふりがな）も検索対象に含める！
+      (
+        r.name.includes(searchTerm) || 
+        (r.room || '').includes(searchTerm) || 
+        (r.kana || '').includes(searchTerm) // 👈 ここを追加
+      )
     )
     .sort((a, b) => {
       if (sortMode === 'floor') {
@@ -296,7 +345,14 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
 
             <div style={searchBox}>
               <Search size={16} color="#999" />
-              <input type="text" placeholder="名前/部屋番号..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={searchInput}/>
+              <input 
+  type="text" 
+  placeholder="名前/部屋番号/ふりがな..." 
+  value={searchTerm} 
+  onChange={(e) => setSearchTerm(e.target.value)} 
+  onKeyDown={handleKeyDown} 
+  style={searchInput}
+/>
             </div>
           </div>
           
@@ -304,41 +360,55 @@ const FacilityListUp_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: vie
             {(() => {
               let lastLabel = ""; // 直前のカテゴリを記憶する変数
               
-              return unselectedResidents.map((res) => {
-                // 🚀 🆕 現在のカテゴリ見出しを決定
-                let currentLabel = "";
-                if (sortMode === 'floor') {
-                  currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "階数未設定";
-                } else {
-                  // 頭文字を抽出（かながあれば優先）
-                  currentLabel = (res.kana || res.name || "？").charAt(0);
-                }
+              return unselectedResidents.map((res, index) => { 
+  // 🚀 🆕 現在のカテゴリ見出しを決定
+  let currentLabel = "";
+  if (sortMode === 'floor') {
+    currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "階数未設定";
+  } else {
+    currentLabel = (res.kana || res.name || "？").charAt(0);
+  }
 
-                // 🚀 🆕 直前の人とカテゴリが変わったか判定
-                const isNewGroup = currentLabel !== lastLabel;
-                lastLabel = currentLabel;
+  const isNewGroup = currentLabel !== lastLabel;
+  lastLabel = currentLabel;
 
-                return (
-                  <React.Fragment key={res.id}>
-                    {/* カテゴリが変わった時だけ見出しを表示 */}
-                    {isNewGroup && (
-                      <div style={groupHeaderStyle}>
-                        {currentLabel}
-                      </div>
-                    )}
-                    
-                    <motion.div 
-                      onClick={() => addToList(res)} 
-                      style={residentCard} 
-                      whileHover={{ x: 5, backgroundColor: '#fcfaf7' }} 
-                      whileTap={{ scale: 0.98 }}
-                    >
+  return (
+    <React.Fragment key={res.id}>
+      {isNewGroup && (
+        <div style={groupHeaderStyle}>
+          {currentLabel}
+        </div>
+      )}
+      
+      <motion.div 
+        onClick={() => addToList(res)} 
+        style={{
+          ...residentCard,
+          // 💡 index (0, 1, 2...) と selectedIndex (選ばれた番号) が一致したら色を変える
+          backgroundColor: index === selectedIndex ? '#fff9e6' : '#fff', 
+          border: index === selectedIndex ? '2px solid #c5a059' : '1px solid #f1f5f9',
+          transform: index === selectedIndex ? 'translateX(5px)' : 'none'
+        }}
+        whileHover={{ x: 5, backgroundColor: '#fcfaf7' }} 
+        whileTap={{ scale: 0.98 }}
+      >
                       <div style={resInfo}>
                         <div style={roomTagBox}>
                           <span style={fLabel}>{res.floor}</span>
                           <span style={rLabel}>{res.room}</span>
                         </div>
-                        <span style={nameText}>{res.name} 様</span>
+                        
+                        {/* 🚀 🆕 修正：名前と前回日付を縦に並べるコンテナへ */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                          <span style={nameText}>{res.name} 様</span>
+                          
+                          {/* 💡 前回の訪問日があれば表示 */}
+                          {lastVisitMap[res.id] && (
+                            <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                              前回：{lastVisitMap[res.id].replace(/-/g, '/')}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <UserPlus size={20} color="#c5a059" />
                     </motion.div>

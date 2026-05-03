@@ -2,13 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { 
   UserPlus, Edit2, Trash2, Home, User, ChevronDown, ChevronUp, 
-  AlertCircle, X, Info, FileText 
+  AlertCircle, X, Info, FileText, Search
 } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion'; // 🚀 アニメーション用
+import { motion, AnimatePresence } from 'framer-motion';
+
+// 🚀 🆕 ふりがなから行を判定する関数
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-お]/)) return "あ行";
+  if (firstChar.match(/[か-こ]/)) return "か行";
+  if (firstChar.match(/[さ-そ]/)) return "さ行";
+  if (firstChar.match(/[た-と]/)) return "た行";
+  if (firstChar.match(/[な-の]/)) return "な行";
+  if (firstChar.match(/[は-ほ]/)) return "は行";
+  if (firstChar.match(/[ま-も]/)) return "ま行";
+  if (firstChar.match(/[や-よ]/)) return "や行";
+  if (firstChar.match(/[ら-ろ]/)) return "ら行";
+  if (firstChar.match(/[わ-を]/)) return "わ行";
+  return "その他";
+};
 
 export default function FacilityUserList_PC({ facilityId, isMobile }) {
   // --- 1. State 管理 ---
   const [residents, setResidents] = useState([]);
+  const [searchTerm, setSearchTerm] = useState(''); // 🚀 🆕 検索文字Stateを追加
+  const [lastVisitMap, setLastVisitMap] = useState({}); // 🚀 🆕 前回利用日Map
+  const [selectedIndex, setSelectedIndex] = useState(-1); // 🚀 🆕 キーボード選択Index
   const [facilityName, setFacilityName] = useState('');
   const [loading, setLoading] = useState(true);
   const [isFormOpen, setIsFormOpen] = useState(false); // スマホは最初閉じておく
@@ -38,16 +58,38 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
   const fetchResidents = async () => {
     setLoading(true);
-    // 🚀 🆕 is_active が true（現役）の人だけを取得するように変更
-    const { data } = await supabase
+    // 1. 現役メンバーの取得
+    const { data: mData } = await supabase
       .from('members')
       .select('*')
       .eq('facility_user_id', facilityId)
       .eq('is_active', true); 
       
-    setResidents(data || []);
+    // 2. 🚀 🆕 前回利用日を特定するために「全期間の完了履歴」を取得
+    const { data: hData } = await supabase
+      .from('visit_request_residents')
+      .select('member_id, visit_requests!inner(scheduled_date)')
+      .eq('status', 'completed')
+      .eq('visit_requests.facility_user_id', facilityId);
+
+    // 最新日をマッピング
+    const vMap = {};
+    hData?.forEach(v => {
+      const mid = v.member_id;
+      const date = v.visit_requests.scheduled_date;
+      if (!vMap[mid] || date > vMap[mid]) vMap[mid] = date;
+    });
+
+    setLastVisitMap(vMap);
+    setResidents(mData || []);
     setLoading(false);
   };
+
+  // 🚀 🆕 キーボード選択のリセット設定
+  useEffect(() => {
+    if (searchTerm) setSelectedIndex(0);
+    else setSelectedIndex(-1);
+  }, [searchTerm]);
 
   // --- 3. 操作ロジック ---
   const handleSubmit = async () => {
@@ -123,7 +165,32 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
     }
   };
 
-  const sortedResidents = [...residents].sort((a, b) => {
+  const filteredResidents = residents.filter(r => 
+    (r.name || '').includes(searchTerm) || 
+    (r.room || '').includes(searchTerm) || 
+    (r.kana || '').includes(searchTerm)
+  );
+
+  // 🚀 🆕 キーボード操作関数
+  const handleKeyDown = (e) => {
+    if (filteredResidents.length === 0) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.min(prev + 1, filteredResidents.length - 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (selectedIndex >= 0 && filteredResidents[selectedIndex]) {
+        // Enterで詳細を開く
+        setDetailMember(filteredResidents[selectedIndex]);
+      }
+    }
+  };
+
+  // 🚀 🆕 filteredResidents（検索結果）を並び替える
+  const sortedResidents = [...filteredResidents].sort((a, b) => {
     if (sortBy === 'room') {
       return ((a.floor || '') + (a.room || '')).localeCompare((b.floor || '') + (b.room || ''), 'ja', { numeric: true });
     }
@@ -178,6 +245,8 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
   function renderMobileView() {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+        
+        {/* 1. 登録・編集フォーム */}
         <div style={mCardStyle}>
           <button onClick={() => setIsFormOpen(!isFormOpen)} style={mFormToggleBtn}>
             <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
@@ -190,12 +259,20 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
             <div style={{ padding: '20px', borderTop: '1px solid #eee' }}>
                <label style={mLabelStyle}>階数選択</label>
                <div style={floorBtnGroup}>{['1F','2F','3F','4F','5F'].map(f => <button key={f} onClick={() => setNewFloor(f)} style={floorBtn(newFloor === f)}>{f}</button>)}</div>
-               <div style={{marginTop:'15px'}}><label style={mLabelStyle}>部屋 / 名前</label>
-                  <div style={{display:'flex', gap:'10px'}}>
-                    <input style={{...mInputStyle, flex:1}} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="101" />
-                    <input style={{...mInputStyle, flex:2}} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名前" />
-                  </div>
+               
+               <div style={{marginTop:'15px'}}>
+                 <label style={mLabelStyle}>部屋 / 名前</label>
+                 <div style={{display:'flex', gap:'10px'}}>
+                   <input style={{...mInputStyle, flex:1}} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="101" />
+                   <input style={{...mInputStyle, flex:2}} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名前" />
+                 </div>
                </div>
+
+               <div style={{marginTop:'15px'}}>
+                 <label style={mLabelStyle}>ふりがな</label>
+                 <input style={mInputStyle} value={newKana} onChange={(e) => setNewKana(e.target.value)} placeholder="ふりがな" />
+               </div>
+
                <div style={{marginTop:'15px'}}>
                   <label style={mLabelStyle}>ベッドカット</label>
                   <div style={toggleButtonGroup}>
@@ -208,19 +285,69 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
             </div>
           )}
         </div>
-        {sortedResidents.map(u => (
-          <div key={u.id} style={mResidentCard} onClick={() => setDetailMember(u)}>
-            <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
-              <div style={mFloorBadge}>{u.floor}</div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:'0.75rem', color:'#94a3b8'}}>{u.room}号室</div>
-                <div style={{fontWeight:'900', fontSize:'1.1rem'}}>{u.name} 様</div>
-                {u.isBedCut && <div style={{...bedCutBadge, display:'inline-flex', marginTop:'4px'}}><AlertCircle size={10}/> ベッドカット</div>}
-              </div>
-              <Info size={18} color="#cbd5e1" />
-            </div>
+
+        {/* 🚀 🆕 2. スマホ用検索バーを追加 */}
+        <div style={mSearchContainer}>
+          <Search size={18} color="#94a3b8" />
+          <input 
+            type="text" 
+            placeholder="お名前・ふりがな・部屋で検索..." 
+            style={mSearchInput} 
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
+        </div>
+
+        {/* 🚀 🆕 3. 検索結果リスト（グループ見出し付き） */}
+        {(() => {
+          let lastLabel = "";
+          return sortedResidents.map((u, index) => {
+            // 見出しの判定
+            let currentLabel = "";
+            if (sortBy === 'room') {
+              currentLabel = u.floor ? (String(u.floor).includes('F') ? u.floor : `${u.floor}F`) : "階数未設定";
+            } else {
+              currentLabel = getKanaGroup(u.kana);
+            }
+            const isNewGroup = currentLabel !== lastLabel;
+            lastLabel = currentLabel;
+
+            return (
+              <React.Fragment key={u.id}>
+                {/* 🚀 グループ見出し */}
+                {isNewGroup && (
+                  <div style={mGroupHeaderStyle}>{currentLabel}</div>
+                )}
+                
+                <div style={mResidentCard} onClick={() => setDetailMember(u)}>
+                  <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+                    <div style={mFloorBadge}>{u.floor}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:'0.75rem', color:'#94a3b8'}}>{u.room}号室</div>
+                      <div style={{fontWeight:'900', fontSize:'1.1rem'}}>{u.name} 様</div>
+                      
+                      {/* 🚀 前回利用日の表示 */}
+                      {lastVisitMap[u.id] && (
+                        <div style={{fontSize:'0.7rem', color:'#c5a059', fontWeight:'bold', marginTop:'2px'}}>
+                          前回: {lastVisitMap[u.id].replace(/-/g, '/')}
+                        </div>
+                      )}
+
+                      {u.isBedCut && <div style={{...bedCutBadge, display:'inline-flex', marginTop:'4px'}}><AlertCircle size={10}/> ベッドカット</div>}
+                    </div>
+                    <Info size={18} color="#cbd5e1" />
+                  </div>
+                </div>
+              </React.Fragment>
+            );
+          });
+        })()}
+        
+        {sortedResidents.length === 0 && (
+          <div style={{textAlign:'center', padding:'40px', color:'#94a3b8', fontSize:'0.9rem'}}>
+            一致する入居者が見つかりません
           </div>
-        ))}
+        )}
       </div>
     );
   }
@@ -247,8 +374,28 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
         <main style={pcListSide}>
           <div style={pcListHeader}>
-            <div style={{display:'flex', alignItems:'center', gap:'12px'}}><span style={pcCountBadge}>{residents.length}名</span><h3 style={{margin:0, fontSize:'1.1rem'}}>入居者一覧</h3></div>
-            <div style={sortGroup}><button onClick={() => setSortBy('room')} style={sortTab(sortBy === 'room')}>部屋順</button><button onClick={() => setSortBy('name')} style={sortTab(sortBy === 'name')}>名前順</button></div>
+            <div style={{display:'flex', alignItems:'center', gap:'12px'}}>
+              <span style={pcCountBadge}>{filteredResidents.length}名</span>
+              <h3 style={{margin:0, fontSize:'1.1rem'}}>入居者一覧</h3>
+            </div>
+
+            {/* 🚀 🆕 検索バーを追加：ここでタイピングしてそのままキーボード操作が可能です */}
+            <div style={searchBox}>
+              <Search size={16} color="#999" />
+              <input 
+                type="text" 
+                placeholder="名前/ふりがな/部屋..." 
+                value={searchTerm} 
+                onChange={(e) => setSearchTerm(e.target.value)} 
+                onKeyDown={handleKeyDown}
+                style={searchInput} 
+              />
+            </div>
+
+            <div style={sortGroup}>
+              <button onClick={() => setSortBy('room')} style={sortTab(sortBy === 'room')}>部屋順</button>
+              <button onClick={() => setSortBy('name')} style={sortTab(sortBy === 'name')}>名前順</button>
+            </div>
           </div>
           <div style={pcTableScroll}>
             <table style={pcTable}>
@@ -261,30 +408,75 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
                 </tr>
               </thead>
               <tbody>
-                {sortedResidents.map(u => (
-                  <tr key={u.id} style={pcTr}>
-                    <td style={{textAlign:'center'}}><span style={floorBadge}>{u.floor}</span></td>
-                    <td style={{fontWeight:'900', color:'#1e293b'}}>{u.room}</td>
-                    <td onClick={() => setDetailMember(u)} style={{cursor:'pointer'}}>
-                      <div style={nameWrapper}>
-                        <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                           <div style={{fontWeight:'900', fontSize:'1.1rem'}}>{u.name} 様</div>
-                           {u.isBedCut && <AlertCircle size={14} color="#ef4444" />}
-                        </div>
-                        <div style={{fontSize:'0.75rem', color:'#94a3b8'}}>{u.kana}</div>
-                      </div>
-                    </td>
-                    <td style={{textAlign:'center'}}>
-                      <div style={btnActions}>
-                        <button onClick={() => startEdit(u)} style={pcActionBtn}><Edit2 size={14}/></button>
-                        {/* 🚀 🆕 修正：上で作った handleDeleteMember を呼び出す形に変更 */}
-                        <button onClick={() => handleDeleteMember(u.id, u.name)} style={pcDelBtn}>
-                          <Trash2 size={14}/>
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
+                {(() => {
+                  let lastLabel = ""; // 直前の見出し（1Fやあ行）を覚えておく変数
+                  
+                  return sortedResidents.map((u, index) => {
+                    // 🚀 1. 現在の行に表示すべき見出しを決定
+                    let currentLabel = "";
+                    if (sortBy === 'room') {
+                      // 部屋順なら「1F」「2F」を見出しにする
+                      currentLabel = u.floor ? (String(u.floor).includes('F') ? u.floor : `${u.floor}F`) : "階数未設定";
+                    } else {
+                      // 名前順なら「あ行」「か行」を見出しにする
+                      currentLabel = getKanaGroup(u.kana);
+                    }
+
+                    // 🚀 2. 直前の人と見出しが変わったかチェック
+                    const isNewGroup = currentLabel !== lastLabel;
+                    lastLabel = currentLabel; // 次の判定のために記憶
+
+                    return (
+                      <React.Fragment key={u.id}>
+                        {/* 🚀 3. 新しいグループの最初だけ見出し行を表示 */}
+                        {isNewGroup && (
+                          <tr style={{ background: '#f8fafc' }}>
+                            <td colSpan={4} style={groupHeaderStyle}>{currentLabel}</td>
+                          </tr>
+                        )}
+
+                        {/* 🚀 4. 入居者データ行（色付けと前回日付を追加） */}
+                        <tr 
+                          style={{
+                            ...pcTr,
+                            // 💡 キーボードで選ばれている番号(index)と一致したら色を変える
+                            backgroundColor: index === selectedIndex ? '#fff9e6' : 'transparent',
+                            borderLeft: index === selectedIndex ? '4px solid #c5a059' : 'none'
+                          }}
+                        >
+                          <td style={{textAlign:'center'}}><span style={floorBadge}>{u.floor}</span></td>
+                          <td style={{fontWeight:'900', color:'#1e293b'}}>{u.room}</td>
+                          <td onClick={() => setDetailMember(u)} style={{cursor:'pointer'}}>
+                            <div style={nameWrapper}>
+                              <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
+                                 <div style={{fontWeight:'900', fontSize:'1.1rem'}}>{u.name} 様</div>
+                                 {u.isBedCut && <AlertCircle size={14} color="#ef4444" />}
+                              </div>
+                              <div style={{display:'flex', gap:'12px', alignItems:'center'}}>
+                                <div style={{fontSize:'0.75rem', color:'#94a3b8'}}>{u.kana}</div>
+                                
+                                {/* 🚀 5. 前回利用日の表示 */}
+                                {lastVisitMap[u.id] && (
+                                  <div style={{fontSize:'0.65rem', color:'#c5a059', fontWeight:'bold'}}>
+                                    前回: {lastVisitMap[u.id].replace(/-/g, '/')}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{textAlign:'center'}}>
+                            <div style={btnActions}>
+                              <button onClick={() => startEdit(u)} style={pcActionBtn}><Edit2 size={14}/></button>
+                              <button onClick={() => handleDeleteMember(u.id, u.name)} style={pcDelBtn}>
+                                <Trash2 size={14}/>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      </React.Fragment>
+                    );
+                  });
+                })()}
               </tbody>
             </table>
           </div>
@@ -355,3 +547,60 @@ const toggleButtonGroup = { display: 'flex', gap: '8px' };
 const toggleBtn = (active) => ({ flex: 1, padding: '12px', borderRadius: '10px', border: 'none', background: active ? '#2d6a4f' : '#f1f5f2', color: active ? '#fff' : '#2d6a4f', fontWeight: '900', cursor: 'pointer', fontSize: '0.85rem' });
 const bedCutBadge = { background: '#fef2f2', color: '#ef4444', padding: '4px 10px', borderRadius: '6px', fontSize: '0.7rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', border: '1px solid #fee2e2' };
 const mCancelBtn = { width: '100%', marginTop: '10px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', textDecoration: 'underline', cursor:'pointer' };
+// 🚀 🆕 不足していたスタイル定義を追加します
+const searchBox = { 
+  display: 'flex', 
+  alignItems: 'center', 
+  gap: '8px', 
+  background: '#f1f5f9', 
+  padding: '8px 15px', 
+  borderRadius: '12px', 
+  border: '1px solid #e2e8f0' 
+};
+
+const searchInput = { 
+  border: 'none', 
+  background: 'transparent', 
+  outline: 'none', 
+  fontSize: '0.85rem', 
+  width: '150px' 
+};
+
+const groupHeaderStyle = { 
+  padding: '10px 20px', 
+  fontSize: '0.8rem', 
+  fontWeight: '900', 
+  color: '#c5a059', 
+  textTransform: 'uppercase', 
+  letterSpacing: '0.05em',
+  background: '#f8fafc',
+  borderBottom: '1px solid #edf2f7'
+};
+// 🚀 🆕 追加：スマホ版の検索と見出し用スタイル
+const mSearchContainer = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '10px',
+  background: '#fff',
+  padding: '12px 18px',
+  borderRadius: '15px',
+  border: '1px solid #eee',
+  marginBottom: '5px'
+};
+
+const mSearchInput = {
+  flex: 1,
+  border: 'none',
+  outline: 'none',
+  fontSize: '0.95rem',
+  color: '#3d2b1f'
+};
+
+const mGroupHeaderStyle = {
+  fontSize: '0.75rem',
+  fontWeight: '900',
+  color: '#94a3b8',
+  padding: '10px 5px 0',
+  marginLeft: '5px',
+  textTransform: 'uppercase'
+};

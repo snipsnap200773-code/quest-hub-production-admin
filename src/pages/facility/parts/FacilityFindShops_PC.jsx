@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { 
   Search, MapPin, User, ExternalLink, Send, 
-  CheckCircle2, Filter, Phone, Store, Globe 
+  CheckCircle2, Filter, Phone, Store, Globe,
+  AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 // 🚀 カテゴリの司令塔を読み込み
@@ -38,7 +39,7 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
 
     const { data: conns } = await supabase
       .from('shop_facility_connections')
-      .select('shop_id, status')
+      .select('shop_id, status, created_by_type') // 👈 これを追加
       .eq('facility_user_id', facilityId);
 
     setShops(profiles || []);
@@ -128,12 +129,18 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
       <div style={gridStyle(isMobile)}>
         {filteredShops.length > 0 ? filteredShops.map(shop => {
           const conn = myConnections.find(c => c.shop_id === shop.id);
-          const isPending = conn?.status === 'pending';
           const isActive = conn?.status === 'active';
+          
+          // 🚀 判定を細かく分けます
+          const isPendingFromMe = conn?.status === 'pending' && conn?.created_by_type === 'facility';
+          const isPendingFromThem = conn?.status === 'pending' && conn?.created_by_type === 'shop';
+          
           const themeColor = shop.theme_color || '#c5a059';
 
           return (
             <motion.div key={shop.id} whileHover={{ y: -5 }} style={shopCardStyle(themeColor)}>
+              
+              {/* 💡 前回消えてしまっていたヘッダー（店舗名など）を復活！ */}
               <div style={cardHeaderStyle}>
                 <div style={iconBadgeStyle(themeColor)}><Store size={22} color="#fff" /></div>
                 <div style={{ flex: 1, marginLeft: '15px' }}>
@@ -198,8 +205,17 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
               <div style={cardFooterStyle}>
                 {isActive ? (
                   <div style={statusBadgeStyle('#10b981')}><CheckCircle2 size={18} /> 提携済み</div>
-                ) : isPending ? (
+                ) : isPendingFromMe ? (
+                  // 💡 自分が送った場合
                   <div style={statusBadgeStyle('#f59e0b')}>申請中・返信待ち</div>
+                ) : isPendingFromThem ? (
+                  // 💡 相手（業者）から届いている場合
+                  <div style={{ ...statusBadgeStyle('#4f46e5'), background: '#f5f3ff', display: 'flex', flexDirection: 'column' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <AlertCircle size={18} /> 提携リクエストが届いています
+                    </div>
+                    <span style={{ fontSize: '0.65rem', marginTop: '4px', opacity: 0.8 }}>※「受付・通知設定」メニューから承認できます</span>
+                  </div>
                 ) : (
                   <button onClick={() => handleRequest(shop.id)} style={requestBtnStyle(themeColor)}>
                     提携リクエストを送る <Send size={16} />

@@ -20,45 +20,81 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   useEffect(() => { fetchSummary(); }, [facilityId]);
 
   const fetchSummary = async () => {
-    const targetDate = sharedDate || new Date(); 
-    const startOfMonth = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-01`;
-    const endOfMonth = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}-${new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0).getDate()}`;
-    // 1. 基本情報の取得
-    const { data: draftData } = await supabase.from('visit_list_drafts').select('*, members(*)').eq('facility_user_id', facilityId);
-    const { data: connData } = await supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').single();
-    const { data: facData } = await supabase.from('facility_users').select('facility_name, email, furigana').eq('id', facilityId).single();
-    
-    if (facData) {
-      setFacilityName(facData.facility_name || '');
-      setFacilityEmail(facData.email || '');
-      // 🚀 🆕 Stateにセット
-      setFacilityFurigana(facData.furigana || '');
+    setLoading(true); // 読み込み開始
+
+    // --- ① 日付計算の安全装置 ---
+    const now = new Date();
+    // sharedDate が正しくない場合は「今日」を基準にする
+    const targetDate = (sharedDate && !isNaN(new Date(sharedDate).getTime())) 
+      ? new Date(sharedDate) 
+      : now;
+
+    const year = targetDate.getFullYear();
+    const month = String(targetDate.getMonth() + 1).padStart(2, '0');
+    const lastDay = new Date(year, targetDate.getMonth() + 1, 0).getDate();
+
+    const startOfMonth = `${year}-${month}-01`;
+    const endOfMonth = `${year}-${month}-${String(lastDay).padStart(2, '0')}`;
+
+    console.log("🔍 取得対象月:", startOfMonth, "〜", endOfMonth);
+
+    try {
+      // 1. 基本情報の取得（ドラフト）
+      const { data: draftData } = await supabase
+        .from('visit_list_drafts')
+        .select('*, members(*)')
+        .eq('facility_user_id', facilityId);
+
+      // 2. 提携情報の取得（single を maybeSingle に変更して 406 エラーを回避）
+      const { data: connData } = await supabase
+        .from('shop_facility_connections')
+        .select('shop_id, regular_rules, profiles(*)')
+        .eq('facility_user_id', facilityId)
+        .eq('status', 'active')
+        .maybeSingle(); // 👈 ここが重要！
+
+      // 3. 施設自身の情報を取得
+      const { data: facData } = await supabase
+        .from('facility_users')
+        .select('facility_name, email, furigana')
+        .eq('id', facilityId)
+        .maybeSingle();
+
+      if (facData) {
+        setFacilityName(facData.facility_name || '');
+        setFacilityEmail(facData.email || '');
+        setFacilityFurigana(facData.furigana || '');
+      }
+
+      // 4. 三土手さんが提示した「既存予約」の取得部分（日付変数を安全にして実行）
+      const { data: visitDatesRes } = await supabase
+        .from('visit_requests')
+        .select('scheduled_date, status, start_time')
+        .eq('facility_user_id', facilityId)
+        .gte('scheduled_date', startOfMonth)
+        .lte('scheduled_date', endOfMonth)
+        .neq('status', 'canceled');
+
+      // --- 各Stateへの反映 ---
+      setDrafts(draftData || []);
+      setShopInfo(connData?.profiles || null);
+      setRegularRules(connData?.regular_rules || []);
+      setConfirmedDates(visitDatesRes || []);
+
+      // 5. 確保済み日程の取得（手動キープ ＆ 除外日）
+      const [keepRes, exclRes] = await Promise.all([
+        supabase.from('keep_dates').select('date, start_time').eq('facility_user_id', facilityId),
+        supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId)
+      ]);
+
+      setManualKeeps(keepRes.data || []);
+      setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
+
+    } catch (err) {
+      console.error("🔥 fetchSummary で致命的なエラー:", err.message);
+    } finally {
+      setLoading(false);
     }
-
-    // 🚀 🆕 【ここを追加！】今月の既存予約（完了分も含む）を取得
-    const { data: visitDatesRes } = await supabase
-      .from('visit_requests')
-      .select('scheduled_date, status, start_time')
-      .eq('facility_user_id', facilityId)
-      .gte('scheduled_date', startOfMonth)
-      .lte('scheduled_date', endOfMonth)
-      .neq('status', 'canceled');
-
-    setDrafts(draftData || []);
-    setShopInfo(connData?.profiles || null);
-    setRegularRules(connData?.regular_rules || []);
-    setFacilityName(facData?.facility_name || '');
-    setFacilityEmail(facData?.email || '');
-    setConfirmedDates(visitDatesRes || []);
-
-    // 2. 確保済み日程の取得
-    const [keepRes, exclRes] = await Promise.all([
-      supabase.from('keep_dates').select('date, start_time').eq('facility_user_id', facilityId),
-      supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId)
-    ]);
-
-    setManualKeeps(keepRes.data || []);
-    setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
   };
 
   // 定期キープの判定ロジック

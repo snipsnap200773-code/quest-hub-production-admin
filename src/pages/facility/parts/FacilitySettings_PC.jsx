@@ -103,7 +103,11 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
   if (loading) return <div style={{textAlign: 'center', padding: '50px'}}>読み込み中...</div>;
 
   // 申請中リストの整理
-  const pendingRequests = connectedShops.filter(con => con.status === 'pending');
+  // 💡 作成者が 'shop' のものだけを「届いています」パネルに出す
+const pendingRequests = connectedShops.filter(con => con.status === 'pending' && con.created_by_type === 'shop');
+
+// 💡 逆に自分が送った「申請中」のものも把握しておくと、下のリスト等で活用できます
+const outgoingRequests = connectedShops.filter(con => con.status === 'pending' && con.created_by_type === 'facility');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', width: '100%' }}>

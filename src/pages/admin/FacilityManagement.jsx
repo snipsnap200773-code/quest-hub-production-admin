@@ -230,29 +230,28 @@ const handleSave = async (e) => {
     const { error } = await supabase.from('shop_facility_connections').update({ status: 'active' }).eq('id', connectionId);
 
     if (!error) {
-      // 🆕 祝福メール送信
       try {
         const f = facilities.find(item => item.connection_id === connectionId);
-        // 店舗自身の情報を取得（profilesテーブルから直接取るか、Stateにあればそれを使う）
-        const { data: myShop } = await supabase.from('profiles').select('business_name, email_contact, email').eq('id', shopId).single();
+        // 1. 店舗の情報を最新の状態で取得
+        const { data: myShop } = await supabase.from('profiles').select('id, business_name, email_contact, email').eq('id', shopId).single();
 
         if (f && myShop) {
-          await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` },
-            body: JSON.stringify({
+          // 🚀 修正：ハードコードされたURLを廃止し、標準の invoke を使用
+          const { error: funcError } = await supabase.functions.invoke('resend', {
+            body: {
               type: 'partnership_approved',
               shopName: myShop.business_name,
               facilityName: f.facility_name,
               shopEmail: myShop.email_contact || myShop.email,
               facilityEmail: f.email,
-              shopId: shopId,
+              shopId: myShop.id,
               facilityId: f.id
-            })
+            }
           });
+          if (funcError) console.error("通知関数の呼び出しに失敗:", funcError);
         }
       } catch (mailErr) {
-        console.error("祝福メール送信エラー:", mailErr);
+        console.error("メール送信処理中にエラー:", mailErr);
       }
 
       alert('提携を承認しました！お互いに祝福メールを送信しました🎉');

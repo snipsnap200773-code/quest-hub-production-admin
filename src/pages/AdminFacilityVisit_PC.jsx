@@ -276,7 +276,7 @@ const AdminFacilityVisit_PC = () => {
     const { data, error } = await supabase
       .from('visit_request_residents')
       .insert([newResident])
-      .select('*, members(name, room, floor)')
+      .select('*, members(name, kana, room, floor)') 
       .single();
 
     if (!error && data) {
