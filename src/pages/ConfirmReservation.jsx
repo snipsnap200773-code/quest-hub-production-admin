@@ -613,8 +613,12 @@ if (isAdminEntry) {
   // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
   // 🆕 state に「fromReserve: true」を追加して、カレンダー側にスクロール禁止を伝えます
   navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
-    state: { newlyAdded: true, fromReserve: true } 
-  });
+  state: { 
+    newlyAdded: true, 
+    fromReserve: true, 
+    targetTime: adminTime || time // 👈 予約した時間をバトンとして渡す
+  } 
+});
 } else {
   // 🚀 一般ユーザーは達成感を味わってもらうために「完了ページ」へ
   navigate('/reserved-success', { 

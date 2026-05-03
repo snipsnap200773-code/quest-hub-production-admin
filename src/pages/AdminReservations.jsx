@@ -289,12 +289,26 @@ const [editFields, setEditFields] = useState({
 
   // 🆕 ここに差し込み！（予約画面から戻った時の5秒ロック）
   useEffect(() => {
-    if (location.state?.fromReserve) {
-      setIsScrollLocked(true);
-      const timer = setTimeout(() => {
-        setIsScrollLocked(false);
-      }, 5000);
-      return () => clearTimeout(timer);
+    const state = location.state;
+    if (state?.fromReserve) {
+      // 1. 成功メッセージを表示
+      showMsg('予約を正常に受け付けました！✨');
+
+      // 2. 予約した時間があれば、そこまでスクロール
+      if (state?.targetTime) {
+        setTimeout(() => {
+          const element = document.getElementById(`time-row-${state.targetTime}`);
+          if (element) {
+            element.scrollIntoView({ 
+              behavior: 'smooth', // 滑らかに動かす
+              block: 'center'     // 画面の真ん中に持ってくる
+            });
+          }
+        }, 800); // データの読み込み完了を少し待ってから実行
+      }
+
+      // 履歴に残らないように state をクリア
+      window.history.replaceState({}, document.title);
     }
   }, [location.state]);
 
@@ -1513,7 +1527,7 @@ return (
         </thead>
         <tbody>
           {timeSlots.map(time => (
-            <tr key={time} style={{ height: '60px' }}>
+            <tr key={time} id={`time-row-${time}`} style={{ height: '60px' }}>
               {/* 左端の時間軸 */}
               <td style={{ borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', textAlign: 'center', background: '#f8fafc' }}>
                 <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{time}</span>
