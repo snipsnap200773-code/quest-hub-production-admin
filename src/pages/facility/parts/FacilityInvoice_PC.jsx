@@ -73,8 +73,10 @@ const FacilityInvoice_PC = ({ facilityId, sharedDate, setSharedDate }) => {
         price += (Number(opt?.additional_price) || 0);
       }
       
-      // --- 🚀 🆕 日付の特定：紐付いている訪問予定日(scheduled_date)を正解にします ---
-      const actualDate = r.visit_requests.scheduled_date;
+      // --- 🚀 🆕 日付の特定：実際に「完了した日(completed_at)」を正解にします ---
+      // completed_at には "2026-04-23T12:00:00" のように時間がくっついているので、'T' の前（日付）だけを切り出します
+      // もし何らかの理由で完了日がない場合は、予備として予定日を使います
+      const actualDate = r.completed_at ? r.completed_at.split('T')[0] : r.visit_requests.scheduled_date;
 
       grouped[shopId].totalAmount += price;
       grouped[shopId].residents.push({
@@ -187,52 +189,97 @@ const FacilityInvoice_PC = ({ facilityId, sharedDate, setSharedDate }) => {
         )}
       </div>
 
-      {/* 🚀 印刷用スタイル */}
+      {/* ==========================================
+          🚀 🆕 印刷用の中身セクション（Hydrationエラー対策版）
+          ========================================== */}
+      <div id="print-area" className="print-only">
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead><tr><td style={{ height: '12mm' }}></td></tr></thead>
+          <tbody>
+            <tr>
+              <td>
+                <div style={{ padding: '0 15mm' }}>
+                  <h1 style={{ textAlign: 'center', margin: '0 0 5px 0', fontSize: '22pt' }}>利用明細書</h1>
+                  <p style={{ textAlign: 'center', fontSize: '13pt', fontWeight: 'bold', margin: '0 0 10px 0' }}>({year}年{month + 1}月分)</p>
+                  <p style={{ textAlign: 'right', fontSize: '10pt', margin: '0 0 15px 0' }}>発行日: {new Date().toLocaleDateString('ja-JP')}</p>
+                  
+                  {filteredData.map(g => (
+                    <div key={g.shop.id} style={{ marginBottom: '30px' }}>
+                      <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '3px', fontSize: '15pt', marginBottom: '10px' }}>■ {g.shop.business_name}</h2>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: '#eee' }}>
+                            <th style={{ border: '1px solid #000', padding: '6px', fontSize: '10pt' }}>実施日</th>
+                            <th style={{ border: '1px solid #000', padding: '6px', fontSize: '10pt' }}>お名前</th>
+                            <th style={{ border: '1px solid #000', padding: '6px', fontSize: '10pt' }}>部屋</th>
+                            <th style={{ border: '1px solid #000', padding: '6px', fontSize: '10pt' }}>メニュー</th>
+                            <th style={{ border: '1px solid #000', padding: '6px', fontSize: '10pt' }}>金額</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {g.residents.map((r, i) => (
+                            <tr key={i}>
+                              <td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontSize: '9.5pt' }}>{r.date.replace(/-/g, '/')}</td>
+                              <td style={{ border: '1px solid #000', padding: '6px', fontSize: '9.5pt' }}>{r.name} 様</td>
+                              <td style={{ border: '1px solid #000', padding: '6px', textAlign: 'center', fontSize: '9.5pt' }}>{r.room}</td>
+                              <td style={{ border: '1px solid #000', padding: '6px', fontSize: '9.5pt' }}>{r.menu}</td>
+                              <td style={{ border: '1px solid #000', padding: '6px', textAlign: 'right', fontSize: '9.5pt', fontWeight: 'bold' }}>¥{r.price.toLocaleString()}</td>
+                            </tr>
+                          ))}
+                          <tr style={{ background: '#f9f9f9' }}>
+                            <td colSpan="4" style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', fontSize: '10pt' }}>店舗合計</td>
+                            <td style={{ border: '1px solid #000', padding: '8px', textAlign: 'right', fontWeight: 'bold', fontSize: '11pt' }}>¥{g.totalAmount.toLocaleString()}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  ))}
+                  <div style={{ textAlign: 'right', fontSize: '18pt', fontWeight: '900', marginTop: '20px', borderTop: '3px double #000', paddingTop: '10px' }}>総支払予定額： ¥{grandTotal.toLocaleString()} (税込)</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+          <tfoot><tr><td style={{ height: '12mm' }}></td></tr></tfoot>
+        </table>
+      </div>
+
+      {/* 🚀 🆕 印刷用CSS（URLを消して、余白を確保する） */}
       <style>{`
-        @media screen { .print-only { display: none; } }
+        @media screen {
+          .print-only { display: none !important; }
+        }
         @media print {
-          body * { visibility: hidden; }
-          #print-area, #print-area * { visibility: visible; }
-          #print-area { position: absolute; left: 0; top: 0; width: 100%; color: #000; background: #fff; }
-          .no-print { display: none !important; }
-          table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
-          th, td { border: 1px solid #ddd; padding: 8px; text-align: left; font-size: 10pt; }
-          th { background: #f5f5f5 !important; }
+          /* 1. ブラウザのURL表示を消す */
+          @page { margin: 0; }
+
+          /* 2. 画面全体を一旦「不可視」にする（場所は残す） */
+          body {
+            visibility: hidden;
+            background: #fff !important;
+          }
+
+          /* 3. 印刷エリアだけを「可視」にする */
+          #print-area, #print-area * {
+            visibility: visible;
+          }
+
+          /* 4. 印刷エリアを紙の左上に強制移動（これで白紙を防止） */
+          #print-area {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 100%;
+            display: block !important;
+          }
+
+          /* 5. 余計なスペースを作っている元の要素を完全に消す */
+          header, .no-print, button, input {
+            display: none !important;
+          }
+
+          .print-only { font-family: "MS Mincho", "Hiragino Mincho Pro", serif; }
         }
       `}</style>
-
-      {/* 🚀 印刷用の中身 */}
-      <div id="print-area" className="print-only">
-        <h1 style={{ textAlign: 'center' }}>利用明細書 ({year}年{month+1}月分)</h1>
-        <p style={{ textAlign: 'right' }}>発行日: {new Date().toLocaleDateString('ja-JP')}</p>
-        
-        {filteredData.map(g => (
-          <div key={g.shop.id} style={{ marginBottom: '40px' }}>
-            <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '5px' }}>■ {g.shop.business_name}</h2>
-            <table>
-              <thead>
-                <tr>
-                  <th>実施日</th><th>お名前</th><th>部屋</th><th>メニュー</th><th>金額</th>
-                </tr>
-              </thead>
-              <tbody>
-                {g.residents.map((r, i) => (
-                  <tr key={i}>
-                    <td>{r.date}</td><td>{r.name}様</td><td>{r.room}</td><td>{r.menu}</td><td>¥{r.price.toLocaleString()}</td>
-                  </tr>
-                ))}
-                <tr>
-                  <td colSpan="4" style={{ textAlign: 'right', fontWeight: 'bold' }}>合計金額</td>
-                  <td style={{ fontWeight: 'bold' }}>¥{g.totalAmount.toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ))}
-        <div style={{ textAlign: 'right', fontSize: '1.4rem', fontWeight: 'bold', marginTop: '30px' }}>
-          総支払予定額： ¥{grandTotal.toLocaleString()} (税込)
-        </div>
-      </div>
     </div>
   );
 };

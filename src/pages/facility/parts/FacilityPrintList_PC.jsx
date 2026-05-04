@@ -126,17 +126,52 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
       </header>
 
       <div id="print-area">
-        {renderPrintPreview(floorGroups, selectedShop, services, lastVisits, printLayout)}
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          {/* 各ページ上部の透明な余白 */}
+          <thead><tr><td style={{ height: '15mm' }}></td></tr></thead>
+          <tbody>
+            <tr>
+              <td>
+                <div style={{ padding: '0 10mm' }}>
+                  {renderPrintPreview(floorGroups, selectedShop, services, lastVisits, printLayout)}
+                </div>
+              </td>
+            </tr>
+          </tbody>
+          {/* 各ページ下部の透明な余白 */}
+          <tfoot><tr><td style={{ height: '15mm' }}></td></tr></tfoot>
+        </table>
       </div>
 
       <style>{`
+        @media screen {
+          .print-only { display: none !important; }
+        }
         @media print {
+          /* 1. URL消去設定 */
+          @page { size: ${printLayout}; margin: 0; }
+
           body * { visibility: hidden; }
-          #print-area, #print-area * { visibility: visible; display: block !important; }
-          #print-area { position: absolute; left: 0; top: 0; width: 100%; }
-          .no-print { display: none !important; }
-          @page { size: ${printLayout}; margin: 10mm; }
+          #print-area, #print-area * { visibility: visible; }
+          
+          #print-area { 
+            position: absolute; 
+            left: 0; 
+            top: 0; 
+            width: 100%; 
+            display: block !important; 
+          }
+
+          /* 🚀 🆕 2. プレビュー用の「枠線」と「影」を印刷時だけ消す */
+          /* pageWrapper というスタイルに付いている border と boxShadow を無効化します */
+          #print-area div { 
+            border: none !important; 
+            box-shadow: none !important; 
+          }
+
+          .no-print, button, header { display: none !important; }
           tr { page-break-inside: avoid; }
+          .print-only { font-family: "MS Gothic", "Hiragino Kaku Gothic ProN", sans-serif; }
         }
       `}</style>
     </div>
