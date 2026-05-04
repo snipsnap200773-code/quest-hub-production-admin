@@ -50,24 +50,77 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     if (!selectedShop) return;
     setLoading(true);
     const shopId = selectedShop.id;
-    const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
-    const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
-    const [visitData, keeps, conns, exclData, blocksRes] = await Promise.all([
-      supabase.from('visit_requests').select('scheduled_date, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
+
+    const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes] = await Promise.all([
+      // ① この施設の予約
+      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
+      // ② 全キープ日程
       supabase.from('keep_dates').select('*').eq('shop_id', shopId),
+      // ③ 提携ルール
       supabase.from('shop_facility_connections').select('facility_user_id, regular_rules').eq('shop_id', shopId),
+      // ④ 定期除外
       supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId).eq('shop_id', shopId),
-      // 🚀 🆕 業者側の「is_block」がついたデータを取得
-      supabase.from('reservations').select('start_time').eq('shop_id', shopId).eq('is_block', true)
+      // ⑤ 他施設の予約（他施設名義の visit_requests）
+      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled'),
+      // ⑥ 個人予約（開始・終了時間を取得）
+      supabase.from('reservations').select('start_time, end_time').eq('shop_id', shopId).neq('status', 'canceled'),
+      // ⑦ プライベート予定（開始・終了時間を取得）
+      supabase.from('private_tasks').select('start_time, end_time').eq('shop_id', shopId)
     ]);
+
+    setConfirmedVisits(thisFacRes.data || []);
     setKeepDates(keeps.data || []);
-    setConfirmedVisits(visitData.data || []);
     setRegularRules(conns.data || []);
     setExclusions(exclData.data?.map(e => e.excluded_date) || []);
-    setShopBlocks(blocksRes.data || []); // 🚀 🆕 セット！
+
+    // 🚀 「自分たち以外」の全予定を「詳細な時間付きリスト」にまとめる
+    // ※ 他施設訪問（visit_requests）は丸1日潰れる前提なので時間なし（日付だけ）で扱う
+    const busyEvents = [
+      ...(otherFacRes.data || []).map(v => ({ date: v.scheduled_date, isAllDay: true })),
+      ...(personalRes.data || []).filter(r => r.start_time).map(r => ({
+        date: r.start_time.split('T')[0].split(' ')[0],
+        start: new Date(r.start_time).getTime(),
+        end: r.end_time ? new Date(r.end_time).getTime() : new Date(new Date(r.start_time).getTime() + 60 * 60000).getTime() // 終了未定なら1時間後と仮定
+      })),
+      ...(privateTasksRes.data || []).filter(p => p.start_time).map(p => ({
+        date: p.start_time.split('T')[0].split(' ')[0],
+        start: new Date(p.start_time).getTime(),
+        end: p.end_time ? new Date(p.end_time).getTime() : new Date(new Date(p.start_time).getTime() + 60 * 60000).getTime()
+      }))
+    ];
+    setShopBlocks(busyEvents); 
+
     setLoading(false);
   };
 
+  // --- 2. 判定補助：営業時間に重なっているかチェックする関数 ---
+  const isOverlappingBusinessHours = (dateStr, events) => {
+    // 該当日の予定だけを絞り込む
+    const dayEvents = events.filter(e => e.date === dateStr);
+    if (dayEvents.length === 0) return false;
+
+    // 1日中潰れる予定（他施設訪問など）があれば問答無用でNG
+    if (dayEvents.some(e => e.isAllDay)) return true;
+
+    // 🚀 【修正】その日の営業時間を取得（open / close に対応）
+    const bHours = selectedShop?.business_hours || {};
+    const d = new Date(dateStr);
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const dayKey = dayNames[d.getDay()];
+    
+    // 🚀 データベースのキー（open, close）に合わせて読み取る（なければ 09:00-18:00）
+    const startStr = bHours[dayKey]?.open || '09:00';
+    const endStr = bHours[dayKey]?.close || '18:00';
+
+    // その日の営業開始・終了のUNIXタイムスタンプを生成
+    const bizStart = new Date(`${dateStr}T${startStr}:00`).getTime();
+    const bizEnd = new Date(`${dateStr}T${endStr}:00`).getTime();
+
+    // どれか一つでも営業時間と重なっていれば true（NG）を返す
+    return dayEvents.some(e => e.start < bizEnd && e.end > bizStart);
+  };
+
+  // --- 3. 定期キープの判定ロジック（変更なし） ---
   const checkIsRegularKeep = (date) => {
     const day = date.getDay();
     const dom = date.getDate();
@@ -89,43 +142,39 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     return result;
   };
 
+  // --- 4. カレンダーの表示状態決定ロジック ---
   const getStatus = (dateStr) => {
     const d = new Date(dateStr);
     const regKeep = checkIsRegularKeep(d);
     if (dateStr < todayStr) return 'past';
 
-    // 🚀 🆕 1. 長期休暇（夏休み・正月休みなど）の判定
     const specialHolidays = selectedShop?.special_holidays || [];
-    const isSpecialHoliday = specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end);
-    if (isSpecialHoliday) return 'ng';
-
-    // 🚀 🆕 2. 個別ブロック（臨時休業など）の判定
-    const isShopBlocked = shopBlocks.some(b => b.start_time.startsWith(dateStr));
-    if (isShopBlocked) return 'ng';
+    if (specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end)) return 'ng';
 
     const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = dayNames[d.getDay()];
-    // 第n週の計算（L1, L2対応のためカレンダーロジックと合わせる）
     const dom = d.getDate();
     const nthWeek = Math.ceil(dom / 7);
     const t7 = new Date(d); t7.setDate(dom + 7);
     const isL1 = t7.getMonth() !== d.getMonth();
     const t14 = new Date(d); t14.setDate(dom + 14);
     const isL2 = t14.getMonth() !== d.getMonth() && !isL1;
-
-    // 🚀 🆕 3. 定休日の判定（L1, L2もカバー）
     const holidays = selectedShop?.business_hours?.regular_holidays || {};
-    const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || 
-                             (isL1 && holidays[`L1-${dayKey}`]) || 
-                             (isL2 && holidays[`L2-${dayKey}`]);
-
+    const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || (isL1 && holidays[`L1-${dayKey}`]) || (isL2 && holidays[`L2-${dayKey}`]);
     if (isRegularHoliday) return 'ng';
 
     if (confirmedVisits.some(v => v.scheduled_date === dateStr)) return 'booked';
-    if (regKeep && !exclusions.includes(dateStr)) return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
+
+    // 🚀 【🆕 修正】取得した「時間付きの全予定（shopBlocks）」と「営業時間」が重なっているかチェック
+    if (isOverlappingBusinessHours(dateStr, shopBlocks)) return 'ng';
+
+    if (regKeep && !exclusions.includes(dateStr)) {
+      return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
+    }
     const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
     if (manualKeep) return { type: 'keeping', time: manualKeep.start_time || '09:00' };
     if (keepDates.some(k => k.date === dateStr)) return 'other-keep';
+
     return 'available';
   };
 
