@@ -113,7 +113,7 @@ const FacilityManagement = () => {
       // 🚀 🆕 売上台帳と顧客マスタも一緒に取得しておく（請求書計算用）
       const [sRes, cRes] = await Promise.all([
         supabase.from('sales').select('*').eq('shop_id', shopId),
-        supabase.from('customers').select('id, name').eq('shop_id', shopId).eq('is_facility', true)
+        supabase.from('customers').select('id, name').eq('shop_id', shopId) 
       ]);
       setSalesRecords(sRes.data || []);
       setAllCustomers(cRes.data || []);
@@ -769,9 +769,13 @@ const handleSave = async (e) => {
 
                   <button 
     onClick={() => {
-      // 🚀 🆕 施設名から名簿側のIDを探してセットし、モーダルを開く
+      // 🚀 🆕 修正：名前だけでなく、施設の持つ様々なIDをすべて渡す（最強の紐付け用）
       const cust = allCustomers.find(c => c.name === f.facility_name);
-      setInvoiceTarget({ id: cust?.id, name: f.facility_name });
+      setInvoiceTarget({ 
+        id: cust?.id, // 顧客名簿のID
+        name: f.facility_name,
+        facility_user_id: f.id // 共通アカウント側のID
+      });
       setShowInvoiceModal(true);
     }} 
     style={{ ...linkBtnStyle, background: '#4f46e5', cursor: 'pointer', border: 'none' }}
@@ -931,13 +935,27 @@ const handleSave = async (e) => {
                 </div>
               </div>
 
-              {(() => {
-                const filteredSales = salesRecords.filter(s => {
-                  const d = new Date(s.sale_date);
-                  return s.customer_id === invoiceTarget.id && d.getFullYear() === invoiceYear && (d.getMonth() + 1) === invoiceMonth;
-                });
-                const total = filteredSales.reduce((sum, s) => sum + Number(s.total_amount), 0);
+{(() => {
+                // 🚀 🆕 最強の名寄せロジック：
+                // この施設名（例：マリアの丘）と一致するすべての顧客IDをリストアップ
+                const targetCustomerIds = allCustomers
+                  .filter(c => c.name === invoiceTarget.name)
+                  .map(c => c.id);
 
+                const filteredSales = salesRecords.filter(s => {
+                  if (!s.sale_date) return false;
+                  const d = new Date(s.sale_date);
+                  
+                  // ① 年月のチェック
+                  const isMatchMonth = d.getFullYear() === invoiceYear && (d.getMonth() + 1) === invoiceMonth;
+                  if (!isMatchMonth) return false;
+
+                  // ② 🚀 🆕 売上の customer_id が、リストアップしたIDのどれかに一致すれば採用
+                  return targetCustomerIds.includes(s.customer_id);
+                });
+
+                const total = filteredSales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
+                
                 return (
                   <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
                     <p style={{ color: '#64748b', fontWeight: 'bold', marginBottom: '10px' }}>{invoiceTarget.name} 様 / {invoiceYear}年{invoiceMonth}月分</p>
