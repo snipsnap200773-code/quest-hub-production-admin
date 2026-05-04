@@ -4,7 +4,7 @@ import { supabase } from '../supabaseClient';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Save, Clipboard, Calendar, FolderPlus, PlusCircle, Trash2, 
-  Tag, ChevronDown, RefreshCw, ChevronLeft, ChevronRight, Settings, Users, Percent, Plus, Minus, X, CheckCircle, User, FileText, History, ShoppingBag, Edit3, BarChart3,
+  Tag, ChevronDown, ChevronUp, RefreshCw, ChevronLeft, ChevronRight, Settings, Users, Percent, Plus, Minus, X, CheckCircle, User, FileText, History, ShoppingBag, Edit3, BarChart3,
   AlertCircle,
   Scissors,
   Search
@@ -99,6 +99,7 @@ function AdminManagement() {
   const [selectedMonthData, setSelectedMonthData] = useState(null);   // ポップアップで表示する月のデータ
   // --- 顧客情報（カルテ）パネル用State ---
   const [isCustomerInfoOpen, setIsCustomerInfoOpen] = useState(false);
+  const [isResidentsListExpanded, setIsResidentsListExpanded] = useState(false);
   const [showSearchModal, setShowSearchModal] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [editName, setEditName] = useState('');
@@ -821,10 +822,16 @@ const sortedAllCustomers = useMemo(() => {
   const managedFacilityMembers = useMemo(() => {
     if (!selectedCustomer) return [];
     
-    // 1. この施設の全売上データを取得
-    const facilitySales = salesRecords.filter(s => s.customer_id === selectedCustomer.id);
+    // 💡 1. 【最強名寄せ】今開いている施設と同じ名前を持つ「すべての顧客ID」をリストアップします
+    const targetName = (selectedCustomer.name || "").trim();
+    const relatedCustomerIds = allCustomers
+      .filter(c => (c.name || "").trim() === targetName)
+      .map(c => c.id);
     
-    // 2. 名寄せMapを作成（最新の日付を保持）
+    // 💡 2. それら「すべてのID」のいずれかに紐付いている売上データを集めます
+    const facilitySales = salesRecords.filter(s => relatedCustomerIds.includes(s.customer_id));
+    
+    // 3. 名寄せMapを作成（最新の日付を保持）
     const memberMap = {};
     facilitySales.forEach(s => {
       const date = s.sale_date?.split('T')[0] || "";
@@ -835,13 +842,11 @@ const sortedAllCustomers = useMemo(() => {
       });
     });
 
-    // 3. 配列に変換し、名簿(allMembers)から「ひらがな」を合流させる
+    // 4. 配列に変換し、名簿(allMembers)から「ひらがな」を合流させる
     const list = Object.entries(memberMap).map(([name, val]) => {
       const memberInfo = allMembers.find(m => m.name === name); 
       return {
         name: name,
-        // 🚀 🆕 追加：DBのフラグを見て「現役かどうか」を判定
-        // DBに値がない（null）場合は true とみなします
         isActive: memberInfo ? memberInfo.is_active !== false : true,
         kana: (memberInfo?.kana || memberInfo?.furigana || name)
           .replace(/[\u30a1-\u30f6]/g, s => String.fromCharCode(s.charCodeAt(0) - 0x60)), 
@@ -849,15 +854,15 @@ const sortedAllCustomers = useMemo(() => {
       };
     });
 
-    // 4. 指定されたモードで並び替え
+    // 5. 指定されたモードで並び替え
     return list.sort((a, b) => {
       if (memberSortMode === 'date') {
-        return b.lastVisit.localeCompare(a.lastVisit); // 日付順（新しい順）
+        return b.lastVisit.localeCompare(a.lastVisit);
       } else {
-        return a.kana.localeCompare(b.kana, 'ja'); // あいうえお順
+        return a.kana.localeCompare(b.kana, 'ja');
       }
     });
-  }, [selectedCustomer, salesRecords, memberSortMode, allMembers]);
+  }, [selectedCustomer, salesRecords, memberSortMode, allMembers, allCustomers]); // 👈 allCustomersを監視対象に追加
   // 🏢 ここまで ======================================================
   const groupedWholeAdjustments = useMemo(() => {
     const sorted = sortItems(adminAdjustments.filter(adj => adj.service_id === null));
@@ -900,6 +905,7 @@ const sortedAllCustomers = useMemo(() => {
     setPastVisits([]); 
     setIsCustomerInfoOpen(true); 
     setIsCheckoutOpen(false);
+    setIsResidentsListExpanded(false);
 
     try {
       const searchName = (res.customer_name || '').replace(/　/g, ' ').trim();
@@ -2068,59 +2074,83 @@ return (
               {/* 🆕 🚀 ここから施設専用の利用者リストを表示！！ ================== */}
               {managedFacilityMembers.length > 0 && (
                 <div style={{ marginBottom: '30px', background: '#f0f7ff', padding: '20px', borderRadius: '20px', border: '2px solid #4f46e5' }}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <SectionTitle icon={<Users size={18} />} title="施設のご利用者・入居者様" color="#4f46e5" />
-                    
-                    {/* 🚀 🆕 並び替えスイッチ */}
-                    <div style={{ display: 'flex', gap: '4px', background: '#fff', padding: '3px', borderRadius: '8px', border: '1px solid #e0e7ff' }}>
-                      <button onClick={() => setMemberSortMode('name')} style={miniSortBtn(memberSortMode === 'name')}>あいうえお</button>
-                      <button onClick={() => setMemberSortMode('date')} style={miniSortBtn(memberSortMode === 'date')}>利用日順</button>
+                  {/* ヘッダー部分：ここをタップして開閉 */}
+                  <div 
+                    onClick={() => setIsResidentsListExpanded(!isResidentsListExpanded)}
+                    style={{ 
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', 
+                      cursor: 'pointer', marginBottom: isResidentsListExpanded ? '15px' : '0' 
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4f46e5', fontWeight: 'bold' }}>
+                      <Users size={18} />
+                      <span style={{ fontSize: '1rem' }}>施設のご利用者・入居者様</span>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '0.8rem', color: '#4f46e5', fontWeight: 'bold', background: '#fff', padding: '2px 8px', borderRadius: '6px' }}>
+                        {managedFacilityMembers.length} 名
+                      </span>
+                      {isResidentsListExpanded ? <ChevronUp size={20} color="#4f46e5" /> : <ChevronDown size={20} color="#4f46e5" />}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                    {(() => {
-                      let lastLabel = "";
-                      return managedFacilityMembers.map((m) => {
-                        // 🚀 🆕 見出し札の文字を決定
-                        let currentLabel = "";
-                        if (memberSortMode === 'date') {
-                          currentLabel = m.lastVisit ? m.lastVisit.substring(0, 7).replace('-', '/') : "未利用";
-                        } else {
-                          const first = (m.kana || "").charAt(0);
-                          currentLabel = first.match(/^[ぁ-ん]$/) ? first : "他";
-                        }
+                  {/* 🚀 リスト本体（開いている時だけ表示） */}
+                  <AnimatePresence>
+                    {isResidentsListExpanded && (
+                      <motion.div 
+                        initial={{ height: 0, opacity: 0 }} 
+                        animate={{ height: 'auto', opacity: 1 }} 
+                        exit={{ height: 0, opacity: 0 }}
+                        style={{ overflow: 'hidden' }}
+                      >
+                        {/* 並び替えスイッチ */}
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '15px' }}>
+                          <div style={{ display: 'flex', gap: '4px', background: '#fff', padding: '3px', borderRadius: '8px', border: '1px solid #e0e7ff' }}>
+                            <button onClick={(e) => { e.stopPropagation(); setMemberSortMode('name'); }} style={miniSortBtn(memberSortMode === 'name')}>あいうえお</button>
+                            <button onClick={(e) => { e.stopPropagation(); setMemberSortMode('date'); }} style={miniSortBtn(memberSortMode === 'date')}>利用日順</button>
+                          </div>
+                        </div>
 
-                        const isNewGroup = currentLabel !== lastLabel;
-                        lastLabel = currentLabel;
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          {(() => {
+                            let lastLabel = "";
+                            return managedFacilityMembers.map((m) => {
+                              let currentLabel = "";
+                              if (memberSortMode === 'date') {
+                                currentLabel = m.lastVisit ? m.lastVisit.substring(0, 7).replace('-', '/') : "未利用";
+                              } else {
+                                const first = (m.kana || "").charAt(0);
+                                currentLabel = first.match(/^[ぁ-ん]$/) ? first : "他";
+                              }
+                              const isNewGroup = currentLabel !== lastLabel;
+                              lastLabel = currentLabel;
 
-                        return (
-                          <React.Fragment key={m.name}>
-                            {/* カテゴリが変わった瞬間にだけ「札」を出す */}
-                            {isNewGroup && <div style={memberGroupLabel}>{currentLabel}</div>}
-                            
-                            <div 
-                              onClick={() => openCustomerInfo({ customer_name: m.name })}
-                              style={{
-                                ...memberRowStyle,
-                                // 🚀 🆕 亡くなった（非アクティブな）方は背景を灰色にし、文字を薄くする
-                                background: m.isActive ? '#fff' : '#f1f5f9',
-                                opacity: m.isActive ? 1 : 0.6,
-                                border: m.isActive ? '1px solid #e0e7ff' : '1px dashed #cbd5e1'
-                              }}
-                            >
-                              <span style={{ fontWeight: 'bold' }}>
-                                {m.name} 様 {!m.isActive && '(退去/除籍済)'} 
-                              </span>
-                              <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                {m.lastVisit ? `最終: ${m.lastVisit.replace(/-/g, '/')}` : '記録なし'}
-                              </span>
-                            </div>
-                          </React.Fragment>
-                        );
-                      });
-                    })()}
-                  </div>
+                              return (
+                                <React.Fragment key={m.name}>
+                                  {isNewGroup && <div style={memberGroupLabel}>{currentLabel}</div>}
+                                  <div 
+                                    onClick={() => openCustomerInfo({ customer_name: m.name })}
+                                    style={{
+                                      ...memberRowStyle,
+                                      background: m.isActive ? '#fff' : '#f1f5f9',
+                                      opacity: m.isActive ? 1 : 0.6,
+                                      border: m.isActive ? '1px solid #e0e7ff' : '1px dashed #cbd5e1'
+                                    }}
+                                  >
+                                    <span style={{ fontWeight: 'bold' }}>{m.name} 様 {!m.isActive && '(退去/除籍済)'}</span>
+                                    <span style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
+                                      {m.lastVisit ? `最終: ${m.lastVisit.replace(/-/g, '/')}` : '記録なし'}
+                                    </span>
+                                  </div>
+                                </React.Fragment>
+                              );
+                            });
+                          })()}
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </div>
               )}
               {/* 🏢 ここまで ====================================================== */}
