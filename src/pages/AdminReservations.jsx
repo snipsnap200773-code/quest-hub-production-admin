@@ -1747,57 +1747,57 @@ return (
 
       {/* 🚀 🆕 ここに追加：イレギュラーキープのアラートバナー */}
       <div style={{ zIndex: 100 }}>
-      <AnimatePresence>
-        
-        {/* 🔴 1. 確定期限間近（3日以内）の緊急アラート */}
-        {urgentKeeps.length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-            style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '1.4rem' }}>🚨</span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#be123c' }}>名簿未確定のキープが {urgentKeeps.length} 件あります！</div>
-                <div style={{ fontSize: '0.75rem', color: '#e11d48', fontWeight: 'bold' }}>
-                  直近：{urgentKeeps[0].date.replace(/-/g, '/')} ({urgentKeeps[0].facility_users?.facility_name}) - 残り{urgentKeeps[0].diffDays}日
+        <AnimatePresence>
+          {/* 🔴 1. 確定期限間近（3日以内）の緊急アラート */}
+          {urgentKeeps.length > 0 && (
+            <motion.div
+              key="alert-urgent" // 👈 🚀 これが必要！
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.4rem' }}>🚨</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#be123c' }}>名簿未確定のキープが {urgentKeeps.length} 件あります！</div>
+                  <div style={{ fontSize: '0.75rem', color: '#e11d48', fontWeight: 'bold' }}>
+                    直近：{urgentKeeps[0].date.replace(/-/g, '/')} ({urgentKeeps[0].facility_users?.facility_name}) - 残り{urgentKeeps[0].diffDays}日
+                  </div>
                 </div>
               </div>
-            </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
-              {/* 🚀 ここを handleEmailNudge(urgentKeeps[0]) に！ */}
-              <button
-                onClick={() => handleEmailNudge(urgentKeeps[0])}
-                style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '8px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-              >
-                📧 つつく
-              </button>
-            </div>
-          </motion.div>
-        )}
-
-        {/* 🟠 2. 単発キープ（イレギュラー）の通知 */}
-        {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0 && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-            style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-              <span style={{ fontSize: '1.4rem' }}>⚠️</span>
-              <div style={{ textAlign: 'left' }}>
-                <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#c2410c' }}>未確定の「単発キープ」が {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length} 件あります</div>
-                <div style={{ fontSize: '0.75rem', color: '#ea580c', fontWeight: 'bold' }}>直近：{irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.date.replace(/-/g, '/')} ({irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.facility_users?.facility_name})</div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => handleEmailNudge(urgentKeeps[0])}
+                  style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '8px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                >
+                  📧 つつく
+                </button>
               </div>
-            </div>
-            <button
-              onClick={() => {/* ジャンプ処理 */}}
-              style={{ background: '#f97316', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+            </motion.div>
+          )}
+
+          {/* 🟠 2. 単発キープ（イレギュラー）の通知 */}
+          {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0 && (
+            <motion.div
+              key="alert-irregular" // 👈 🚀 これが必要！
+              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+              style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
             >
-              枠を確認 ➔
-            </button>
-          </motion.div>
-        )}
-      </AnimatePresence>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <span style={{ fontSize: '1.4rem' }}>⚠️</span>
+                <div style={{ textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#c2410c' }}>未確定の「単発キープ」が {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length} 件あります</div>
+                  <div style={{ fontSize: '0.75rem', color: '#ea580c', fontWeight: 'bold' }}>直近：{irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.date.replace(/-/g, '/')} ({irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.facility_users?.facility_name})</div>
+                </div>
+              </div>
+              <button
+                onClick={() => {/* ジャンプ処理 */}}
+                style={{ background: '#f97316', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+              >
+                枠を確認 ➔
+              </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
     </div>
 
 {/* ✅ 親要素：はみ出しを隠し、高さを固定 */}
@@ -2912,7 +2912,7 @@ return (
         const remaining = visitResidents.filter(r => r.status === 'pending').length;
         const done = total - remaining;
 
-        // 🚀 🆕 【ここを追加！】全予約の中から、この予約(selectedRes.id)を「親」に持つ予約があるか探す
+        // 🚀 🆕 【ここを追加！】この予約(selectedRes.id)を「親」に持つ予約が既に存在するか判定
         const isAlreadyExtended = visitRequests.some(v => v.parent_id === selectedRes?.id && v.status !== 'canceled');
 
         return (
@@ -2922,13 +2922,13 @@ return (
               残り <span style={{ color: '#c5a059', fontSize: '2rem' }}>{remaining}</span> 名 / 全体 {total} 名
             </div>
             
-            {/* 🚀 🆕 修正：引き継ぎボタンの表示判定を強化 */}
+            {/* 🚀 🆕 引き継ぎボタンエリア（条件付き表示） */}
             {remaining > 0 && (
               <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #f0e6d2' }}>
                 {isAlreadyExtended ? (
                   // ✅ 既に引き継ぎ済みの場合は、ボタンの代わりに安心感のあるメッセージを表示
-                  <div style={{ padding: '10px', background: '#f0fdf4', borderRadius: '10px', color: '#166534', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>
-                    ✅ 次回分への引き継ぎ予約を作成済みです
+                  <div style={{ padding: '10px', background: '#f0fdf4', borderRadius: '10px', color: '#166534', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid #bbf7d0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <CheckCircle size={16} /> 次回分への引き継ぎを作成済みです
                   </div>
                 ) : !showCarryoverPicker ? (
                   <button 
@@ -2938,94 +2938,58 @@ return (
                     ⏩ 終わらない分を別日に引き継ぐ
                   </button>
                 ) : (
-                  /* --- 以下、カレンダー表示（既存通り） --- */
+                  /* 📅 カレンダーピッカー表示モード */
                   <div style={{ background: '#fff', padding: '15px', borderRadius: '20px', border: '2px solid #c5a059', animation: 'fadeIn 0.3s', marginTop: '10px' }}>
-                                        {/* カレンダーの年月ナビ */}
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                       <button onClick={() => setCarryoverViewMonth(new Date(carryoverViewMonth.setMonth(carryoverViewMonth.getMonth() - 1)))} style={{ border: 'none', background: '#f1f5f9', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer' }}>◀</button>
                       <span style={{ fontWeight: '900', color: '#3d2b1f' }}>{carryoverViewMonth.getFullYear()}年 {carryoverViewMonth.getMonth() + 1}月</span>
                       <button onClick={() => setCarryoverViewMonth(new Date(carryoverViewMonth.setMonth(carryoverViewMonth.getMonth() + 1)))} style={{ border: 'none', background: '#f1f5f9', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer' }}>▶</button>
                     </div>
 
-                    {/* 📅 引き継ぎ先ミニカレンダー */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.7rem', textAlign: 'center' }}>
-                      {['日','月','火','水','木','金','土'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '5px' }}>{w}</div>)}
+                      {['日','月','火','水','木','金','土'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold' }}>{w}</div>)}
                       {(() => {
                         const year = carryoverViewMonth.getFullYear();
                         const month = carryoverViewMonth.getMonth();
                         const firstDay = new Date(year, month, 1).getDay();
                         const lastDate = new Date(year, month + 1, 0).getDate();
                         const daysArray = [...Array(firstDay).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
-                        
                         return daysArray.map((day, i) => {
                           if (!day) return <div key={i} />;
-                          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                          const status = getCarryoverDayStatus(dateStr);
-                          const isSelected = carryoverDate === dateStr;
-
-                          // 過去日以外はすべて選択可能
+                          const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                          const status = getCarryoverDayStatus(dStr);
+                          const isSelected = carryoverDate === dStr;
                           const isSelectable = status !== 'past';
-
                           return (
-                            <div 
-                              key={i} 
-                              onClick={() => isSelectable && setCarryoverDate(dateStr)}
-                              style={{ 
-                                padding: '8px 0', 
-                                cursor: isSelectable ? 'pointer' : 'default', 
-                                borderRadius: '8px',
-                                background: isSelected ? '#3d2b1f' : 'none',
-                                // 🎨 色分けのルール
-                                color: isSelected ? '#fff' : 
-                                       (status === 'available' ? '#c5a059' : 
-                                       (status === 'partial' ? '#f59e0b' : // 🚀 △はアンバー（琥珀色）
-                                       (status === 'ng' ? '#fca5a5' : '#e2e8f0'))),
-                                position: 'relative',
-                                opacity: status === 'past' ? 0.3 : 1
-                              }}
-                            >
+                            <div key={i} onClick={() => isSelectable && setCarryoverDate(dStr)} style={{ padding: '8px 0', cursor: isSelectable ? 'pointer' : 'default', borderRadius: '8px', background: isSelected ? '#3d2b1f' : 'none', color: isSelected ? '#fff' : (status === 'available' ? '#c5a059' : (status === 'partial' ? '#f59e0b' : (status === 'ng' ? '#fca5a5' : '#e2e8f0'))), opacity: status === 'past' ? 0.3 : 1 }}>
                               <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{day}</div>
-                              {/* 🚀 🆕 記号の出し分け：◎ / △ / ✕ */}
-                              <div style={{ fontSize: '0.6rem', fontWeight: '900' }}>
-                                {status === 'available' ? '◎' : 
-                                 (status === 'partial' ? '△' : 
-                                 (status === 'ng' ? '✕' : ''))}
-                              </div>
+                              <div style={{ fontSize: '0.6rem', fontWeight: '900' }}>{status === 'available' ? '◎' : (status === 'partial' ? '△' : (status === 'ng' ? '✕' : ''))}</div>
                             </div>
                           );
                         });
                       })()}
                     </div>
 
-                    {/* 🕒 時間選択（日付がタップされたら出現） */}
                     {carryoverDate && (
-                      <div style={{ marginTop: '20px', borderTop: '2px dashed #f1f5f9', paddingTop: '15px', textAlign: 'left', animation: 'fadeIn 0.3s' }}>
+                      <div style={{ marginTop: '20px', borderTop: '2px dashed #f1f5f9', paddingTop: '15px', textAlign: 'left' }}>
                         <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#c5a059', display: 'block', marginBottom: '10px' }}>🕛 何時から開始しますか？</label>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
                           {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => (
-                            <button 
-                              key={t} 
-                              onClick={() => setCarryoverTargetTime(t)}
-                              style={{ padding: '8px', borderRadius: '8px', border: carryoverTime === t ? '2px solid #3d2b1f' : '1px solid #e2e8f0', background: carryoverTime === t ? '#3d2b1f' : '#fff', color: carryoverTime === t ? '#fff' : '#3d2b1f', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
-                            >
-                              {t}
-                            </button>
+                            <button key={t} onClick={() => setCarryoverTargetTime(t)} style={{ padding: '8px', borderRadius: '8px', border: carryoverTime === t ? '2px solid #3d2b1f' : '1px solid #e2e8f0', background: carryoverTime === t ? '#3d2b1f' : '#fff', color: carryoverTime === t ? '#fff' : '#3d2b1f', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>{t}</button>
                           ))}
                         </div>
-                        <button 
-                          onClick={handleCarryoverVisit}
-                          style={{ width: '100%', marginTop: '15px', padding: '14px', background: '#c5a059', color: '#3d2b1f', border: 'none', borderRadius: '12px', fontWeight: '900', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(197,160,89,0.3)' }}
-                        >
-                          引き継ぎを確定する
-                        </button>
+                        <button onClick={handleCarryoverVisit} style={{ width: '100%', marginTop: '15px', padding: '14px', background: '#c5a059', color: '#3d2b1f', border: 'none', borderRadius: '12px', fontWeight: '900', fontSize: '1rem', cursor: 'pointer' }}>引き継ぎを確定する</button>
                       </div>
                     )}
-                    
-                    <button onClick={() => { setShowCarryoverPicker(false); setCarryoverDate(''); }} style={{ width: '100%', marginTop: '10px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>キャンセル</button>
+                    <button onClick={() => { setShowCarryoverPicker(false); setCarryoverDate(''); }} style={{ width: '100%', marginTop: '10px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer' }}>キャンセル</button>
                   </div>
                 )}
               </div>
             )}
+            
+            <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '10px', fontWeight: 'bold' }}>
+              （現在までに {done} 名が完了済み）
+            </div>
           </div>
         );
       })()}
