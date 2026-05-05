@@ -841,7 +841,6 @@ const { data: resData } = await supabase
 
   // 🚀 🆕 追加：Edge Function を呼び出して施設を「つつく（メール送信）」
   const handleEmailNudge = async (keep) => {
-    // 誤送信防止の確認
     if (!window.confirm(`${keep.facility_users?.facility_name} 様へ、名簿作成の催促メールを送信しますか？`)) return;
 
     try {
@@ -850,9 +849,12 @@ const { data: resData } = await supabase
       const { data, error } = await supabase.functions.invoke('resend', {
         body: {
           type: 'facility_nudge',
-          shopId: shopId,         // どの店舗からの依頼か
-          facilityId: keep.facility_user_id, // どの施設宛か
-          keepDate: keep.date     // どの日程か
+          shopId: shopId,
+          facilityId: keep.facility_user_id,
+          keepDate: keep.date,
+          // 🚀 🆕 ここを追加！
+          shopName: shop?.business_name, 
+          ownerName: shop?.owner_name
         }
       });
 
