@@ -272,6 +272,7 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
       } else {
         // 🚀 B: キープ（定期・手動）の解除ロジック（こちらは既存のままでOK）
         await supabase.from('regular_keep_exclusions').upsert([{ 
+        
           facility_user_id: id, shop_id: shopId, excluded_date: date 
         }]);
         await supabase.from('keep_dates').delete().match({ 
@@ -868,6 +869,59 @@ const { data: resData } = await supabase
     } catch (err) {
       console.error("Nudge Error:", err);
       alert("送信に失敗しました: " + err.message);
+    }
+  };
+
+  /* ============================================================
+     🌟🌟🌟 ここに追加します！ 🌟🌟🌟
+     ============================================================ */
+  // 🚀 🆕 追加：単発キープを強制削除する命令
+  const handleForceDeleteKeep = async (keep) => {
+    const facilityName = keep.facility_users?.facility_name || "施設";
+    if (!window.confirm(`【強制キャンセル】\n${facilityName} 様の ${keep.date.replace(/-/g, '/')} のキープ枠を強制的に削除しますか？\nこの操作は取り消せません。`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('keep_dates')
+        .delete()
+        .eq('id', keep.id);
+
+      if (error) throw error;
+
+      showMsg("キープ枠を強制的に解放しました。");
+      fetchData(); // 画面を更新して枠を空ける
+    } catch (err) {
+      console.error("Force Delete Error:", err);
+      alert("解除に失敗しました: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  /* ============================================================
+     🌟🌟🌟 追加ここまで 🌟🌟🌟
+     ============================================================ */
+
+  // 🚀 🆕 ここに追加：単発キープの強制削除（連絡がない場合など）
+  const handleForceCancelKeep = async (keep) => {
+    if (!window.confirm(`${keep.facility_users?.facility_name} 様のこのキープ枠を強制キャンセルしますか？\n（カレンダーから削除され、一般予約が受けられるようになります）`)) return;
+
+    setLoading(true);
+    try {
+      const { error } = await supabase
+        .from('keep_dates')
+        .delete()
+        .eq('id', keep.id);
+
+      if (error) throw error;
+
+      showMsg("キープ枠を解除しました。一般予約の受付が可能です。✨");
+      fetchData(); // カレンダーを更新
+    } catch (err) {
+      console.error("Cancel Error:", err);
+      alert("解除に失敗しました: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -1753,59 +1807,81 @@ return (
           </div>
 
       {/* 🚀 🆕 ここに追加：イレギュラーキープのアラートバナー */}
-      <div style={{ zIndex: 100 }}>
+      <div style={{ zIndex: 100, display: 'flex', flexDirection: 'column' }}>
         <AnimatePresence>
-          {/* 🔴 1. 確定期限間近（3日以内）の緊急アラート */}
-          {urgentKeeps.length > 0 && (
+          {/* 🔴 1. 確定期限間近の緊急アラートを1件ずつ表示 */}
+          {urgentKeeps.map((keep) => (
             <motion.div
-              key="alert-urgent" // 👈 🚀 これが必要！
+              key={`urgent-${keep.id}`} // 🚀 IDをkeyにして個別管理
               initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
             >
               <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.4rem' }}>🚨</span>
+                <span style={{ fontSize: '1.2rem' }}>🚨</span>
                 <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#be123c' }}>名簿未確定のキープが {urgentKeeps.length} 件あります！</div>
-                  <div style={{ fontSize: '0.75rem', color: '#e11d48', fontWeight: 'bold' }}>
-                    直近：{urgentKeeps[0].date.replace(/-/g, '/')} ({urgentKeeps[0].facility_users?.facility_name}) - 残り{urgentKeeps[0].diffDays}日
+                  <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                    名簿未確定：{keep.facility_users?.facility_name} 様
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#e11d48' }}>
+                    予定日：{keep.date.replace(/-/g, '/')}（あと {keep.diffDays} 日）
                   </div>
                 </div>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
                 <button
-                  onClick={() => handleEmailNudge(urgentKeeps[0])}
-                  style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '8px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                  onClick={() => handleEmailNudge(keep)}
+                  style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
                 >
                   📧 つつく
                 </button>
+                <button
+                  onClick={() => handleForceDeleteKeep(keep)}
+                  style={{ background: '#be123c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                >
+                  🗑 強制キャンセル
+                </button>
               </div>
             </motion.div>
-          )}
+          ))}
 
-          {/* 🟠 2. 単発キープ（イレギュラー）の通知 */}
-          {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0 && (
-            <motion.div
-              key="alert-irregular" // 👈 🚀 これが必要！
-              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '12px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.4rem' }}>⚠️</span>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#c2410c' }}>未確定の「単発キープ」が {irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).length} 件あります</div>
-                  <div style={{ fontSize: '0.75rem', color: '#ea580c', fontWeight: 'bold' }}>直近：{irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.date.replace(/-/g, '/')} ({irregularKeeps.find(k => !dismissedKeeps.includes(k.id))?.facility_users?.facility_name})</div>
-                </div>
-              </div>
-              <button
-                onClick={() => {/* ジャンプ処理 */}}
-                style={{ background: '#f97316', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+          {/* 🟠 2. 単発キープ（イレギュラー）を1件ずつ表示 */}
+          {irregularKeeps
+            .filter(k => !dismissedKeeps.includes(k.id))
+            .map((keep) => (
+              <motion.div
+                key={`irregular-${keep.id}`} // 🚀 IDをkeyにして個別管理
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
               >
-                枠を確認 ➔
-              </button>
-            </motion.div>
-          )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
+                      単発キープあり：{keep.facility_users?.facility_name} 様
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#ea580c' }}>
+                      候補日：{keep.date.replace(/-/g, '/')}
+                    </div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <button
+                    onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
+                    style={{ background: '#f97316', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                  >
+                    枠を確認 ➔
+                  </button>
+                  <button
+                    onClick={() => handleForceDeleteKeep(keep)}
+                    style={{ background: '#fff', color: '#f97316', border: '1px solid #f97316', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                  >
+                    🗑 解放
+                  </button>
+                </div>
+              </motion.div>
+            ))}
         </AnimatePresence>
-    </div>
+      </div>
 
 {/* ✅ 親要素：はみ出しを隠し、高さを固定 */}
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
