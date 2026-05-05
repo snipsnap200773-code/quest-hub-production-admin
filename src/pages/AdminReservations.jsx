@@ -261,11 +261,16 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
       const { id, date, name, type } = facCancelTarget;
 
       if (type === 'visit') {
-        // 🚀 A: 確定済み予約（visit_requests）の物理削除
-        const { error } = await supabase.from('visit_requests').delete().eq('id', id);
+        // ❌ delete() ではなく ⭕️ update() に変更します
+        // これにより、関連データ（引き継ぎ先など）とのリンクを壊さずに済みます
+        const { error } = await supabase
+          .from('visit_requests')
+          .update({ status: 'canceled' }) // ステータスを「キャンセル」に変更
+          .eq('id', id);
+
         if (error) throw error;
       } else {
-        // 🚀 B: キープ（定期・手動）の解除ロジック
+        // 🚀 B: キープ（定期・手動）の解除ロジック（こちらは既存のままでOK）
         await supabase.from('regular_keep_exclusions').upsert([{ 
           facility_user_id: id, shop_id: shopId, excluded_date: date 
         }]);
@@ -276,7 +281,7 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
 
       setShowFacCancelModal(false);
       showMsg(`${name} 様の予定をキャンセルしました。`);
-      fetchData(); 
+      fetchData(); // 🔄 これでカレンダーから消えます
     } catch (err) {
       alert("実行エラー: " + err.message);
     }
@@ -1926,21 +1931,42 @@ return (
 
                       const activeTask = items[0];
 
-                      // 🚀 施設訪問の本予約（実体）への対応
-                      if (activeTask.res_type === 'facility_visit') {
-                        const targetIdForCount = activeTask.visitData?.parent_id || activeTask.visitId;
-                        const { count } = await supabase
-                          .from('visit_request_residents')
-                          .select('id', { count: 'exact', head: true })
-                          .eq('visit_request_id', targetIdForCount)
-                          .eq('status', 'completed');
+// 🚀 'facility_keep' (定期枠) を判定条件に追加しました
+if (activeTask.res_type === 'facility_visit') {
+  const targetIdForCount = activeTask.visitData?.parent_id || activeTask.visitId;
+  const { count } = await supabase
+    .from('visit_request_residents')
+    .select('id', { count: 'exact', head: true })
+    .eq('visit_request_id', targetIdForCount)
+    .eq('status', 'completed');
 
-                        if (count > 0 || activeTask.visitData?.status === 'completed') {
-                          openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
-                        } else {
-                          handleDeleteVisit(activeTask.visitId, dStr, activeTask.customer_name);
-                        }
-                      } 
+  if (count > 0 || activeTask.visitData?.status === 'completed') {
+    openVisitDetail(activeTask.visitId, activeTask.customer_name, activeTask.visitData);
+  } else {
+    handleDeleteVisit(activeTask.visitId, dStr, activeTask.customer_name);
+  }
+} 
+// 💡 ここ！ 'facility_keep' を追加することで定期枠も反応するようになります
+else if (
+  activeTask.res_type === 'facility_keep' || 
+  activeTask.res_type === 'facility_keep_regular' || 
+  activeTask.res_type === 'facility_keep_single'
+) {
+  
+  if (activeTask.res_type === 'facility_keep_single') {
+    markKeepAsDismissed(activeTask.id); 
+    setSelectedSlotReservations([activeTask]); 
+    setShowSlotListModal(true);
+  } else {
+    // 📅 定期キープ（施設日）のキャンセル確認を開く
+    // すでに実装済みの handleCancelKeep を呼び出せばOKです
+    handleCancelKeep(
+      activeTask.facility_user_id, 
+      dStr, 
+      activeTask.customer_name.replace(' 予定', '')
+    );
+  }
+}
                       // 🚀 🆕 ここ！定期キープと単発キープで動作を分ける部分
                       else if (activeTask.res_type === 'facility_keep_regular' || activeTask.res_type === 'facility_keep_single') {
                         
