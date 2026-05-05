@@ -16,6 +16,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const [loading, setLoading] = useState(true);
   const [exclusions, setExclusions] = useState([]); 
   const [timeModal, setTimeModal] = useState({ show: false, dateStr: '', currentTime: '' });
+  const [advanceDays, setAdvanceDays] = useState(0);
 
   // 🚀 🆕 自動スクロール用のターゲット（ボタンの位置）
   const nextStepRef = useRef(null);
@@ -30,6 +31,14 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
   useEffect(() => { fetchInitialData(); }, [facilityId]);
   useEffect(() => { if (selectedShop) fetchData(); }, [currentDate, selectedShop]);
+
+  // 🚀 🆕 【今回追加した部分】選択中の業者が変わったら、その業者の「予約制限日数」を特定してStateに入れる
+  useEffect(() => {
+    if (selectedShop && shops.length > 0) {
+      const currentConn = shops.find(s => s.profiles.id === selectedShop.id);
+      setAdvanceDays(currentConn?.advance_booking_days || 0);
+    }
+  }, [selectedShop, shops]);
 
   // 🚀 🆕 選択された日がある場合、スルスルと下へスクロールさせる
   useEffect(() => {
@@ -146,8 +155,24 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const getStatus = (dateStr) => {
     const d = new Date(dateStr);
     const regKeep = checkIsRegularKeep(d);
+    
+    // ① 過去日の判定
     if (dateStr < todayStr) return 'past';
 
+    // 🚀 ② 🆕 【重要：予約制限の判定】
+    // 今日 + 設定日数（advanceDays）より前の日は、空きがあっても強制的に ✕ にする
+    const limitDate = new Date();
+    limitDate.setDate(new Date().getDate() + advanceDays);
+    const limitDateStr = limitDate.toLocaleDateString('sv-SE');
+
+    // すでに確定済みの予約（✓）がある日は、制限期間内であっても表示を最優先する
+    const isBooked = confirmedVisits.some(v => v.scheduled_date === dateStr);
+    if (isBooked) return 'booked';
+
+    // 制限期間内の判定（確定予約がない場合）
+    if (dateStr < limitDateStr) return 'limit-closed'; // 🆕 新しいステータス
+
+    // ③ 長期休暇（以降、既存のロジック）
     const specialHolidays = selectedShop?.special_holidays || [];
     if (specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end)) return 'ng';
 
@@ -163,9 +188,6 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || (isL1 && holidays[`L1-${dayKey}`]) || (isL2 && holidays[`L2-${dayKey}`]);
     if (isRegularHoliday) return 'ng';
 
-    if (confirmedVisits.some(v => v.scheduled_date === dateStr)) return 'booked';
-
-    // 🚀 【🆕 修正】取得した「時間付きの全予定（shopBlocks）」と「営業時間」が重なっているかチェック
     if (isOverlappingBusinessHours(dateStr, shopBlocks)) return 'ng';
 
     if (regKeep && !exclusions.includes(dateStr)) {
@@ -276,20 +298,23 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
             </div>
 
             <div style={calendarGrid(isMobile)}>
-              {['日', '月', '火', '水', '木', '金', '土'].map(w => <div key={w} style={weekHeader}>{w}</div>)}
-              {days.map((day, i) => {
-                if (!day) return <div key={i} style={emptyDay}></div>;
-                const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                const statusData = getStatus(dateStr);
-                const status = typeof statusData === 'object' ? statusData.type : statusData;
-                const config = {
-                  keeping: { bg: '#fff9e6', border: '#c5a059', color: '#c5a059', label: '選択中', icon: '★' },
-                  booked: { bg: '#f0fdf4', border: '#10b981', color: '#10b981', label: '確定済', icon: '✓' },
-                  ng: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '定休', icon: '✕' },
-                  other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '他施設', icon: '✕' },
-                  past: { bg: '#fff', border: '#fff', color: '#eee', label: '-', icon: '' },
-                  available: { bg: '#fff', border: '#f0f0f0', color: '#c5a059', label: '空き', icon: '◎' }
-                };
+    {['日', '月', '火', '水', '木', '金', '土'].map(w => <div key={w} style={weekHeader}>{w}</div>)}
+    {days.map((day, i) => {
+      if (!day) return <div key={i} style={emptyDay}></div>;
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+      const statusData = getStatus(dateStr);
+      const status = typeof statusData === 'object' ? statusData.type : statusData;
+      
+      const config = {
+        keeping: { bg: '#fff9e6', border: '#c5a059', color: '#c5a059', label: '選択中', icon: '★' },
+        booked: { bg: '#f0fdf4', border: '#10b981', color: '#10b981', label: '確定済', icon: '✓' },
+        ng: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '定休', icon: '✕' },
+        // 🚀 🆕 【ここを追加】予約制限（締め切り）による表示
+        'limit-closed': { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '受付終了', icon: '✕' },
+        other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '他施設', icon: '✕' },
+        past: { bg: '#fff', border: '#fff', color: '#eee', label: '-', icon: '' },
+        available: { bg: '#fff', border: '#f0f0f0', color: '#c5a059', label: '空き', icon: '◎' }
+      };
                 const s = config[status === 'other-keep' ? 'other_keep' : status] || config.past;
 
                 return (

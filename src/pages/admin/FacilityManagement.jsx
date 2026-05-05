@@ -63,6 +63,7 @@ const FacilityManagement = () => {
     pw: '',            // 👈 追加（不足分）
     login_id: '',      // 👈 追加（不足分）
     regular_rules: [], 
+    advance_booking_days: 0,
     tenant_id: shopId 
   });
 
@@ -106,6 +107,7 @@ const FacilityManagement = () => {
         id: item.facility_users.id,
         status: item.status,
         regular_rules: item.regular_rules || [],
+        advance_booking_days: item.advance_booking_days || 0,
         connection_id: item.id
       }));
       setFacilities(formatted);
@@ -173,7 +175,8 @@ const handleSave = async (e) => {
       const { error: connError } = await supabase
         .from('shop_facility_connections')
         .update({ 
-          regular_rules: formData.regular_rules 
+          regular_rules: formData.regular_rules,
+          advance_booking_days: formData.advance_booking_days // 🚀 🆕 ここを追加！
         })
         .eq('facility_user_id', editingId)
         .eq('shop_id', shopId);
@@ -206,7 +209,8 @@ const handleSave = async (e) => {
         .insert([{
           shop_id: shopId,
           facility_user_id: newUser.id,
-          regular_rules: formData.regular_rules
+          regular_rules: formData.regular_rules,
+          advance_booking_days: formData.advance_booking_days // 🚀 🆕 ここを追加！
         }]);
 
       if (connError) throw connError;
@@ -509,6 +513,7 @@ const handleSave = async (e) => {
       pw: f.password || '', 
       login_id: f.login_id || '',
       regular_rules: f.regular_rules || [], 
+      advance_booking_days: f.advance_booking_days || 0,
       tenant_id: shopId 
     });
     setIsModalOpen(true);
@@ -519,7 +524,7 @@ const handleSave = async (e) => {
     // 🚀 🆕 修正：全項目を空でリセット（furigana含む）
     setFormData({ 
       name: '', furigana: '', email: '', tel: '', address: '', pw: '', login_id: '', 
-      regular_rules: [], tenant_id: shopId 
+      regular_rules: [], advance_booking_days: 0, tenant_id: shopId // 🚀 🆕 ここに0を追加！
     });
     setSelMonthType(0);
   };
@@ -841,6 +846,32 @@ const handleSave = async (e) => {
                         </label>
                       </div>
                     </div>
+
+                    {/* 🚀 🆕 ここから追加：予約受付の制限設定 */}
+                    <div style={{ background: '#fff5f5', padding: '15px', borderRadius: '15px', border: '1px solid #fee2e2', marginBottom: '10px' }}>
+                      <label style={{ ...labelStyle, color: '#ef4444' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <AlertCircle size={16} /> 施設側の予約締め切り
+                        </div>
+                        <select 
+                          value={formData.advance_booking_days}
+                          onChange={(e) => setFormData({ ...formData, advance_booking_days: parseInt(e.target.value) })}
+                          style={{ ...inputStyle, background: '#fff', marginTop: '8px' }}
+                        >
+                          <option value={0}>当日まで受付OK</option>
+                          <option value={1}>1日前（前日）で受付終了</option>
+                          <option value={2}>2日前で受付終了</option>
+                          <option value={3}>3日前で受付終了</option>
+                          <option value={7}>1週間前で受付終了</option>
+                          <option value={10}>10日前で受付終了</option>
+                          <option value={14}>2週間前で受付終了</option>
+                        </select>
+                      </label>
+                      <div style={{ fontSize: '0.7rem', color: '#ef4444', marginTop: '8px', lineHeight: '1.4' }}>
+                        ※施設側のポータル画面で、今日から指定日数より前の日程は「✕」になり選択できなくなります。
+                      </div>
+                    </div>
+                    {/* 🚀 🆕 追加ここまで */}
 
                     {/* 定期ルール設定（既存ロジックを維持） */}
                     <div style={ruleConfigBoxStyle}>
