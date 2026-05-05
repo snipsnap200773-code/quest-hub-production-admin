@@ -432,9 +432,11 @@ if (type === 'facility_booking') {
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
   // 日付リストを読みやすく整形
-  const dateListHtml = scheduledDates.map((d: string) => 
-    `<span style="display:inline-block; background:#3d2b1f; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${d.replace(/-/g, '/')}</span>`
-  ).join(' ');
+  const dateListHtml = scheduledDates.map((d: string) => {
+    // 🚀 秒数（:00）を削除し、ハイフンをスラッシュに変換
+    const cleanedDate = d.replace(':00)', ')').replace(/-/g, '/');
+    return `<span style="display:inline-block; background:#3d2b1f; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
+  }).join(' ');
 
   // 1. 店舗様への通知（新着予約確定）
   await fetch('https://api.resend.com/emails', {
@@ -544,7 +546,6 @@ if (type === 'facility_nudge') {
       <p>スタッフ手配の兼ね合いもございますので、お忙しいところ恐縮ですが、至急ポータル画面よりお手続きをお願いできますでしょうか。</p>
       
       <div style="text-align: center; margin-top: 25px;">
-        {/* 🟢 ADMIN_URL に変更！ */}
         <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面へログインして確定する</a>
       </div>
 

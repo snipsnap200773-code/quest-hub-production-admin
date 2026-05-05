@@ -156,23 +156,18 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const d = new Date(dateStr);
     const regKeep = checkIsRegularKeep(d);
     
-    // ① 過去日の判定
     if (dateStr < todayStr) return 'past';
 
-    // 🚀 ② 🆕 【重要：予約制限の判定】
-    // 今日 + 設定日数（advanceDays）より前の日は、空きがあっても強制的に ✕ にする
     const limitDate = new Date();
     limitDate.setDate(new Date().getDate() + advanceDays);
     const limitDateStr = limitDate.toLocaleDateString('sv-SE');
 
-    // すでに確定済みの予約（✓）がある日は、制限期間内であっても表示を最優先する
     const isBooked = confirmedVisits.some(v => v.scheduled_date === dateStr);
     if (isBooked) return 'booked';
 
-    // 制限期間内の判定（確定予約がない場合）
-    if (dateStr < limitDateStr) return 'limit-closed'; // 🆕 新しいステータス
+    if (dateStr < limitDateStr) return 'limit-closed';
 
-    // ③ 長期休暇（以降、既存のロジック）
+    // A: 長期休暇・定休日（店舗が設定した休み）
     const specialHolidays = selectedShop?.special_holidays || [];
     if (specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end)) return 'ng';
 
@@ -186,15 +181,33 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const isL2 = t14.getMonth() !== d.getMonth() && !isL1;
     const holidays = selectedShop?.business_hours?.regular_holidays || {};
     const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || (isL1 && holidays[`L1-${dayKey}`]) || (isL2 && holidays[`L2-${dayKey}`]);
-    if (isRegularHoliday) return 'ng';
+    
+    if (isRegularHoliday) return 'ng'; // 🚩 これは本当の「定休」
 
-    if (isOverlappingBusinessHours(dateStr, shopBlocks)) return 'ng';
+    // B: 予定の重なりを詳しくチェック
+    const dayEvents = shopBlocks.filter(e => e.date === dateStr);
+    if (dayEvents.length > 0) {
+      // 他施設の予約（isAllDay）が入っている場合
+      if (dayEvents.some(e => e.isAllDay)) return 'other-keep';
+
+      // 営業時間内の重なりを判定
+      const bHours = selectedShop?.business_hours || {};
+      const startStr = bHours[dayKey]?.open || '09:00';
+      const endStr = bHours[dayKey]?.close || '18:00';
+      const bizStart = new Date(`${dateStr}T${startStr}:00`).getTime();
+      const bizEnd = new Date(`${dateStr}T${endStr}:00`).getTime();
+
+      const hasOverlap = dayEvents.some(e => e.start < bizEnd && e.end > bizStart);
+      if (hasOverlap) return 'full'; // 🚀 🆕 自分の予約・私用がある場合は「満員」を返す
+    }
 
     if (regKeep && !exclusions.includes(dateStr)) {
       return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
     }
     const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
     if (manualKeep) return { type: 'keeping', time: manualKeep.start_time || '09:00' };
+    
+    // 他施設のキープ
     if (keepDates.some(k => k.date === dateStr)) return 'other-keep';
 
     return 'available';
@@ -309,7 +322,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
         keeping: { bg: '#fff9e6', border: '#c5a059', color: '#c5a059', label: '選択中', icon: '★' },
         booked: { bg: '#f0fdf4', border: '#10b981', color: '#10b981', label: '確定済', icon: '✓' },
         ng: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '定休', icon: '✕' },
-        // 🚀 🆕 【ここを追加】予約制限（締め切り）による表示
+        // 🚀 🆕 追加：自分の予約（個人・私用）で埋まっている場合
+        full: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '満員', icon: '✕' }, 
         'limit-closed': { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '受付終了', icon: '✕' },
         other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '他施設', icon: '✕' },
         past: { bg: '#fff', border: '#fff', color: '#eee', label: '-', icon: '' },

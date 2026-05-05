@@ -214,6 +214,12 @@ const [visitResidents, setVisitResidents] = useState([]);
 // 🏢 施設訪問詳細（入居者リスト）を開く関数
 const [finalizedSale, setFinalizedSale] = useState(null); // 🆕 売上実績保存用のStateを追加
 
+// 🚀 🆕 追加：引き継ぎ（延長）機能用のState
+  const [showCarryoverPicker, setShowCarryoverPicker] = useState(false);
+  const [carryoverDate, setCarryoverDate] = useState('');
+  const [carryoverTime, setCarryoverTargetTime] = useState('09:00'); // 🚀 🆕 追加
+  const [carryoverViewMonth, setCarryoverViewMonth] = useState(new Date()); // 🚀 🆕 カレンダーの表示月用
+
   const openVisitDetail = async (visitId, facilityName, visitData) => {
     if (!visitId) return;
     setLoading(true);
@@ -277,13 +283,86 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
   };
 
 // 🚀 🆕 確定済みの施設訪問（visit_request）を削除する関数
-const handleDeleteVisit = (visitId, dateStr, facilityName) => {
-  // 🚀 window.confirm を廃止！ 
-  // 🚀 パスワードモーダルを呼び出し、type: 'visit' をセットします
-  setFacCancelTarget({ id: visitId, date: dateStr, name: facilityName, type: 'visit' });
+const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
+  setLoading(true);
+  
+  // 1. 対象の予約データを特定
+  const visit = visitRequests.find(v => v.id === visitId);
+  // 複数日予約の場合も考慮し、親ID（parent_id）があればそちらを基準に名簿を探す
+  const targetId = visit?.parent_id || visitId;
+
+  // 2. 紐付いている入居者名簿を取得
+  const { data: residents } = await supabase
+    .from('visit_request_residents')
+    .select('members(name)')
+    .eq('visit_request_id', targetId);
+
+  const names = residents?.map(r => r.members?.name).filter(Boolean) || [];
+
+  // 3. キャンセル用Stateに名簿情報もセット
+  setFacCancelTarget({ 
+    id: visitId, 
+    date: dateStr, 
+    name: facilityName, 
+    type: 'visit',
+    residentNames: names,    // 🚀 名前リストを追加
+    totalCount: names.length // 🚀 合計人数を追加
+  });
+
   setFacCancelPass('');
   setShowFacCancelModal(true);
+  setLoading(false);
 };
+
+  // 🚀 🆕 追加：未完了者を別日に引き継ぐ（延長予約）
+  const handleCarryoverVisit = async () => {
+    const pendingResidents = visitResidents.filter(r => r.status === 'pending');
+    
+    if (!carryoverDate) { alert("引き継ぎ先の日付を選択してください。"); return; }
+    if (pendingResidents.length === 0) { alert("引き継ぐ対象（未完了の方）がいません。"); return; }
+    if (!window.confirm(`${carryoverDate.replace(/-/g, '/')} に ${pendingResidents.length} 名を引き継いで予約を作成しますか？`)) return;
+
+    setLoading(true);
+    try {
+      // 1. 新しい訪問予約（visit_requests）を作成
+      // 🚀 確実に存在する列（shop_id, facility_user_id, scheduled_date, start_time, status, parent_id）だけに絞りました
+      const { data: newVisit, error: vError } = await supabase
+        .from('visit_requests')
+        .insert([{
+          shop_id: shopId,
+          facility_user_id: selectedRes.facility_user_id,
+          scheduled_date: carryoverDate,
+          start_time: carryoverTime, 
+          status: 'confirmed',
+          parent_id: selectedRes.parent_id || selectedRes.id
+        }])
+        .select()
+        .single();
+
+      if (vError) throw vError;
+
+      // 2. 未完了の住民を新しい予約IDでコピー登録（ここも visit_request_residents テーブルで合っています）
+      const residentInserts = pendingResidents.map(r => ({
+        visit_request_id: newVisit.id,
+        member_id: r.members.id,
+        menu_name: r.menu_name,
+        status: 'pending'
+      }));
+
+      const { error: rError } = await supabase.from('visit_request_residents').insert(residentInserts);
+      if (rError) throw rError;
+
+      showMsg(`${carryoverDate.replace(/-/g, '/')} へ ${pendingResidents.length} 名を引き継ぎました！✨`);
+      setShowVisitDetailModal(false);
+      setShowCarryoverPicker(false);
+      fetchData(); // カレンダーを最新の状態に更新
+    } catch (err) {
+      console.error("Carryover Error:", err);
+      alert("引き継ぎに失敗しました: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
 const [editFields, setEditFields] = useState({ 
     name: '',       // ✅ 表のお名前用
@@ -1069,6 +1148,68 @@ const { data: resData } = await supabase
     
     const dStr = getJapanDateStr(date); // YYYY-MM-DD形式
     return shop.special_holidays.some(h => dStr >= h.start && dStr <= h.end);
+  };
+
+  // 🚀 🆕 追加：引き継ぎカレンダー用の「空き状況」判定ロジック
+  const getCarryoverDayStatus = (dateStr) => {
+    const d = new Date(dateStr);
+    const todayStr = getJapanDateStr(new Date());
+    if (dateStr < todayStr) return 'past';
+
+    // 1. 🚀 【Hard Block】基本の休み（定休日・長期休暇） -> ✕
+    if (checkIsRegularHoliday(d) || checkIsSpecialHoliday(d)) return 'ng';
+
+    // 2. 🚀 【Hard Block】他施設の「定期キープ」チェック -> ✕
+    const regKeep = checkIsRegularKeep(d);
+    if (regKeep && regKeep.facility_user_id !== selectedRes?.facility_user_id && !exclusions.includes(dateStr)) {
+      return 'ng';
+    }
+
+    // 3. 🚀 【Hard Block】他施設の「確定予約・単発キープ」チェック -> ✕
+    const hasOtherFacilityEvent = [
+      ...visitRequests.filter(v => 
+        v.status !== 'canceled' && 
+        v.id !== selectedRes?.id && 
+        (v.scheduled_date === dateStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(dv => (typeof dv === 'string' ? dv : dv.date) === dateStr)))
+      ),
+      ...manualKeeps.filter(k => 
+        k.date === dateStr && 
+        k.facility_user_id !== selectedRes?.facility_user_id
+      )
+    ].length > 0;
+
+    if (hasOtherFacilityEvent) return 'ng';
+
+    // 4. 🚀 【Soft Block】個人予約 or プライベート予定の重なりチェック -> △ (partial)
+    const personalEvents = [
+      ...reservations.filter(r => 
+        r.start_time.startsWith(dateStr) && 
+        r.status !== 'canceled' && 
+        r.res_type === 'normal'
+      ).map(r => ({ start: new Date(r.start_time).getTime(), end: new Date(r.end_time).getTime() })),
+      ...privateTasks.filter(p => 
+        p.start_time.startsWith(dateStr)
+      ).map(p => ({ start: new Date(p.start_time).getTime(), end: new Date(p.end_time).getTime() }))
+    ];
+
+    if (personalEvents.length > 0) {
+      const bHours = shop?.business_hours || {};
+      const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+      const dayKey = dayNames[d.getDay()];
+      
+      const startStr = bHours[dayKey]?.open || '09:00';
+      const endStr = bHours[dayKey]?.close || '18:00';
+
+      const bizStart = new Date(`${dateStr}T${startStr}:00`).getTime();
+      const bizEnd = new Date(`${dateStr}T${endStr}:00`).getTime();
+
+      // 営業時間に少しでも重なっている個人予定があれば △ を返す
+      const hasOverlap = personalEvents.some(e => e.start < bizEnd && e.end > bizStart);
+      if (hasOverlap) return 'partial'; 
+    }
+
+    // 5. 何もなければ ◎
+    return 'available';
   };
 
   // 🚀 🆕 修正：カレンダー表示用の状態判定（一番早い予定の名前を取得するように強化）
@@ -2766,10 +2907,13 @@ return (
       </div>
 
       {/* 🆕 【重要】残り人数のカウント計算 */}
-      {(() => {
+{(() => {
         const total = visitResidents.length;
         const remaining = visitResidents.filter(r => r.status === 'pending').length;
         const done = total - remaining;
+
+        // 🚀 🆕 【ここを追加！】全予約の中から、この予約(selectedRes.id)を「親」に持つ予約があるか探す
+        const isAlreadyExtended = visitRequests.some(v => v.parent_id === selectedRes?.id && v.status !== 'canceled');
 
         return (
           <div style={{ background: '#fcfaf7', padding: '15px', borderRadius: '15px', border: '1px solid #f0e6d2', marginBottom: '20px', textAlign: 'center' }}>
@@ -2777,9 +2921,111 @@ return (
             <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#3d2b1f' }}>
               残り <span style={{ color: '#c5a059', fontSize: '2rem' }}>{remaining}</span> 名 / 全体 {total} 名
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '5px', fontWeight: 'bold' }}>
-              （現在までに {done} 名が完了済み）
-            </div>
+            
+            {/* 🚀 🆕 修正：引き継ぎボタンの表示判定を強化 */}
+            {remaining > 0 && (
+              <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #f0e6d2' }}>
+                {isAlreadyExtended ? (
+                  // ✅ 既に引き継ぎ済みの場合は、ボタンの代わりに安心感のあるメッセージを表示
+                  <div style={{ padding: '10px', background: '#f0fdf4', borderRadius: '10px', color: '#166534', fontSize: '0.85rem', fontWeight: 'bold', border: '1px solid #bbf7d0' }}>
+                    ✅ 次回分への引き継ぎ予約を作成済みです
+                  </div>
+                ) : !showCarryoverPicker ? (
+                  <button 
+                    onClick={() => { setShowCarryoverPicker(true); setCarryoverViewMonth(new Date()); }}
+                    style={{ background: '#3d2b1f', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', width: '100%', boxShadow: '0 4px 10px rgba(61,43,31,0.2)' }}
+                  >
+                    ⏩ 終わらない分を別日に引き継ぐ
+                  </button>
+                ) : (
+                  /* --- 以下、カレンダー表示（既存通り） --- */
+                  <div style={{ background: '#fff', padding: '15px', borderRadius: '20px', border: '2px solid #c5a059', animation: 'fadeIn 0.3s', marginTop: '10px' }}>
+                                        {/* カレンダーの年月ナビ */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                      <button onClick={() => setCarryoverViewMonth(new Date(carryoverViewMonth.setMonth(carryoverViewMonth.getMonth() - 1)))} style={{ border: 'none', background: '#f1f5f9', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer' }}>◀</button>
+                      <span style={{ fontWeight: '900', color: '#3d2b1f' }}>{carryoverViewMonth.getFullYear()}年 {carryoverViewMonth.getMonth() + 1}月</span>
+                      <button onClick={() => setCarryoverViewMonth(new Date(carryoverViewMonth.setMonth(carryoverViewMonth.getMonth() + 1)))} style={{ border: 'none', background: '#f1f5f9', width: '30px', height: '30px', borderRadius: '50%', cursor: 'pointer' }}>▶</button>
+                    </div>
+
+                    {/* 📅 引き継ぎ先ミニカレンダー */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.7rem', textAlign: 'center' }}>
+                      {['日','月','火','水','木','金','土'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '5px' }}>{w}</div>)}
+                      {(() => {
+                        const year = carryoverViewMonth.getFullYear();
+                        const month = carryoverViewMonth.getMonth();
+                        const firstDay = new Date(year, month, 1).getDay();
+                        const lastDate = new Date(year, month + 1, 0).getDate();
+                        const daysArray = [...Array(firstDay).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
+                        
+                        return daysArray.map((day, i) => {
+                          if (!day) return <div key={i} />;
+                          const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                          const status = getCarryoverDayStatus(dateStr);
+                          const isSelected = carryoverDate === dateStr;
+
+                          // 過去日以外はすべて選択可能
+                          const isSelectable = status !== 'past';
+
+                          return (
+                            <div 
+                              key={i} 
+                              onClick={() => isSelectable && setCarryoverDate(dateStr)}
+                              style={{ 
+                                padding: '8px 0', 
+                                cursor: isSelectable ? 'pointer' : 'default', 
+                                borderRadius: '8px',
+                                background: isSelected ? '#3d2b1f' : 'none',
+                                // 🎨 色分けのルール
+                                color: isSelected ? '#fff' : 
+                                       (status === 'available' ? '#c5a059' : 
+                                       (status === 'partial' ? '#f59e0b' : // 🚀 △はアンバー（琥珀色）
+                                       (status === 'ng' ? '#fca5a5' : '#e2e8f0'))),
+                                position: 'relative',
+                                opacity: status === 'past' ? 0.3 : 1
+                              }}
+                            >
+                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{day}</div>
+                              {/* 🚀 🆕 記号の出し分け：◎ / △ / ✕ */}
+                              <div style={{ fontSize: '0.6rem', fontWeight: '900' }}>
+                                {status === 'available' ? '◎' : 
+                                 (status === 'partial' ? '△' : 
+                                 (status === 'ng' ? '✕' : ''))}
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+
+                    {/* 🕒 時間選択（日付がタップされたら出現） */}
+                    {carryoverDate && (
+                      <div style={{ marginTop: '20px', borderTop: '2px dashed #f1f5f9', paddingTop: '15px', textAlign: 'left', animation: 'fadeIn 0.3s' }}>
+                        <label style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#c5a059', display: 'block', marginBottom: '10px' }}>🕛 何時から開始しますか？</label>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '6px' }}>
+                          {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => (
+                            <button 
+                              key={t} 
+                              onClick={() => setCarryoverTargetTime(t)}
+                              style={{ padding: '8px', borderRadius: '8px', border: carryoverTime === t ? '2px solid #3d2b1f' : '1px solid #e2e8f0', background: carryoverTime === t ? '#3d2b1f' : '#fff', color: carryoverTime === t ? '#fff' : '#3d2b1f', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}
+                            >
+                              {t}
+                            </button>
+                          ))}
+                        </div>
+                        <button 
+                          onClick={handleCarryoverVisit}
+                          style={{ width: '100%', marginTop: '15px', padding: '14px', background: '#c5a059', color: '#3d2b1f', border: 'none', borderRadius: '12px', fontWeight: '900', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(197,160,89,0.3)' }}
+                        >
+                          引き継ぎを確定する
+                        </button>
+                      </div>
+                    )}
+                    
+                    <button onClick={() => { setShowCarryoverPicker(false); setCarryoverDate(''); }} style={{ width: '100%', marginTop: '10px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.8rem', cursor: 'pointer', fontWeight: 'bold' }}>キャンセル</button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         );
       })()}
@@ -2850,11 +3096,30 @@ return (
       <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontWeight: '900', fontSize: '1.2rem' }}>予定のキャンセル確認</h3>
       
       <div style={{ background: '#fff1f2', padding: '15px', borderRadius: '15px', border: '1px solid #fecdd3', marginBottom: '20px' }}>
-        <p style={{ fontSize: '0.85rem', color: '#e11d48', margin: 0, fontWeight: 'bold', lineHeight: '1.6' }}>
-          {facCancelTarget.date.replace(/-/g, '/')} の<br/>
-          <span style={{ fontSize: '1.1rem', color: '#b91c1c' }}>{facCancelTarget.name} 様</span><br/>
-          予定をキャンセルして枠を空けますか？
+        <p style={{ fontSize: '0.85rem', color: '#e11d48', margin: '0 0 10px 0', fontWeight: 'bold', lineHeight: '1.6' }}>
+          {facCancelTarget.date.replace(/-/g, '/')} の予定をキャンセルしますか？
         </p>
+        
+        {/* 🚀 🆕 ここに追加：施術希望者の人数と名前の表示セクション */}
+        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', border: '1px solid rgba(225,29,72,0.1)', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px dashed #fecdd3', paddingBottom: '5px' }}>
+            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold' }}>施術予定者</span>
+            <span style={{ fontSize: '0.9rem', color: '#b91c1c', fontWeight: '900' }}>合計 {facCancelTarget.totalCount || 0} 名</span>
+          </div>
+          
+          {/* 💡 maxHeight を少し広げ、lineHeight を調整して読みやすくしました */}
+          <div style={{ maxHeight: '150px', overflowY: 'auto', fontSize: '0.85rem', color: '#3d2b1f', lineHeight: '1.8' }}>
+            {facCancelTarget.residentNames?.length > 0 ? (
+              facCancelTarget.residentNames.map((name, idx) => (
+                <div key={idx} style={{ borderBottom: '1px solid #fff5f5', padding: '2px 0' }}>
+                  ・ <b>{name}</b> 様
+                </div>
+              ))
+            ) : (
+              <div style={{ color: '#94a3b8', textAlign: 'center', padding: '10px' }}>（名簿データがありません）</div>
+            )}
+          </div>
+        </div>
       </div>
 
       <div style={{ textAlign: 'left', marginBottom: '25px' }}>

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { 
   Store, User, MapPin, Phone, Mail, 
-  Globe, ExternalLink, CalendarCheck, Trash2, CheckCircle2 
+  Globe, ExternalLink, Trash2, CheckCircle2 
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -103,19 +103,15 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
                 </div>
 
                 <div style={actionRow}>
-                  {shop.official_url && (
-                    <a href={shop.official_url} target="_blank" rel="noreferrer" style={outlineBtn}>
-                      <Globe size={16} /> サイト
+                  {shop.official_url ? (
+                    <a href={shop.official_url} target="_blank" rel="noreferrer" style={{ ...outlineBtn, flex: 1 }}>
+                      <Globe size={16} /> 公式サイトを閲覧する
                     </a>
+                  ) : (
+                    <div style={{ ...infoLabel, fontSize: '0.8rem', opacity: 0.5, textAlign: 'center', width: '100%' }}>
+                      ※公式サイトの情報はありません
+                    </div>
                   )}
-                  <button 
-                    onClick={() => navigate(`/shop/${shop.id}/reserve/time`, { 
-                      state: { mode: 'facility', facilityUserId: facilityId } 
-                    })}
-                    style={mainBtn(themeColor)}
-                  >
-                    <CalendarCheck size={18} /> 予約・依頼
-                  </button>
                 </div>
               </motion.div>
             );
