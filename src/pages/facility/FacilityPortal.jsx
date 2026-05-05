@@ -32,6 +32,10 @@ const FacilityPortal = () => {
   const [activeTab, setActiveTab] = useState('residents');
   const [sharedDate, setSharedDate] = useState(new Date());
 
+  // 🚀 🆕 追加：アラート用のState
+  const [urgentKeeps, setUrgentKeeps] = useState([]);    // 期限間近（3日以内）
+  const [unconfirmedKeeps, setUnconfirmedKeeps] = useState([]); // 単発キープ（未確定）
+
   // 🆕 追加：スマホ判定とメニュー開閉State
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -75,8 +79,41 @@ const FacilityPortal = () => {
 
   const fetchFacilityData = async () => {
     setLoading(true);
-    const { data } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
-    if (data) setFacility(data);
+    // 1. 施設プロフィール取得
+    const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
+    if (fac) setFacility(fac);
+
+    // 2. スケジュールチェック（キープ vs 確定予約）
+    const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
+    const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
+
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const urgList = [];
+    const unconList = [];
+
+    (mData || []).forEach(k => {
+      if (k.date < todayStr) return; // 過去は無視
+
+      // 確定済みかどうか判定
+      const isBooked = (visitData || []).some(v => 
+        (v.status === 'confirmed' || v.status === 'completed') && 
+        (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
+      );
+
+      if (!isBooked) {
+        unconList.push(k); // 未確定リストへ
+
+        // 3日前判定
+        const diffTime = new Date(k.date).getTime() - new Date(todayStr).getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        if (diffDays >= 0 && diffDays <= 3) {
+          urgList.push({ ...k, diffDays }); // 期限間近リストへ
+        }
+      }
+    });
+
+    setUrgentKeeps(urgList);
+    setUnconfirmedKeeps(unconList);
     setLoading(false);
   };
 
@@ -216,6 +253,56 @@ const FacilityPortal = () => {
 
       {/* 🆕 右側：メインコンテンツエリア（関数呼び出し getMainAreaStyle を使用） */}
       <main style={getMainAreaStyle(isMobile)}>
+        
+        {/* 🚀 🚨 アラートバナー表示エリア */}
+        <div style={{ width: '100%', zIndex: 100 }}>
+          <AnimatePresence>
+            {/* 🔴 パターン1：期限間近の警告（最優先） */}
+            {urgentKeeps.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>🚨</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>確定期限（3日前）が過ぎています！</div>
+                    <p style={{ fontSize: '0.7rem', color: '#e11d48', margin: 0 }}>{urgentKeeps[0].date.replace(/-/g, '/')} の名簿を至急作成して確定してください。</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('list-up')}
+                  style={{ background: '#e11d48', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  名簿を作成する
+                </button>
+              </motion.div>
+            )}
+
+            {/* 🟠 パターン2：単発キープの未確定通知（3日前以前） */}
+            {urgentKeeps.length === 0 && unconfirmedKeeps.length > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <span style={{ fontSize: '1.2rem' }}>⚠️</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>未確定の「単発キープ」が {unconfirmedKeeps.length} 件あります</div>
+                    <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>忘れないうちに「STEP 2: 利用者選択」へ進んでください。</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('list-up')}
+                  style={{ background: '#f97316', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  確認する
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         <header style={contentHeaderStyle}>
           <div style={headerTitleGroup}>
              <span style={headerIcon}>{menuItems.find(i => i.id === activeTab)?.icon}</span>

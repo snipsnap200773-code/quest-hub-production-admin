@@ -501,7 +501,71 @@ if (type === 'facility_booking') {
 
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
 }
-// 🆕 【ここまで追加】
+// ==========================================
+// 🚀 🆕 パターンP：施設への名簿作成・予約確定「つつく」通知
+// ==========================================
+if (type === 'facility_nudge') {
+  const { shopId, facilityId, keepDate } = payload;
+
+  const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
+  const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') ?? "";
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+  const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+
+  // 1. 店舗と施設の情報を取得
+  const [shopRes, facRes] = await Promise.all([
+    supabaseAdmin.from('profiles').select('business_name, owner_name, email_contact, email').eq('id', shopId).single(),
+    supabaseAdmin.from('facility_users').select('facility_name, email').eq('id', facilityId).single()
+  ]);
+
+  const shop = shopRes.data;
+  const facility = facRes.data;
+
+  if (!facility?.email) throw new Error('施設側のメールアドレスが登録されていません');
+
+  const displayDate = keepDate.replace(/-/g, '/');
+  const shopName = shop?.business_name || "店舗管理者";
+  const ownerName = shop?.owner_name || "担当者";
+
+  const subject = `【重要】${displayDate} 訪問予約の名簿作成と確定のお願い`;
+  const html = `
+    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #be123c;">
+      <h2 style="color: #be123c; margin-top: 0;">⚠️ 確定期限が近づいています</h2>
+      <p><strong>${facility.facility_name} 様</strong></p>
+      <p>いつも大変お世話になっております。<strong>${shopName}</strong> の ${ownerName} です。</p>
+      
+      <p>確保いただいております以下の日程につきまして、まだ名簿（リストアップ）の作成と予約確定が完了しておりません。</p>
+      
+      <div style="background: #fff5f5; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #feb2b2; text-align: center;">
+        <p style="margin: 0; font-size: 0.9rem; color: #be123c;">訪問予定日</p>
+        <p style="margin: 5px 0; font-size: 1.5rem; font-weight: 900; color: #3d2b1f;">${displayDate}</p>
+      </div>
+
+      <p>スタッフ手配の兼ね合いもございますので、お忙しいところ恐縮ですが、至急ポータル画面よりお手続きをお願いできますでしょうか。</p>
+      
+      <div style="text-align: center; margin-top: 25px;">
+        <a href="${PORTAL_URL}/facility-login/${facilityId}" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログインして確定する</a>
+      </div>
+
+      <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px;">
+        ※本メールは Quest Hub システムより自動送信されています。
+      </p>
+    </div>`;
+
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: `${shopName} <infec@snipsnap.biz>`,
+      to: [facility.email],
+      reply_to: shop?.email_contact || shop?.email,
+      subject,
+      html
+    })
+  });
+
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+}
 
 // ==========================================
 // 🚀 🆕 【バトン対応版】パターンJ：お問い合わせ通知

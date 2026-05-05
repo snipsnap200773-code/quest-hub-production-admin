@@ -227,7 +227,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId);
       await supabase.from('keep_dates').delete().eq('facility_user_id', facilityId);
 
-      alert(`${ensuredDates.length}日間の訪問予約（連動モード）を確定しました！`);
+      alert(`${ensuredDates.length}日間の訪問予約を確定しました！`);
       setActiveTab('status'); 
     } catch (err) {
       console.error(err);
