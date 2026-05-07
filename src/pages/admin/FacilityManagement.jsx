@@ -93,7 +93,7 @@ const FacilityManagement = () => {
     // ✅ 修正：振込先情報も一緒に取得するように変更
     const { data: profile } = await supabase
       .from('profiles')
-      .select('..., hourly_capacity_per_staff, facility_staff_count, facility_visit_start, facility_visit_end, facility_visit_slots') 
+      .select('*') // ⭕️ これで全カラムを安全に取得します
       .eq('id', shopId)
       .single();
     
@@ -333,6 +333,8 @@ const handleSave = async (e) => {
           facility_visit_start: shopSettings.facility_visit_start,
           facility_visit_end: shopSettings.facility_visit_end,
           facility_visit_slots: shopSettings.facility_visit_slots, // 🚀 🆕 ここを追加！
+          facility_lunch_start: shopSettings.facility_lunch_start,
+          facility_lunch_end: shopSettings.facility_lunch_end,
           bank_name: shopSettings.bank_name,
           bank_branch: shopSettings.bank_branch,
           bank_account_type: shopSettings.bank_account_type,

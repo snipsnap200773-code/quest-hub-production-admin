@@ -93,7 +93,11 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
   // --- 3. 操作ロジック ---
   const handleSubmit = async () => {
-    if (!newRoom || !newName) { alert("部屋番号とお名前は必須です"); return; }
+    // 🚀 部屋番号(newRoom)のチェックを削除し、お名前だけを必須にします
+    if (!newName) { 
+      alert("お名前は必須です"); 
+      return; 
+    }
     const userData = { 
       facility_user_id: facilityId, facility: facilityName, floor: newFloor, 
       room: newRoom, name: newName, kana: newKana, notes: newNotes, isBedCut: isBedCut 
@@ -361,7 +365,10 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
           <div style={{padding:'25px'}}>
             <div style={formGroup}><label style={labelStyle}>階数</label><div style={floorBtnGroup}>{['1F','2F','3F','4F','5F'].map(f => <button key={f} onClick={() => setNewFloor(f)} style={floorBtn(newFloor === f)}>{f}</button>)}</div></div>
             <div style={{display:'flex', gap:'15px', marginTop:'20px'}}>
-              <div style={{flex:1}}><label style={labelStyle}>部屋番号</label><input style={pcInput} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="101" /></div>
+              <div style={{flex:1}}>
+  <label style={labelStyle}>部屋番号 (任意)</label> {/* 🚀 任意を追加 */}
+  <input style={pcInput} value={newRoom} onChange={(e) => setNewRoom(e.target.value)} placeholder="なし" /> 
+</div>
               <div style={{flex:2}}><label style={labelStyle}>お名前</label><input style={pcInput} value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="名前" /></div>
             </div>
             <div style={{marginTop:'20px'}}><label style={labelStyle}>ふりがな</label><input style={pcInput} value={newKana} onChange={(e) => setNewKana(e.target.value)} placeholder="ふりがな" /></div>

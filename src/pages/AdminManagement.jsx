@@ -267,15 +267,19 @@ function AdminManagement() {
     }
 
     setIsSearchLoading(true);
-    // ✅ 幽霊データを防ぐため、reservationsではなく「customers名簿」だけを検索
     const blockNamesStr = '("臨時休業","管理者ブロック","休憩","銀行","買い出し","移動")';
+
+    // 🚀 🆕 入力された文字をカタカナに変換したバージョンを作成
+    // これにより「なかむら」と打ってもDBの「ナカムラ」にヒットします
+    const katakanaVal = val.replace(/[ぁ-ん]/g, s => String.fromCharCode(s.charCodeAt(0) + 0x60));
 
     const { data, error } = await supabase
       .from('customers')
-      .select('id, name, admin_name, phone')
+      .select('id, name, admin_name, furigana, phone') // 🚀 furigana も取得対象に追加
       .eq('shop_id', cleanShopId)
-      .or(`name.ilike.%${val}%,admin_name.ilike.%${val}%`)
-      .not('name', 'in', blockNamesStr) // 👈 これを追加！
+      // 🚀 🆕 name, admin_name に加えて、furigana 列を「入力値そのまま」と「カタカナ変換後」の両方で検索
+      .or(`name.ilike.%${val}%,admin_name.ilike.%${val}%,furigana.ilike.%${val}%,furigana.ilike.%${katakanaVal}%`)
+      .not('name', 'in', blockNamesStr)
       .limit(5);
     
     if (error) console.error("Search Error:", error);
@@ -1619,8 +1623,20 @@ return (
                 {(() => {
                   let lastLabel = ""; // 直前のグループ（あ行など）を記憶
                   
+                  const katakanaSearch = searchTerm.replace(/[ぁ-ん]/g, s => String.fromCharCode(s.charCodeAt(0) + 0x60));
+
                   return sortedAllCustomers
-                    .filter(c => (c.name || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
+                    .filter(c => {
+                      const name = (c.name || '');
+                      const furigana = (c.furigana || '');
+                      const phone = (c.phone || '');
+                      
+                      // 🚀 🆕 名前、ふりがな（そのまま ＆ カタカナ変換後）、電話番号のいずれかにヒットすればOK
+                      return name.includes(searchTerm) || 
+                             furigana.includes(searchTerm) || 
+                             furigana.includes(katakanaSearch) || 
+                             phone.includes(searchTerm);
+                    })
                     .map((cust) => {
                       // 🚀 🆕 行見出し（あ行など）を判定
                       const currentLabel = getKanaGroup(cust.furigana);
@@ -1628,11 +1644,14 @@ return (
                       lastLabel = currentLabel;
 
                       // 完了済み予約のカウント
-                      const completedVisits = allReservations.filter(r => 
-                        (r.customer_name === cust.name || r.customer_id === cust.id) && 
-                        r.status === 'completed' && 
-                        (r.task_type === 'individual' || r.task_type === 'facility')
-                      );
+                      const completedVisits = allReservations.filter(r => {
+  // 名前から空白（全角・半角）をすべて抜いて比較する
+  const rName = (r.customer_name || "").replace(/\s+/g, '');
+  const cName = (cust.name || "").replace(/\s+/g, '');
+  
+  return (rName === cName || r.customer_id === cust.id) && 
+         r.status === 'completed';
+});
 
                       // 🚀 🆕 2. 全データの中から「一番新しい日付」を探し出す
                       const latestVisit = completedVisits.reduce((latest, current) => {
@@ -2840,9 +2859,79 @@ return (
         )}
       </AnimatePresence>
       {/* 🚀 🆕 ここまで差し込む！ */}
-    </div>
-  );
-}
+    <AnimatePresence>
+              {showSearchModal && (
+                <div style={modalOverlayStyle} onClick={() => setShowSearchModal(false)}>
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }} 
+                    animate={{ scale: 1, opacity: 1 }} 
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    onClick={e => e.stopPropagation()}
+                    style={{ ...modalContentStyle, maxWidth: '500px', borderRadius: '32px' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #4285f4', paddingBottom: '15px' }}>
+                      <h3 style={{ margin: 0, color: '#4285f4', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <Search size={22} /> 顧客名簿から検索
+                      </h3>
+                      <button onClick={() => setShowSearchModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#94a3b8' }}><X size={24}/></button>
+                    </div>
+
+                    <div style={{ marginBottom: '20px' }}>
+                      <input 
+                        autoFocus
+                        type="text" 
+                        placeholder="名前・フリガナ・電話番号で検索..." 
+                        value={searchTerm}
+                        onChange={(e) => handleSearch(e.target.value)}
+                        onKeyDown={handleKeyDown}
+                        style={{ ...inputStyle, fontSize: '1.1rem', padding: '15px', border: '2px solid #4285f4' }}
+                      />
+                      <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '8px', paddingLeft: '5px' }}>
+                        ※上下キーで選択、Enterで決定、Escで閉じます
+                      </p>
+                    </div>
+
+                    <div style={{ maxHeight: '400px', overflowY: 'auto', paddingRight: '5px' }}>
+                      {isSearchLoading ? (
+                        <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>検索中...</div>
+                      ) : (
+                        searchResults.map((cust, idx) => (
+                          <div 
+                            key={cust.id} 
+                            onClick={() => selectSearchResult(cust)}
+                            style={{ 
+                              padding: '18px', borderRadius: '16px', marginBottom: '10px', cursor: 'pointer',
+                              background: selectedIndex === idx ? '#eff6ff' : '#f8fafc',
+                              border: selectedIndex === idx ? '2px solid #4285f4' : '1px solid #e2e8f0',
+                              transition: 'all 0.2s'
+                            }}
+                          >
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b' }}>
+                                {cust.name} 様
+                              </div>
+                              <ChevronRight size={18} color="#cbd5e1" />
+                            </div>
+                            <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                              📞 {cust.phone || '電話番号なし'}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                      {!isSearchLoading && searchTerm && searchResults.length === 0 && (
+                        <div style={{ textAlign: 'center', color: '#94a3b8', padding: '40px' }}>
+                          「{searchTerm}」に一致するお客様はいません
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+          </div>
+        );
+      }
 
 // スタイル定義
 const SectionTitle = ({ icon, title, color }) => (<div style={{ display: 'flex', alignItems: 'center', gap: '8px', color, fontWeight: 'bold', borderBottom: `2px solid ${color}`, paddingBottom: '5px', marginBottom: '15px' }}>{icon} {title}</div>);
