@@ -25,6 +25,12 @@ const MONTH_TYPES = [
   { label: "毎月", value: 0 }, { label: "奇数月", value: 1 }, { label: "偶数月", value: 2 }
 ];
 
+// 🚀 🆕 選択肢として表示したい時間のリスト
+const FACILITY_TIME_OPTIONS = [
+  '09:00', '09:30', '10:00', '10:30', '11:00', '11:30',
+  '12:00', '12:30', '13:00', '13:30', '14:00', '14:30', '15:00', '15:30', '16:00'
+];
+
 const FacilityManagement = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -32,12 +38,13 @@ const FacilityManagement = () => {
   const [loading, setLoading] = useState(true);
   const [shopSettings, setShopSettings] = useState({ 
     email_notifications_enabled: true,
-    is_facility_searchable: false, // 🚀 追加：検索に出るか
-    sub_business_type: '理美容',    // 🚀 追加：ジャンル
+    is_facility_searchable: false,
+    sub_business_type: '理美容',
     hourly_capacity_per_staff: 2.0,
     facility_staff_count: 1,
     facility_visit_start: '09:00',
     facility_visit_end: '16:00',
+    facility_visit_slots: ['09:00', '13:00'], // 🚀 🆕 初期値（配列）を追加
     bank_name: '',
     bank_branch: '',
     bank_account_type: '普通',
@@ -86,7 +93,7 @@ const FacilityManagement = () => {
     // ✅ 修正：振込先情報も一緒に取得するように変更
     const { data: profile } = await supabase
       .from('profiles')
-      .select('..., hourly_capacity_per_staff, facility_staff_count, facility_visit_start, facility_visit_end') // 🚀 🆕 カラム追加
+      .select('..., hourly_capacity_per_staff, facility_staff_count, facility_visit_start, facility_visit_end, facility_visit_slots') 
       .eq('id', shopId)
       .single();
     
@@ -300,20 +307,32 @@ const handleSave = async (e) => {
     setIsUpdating(false);
   };
 
+  const toggleTimeSlot = (time) => {
+    const currentSlots = shopSettings.facility_visit_slots || [];
+    if (currentSlots.includes(time)) {
+      // 既に選択されていたら削除
+      setShopSettings({ ...shopSettings, facility_visit_slots: currentSlots.filter(t => t !== time) });
+    } else {
+      // 未選択なら追加してソート（時間の早い順に並べる）
+      setShopSettings({ ...shopSettings, facility_visit_slots: [...currentSlots, time].sort() });
+    }
+  };
+
   // 🆕 ここから差し込む！！ ==========================================
   // 振込先情報を一括で更新（保存）する関数
-  const saveShopGlobalSettings = async () => { // 🚀 名前を広義に変更
+  const saveShopGlobalSettings = async () => {
     setIsUpdating(true);
     try {
       const { error } = await supabase
         .from('profiles')
         .update({ 
-          is_facility_searchable: shopSettings.is_facility_searchable, // 🚀 追加
-          sub_business_type: shopSettings.sub_business_type,          // 🚀 追加
+          is_facility_searchable: shopSettings.is_facility_searchable,
+          sub_business_type: shopSettings.sub_business_type,
           hourly_capacity_per_staff: shopSettings.hourly_capacity_per_staff,
           facility_staff_count: shopSettings.facility_staff_count,
           facility_visit_start: shopSettings.facility_visit_start,
           facility_visit_end: shopSettings.facility_visit_end,
+          facility_visit_slots: shopSettings.facility_visit_slots, // 🚀 🆕 ここを追加！
           bank_name: shopSettings.bank_name,
           bank_branch: shopSettings.bank_branch,
           bank_account_type: shopSettings.bank_account_type,
@@ -565,22 +584,22 @@ const handleSave = async (e) => {
             <h3 style={{ margin: 0, fontSize: '1rem', color: '#1e293b' }}>基本設定（検索公開・振込先）</h3>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '30px' }}>
+          {/* 🚀 🆕 修正：縦に一本化されたスッキリレイアウト */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '25px' }}>
             
-            {/* 🆕 左側：公開設定エリア */}
+            {/* 1. 公開設定・ジャンル */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                <div style={settingRow}>
-                  <div>
-                    <div style={{fontWeight:'bold', fontSize:'0.9rem'}}>施設検索への公開</div>
-                    <div style={{fontSize:'0.7rem', color:'#64748b'}}>施設側で検索・リクエストが可能になります</div>
-                  </div>
-                  {/* スイッチボタン */}
-                  <button 
-                    onClick={() => setShopSettings({...shopSettings, is_facility_searchable: !shopSettings.is_facility_searchable})}
-                    style={toggleBtnStyle(shopSettings.is_facility_searchable)}
-                  >
-                    {shopSettings.is_facility_searchable ? '公開中' : '非公開'}
-                  </button>
+                 <div>
+                   <div style={{fontWeight:'bold', fontSize:'0.9rem'}}>施設検索への公開</div>
+                   <div style={{fontSize:'0.7rem', color:'#64748b'}}>施設側で検索・リクエストが可能になります</div>
+                 </div>
+                 <button 
+                   onClick={() => setShopSettings({...shopSettings, is_facility_searchable: !shopSettings.is_facility_searchable})}
+                   style={toggleBtnStyle(shopSettings.is_facility_searchable)}
+                 >
+                   {shopSettings.is_facility_searchable ? '公開中' : '非公開'}
+                 </button>
                </div>
 
                <label style={labelStyle}>施設向け専門ジャンル
@@ -594,84 +613,80 @@ const handleSave = async (e) => {
                     ))}
                   </select>
                </label>
+            </div>
 
-               {/* 🚀 🆕 ここに追加：施術キャパシティ設定セクション */}
-               <div style={{ marginTop: '20px', padding: '15px', background: '#f0fdf4', borderRadius: '15px', border: '1px solid #bbf7d0' }}>
-                 <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#166534', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                   <Users size={16} /> 施術キャパシティ設定
+            {/* 2. 施術キャパシティ ＆ 時間枠設定（開始時間も復活！） */}
+            <div style={{ padding: '20px', background: '#f0fdf4', borderRadius: '20px', border: '1px solid #bbf7d0' }}>
+                 <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#166534', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                   <Users size={16} /> 施術キャパシティ ＆ 時間枠の設定
                  </div>
                  
-                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-                   {/* 1段目：人数設定 */}
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
                    <label style={labelStyle}>1人1時間の施術人数
-                     <input 
-                       type="number" step="0.1"
-                       value={shopSettings.hourly_capacity_per_staff || ''} 
-                       onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} 
-                       style={inputStyle} 
-                     />
+                     <input type="number" step="0.1" value={shopSettings.hourly_capacity_per_staff || ''} onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} style={inputStyle} />
                    </label>
                    <label style={labelStyle}>訪問スタッフ数(標準)
-                     <input 
-                       type="number"
-                       value={shopSettings.facility_staff_count || ''} 
-                       onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} 
-                       style={inputStyle} 
-                     />
+                     <input type="number" value={shopSettings.facility_staff_count || ''} onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} style={inputStyle} />
+                   </label>
+                   
+                   {/* ⭕️ 復活：開始時間 */}
+                   <label style={labelStyle}>施設訪問 開始時間
+                     <input type="time" value={shopSettings.facility_visit_start || '09:00'} onChange={(e) => setShopSettings({...shopSettings, facility_visit_start: e.target.value})} style={inputStyle} />
                    </label>
 
-                   {/* 🚀 🆕 2段目：施設専用の受付時間設定 */}
-                   <label style={labelStyle}>施設訪問 開始時間
-                     <input 
-                       type="time"
-                       value={shopSettings.facility_visit_start || '09:00'} 
-                       onChange={(e) => setShopSettings({...shopSettings, facility_visit_start: e.target.value})} 
-                       style={inputStyle} 
-                     />
-                   </label>
+                   {/* 終了時間 */}
                    <label style={labelStyle}>施設訪問 終了時間
-                     <input 
-                       type="time"
-                       value={shopSettings.facility_visit_end || '16:00'} 
-                       onChange={(e) => setShopSettings({...shopSettings, facility_visit_end: e.target.value})} 
-                       style={inputStyle} 
-                     />
+                     <input type="time" value={shopSettings.facility_visit_end || '16:00'} onChange={(e) => setShopSettings({...shopSettings, facility_visit_end: e.target.value})} style={inputStyle} />
                    </label>
                  </div>
-                 <p style={{ fontSize: '0.65rem', color: '#166534', marginTop: '8px', lineHeight: '1.4' }}>
-                   ※施設側が開始時間を選んだ際、「何名まで予約可能か」を自動計算するベースになります。
-                 </p>
+
+                 {/* ポチポチ選べるタイルセクション */}
+                 <div style={{ marginTop: '20px', paddingTop: '15px', borderTop: '1px dashed #bbf7d0' }}>
+                   <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#166534', marginBottom: '10px' }}>🕒 施設側に表示する時間枠（タップして選択）</div>
+                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+                     {FACILITY_TIME_OPTIONS.map(time => {
+                       const isActive = shopSettings.facility_visit_slots?.includes(time);
+                       return (
+                         <button key={time} type="button" onClick={() => toggleTimeSlot(time)} style={{ padding: '8px 12px', borderRadius: '10px', border: isActive ? 'none' : '1px solid #cbd5e1', background: isActive ? '#4f46e5' : '#fff', color: isActive ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem', transition: '0.2s' }}>
+                           {time}
+                         </button>
+                       );
+                     })}
+                   </div>
+                   <p style={{ fontSize: '0.65rem', color: '#166534', marginTop: '12px', lineHeight: '1.4' }}>
+                     ※選んだ時間だけが施設側の予約画面にボタンとして表示されます。<br/>
+                     ※「最大〇名」の計算には、上記の「終了時間」が使用されます。
+                   </p>
+                 </div>
+            </div>
+
+            {/* 3. 振込先情報（キャパ設定のすぐ下に配置） */}
+            <div style={{ padding: '20px', background: '#f8fafc', borderRadius: '20px', border: '1px solid #e2e8f0' }}>
+               <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#475569', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                 <ReceiptText size={16} /> お振込先情報（請求書に記載されます）
+               </div>
+               
+               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: '12px' }}>
+                 <label style={labelStyle}>銀行名
+                   <input type="text" value={shopSettings.bank_name || ''} onChange={(e) => setShopSettings({...shopSettings, bank_name: e.target.value})} style={inputStyle} />
+                 </label>
+                 <label style={labelStyle}>支店名
+                   <input type="text" value={shopSettings.bank_branch || ''} onChange={(e) => setShopSettings({...shopSettings, bank_branch: e.target.value})} style={inputStyle} />
+                 </label>
+                 <label style={labelStyle}>口座番号
+                   <input type="text" value={shopSettings.bank_account_number || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_number: e.target.value})} style={inputStyle} />
+                 </label>
+                 <label style={{ ...labelStyle, gridColumn: '1 / -1' }}>名義(カナ)
+                   <input type="text" value={shopSettings.bank_account_holder || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_holder: e.target.value})} style={inputStyle} />
+                 </label>
                </div>
             </div>
 
-            {/* 右側：振込先エリア */}
-            <div style={{ 
-  display: 'grid', 
-  gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', // 🚀 スマホ対応
-  gap: '12px' 
-}}>
-  <label style={labelStyle}>銀行名
-    <input type="text" value={shopSettings.bank_name || ''} onChange={(e) => setShopSettings({...shopSettings, bank_name: e.target.value})} style={inputStyle} />
-  </label>
-  
-  <label style={labelStyle}>支店名
-    <input type="text" value={shopSettings.bank_branch || ''} onChange={(e) => setShopSettings({...shopSettings, bank_branch: e.target.value})} style={inputStyle} />
-  </label>
-  
-  <label style={labelStyle}>口座番号
-    <input type="text" value={shopSettings.bank_account_number || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_number: e.target.value})} style={inputStyle} />
-  </label>
-  
-  {/* 名義は重要なので、常に1行（2カラム分）使わせるのが綺麗です */}
-  <label style={{ ...labelStyle, gridColumn: '1 / -1' }}>名義(カナ)
-    <input type="text" value={shopSettings.bank_account_holder || ''} onChange={(e) => setShopSettings({...shopSettings, bank_account_holder: e.target.value})} style={inputStyle} />
-  </label>
-</div>
           </div>
           
           <button 
-  onClick={saveShopGlobalSettings} // ✅ この名前に修正！
-  disabled={isUpdating}
+            onClick={saveShopGlobalSettings}
+            disabled={isUpdating}
             style={{ ...addBtnStyle, width: '100%', marginTop: '20px', background: '#1e293b', justifyContent: 'center' }}
           >
             {isUpdating ? '保存中...' : '基本設定をすべて保存する'}
