@@ -106,28 +106,41 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const calculateCapacity = (dateStr, startTimeStr) => {
     if (!selectedShop || !startTimeStr) return 0;
     
-    // 1. その日の曜日から閉店時間を取得
     const d = new Date(dateStr);
     const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = dayNames[d.getDay()];
     const bHours = selectedShop?.business_hours || {};
-    const closeStr = bHours[dayKey]?.close || '18:00';
 
-    // 2. 残り時間を計算 (単位: 時間)
-    const [startH, startM] = startTimeStr.split(':').map(Number);
-    const [endH, endM] = closeStr.split(':').map(Number);
-    
-    const startTotalMin = startH * 60 + startM;
-    const endTotalMin = endH * 60 + endM;
-    const remainingHours = (endTotalMin - startTotalMin) / 60;
+    // 1. 各種設定時間を分単位に変換するヘルパー
+    const toMin = (t) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
 
-    if (remainingHours <= 0) return 0;
+    const startMin = toMin(startTimeStr);
+    const endMin = toMin(selectedShop.facility_visit_end || bHours[dayKey]?.close || '17:00');
+    const lunchStartMin = toMin(selectedShop.facility_lunch_start || '12:00');
+    const lunchEndMin = toMin(selectedShop.facility_lunch_end || '13:00');
 
-    // 3. キャパシティ計算（先ほど profiles に追加した新カラムを使用）
+    // 2. 総活動時間を計算
+    let activeMinutes = endMin - startMin;
+
+    // 3. 🚀 🆕 休憩時間との重複を計算して差し引く
+    // 「活動時間（Start〜End）」と「休憩時間（LunchStart〜LunchEnd）」が重なっている分を出す
+    const overlapStart = Math.max(startMin, lunchStartMin);
+    const overlapEnd = Math.min(endMin, lunchEndMin);
+    const overlapMinutes = Math.max(0, overlapEnd - overlapStart);
+
+    activeMinutes -= overlapMinutes;
+
+    if (activeMinutes <= 0) return 0;
+
+    // 4. キャパシティ計算
     const capacityPerStaff = selectedShop.hourly_capacity_per_staff || 2.0;
     const staffCount = selectedShop.facility_staff_count || 1;
     
-    return Math.floor(remainingHours * staffCount * capacityPerStaff);
+    // (実働分 / 60分) × スタッフ数 × 1時間あたりの人数
+    return Math.floor((activeMinutes / 60) * staffCount * capacityPerStaff);
   };
 
   // --- 2. 判定補助：営業時間に重なっているかチェックする関数 ---
@@ -298,9 +311,16 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     if (status === 'keeping') {
       setTimeModal({ show: true, dateStr, currentTime: statusData.time || '09:00' });
     } else {
-      await supabase.from('keep_dates').upsert({ date: dateStr, facility_user_id: facilityId, shop_id: selectedShop.id, start_time: '09:00' });
+      // 🚀 🆕 設定された時間枠の1番目（例: 09:00）を初期値にする
+      const defaultTime = selectedShop.facility_visit_slots?.[0] || '09:00';
+      await supabase.from('keep_dates').upsert({ 
+        date: dateStr, 
+        facility_user_id: facilityId, 
+        shop_id: selectedShop.id, 
+        start_time: defaultTime 
+      });
       fetchData();
-      setTimeModal({ show: true, dateStr, currentTime: '09:00' });
+      setTimeModal({ show: true, dateStr, currentTime: defaultTime });
     }
   };
 
@@ -432,8 +452,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                 <div style={{ fontSize: '0.85rem', color: '#888' }}>{timeModal.dateStr.replace(/-/g, '/')}</div>
               </div>
               <div style={timeListScroll}>
-                {['09:00','09:30','10:00','10:30','11:00','11:30','13:00','14:00','15:00','16:00'].map(t => {
-                  // 🚀 🆕 その時間を選んだ場合のキャパを計算
+                {/* 🚀 🆕 三土手さんが管理画面で選んだ時間枠（facility_visit_slots）だけを回す */}
+                {(selectedShop.facility_visit_slots || ['09:00', '13:00']).map(t => {
                   const cap = calculateCapacity(timeModal.dateStr, t);
                   return (
                     <button 
@@ -442,7 +462,10 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                       style={{...timeCard(timeModal.currentTime.substring(0,5) === t), flexDirection: 'column', gap: '2px'}}
                     >
                       <div style={{display:'flex', alignItems:'center', gap:'4px'}}><Clock size={14} /> {t}</div>
-                      <div style={{fontSize: '0.65rem', opacity: 0.8}}>最大 {cap}名</div>
+                      {/* キャパが1名以上なら人数、0名なら「受付不可」と出す親切設計 */}
+                      <div style={{fontSize: '0.65rem', color: cap > 0 ? '#10b981' : '#ef4444', fontWeight: 'bold'}}>
+                        {cap > 0 ? `最大 ${cap}名` : '時間外です'}
+                      </div>
                     </button>
                   );
                 })}

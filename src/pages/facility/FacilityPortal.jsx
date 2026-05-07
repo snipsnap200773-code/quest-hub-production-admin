@@ -31,6 +31,9 @@ const FacilityPortal = () => {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('residents');
   const [sharedDate, setSharedDate] = useState(new Date());
+  const [shopProfile, setShopProfile] = useState(null);
+  const [draftCount, setDraftCount] = useState(0); 
+  const [totalCapacity, setTotalCapacity] = useState(0);
 
   // 🚀 🆕 追加：アラート用のState
   const [urgentKeeps, setUrgentKeeps] = useState([]);    // 期限間近（3日以内）
@@ -79,46 +82,106 @@ const FacilityPortal = () => {
 
   const fetchFacilityData = async () => {
     setLoading(true);
-    // 1. 施設プロフィール取得
-    const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
-    if (fac) setFacility(fac);
+    try {
+      // 1. 施設プロフィール ＆ 店舗プロフィールの取得
+      const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
+      if (fac) setFacility(fac);
 
-    // 2. スケジュールチェック（キープ vs 確定予約）
-    const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
-    const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
+      // 🚀 🆕 提携している店舗の設定（キャパ・休憩時間など）を親でも保持
+      // 🚀 🆕 同時に「現在の名簿の下書き数」もカウントして取得
+      const [connRes, draftRes] = await Promise.all([
+        supabase.from('shop_facility_connections').select('profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').maybeSingle(),
+        supabase.from('visit_list_drafts').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId)
+      ]);
+      
+      if (connRes.data) setShopProfile(connRes.data.profiles);
+      setDraftCount(draftRes.count || 0);
 
-    const todayStr = new Date().toLocaleDateString('sv-SE');
-    const urgList = [];
-    const unconList = [];
+      // 2. スケジュールチェック（キープ vs 確定予約）
+      const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
+      const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
 
-    (mData || []).forEach(k => {
-      if (k.date < todayStr) return; // 過去は無視
+      // 🚀 🆕 キープ日程（mData）をStateに保存（キャパ計算に使うため）
+      setUnconfirmedKeeps(mData || []); 
 
-      // 確定済みかどうか判定
-      const isBooked = (visitData || []).some(v => 
-        (v.status === 'confirmed' || v.status === 'completed') && 
-        (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
-      );
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+      const urgList = [];
+      const unconList = [];
 
-      if (!isBooked) {
-        unconList.push(k); // 未確定リストへ
+      (mData || []).forEach(k => {
+        if (k.date < todayStr) return;
 
-        // 3日前判定
-        const diffTime = new Date(k.date).getTime() - new Date(todayStr).getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-        if (diffDays >= 0 && diffDays <= 3) {
-          urgList.push({ ...k, diffDays }); // 期限間近リストへ
+        const isBooked = (visitData || []).some(v => 
+          (v.status === 'confirmed' || v.status === 'completed') && 
+          (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
+        );
+
+        if (!isBooked) {
+          unconList.push(k);
+          const diffTime = new Date(k.date).getTime() - new Date(todayStr).getTime();
+          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...k, diffDays });
         }
-      }
-    });
+      });
 
-    setUrgentKeeps(urgList);
-    setUnconfirmedKeeps(unconList);
-    setLoading(false);
+      setUrgentKeeps(urgList);
+      // setUnconfirmedKeeps(unconList); // 💡 上の setUnconfirmedKeeps と統合したのでここはお好みで
+    } catch (err) {
+      console.error("データ取得エラー:", err);
+    } finally {
+      setLoading(false);
+    }
+  }; // 👈 ここが fetchFacilityData の終わり
+
+  // ==========================================
+  // 🚀 🆕 ここから追加：親側（脳）の計算ロジック
+  // ==========================================
+  
+  // ① 施術可能人数の計算機
+  const calculateCapacity = (dateStr, startTimeStr, profile) => {
+    if (!profile || !startTimeStr) return 0;
+    const toMin = (t) => { const [h, m] = t.split(':').map(Number); return h * 60 + m; };
+    const startMin = toMin(startTimeStr);
+    const endMin = toMin(profile.facility_visit_end || '17:00');
+    const lunchStartMin = toMin(profile.facility_lunch_start || '12:00');
+    const lunchEndMin = toMin(profile.facility_lunch_end || '13:00');
+    
+    let activeMinutes = endMin - startMin;
+    const overlapStart = Math.max(startMin, lunchStartMin);
+    const overlapEnd = Math.min(endMin, lunchEndMin);
+    const overlapMinutes = Math.max(0, overlapEnd - overlapStart);
+    activeMinutes -= overlapMinutes;
+    
+    const capPerStaff = profile.hourly_capacity_per_staff || 2.0;
+    const staffCount = profile.facility_staff_count || 1;
+    return Math.floor((activeMinutes / 60) * staffCount * capPerStaff);
   };
 
+  // ② 現在の月の合計キャパを自動計算
+  useEffect(() => {
+    if (!shopProfile || unconfirmedKeeps.length === 0) {
+      setTotalCapacity(0);
+      return;
+    }
+    // 表示している月のキープだけを合計する
+    const currentMonthPrefix = `${sharedDate.getFullYear()}-${String(sharedDate.getMonth() + 1).padStart(2, '0')}`;
+    const monthlyKeeps = unconfirmedKeeps.filter(k => k.date.startsWith(currentMonthPrefix));
+    
+    const total = monthlyKeeps.reduce((sum, k) => {
+      return sum + calculateCapacity(k.date, k.start_time || '09:00', shopProfile);
+    }, 0);
+    
+    setTotalCapacity(total);
+  }, [sharedDate, unconfirmedKeeps, shopProfile]);
+
+  // ③ オーバー判定（名簿画面でもこれを使う）
+  const isOverCapacity = draftCount > totalCapacity && totalCapacity > 0;
+
+  // ==========================================
+  // 🚀 🆕 ここまで追加
+  // ==========================================
+
   // サイドバーのメニュー構成
-  // 🚀 🆕 役割ごとにグループ化
   const menuGroups = [
     {
       groupName: '基礎管理',
@@ -207,10 +270,16 @@ const FacilityPortal = () => {
                   <button
                     key={item.id}
                     onClick={() => {
+                      // 🚀 🆕 予約確定(booking)へ進もうとした時のチェック
+                      if (item.id === 'booking' && isOverCapacity) {
+                        alert("施術可能人数を超えているため、予約確定へ進めません。\n名簿の人数を調整するか、訪問日を増やしてください。");
+                        return;
+                      }
                       setActiveTab(item.id);
                       if (isMobile) setIsMenuOpen(false);
                     }}
-                    style={sidebarBtnStyle(activeTab === item.id)}
+                    // 🚀 🆕 スタイルに関数を追加して、ロック状態を表現
+                    style={sidebarBtnStyle(activeTab === item.id, item.id === 'booking' && isOverCapacity)}
                   >
                     {/* 🚀 予約フローの時だけ数字バッジを出す、それ以外はアイコン */}
                     {group.isFlow ? (
@@ -331,9 +400,16 @@ const FacilityPortal = () => {
   /* 🚀 sharedDateを渡す */
   <FacilityKeepDate_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} /> 
 ) : activeTab === 'list-up' ? (
-  /* 🚀 sharedDateを渡す */
-  <FacilityListUp_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} />
-) : activeTab === 'booking' ? ( 
+  <FacilityListUp_PC 
+    facilityId={facilityId} 
+    isMobile={isMobile} 
+    setActiveTab={setActiveTab} 
+    sharedDate={sharedDate} 
+    setSharedDate={setSharedDate}
+    // 🚀 setIsOverCapacity の行を消しました
+  />
+) :
+ activeTab === 'booking' ? ( 
   /* 🚀 sharedDateを渡す */
   <FacilityBooking_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} />
 ) : activeTab === 'status' ? (
@@ -441,10 +517,16 @@ const stepNumberStyle = (active) => ({
 });
 
 // 💡 既存の sidebarBtnStyle に minHeight を足すと押しやすくなります
-const sidebarBtnStyle = (active) => ({
+const sidebarBtnStyle = (active, isLocked) => ({
   display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 15px', borderRadius: '10px',
-  background: active ? '#c5a059' : 'transparent', color: active ? '#3d2b1f' : '#d1c7be',
-  border: 'none', cursor: 'pointer', transition: '0.2s', width: '100%', textAlign: 'left',
+  background: active ? '#c5a059' : 'transparent', 
+  color: isLocked ? '#64748b' : (active ? '#3d2b1f' : '#d1c7be'), // ロック時はグレー
+  border: 'none', 
+  cursor: isLocked ? 'not-allowed' : 'pointer', // ロック時は禁止マーク
+  opacity: isLocked ? 0.5 : 1, // ロック時は薄くする
+  transition: '0.2s', 
+  width: '100%', 
+  textAlign: 'left',
   minHeight: '44px' 
 });
 

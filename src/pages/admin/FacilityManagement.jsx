@@ -615,28 +615,36 @@ const handleSave = async (e) => {
                </label>
             </div>
 
-            {/* 2. 施術キャパシティ ＆ 時間枠設定（開始時間も復活！） */}
+            {/* 2. 施術キャパシティ ＆ 時間枠設定（全6項目で修正） */}
             <div style={{ padding: '20px', background: '#f0fdf4', borderRadius: '20px', border: '1px solid #bbf7d0' }}>
                  <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#166534', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '6px' }}>
                    <Users size={16} /> 施術キャパシティ ＆ 時間枠の設定
                  </div>
                  
-                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                 {/* 🚀 🆕 3列×2段の計6項目が並ぶように調整しました */}
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>
                    <label style={labelStyle}>1人1時間の施術人数
                      <input type="number" step="0.1" value={shopSettings.hourly_capacity_per_staff || ''} onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} style={inputStyle} />
                    </label>
                    <label style={labelStyle}>訪問スタッフ数(標準)
                      <input type="number" value={shopSettings.facility_staff_count || ''} onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} style={inputStyle} />
                    </label>
-                   
+
                    {/* ⭕️ 復活：開始時間 */}
                    <label style={labelStyle}>施設訪問 開始時間
                      <input type="time" value={shopSettings.facility_visit_start || '09:00'} onChange={(e) => setShopSettings({...shopSettings, facility_visit_start: e.target.value})} style={inputStyle} />
                    </label>
 
-                   {/* 終了時間 */}
                    <label style={labelStyle}>施設訪問 終了時間
-                     <input type="time" value={shopSettings.facility_visit_end || '16:00'} onChange={(e) => setShopSettings({...shopSettings, facility_visit_end: e.target.value})} style={inputStyle} />
+                     <input type="time" value={shopSettings.facility_visit_end || '17:00'} onChange={(e) => setShopSettings({...shopSettings, facility_visit_end: e.target.value})} style={inputStyle} />
+                   </label>
+
+                   {/* ☕️ 休憩時間 */}
+                   <label style={labelStyle}>休憩 開始
+                     <input type="time" value={shopSettings.facility_lunch_start || '12:00'} onChange={(e) => setShopSettings({...shopSettings, facility_lunch_start: e.target.value})} style={inputStyle} />
+                   </label>
+                   <label style={labelStyle}>休憩 終了
+                     <input type="time" value={shopSettings.facility_lunch_end || '13:00'} onChange={(e) => setShopSettings({...shopSettings, facility_lunch_end: e.target.value})} style={inputStyle} />
                    </label>
                  </div>
 
@@ -655,7 +663,7 @@ const handleSave = async (e) => {
                    </div>
                    <p style={{ fontSize: '0.65rem', color: '#166534', marginTop: '12px', lineHeight: '1.4' }}>
                      ※選んだ時間だけが施設側の予約画面にボタンとして表示されます。<br/>
-                     ※「最大〇名」の計算には、上記の「終了時間」が使用されます。
+                     ※「最大〇名」の計算には、上記の「終了時間」と「休憩時間」が使用されます。
                    </p>
                  </div>
             </div>
