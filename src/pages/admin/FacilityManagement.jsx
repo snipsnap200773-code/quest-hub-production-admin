@@ -34,6 +34,10 @@ const FacilityManagement = () => {
     email_notifications_enabled: true,
     is_facility_searchable: false, // 🚀 追加：検索に出るか
     sub_business_type: '理美容',    // 🚀 追加：ジャンル
+    hourly_capacity_per_staff: 2.0,
+    facility_staff_count: 1,
+    facility_visit_start: '09:00',
+    facility_visit_end: '16:00',
     bank_name: '',
     bank_branch: '',
     bank_account_type: '普通',
@@ -82,7 +86,7 @@ const FacilityManagement = () => {
     // ✅ 修正：振込先情報も一緒に取得するように変更
     const { data: profile } = await supabase
       .from('profiles')
-      .select('business_name, zip_code, address, phone, email_notifications_enabled, is_facility_searchable, sub_business_type, bank_name, bank_branch, bank_account_type, bank_account_number, bank_account_holder')
+      .select('..., hourly_capacity_per_staff, facility_staff_count, facility_visit_start, facility_visit_end') // 🚀 🆕 カラム追加
       .eq('id', shopId)
       .single();
     
@@ -306,6 +310,10 @@ const handleSave = async (e) => {
         .update({ 
           is_facility_searchable: shopSettings.is_facility_searchable, // 🚀 追加
           sub_business_type: shopSettings.sub_business_type,          // 🚀 追加
+          hourly_capacity_per_staff: shopSettings.hourly_capacity_per_staff,
+          facility_staff_count: shopSettings.facility_staff_count,
+          facility_visit_start: shopSettings.facility_visit_start,
+          facility_visit_end: shopSettings.facility_visit_end,
           bank_name: shopSettings.bank_name,
           bank_branch: shopSettings.bank_branch,
           bank_account_type: shopSettings.bank_account_type,
@@ -586,6 +594,54 @@ const handleSave = async (e) => {
                     ))}
                   </select>
                </label>
+
+               {/* 🚀 🆕 ここに追加：施術キャパシティ設定セクション */}
+               <div style={{ marginTop: '20px', padding: '15px', background: '#f0fdf4', borderRadius: '15px', border: '1px solid #bbf7d0' }}>
+                 <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#166534', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                   <Users size={16} /> 施術キャパシティ設定
+                 </div>
+                 
+                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
+                   {/* 1段目：人数設定 */}
+                   <label style={labelStyle}>1人1時間の施術人数
+                     <input 
+                       type="number" step="0.1"
+                       value={shopSettings.hourly_capacity_per_staff || ''} 
+                       onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} 
+                       style={inputStyle} 
+                     />
+                   </label>
+                   <label style={labelStyle}>訪問スタッフ数(標準)
+                     <input 
+                       type="number"
+                       value={shopSettings.facility_staff_count || ''} 
+                       onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} 
+                       style={inputStyle} 
+                     />
+                   </label>
+
+                   {/* 🚀 🆕 2段目：施設専用の受付時間設定 */}
+                   <label style={labelStyle}>施設訪問 開始時間
+                     <input 
+                       type="time"
+                       value={shopSettings.facility_visit_start || '09:00'} 
+                       onChange={(e) => setShopSettings({...shopSettings, facility_visit_start: e.target.value})} 
+                       style={inputStyle} 
+                     />
+                   </label>
+                   <label style={labelStyle}>施設訪問 終了時間
+                     <input 
+                       type="time"
+                       value={shopSettings.facility_visit_end || '16:00'} 
+                       onChange={(e) => setShopSettings({...shopSettings, facility_visit_end: e.target.value})} 
+                       style={inputStyle} 
+                     />
+                   </label>
+                 </div>
+                 <p style={{ fontSize: '0.65rem', color: '#166534', marginTop: '8px', lineHeight: '1.4' }}>
+                   ※施設側が開始時間を選んだ際、「何名まで予約可能か」を自動計算するベースになります。
+                 </p>
+               </div>
             </div>
 
             {/* 右側：振込先エリア */}

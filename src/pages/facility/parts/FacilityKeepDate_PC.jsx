@@ -102,6 +102,34 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     setLoading(false);
   };
 
+  // 🚀 🆕 ここに追加！：施術可能人数の計算ロジック
+  const calculateCapacity = (dateStr, startTimeStr) => {
+    if (!selectedShop || !startTimeStr) return 0;
+    
+    // 1. その日の曜日から閉店時間を取得
+    const d = new Date(dateStr);
+    const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+    const dayKey = dayNames[d.getDay()];
+    const bHours = selectedShop?.business_hours || {};
+    const closeStr = bHours[dayKey]?.close || '18:00';
+
+    // 2. 残り時間を計算 (単位: 時間)
+    const [startH, startM] = startTimeStr.split(':').map(Number);
+    const [endH, endM] = closeStr.split(':').map(Number);
+    
+    const startTotalMin = startH * 60 + startM;
+    const endTotalMin = endH * 60 + endM;
+    const remainingHours = (endTotalMin - startTotalMin) / 60;
+
+    if (remainingHours <= 0) return 0;
+
+    // 3. キャパシティ計算（先ほど profiles に追加した新カラムを使用）
+    const capacityPerStaff = selectedShop.hourly_capacity_per_staff || 2.0;
+    const staffCount = selectedShop.facility_staff_count || 1;
+    
+    return Math.floor(remainingHours * staffCount * capacityPerStaff);
+  };
+
   // --- 2. 判定補助：営業時間に重なっているかチェックする関数 ---
   const isOverlappingBusinessHours = (dateStr, events) => {
     // 該当日の予定だけを絞り込む
@@ -228,11 +256,28 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
       const regKeep = checkIsRegularKeep(new Date(dStr));
       const isAlreadyBooked = confirmedVisits.some(v => v.scheduled_date === dStr);
+      
+      // 🚀 🆕 既存のキープデータから開始時間を特定
+      const manualKeep = keepDates.find(k => k.date === dStr && k.facility_user_id === facilityId);
+      const activeStartTime = manualKeep?.start_time || (regKeep?.keeperId === facilityId ? regKeep.time : '09:00');
+
       if (regKeep && regKeep.keeperId === facilityId && !exclusions.includes(dStr) && !isAlreadyBooked) {
-        if (!list.some(k => k.date === dStr)) list.push({ date: dStr, isRegular: true });
+        if (!list.some(k => k.date === dStr)) {
+          list.push({ 
+            date: dStr, 
+            isRegular: true, 
+            start_time: activeStartTime,
+            capacity: calculateCapacity(dStr, activeStartTime) // 🚀 🆕 計算結果を付与
+          });
+        }
       }
     });
-    return list.sort((a, b) => a.date.localeCompare(b.date));
+    // 🚀 🆕 単発キープ側にも capacity を付与
+    const enrichedList = list.map(k => ({
+      ...k,
+      capacity: k.capacity || calculateCapacity(k.date, k.start_time || '09:00')
+    }));
+    return enrichedList.sort((a, b) => a.date.localeCompare(b.date));
   }, [keepDates, regularRules, exclusions, year, month, days, facilityId, confirmedVisits]);
 
   const handleDateClick = async (day) => {
@@ -359,9 +404,13 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                         <span style={{fontSize:'0.8rem', color:'#c5a059', fontWeight:'900'}}>STEP 1 完了！</span>
                         <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
                            <div style={keepCountBadge}>{allActiveKeeps.length}</div>
-                           <span style={{fontWeight:'bold', fontSize:'1rem'}}>日間の訪問日をキープ中</span>
+                           <span style={{fontWeight:'bold', fontSize:'0.9rem'}}>日間の訪問日をキープ中</span>
                         </div>
-                     </div>
+                        {/* 🚀 🆕 合計可能人数を表示 */}
+                        <div style={{fontSize: '0.75rem', color: '#f0e6d2', marginTop: '2px'}}>
+                          想定受入キャパ：合計 <strong>{allActiveKeeps.reduce((sum, k) => sum + (k.capacity || 0), 0)}</strong> 名
+                        </div>
+                      </div>
                      <button onClick={() => setActiveTab('list-up')} style={jumpBtn}>
                        次に利用者を選ぶ <ArrowRight size={18} />
                      </button>
@@ -383,9 +432,20 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                 <div style={{ fontSize: '0.85rem', color: '#888' }}>{timeModal.dateStr.replace(/-/g, '/')}</div>
               </div>
               <div style={timeListScroll}>
-                {['09:00','09:30','10:00','10:30','11:00','11:30','13:00','14:00','15:00','16:00'].map(t => (
-                  <button key={t} onClick={() => { handleTimeChange(timeModal.dateStr, t); setTimeModal({ ...timeModal, show: false }); }} style={timeCard(timeModal.currentTime.substring(0,5) === t)}><Clock size={16} /> {t}</button>
-                ))}
+                {['09:00','09:30','10:00','10:30','11:00','11:30','13:00','14:00','15:00','16:00'].map(t => {
+                  // 🚀 🆕 その時間を選んだ場合のキャパを計算
+                  const cap = calculateCapacity(timeModal.dateStr, t);
+                  return (
+                    <button 
+                      key={t} 
+                      onClick={() => { handleTimeChange(timeModal.dateStr, t); setTimeModal({ ...timeModal, show: false }); }} 
+                      style={{...timeCard(timeModal.currentTime.substring(0,5) === t), flexDirection: 'column', gap: '2px'}}
+                    >
+                      <div style={{display:'flex', alignItems:'center', gap:'4px'}}><Clock size={14} /> {t}</div>
+                      <div style={{fontSize: '0.65rem', opacity: 0.8}}>最大 {cap}名</div>
+                    </button>
+                  );
+                })}
               </div>
               <button onClick={async () => { await supabase.from('keep_dates').delete().match({ date: timeModal.dateStr, facility_user_id: facilityId }); fetchData(); setTimeModal({ ...timeModal, show: false }); }} style={deleteKeepBtn}><Trash2 size={16} /> 解除する</button>
               <button onClick={() => setTimeModal({ ...timeModal, show: false })} style={closeBtn}>閉じる</button>
