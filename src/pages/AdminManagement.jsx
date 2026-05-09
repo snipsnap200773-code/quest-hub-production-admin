@@ -297,6 +297,23 @@ function AdminManagement() {
     setShowSearchModal(false); // 👈 モーダルを閉じる
   };
 
+  // ==========================================
+  // 🚀 🆕 追加：顧客データの完全消去
+  // ==========================================
+  const handleDeleteCustomer = async (e, cust) => {
+    e.stopPropagation(); // 詳細パネルが開くのを防ぐ
+    if (!window.confirm(`「${cust.name}」様のデータを完全に消去しますか？\n※過去の売上データとの紐付けも解除されます。`)) return;
+
+    try {
+      const { error } = await supabase.from('customers').delete().eq('id', cust.id);
+      if (error) throw error;
+      alert("消去しました");
+      fetchInitialData(); // リストを再読込
+    } catch (err) {
+      alert("消去に失敗しました: " + err.message);
+    }
+  };
+
 // 🆕 キーボード操作（上下、エンター、エスケープ）を制御する
   const handleKeyDown = (e) => {
     if (searchResults.length === 0) return;
@@ -1001,10 +1018,14 @@ const sortedAllCustomers = useMemo(() => {
     if (!selectedCustomer) return; 
     setIsSavingMemo(true);
 
+    // 入力された名前の全角スペースなどを整える
     const normalizedName = (editFields.name || '').replace(/　/g, ' ').trim(); 
+    // 電話番号から数字以外（ハイフンなど）を抜く
+    const cleanPhone = editFields.phone?.replace(/[^0-9]/g, '');
+    const cleanEmail = editFields.email?.trim();
 
     try {
-      // 🚀 🆕 修正：ここ！ 保存前に「同じ名前の人」がいないかDBを再チェックします
+      // 1. まず同じ名前の人がいないかDBをチェック（名寄せの基本）
       const { data: existingCust } = await supabase
         .from('customers')
         .select('id')
@@ -1012,17 +1033,50 @@ const sortedAllCustomers = useMemo(() => {
         .eq('name', normalizedName)
         .maybeSingle();
 
-      // 💡 今開いているデータのID、またはDBで見つかった同一名データのIDを特定
-      // これを targetId に入れることで、新規作成ではなく「上書き」になります
       const targetId = selectedCustomer?.id || existingCust?.id;
 
+      // --- 🚀 🆕 【統合ロジック開始】 ---
+      // 2. 電話番号またはメールアドレスを使って、重複している「別のIDのデータ」を探す
+      if (targetId && (cleanPhone || cleanEmail)) {
+        let dupQuery = supabase.from('customers')
+          .select('id, name')
+          .eq('shop_id', cleanShopId)
+          .neq('id', targetId); // 今開いている人「以外」を探す
+        
+        const conditions = [];
+        if (cleanPhone) conditions.push(`phone.eq.${cleanPhone}`);
+        if (cleanEmail) conditions.push(`email.eq.${cleanEmail}`);
+        
+        const { data: duplicates } = await dupQuery.or(conditions.join(','));
+
+        if (duplicates && duplicates.length > 0) {
+          const oldCust = duplicates[0];
+          // ⚠️ 三土手さんに確認（家族で番号を共有している場合などの誤爆防止用）
+          if (window.confirm(`【名寄せ検知】\n別のIDで登録されている「${oldCust.name}」様の既存データが見つかりました。\n\n過去のすべての予約・売上記録を今のデータに合流させ、古い名簿を削除してもよろしいですか？`)) {
+            
+            // A. 古い予約データのIDを今のものに書き換え（引っ越し）
+            await supabase.from('reservations').update({ customer_id: targetId }).eq('customer_id', oldCust.id);
+            
+            // B. 古い売上データのIDを今のものに書き換え（引っ越し）
+            await supabase.from('sales').update({ customer_id: targetId }).eq('customer_id', oldCust.id);
+            
+            // C. 履歴が空になった古い顧客マスタを名簿から削除
+            await supabase.from('customers').delete().eq('id', oldCust.id);
+            
+            console.log("✅ 同一人物のデータを統合し、古いIDを削除しました:", oldCust.id);
+          }
+        }
+      }
+      // --- 🚀 【統合ロジック終了】 ---
+
+      // 3. 本来の保存処理（最新の入力内容で上書き）
       const payload = { 
         shop_id: cleanShopId, 
         name: normalizedName, 
         admin_name: normalizedName,
         furigana: editFields.furigana || null, 
-        phone: editFields.phone || null, 
-        email: editFields.email || null, 
+        phone: cleanPhone || null, 
+        email: cleanEmail || null, 
         address: editFields.address || null,
         zip_code: editFields.zip_code || null,
         parking: editFields.parking || null,
@@ -1037,25 +1091,15 @@ const sortedAllCustomers = useMemo(() => {
         updated_at: new Date().toISOString() 
       };
       
-      // 2. IDがあるなら更新、なければ新規作成
-      // 💡 update の時は .eq('id', targetId) で IDを指定しているので、
-      // 💡 payload の中身に id が入っていなくても正しく動きます！
       const { error } = targetId 
         ? await supabase.from('customers').update(payload).eq('id', targetId)
         : await supabase.from('customers').insert([payload]);
 
       if (error) throw error;
 
-      // 🚩 🚀 【ここが変更点！】
-      // 以前の facility_users への update 処理は「削除」しました。
-      // 店舗側の名簿(customers)は更新しますが、施設側の共通アカウント情報は守られます。
-
-      alert("情報を更新しました！✨");
+      alert("情報を更新・統合しました！✨");
       setIsCustomerInfoOpen(false); // ポップアップを閉じる
-      
-      // 💡 これを呼ぶことで、画面全体のリスト（allCustomers）が最新になり、
-      // 次に検索ボタンを押した時に「新しい住所」が反映されています。
-      fetchInitialData(); 
+      fetchInitialData(); // 画面全体（リスト）を最新の状態にする
 
     } catch (err) { 
       console.error("Save Error:", err);
@@ -1684,7 +1728,7 @@ return (
                           <div 
                             onClick={() => openCustomerInfo({ customer_name: cust.name })} 
                             style={{ 
-                              background: cust.is_active === false ? '#f1f5f9' : '#fff', // 👈 前回の「灰色」ロジックも合流！
+                              background: cust.is_active === false ? '#f1f5f9' : '#fff',
                               opacity: cust.is_active === false ? 0.6 : 1,
                               padding: '18px', 
                               borderRadius: '16px', 
@@ -1694,32 +1738,55 @@ return (
                               display: 'flex', 
                               justifyContent: 'space-between', 
                               alignItems: 'center',
-                              maxWidth: isPC ? '700px' : '100%', // PCで横に伸びすぎないように制限
-                              transition: 'transform 0.1s',
+                              maxWidth: isPC ? '700px' : '100%',
+                              transition: 'transform 0.1s', // 🚀 エフェクトを滑らかにする
                             }}
+                            // 🚀 ホバーエフェクト（浮き上がる）を維持
                             onMouseEnter={(e) => isPC && (e.currentTarget.style.transform = 'translateY(-2px)')}
                             onMouseLeave={(e) => isPC && (e.currentTarget.style.transform = 'translateY(0)')}
                           >
-                            <div>
-                              <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '5px' }}>
-                                {cust.name} 様
-                                {cust.is_blocked && <span style={{ color: '#ef4444' }} title="ブロック中">🚫</span>}
-                                {(cust.cancel_count >= 3) && <span style={{ color: '#ef4444' }}>‼️</span>}
+                            {/* 🚀 🆕 横並びのレイアウトに再構成 */}
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', width: '100%' }}>
+                              
+                              {/* 左側：名前・LINEバッジ・電話番号・来店日 */}
+                              <div style={{ flex: 1 }}>
+                                <div style={{ fontWeight: 'bold', fontSize: '1.1rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  {cust.name} 様
+                                  {/* 🚀 🆕 LINE連携済みバッジ */}
+                                  {cust.line_user_id && (
+                                    <span style={{ fontSize: '0.6rem', background: '#06c755', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: '900' }}>LINE連携済</span>
+                                  )}
+                                  {cust.is_blocked && <span style={{ color: '#ef4444' }} title="ブロック中">🚫</span>}
+                                  {(cust.cancel_count >= 3) && <span style={{ color: '#ef4444' }}>‼️</span>}
+                                </div>
+                                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
+                                <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
+                                  最終来店: {latestVisit ? latestVisit.toLocaleDateString() : '記録なし'}
+                                </div>
                               </div>
-                              <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>📞 {cust.phone || '電話未登録'}</div>
-                              <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '8px' }}>
-                            {/* 💡 DBの記録か、計算した最新日のどちらか新しい方を表示 */}
-                            最終来店: {latestVisit ? latestVisit.toLocaleDateString() : '記録なし'}
-                          </div>
+                              
+                              {/* 右側：ゴミ箱ボタン ＆ 利用回数 */}
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '10px' }}>
+                                {/* 🚀 🆕 ゴミ箱ボタン（ホバーで赤くなる） */}
+                                <button 
+                                  onClick={(e) => handleDeleteCustomer(e, cust)}
+                                  style={{ background: 'none', border: 'none', color: '#cbd5e1', cursor: 'pointer', padding: '5px', transition: '0.2s' }}
+                                  onMouseEnter={(e) => e.currentTarget.style.color = '#ef4444'}
+                                  onMouseLeave={(e) => e.currentTarget.style.color = '#cbd5e1'}
+                                  title="名簿から完全に消去"
+                                >
+                                  <Trash2 size={18} />
+                                </button>
+
+                                <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px' }}>
+                                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
+                                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
+                                    {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
+                                  </div>
+                                </div>
+                              </div>
+
                             </div>
-                            <div style={{ textAlign: 'right', borderLeft: '1px solid #f1f5f9', paddingLeft: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              <div>
-                  <div style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>利用回数</div>
-                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#4b2c85' }}>
-                    {realVisitCount}<span style={{fontSize:'0.75rem', marginLeft: '2px'}}>回</span>
-                  </div>
-                </div>
-              </div>
                           </div>
                         </React.Fragment>
                       );
@@ -2080,14 +2147,25 @@ return (
           <div 
             style={{ 
               ...checkoutPanelStyle, 
-              // 🆕 修正：スマホの時は横幅100% ＆ 下にボトムナビ避用の余白を作る
               width: isPC ? '450px' : '100%', 
               paddingBottom: isPC ? '0' : '80px', 
               background: '#fdfcf5' 
             }} 
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ ...checkoutHeaderStyle, background: '#008000' }}><div><h3 style={{ margin: 0 }}>{selectedCustomer?.name} 様</h3><p style={{ fontSize: '0.8rem', margin: 0 }}>顧客カルテ編集</p></div><button onClick={() => setIsCustomerInfoOpen(false)} style={{ background: 'none', border: 'none', color: '#fff' }}><X size={24} /></button></div>
+            <div style={{ ...checkoutHeaderStyle, background: '#008000' }}>
+              <div>
+                {/* 🚀 🆕 LINEバッジをタイトルの横へ配置 */}
+                <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {selectedCustomer?.name} 様
+                  {editFields.line_user_id && (
+                    <span style={{ fontSize: '0.6rem', background: '#fff', color: '#008000', padding: '2px 6px', borderRadius: '4px' }}>LINE連携中</span>
+                  )}
+                </h3>
+                <p style={{ fontSize: '0.8rem', margin: 0 }}>顧客カルテ編集</p>
+              </div>
+              <button onClick={() => setIsCustomerInfoOpen(false)} style={{ background: 'none', border: 'none', color: '#fff' }}><X size={24} /></button>
+            </div>
             <div style={{ flex: 1, overflowY: 'auto', padding: '20px' }}>
               
               {/* 🆕 🚀 ここから施設専用の利用者リストを表示！！ ================== */}
@@ -2303,6 +2381,17 @@ return (
   placeholder="お客様の好みや注意事項（全画面共通のメモです）"
 />
               <button onClick={saveCustomerInfo} disabled={isSavingMemo} style={{ width: '100%', padding: '15px', background: '#008000', color: '#fff', borderRadius: '10px', fontWeight: 'bold' }}>{isSavingMemo ? '保存中...' : '情報を保存'}</button>
+
+              <div style={{ marginTop: '20px', padding: '15px', borderRadius: '12px', border: '1px solid #fee2e2', textAlign: 'center' }}>
+                <p style={{ margin: '0 0 10px 0', fontSize: '0.7rem', color: '#ef4444' }}>※重複したデータや誤登録を整理する場合</p>
+                <button 
+                  onClick={(e) => handleDeleteCustomer(e, selectedCustomer)}
+                  style={{ background: 'none', border: 'none', color: '#ef4444', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  <Trash2 size={14} style={{ verticalAlign: 'middle', marginRight: '4px' }} />
+                  この顧客データを名簿から完全に削除する
+                </button>
+              </div>
               
               <SectionTitle icon={<History size={16} />} title="過去の履歴" color="#4b2c85" />
               <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

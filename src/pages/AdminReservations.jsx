@@ -948,7 +948,6 @@ const { data: resData } = await supabase
         fetchData();
         return; // プライベート予定の時はここで終了
       }
-      // --- ここまで追加 ---
 
       // 1. まず同じ名前の人がいないかDBをチェック（名寄せ）
       const { data: existingCust } = await supabase
@@ -959,6 +958,40 @@ const { data: resData } = await supabase
         .maybeSingle();
 
       const finalTargetId = selectedCustomer?.id || existingCust?.id;
+
+      // --- 🚀 🆕 ここから「強力な名寄せ（統合）」ロジックを追加 ---
+      const cleanPhone = editFields.phone?.replace(/[^0-9]/g, '');
+      const cleanEmail = editFields.email?.trim();
+
+      // 💡 IDが確定していて、かつ電話かメールが入力されている場合のみ実行
+      if (finalTargetId && (cleanPhone || cleanEmail)) {
+        // 自分自身(finalTargetId)以外の、同じ電話番号またはメールアドレスを持つ人を探す
+        let dupQuery = supabase.from('customers').select('id, name').eq('shop_id', shopId).neq('id', finalTargetId);
+        
+        const conditions = [];
+        if (cleanPhone) conditions.push(`phone.eq.${cleanPhone}`);
+        if (cleanEmail) conditions.push(`email.eq.${cleanEmail}`);
+        
+        const { data: duplicates } = await dupQuery.or(conditions.join(','));
+
+        if (duplicates && duplicates.length > 0) {
+          const oldCust = duplicates[0];
+          // 三土手さんに確認（家族で番号共有している場合などの誤爆防止）
+          if (window.confirm(`【名寄せ検知】\n別のIDで登録されている「${oldCust.name}」様のデータが見つかりました。\n\n過去のすべての予約・売上記録を、今のデータに統合して、古い名簿を削除してもよろしいですか？`)) {
+            
+            // A. 予約データの引っ越し
+            await supabase.from('reservations').update({ customer_id: finalTargetId }).eq('customer_id', oldCust.id);
+            
+            // B. 売上データの引っ越し
+            await supabase.from('sales').update({ customer_id: finalTargetId }).eq('customer_id', oldCust.id);
+            
+            // C. 履歴が空になった古い顧客マスタを削除
+            await supabase.from('customers').delete().eq('id', oldCust.id);
+            
+            console.log("✅ 同一人物のデータを統合し、古いIDを削除しました:", oldCust.id);
+          }
+        }
+      }
 
       // 2. 保存用データの作成（フォームの全項目を名簿のカラムにマッピング）
       const customerPayload = {

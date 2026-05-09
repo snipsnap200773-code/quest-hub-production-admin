@@ -115,27 +115,30 @@ const payload = await req.json();
     // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
     if (type === 'cancel' && payload.reservation) {
       const res = payload.reservation;
+      // 🚀 1. 先に shopId を確定させる（URL生成に使うため）
+      shopId = shopId || res.shop_id;
+
       customerEmail = customerEmail || res.customer_email;
       customerName = customerName || res.customer_name;
       startTime = startTime || res.start_time;
+
+      // 🚀 2. 【ここを追加！】新しい予約を入れるためのURLを自動生成
+      // これにより、メール内のリンクが正しく予約ページを向くようになります
+      reserve_url = reserve_url || `${PORTAL_URL}/shop/${shopId}/reserve`;
+
       // メニュー名は services に入っているものを復元
       if (!services) {
         if (res.options?.people) {
-          // 複数名データ（people）がある場合
           services = res.options.people.map((p: any) => p.services.map((s: any) => s.name).join(', ')).join(' / ');
         } else if (res.options?.services) {
-          // 従来データ（services）がある場合
           services = res.options.services.map((s: any) => s.name).join(', ');
         } else {
           services = "メニューなし";
         }
       }
-      // 店舗情報はDBから後で取りますが、最低限必要なものを補填
-      shopId = shopId || res.shop_id;
     }
 
     const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
-    // 🚀 さっき設定した名前に合わせる（SUPABASE_ を取る）
     const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') ?? ""; 
     const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
@@ -1021,7 +1024,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
             <div style="margin-top: 20px; padding: 15px; border-left: 4px solid #cbd5e1; background: #fff;">
               <h3 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #64748b;">📝 お客様の入力内容</h3>
               <div style="font-size: 0.9rem; color: #1e293b;">
-                ${address ? `
+                ${(isVisit && address) ? `
                   <p style="margin: 4px 0;">📍 <b>住所:</b> ${address}</p>
                   <div style="margin: 8px 0 15px 0;">
                     <a href="https://www.google.co.jp/maps/search/${encodeURIComponent(address)}" target="_blank" style="display: inline-block; background: #3b82f6; color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">🗺 Googleマップで場所を確認</a>
@@ -1054,10 +1057,27 @@ const sendMail = async (to: string, isOwner: boolean) => {
           const bodyTemplate = profile.mail_body_customer_booking || defaults.booking_body;
           finalSubject = applyPlaceholders(subTemplate, placeholderData);
           const body = applyPlaceholders(bodyTemplate, placeholderData).replace(/\n/g, '<br>');
+          
+          /* 🚀 🆕 来店型(isVisitがfalse)の場合のみ、店舗へのアクセスマップを表示 */
+          const shopMapHtml = (!isVisit && profile.address) ? `
+            <div style="margin-top: 25px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0; text-align: center;">
+              <p style="margin: 0 0 10px 0; font-size: 0.9rem; font-weight: bold; color: #475569;">📍 店舗の場所はこちら</p>
+              <p style="margin: 0 0 15px 0; font-size: 0.85rem;">${profile.address}</p>
+              <a href="https://www.google.com.au/maps/search/${encodeURIComponent(profile.address)}" 
+                 target="_blank" 
+                 style="display: inline-block; background: #3b82f6; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem;">
+                Googleマップでルート案内
+              </a>
+            </div>
+          ` : '';
+
           finalHtml = `
             <div lang="ja" style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
               <h2 style="color: #2563eb; margin-top: 0;">${isVisit ? '訪問' : '予約'}確定のお知らせ</h2>
               <div>${body}</div>
+              
+              ${shopMapHtml} 
+
               ${cancelUrl ? `<p style="font-size: 0.85rem; border-top: 1px solid #eee; padding-top: 15px; margin-top:20px;"><a href="${cancelUrl}" style="color: #2563eb;">ご予約の確認・キャンセルはこちら</a></p>` : ''}
             </div>`;
         }
@@ -1083,9 +1103,20 @@ const sendMail = async (to: string, isOwner: boolean) => {
     if (isLineBooking) {
       // 【LINE予約の場合】LINE通知のみ送る（設定がONの場合）
       if (profile?.customer_line_booking_enabled !== false && currentToken) {
+        
+        // 🚀 🆕 追加1：来店型かつ店舗住所がある場合、マップURLの文章を作る
+        const shopMapUrlText = (!isVisit && profile.address) 
+          ? `\n\n📍 店舗の場所\nhttps://www.google.co.jp/maps/search/${encodeURIComponent(profile.address)}`
+          : '';
+
+        // 🚀 🆕 追加2：訪問型の場合の「訪問先住所」の文章を作る
+        const visitAddressText = (isVisit && address) 
+          ? `\n\n📍 訪問先\n${address}` 
+          : '';
+
         const customerMsg = type === 'cancel' 
           ? `【キャンセル完了】\n${customerName} 様、キャンセル手続きが完了いたしました。`
-          : `${customerName}様\n${isVisit ? 'ご指定の場所へお伺いいたします。' : 'ご予約ありがとうございます。'}\n\n🏨 店名：${shopName}\n👤 担当：${staffName || '店舗スタッフ'}\n📅 日時：${startTime}〜\n\n📋 内容：\n${services}\n${isVisit ? `📍 訪問先：\n${address}` : ''}\n\n■予約確認・キャンセル\n${cancelUrl}`;
+          : `${customerName}様\n${isVisit ? 'ご指定の場所へお伺いいたします。' : 'ご予約ありがとうございます。'}\n\n🏨 店名：${shopName}\n👤 担当：${staffName || '店舗スタッフ'}\n📅 日時：${startTime}〜\n\n📋 内容：\n${services}${visitAddressText}${shopMapUrlText}\n\n■予約確認・キャンセル\n${cancelUrl}`;
         
         customerLineSent = await safePushToLine(lineUserId, customerMsg, currentToken, "CUSTOMER");
       }
