@@ -122,7 +122,7 @@ const FacilityInvoice_PC = ({ facilityId }) => {
             <table>
               <thead><tr><th>No</th><th>日付</th><th>階数</th><th>名前</th><th>メニュー</th><th>金額</th></tr></thead>
               <tbody>
-                ${members.map((m, i) => `<tr><td align="center">${i + 1}</td><td align="center">${m.date?.slice(5).replace('-', '/')}</td><td align="center">${m.floor || '-'}F</td><td><strong>${m.name} 様</strong></td><td>${m.menu || ''}</td><td align="right">¥${Number(m.price || 0).toLocaleString()}</td></tr>`).join('')}
+                ${members.map((m, i) => `<tr><td align="center">${i + 1}</td><td align="center">${m.date?.slice(5).replace('-', '/')}</td><td align="center">${m.floor?.toString().replace(/F/g, '') || '-'}F</td><td><strong>${m.name} 様</strong></td><td>${m.menu || ''}</td><td align="right">¥${Number(m.price || 0).toLocaleString()}</td></tr>`).join('')}
               </tbody>
             </table>
             <div class="total-section"><div class="total-box">合計金額： ¥ ${totalAmount.toLocaleString()} - (税込)</div></div>
