@@ -202,8 +202,9 @@ const fetchTodayTasks = async () => {
     // 💡 シンプルに「自分の店舗ID」で予約を検索するだけ！
     const { data: resData, error: resError } = await supabase
       .from('reservations')
-      .select('*, customers(name, admin_name, memo)') // 👈 memo を追加
+      .select('*, customers(name, admin_name, memo)') 
       .eq('shop_id', shopId)
+      .neq('status', 'canceled') // 🚀 追記：キャンセルされた個人予約を除外
       .gte('start_time', `${dateStr} 00:00:00`)
       .lte('start_time', `${dateStr} 23:59:59`)
       .or('is_block.is.null,is_block.eq.false')
@@ -211,11 +212,12 @@ const fetchTodayTasks = async () => {
 
     if (resError) throw resError;
 
-    // 施設訪問依頼の取得（もともと自店のみなのでそのまま）
+    // 施設訪問依頼の取得
     const { data: visitData, error: visitError } = await supabase
       .from('visit_requests')
       .select('*, facility_users(facility_name)')
       .eq('shop_id', shopId)
+      .neq('status', 'canceled') // 🚀 追記：キャンセルされた施設訪問を除外
       .eq('scheduled_date', dateStr);
 
     if (visitError) throw visitError;
@@ -251,7 +253,8 @@ const fetchTodayTasks = async () => {
       // 2. 施設の未処理
       supabase.from('visit_requests').select('scheduled_date')
         .eq('shop_id', shopId)
-        .eq('status', 'confirmed') // 施設はconfirmedが未完了
+        .eq('status', 'confirmed')
+        .neq('status', 'canceled')
         .lt('scheduled_date', todayStr)
     ]);
 

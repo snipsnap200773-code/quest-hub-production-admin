@@ -177,14 +177,16 @@ function AdminManagement() {
       // --- 2. 予約 ＆ 施設訪問データを取得（常に自店のみ） ---
       const [resRes, visitRes] = await Promise.all([
         supabase.from('reservations')
-          .select('*, staffs(name)') // 💡 profiles の結合は不要なので削除
-          .eq('shop_id', cleanShopId) // 👈 .in ではなく .eq
+          .select('*, staffs(name)') 
+          .eq('shop_id', cleanShopId) 
+          .neq('status', 'canceled') // 🚀 追記：個人予約のキャンセル分を除外
           .or('is_block.is.null,is_block.eq.false')
           .order('start_time', { ascending: true }),
         
         supabase.from('visit_requests')
           .select('*, facility_data:facility_user_id(facility_name)')
-          .eq('shop_id', cleanShopId) // 👈 .in ではなく .eq
+          .eq('shop_id', cleanShopId) 
+          .neq('status', 'canceled') // 🚀 追記：施設予約のキャンセル分を除外
       ]);
 
       const reservationsData = resRes.data || [];

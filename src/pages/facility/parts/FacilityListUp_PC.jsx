@@ -14,6 +14,29 @@ const FacilityListUp_PC = ({
 }) => {
   const [residents, setResidents] = useState([]);
   const [draftList, setDraftList] = useState([]);
+  const [draftSortMode, setDraftSortMode] = useState('floor'); // 🚀 追加：右側の並べ替えモード
+
+  // 🚀 追加：施術希望者（右側）のソート済みリストを計算
+  const sortedDraftList = useMemo(() => {
+  return [...draftList].sort((a, b) => {
+    const m1 = a.members || {};
+    const m2 = b.members || {};
+    
+    if (draftSortMode === 'floor') {
+      // 階数順（数字を抽出して比較）
+      const f1 = parseInt(String(m1.floor).replace(/[^0-9]/g, '')) || 999;
+      const f2 = parseInt(String(m2.floor).replace(/[^0-9]/g, '')) || 999;
+      if (f1 !== f2) return f1 - f2;
+      // 階数が同じなら部屋番号順
+      return (m1.room || "").localeCompare(m2.room || "", undefined, { numeric: true });
+    } else {
+      // 名前順（ふりがな優先）
+      const k1 = (m1.kana || m1.name || "").trim();
+      const k2 = (m2.kana || m2.name || "").trim();
+      return k1.localeCompare(k2, 'ja');
+    }
+  });
+}, [draftList, draftSortMode]);
   const [completedMemberIds, setCompletedMemberIds] = useState([]);
   const [confirmedDates, setConfirmedDates] = useState([]);
   const [lastVisitMap, setLastVisitMap] = useState({});
@@ -446,7 +469,6 @@ const FacilityListUp_PC = ({
       >
                       <div style={resInfo}>
                         <div style={roomTagBox}>
-                          <span style={fLabel}>{res.floor}</span>
                           <span style={rLabel}>{res.room}</span>
                         </div>
                         
@@ -472,72 +494,99 @@ const FacilityListUp_PC = ({
         </section>
 
         <section style={columnBox}>
-          <div style={{...sectionHeader, borderBottom: isOverCapacity ? '2px solid #ef4444' : '2px solid #c5a059', paddingBottom: '10px'}}>
-            <div style={headerTextGroup}>
-              <h3 style={{...sectionTitle, color: isOverCapacity ? '#ef4444' : '#c5a059'}}><ListChecks size={20} /> 施術希望者</h3>
-              {/* 🚀 🆕 ここを修正：分母を表示 */}
-              <span style={isOverCapacity ? countBadgeRed : countBadgeGold}>
-                {draftList.length} / {totalMonthlyCapacity}名
-              </span>
-            </div>
-          </div>
+  <div style={{...sectionHeader, borderBottom: isOverCapacity ? '2px solid #ef4444' : '2px solid #c5a059', paddingBottom: '10px'}}>
+    <div style={headerTextGroup}>
+      <h3 style={{...sectionTitle, color: isOverCapacity ? '#ef4444' : '#c5a059'}}><ListChecks size={20} /> 施術希望者</h3>
+      <span style={isOverCapacity ? countBadgeRed : countBadgeGold}>
+        {draftList.length} / {totalMonthlyCapacity}名
+      </span>
+    </div>
 
-          {/* 🚀 🆕 追加：警告バナー */}
-          <AnimatePresence>
-            {isOverCapacity && (
-              <motion.div 
-                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                style={{ background: '#fff1f2', border: '2px solid #fecdd3', borderRadius: '15px', padding: '15px', marginBottom: '15px' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
-                  <AlertCircle size={20} color="#e11d48" style={{ marginTop: '2px' }} />
-                  <div>
-                    <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#be123c', marginBottom: '4px' }}>
-                      施術可能人数（{totalMonthlyCapacity}名）を超えています
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#e11d48', lineHeight: '1.5' }}>
-                      現在の名簿は <strong>{draftList.length}名</strong> ですが、確保している枠では <strong>{totalMonthlyCapacity}名</strong> までしか施術できません。
-                    </div>
-                    
-                    {/* 🚀 🆕 ステップ1へ戻るボタン */}
-                    <button 
-                      onClick={() => setActiveTab('keep')} // ⭕️ 'keep' に修正
-                      style={{ marginTop: '10px', background: '#e11d48', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      <ChevronLeft size={14} /> 「1 キープ！」に戻って枠を調整する
-                    </button>
-                  </div>
-                </div>
-              </motion.div>
-            )}
-          </AnimatePresence>
+    {/* 🚀 追加：右側専用の並べ替えボタン */}
+    <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '4px', borderRadius: '10px' }}>
+      <button onClick={() => setDraftSortMode('floor')} style={sortTabStyle(draftSortMode === 'floor')}>階数</button>
+      <button onClick={() => setDraftSortMode('name')} style={sortTabStyle(draftSortMode === 'name')}>名前</button>
+    </div>
+  </div>
 
-          <div style={{...scrollArea, background: isOverCapacity ? '#fff5f5' : '#fff9e6', borderColor: isOverCapacity ? '#fca5a5' : '#f0e6d2'}}>
-            <AnimatePresence>
-              {draftList.map(item => (
-                <motion.div key={item.id} initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, x: 50 }} style={selectedCard}>
-                  <div style={{flex: 1}}>
-                    <div style={resInfo}>
-                      <span style={roomBadgeSimple}>{item.members?.floor} {item.members?.room}</span>
-                      <span style={nameTextMain}>{item.members?.name} 様</span>
-                    </div>
-                    <div style={menuRow}>
-                      <select value={item.menu_name} onChange={(e) => updateMenu(item.id, e.target.value)} style={menuSelect}>
-                        {shopServices.map(s => (
-                          <option key={s.name} value={s.name}>{s.name}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <button onClick={() => removeFromList(item.id)} style={removeBtn}><UserMinus size={20} /></button>
-                </motion.div>
-              ))}
-            </AnimatePresence>
-            {draftList.length === 0 && (
-              <div style={emptyState}>左の名簿から<br/>今回の希望者をタップしてください</div>
-            )}
+  {/* 警告バナー（既存通り） */}
+  <AnimatePresence>
+    {isOverCapacity && (
+      <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ background: '#fff1f2', border: '2px solid #fecdd3', borderRadius: '15px', padding: '15px', marginBottom: '15px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+          <AlertCircle size={20} color="#e11d48" style={{ marginTop: '2px' }} />
+          <div>
+            <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#be123c', marginBottom: '4px' }}>施術可能人数を超えています</div>
+            <div style={{ fontSize: '0.75rem', color: '#e11d48', lineHeight: '1.5' }}>枠を調整するか、人数を減らしてください。</div>
           </div>
-        </section>
+        </div>
+      </motion.div>
+    )}
+  </AnimatePresence>
+
+  {/* 🚀 修正：sortedDraftList を使い、見出しを表示するループ */}
+  <div style={{...scrollArea, background: isOverCapacity ? '#fff5f5' : '#fff9e6', borderColor: isOverCapacity ? '#fca5a5' : '#f0e6d2'}}>
+    <AnimatePresence mode="popLayout">
+      {(() => {
+        let lastLabel = ""; 
+        return sortedDraftList.map((item) => { 
+          const res = item.members || {};
+          let currentLabel = "";
+          
+          if (draftSortMode === 'floor') {
+            currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "未設定";
+          } else {
+            currentLabel = (res.kana || res.name || "？").charAt(0);
+          }
+
+          const isNewGroup = currentLabel !== lastLabel;
+          lastLabel = currentLabel;
+
+          return (
+  <motion.div 
+    key={item.id} 
+    layout 
+    initial={{ opacity: 0, y: 10 }} 
+    animate={{ opacity: 1, y: 0 }} 
+    exit={{ opacity: 0, scale: 0.95 }}
+    style={{ marginBottom: '10px' }} // カード間の余白をここで制御
+  >
+    {/* グループ見出し */}
+    {isNewGroup && (
+      <div style={groupHeaderStyle}>
+        {currentLabel}
+      </div>
+    )}
+    
+    {/* 施術希望者カード本体 */}
+    <div style={selectedCard}>
+      <div style={{flex: 1}}>
+        <div style={resInfo}>
+          <span style={roomBadgeSimple}>{item.members?.room || "---"}</span>
+          <span style={nameTextMain}>{res.name} 様</span>
+        </div>
+        <div style={menuRow}>
+          <select value={item.menu_name} onChange={(e) => updateMenu(item.id, e.target.value)} style={menuSelect}>
+            {shopServices.map(s => (
+              <option key={s.name} value={s.name}>{s.name}</option>
+            ))}
+          </select>
+        </div>
+      </div>
+      <button onClick={() => removeFromList(item.id)} style={removeBtn}>
+        <UserMinus size={20} />
+      </button>
+    </div>
+  </motion.div>
+);
+        });
+      })()}
+    </AnimatePresence>
+    {draftList.length === 0 && (
+      <div style={emptyState}>左の名簿から<br/>今回の希望者をタップしてください</div>
+    )}
+  </div>
+</section>
       </div>
 
       <footer style={footerStyle}>

@@ -6,6 +6,26 @@ import { motion } from 'framer-motion';
 const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
+  const [bookingSortMode, setBookingSortMode] = useState('floor'); // 🚀 追加：並べ替え状態
+
+  // 🚀 追加：最終確認用のソート済みリストを計算
+  const sortedDrafts = useMemo(() => {
+    return [...drafts].sort((a, b) => {
+      const m1 = a.members || {};
+      const m2 = b.members || {};
+      
+      if (bookingSortMode === 'floor') {
+        const f1 = parseInt(String(m1.floor).replace(/[^0-9]/g, '')) || 999;
+        const f2 = parseInt(String(m2.floor).replace(/[^0-9]/g, '')) || 999;
+        if (f1 !== f2) return f1 - f2;
+        return (m1.room || "").localeCompare(m2.room || "", undefined, { numeric: true });
+      } else {
+        const k1 = (m1.kana || m1.name || "").trim();
+        const k2 = (m2.kana || m2.name || "").trim();
+        return k1.localeCompare(k2, 'ja');
+      }
+    });
+  }, [drafts, bookingSortMode]);
   const [shopInfo, setShopInfo] = useState(null);
   const [facilityName, setFacilityName] = useState('');
   const [facilityEmail, setFacilityEmail] = useState('');
@@ -286,16 +306,56 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         </div>
 
         <div style={residentPreview}>
-          <h4 style={smallTitle}>希望者一覧（各日程共通）</h4>
-          <div style={previewScroll}>
-            {drafts.map(d => (
-              <div key={d.id} style={pRow}>
-                <span style={pName}>{d.members?.name} 様</span>
-                <span style={pMenu}>{d.menu_name}</span>
+  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+    <h4 style={{ ...smallTitle, margin: 0 }}>希望者一覧（各日程共通）</h4>
+    
+    {/* 🚀 追加：並べ替えタブ */}
+    <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
+      <button onClick={() => setBookingSortMode('floor')} style={miniSortTabStyle(bookingSortMode === 'floor')}>階数</button>
+      <button onClick={() => setBookingSortMode('name')} style={miniSortTabStyle(bookingSortMode === 'name')}>名前</button>
+    </div>
+  </div>
+
+  <div style={previewScroll}>
+    {(() => {
+      let lastLabel = ""; 
+      return sortedDrafts.map((d) => { 
+        const res = d.members || {};
+        let currentLabel = "";
+        if (bookingSortMode === 'floor') {
+          currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "未設定";
+        } else {
+          currentLabel = (res.kana || res.name || "？").charAt(0);
+        }
+
+        const isNewGroup = currentLabel !== lastLabel;
+        lastLabel = currentLabel;
+
+        return (
+          <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+            {/* 🚀 グループ見出し（階数や50音） */}
+            {isNewGroup && (
+              <div style={bookingGroupHeader}>
+                {currentLabel}
               </div>
-            ))}
-          </div>
-        </div>
+            )}
+            
+            <div style={pRow}>
+  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+    {/* 🚀 修正：res.room があれば表示。なければハイフンなどを出すか非表示に */}
+    <span style={pRoomBadge}>
+      {res.room ? res.room : "---"} 
+    </span>
+    <span style={pName}>{res.name} 様</span>
+  </div>
+  <span style={pMenu}>{d.menu_name}</span>
+</div>
+          </motion.div>
+        );
+      });
+    })()}
+  </div>
+</div>
 
         <button 
           onClick={handleFinalSubmit} 
@@ -324,10 +384,55 @@ const dateTag = { background: '#3d2b1f', color: '#fff', padding: '5px 12px', bor
 const countNum = { fontSize: '2.5rem', fontWeight: '900', color: '#c5a059' };
 const residentPreview = { background: '#fff', border: '1px solid #eee', borderRadius: '20px', padding: '20px', marginBottom: '40px' };
 const smallTitle = { margin: '0 0 15px 0', fontSize: '0.9rem', color: '#3d2b1f' };
-const previewScroll = { maxHeight: '200px', overflowY: 'auto' };
+const previewScroll = { 
+  maxHeight: '600px', // 🚀 修正：高さを大幅にアップ（約3倍）
+  minHeight: '350px', // 🚀 追加：最低限の高さ
+  overflowY: 'auto',
+  paddingRight: '12px',
+  borderBottom: '1px solid #f8fafc'
+};
 const pRow = { display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #f8fafc' };
 const pName = { fontWeight: 'bold', color: '#334155' };
 const pMenu = { color: '#c5a059', fontWeight: 'bold', fontSize: '0.9rem' };
 const finalBtn = (loading) => ({ width: '100%', padding: '25px', borderRadius: '20px', border: 'none', background: loading ? '#ccc' : '#3d2b1f', color: '#fff', fontSize: '1.2rem', fontWeight: '900', cursor: loading ? 'default' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '15px', boxShadow: '0 10px 25px rgba(61,43,31,0.2)' });
+// 🚀 追加：予約画面用のミニソートタブ
+const miniSortTabStyle = (active) => ({
+  padding: '4px 10px',
+  borderRadius: '6px',
+  fontSize: '0.65rem',
+  fontWeight: 'bold',
+  cursor: 'pointer',
+  border: 'none',
+  background: active ? '#fff' : 'transparent',
+  color: active ? '#3d2b1f' : '#64748b',
+  boxShadow: active ? '0 2px 4px rgba(0,0,0,0.05)' : 'none',
+  transition: '0.2s'
+});
 
+// 🚀 追加：グループ見出しのスタイル
+const bookingGroupHeader = {
+  fontSize: '0.8rem',
+  fontWeight: '900',
+  color: '#c5a059',
+  padding: '15px 5px 8px',
+  borderBottom: '2px solid #f1f5f9', // 線を少し太く
+  marginBottom: '8px',
+  background: '#fff',
+  position: 'sticky', // 🚀 追加：スクロールしても階数が見えるように
+  top: 0,
+  zIndex: 1
+};
+
+// 🚀 追加：部屋番号バッジ
+const pRoomBadge = {
+  fontSize: '0.75rem',      // 🚀 少し大きくしました
+  background: '#f1f5f9',
+  color: '#475569',         // 🚀 文字色を少し濃くして視認性アップ
+  padding: '3px 8px',
+  borderRadius: '6px',
+  fontWeight: '900',        // 🚀 太字に
+  minWidth: '55px',         // 🚀 幅を固定（101号室なども綺麗に収まる）
+  textAlign: 'center',
+  display: 'inline-block'
+};
 export default FacilityBooking_PC;

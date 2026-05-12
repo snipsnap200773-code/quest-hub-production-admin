@@ -292,27 +292,23 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
 const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
   setLoading(true);
   
-  // 1. 対象の予約データを特定
   const visit = visitRequests.find(v => v.id === visitId);
-  // 複数日予約の場合も考慮し、親ID（parent_id）があればそちらを基準に名簿を探す
   const targetId = visit?.parent_id || visitId;
 
-  // 2. 紐付いている入居者名簿を取得
-  const { data: residents } = await supabase
+  // 1. データを取得
+  const { data: residents } = await supabase 
     .from('visit_request_residents')
-    .select('members(name)')
+    .select('members(name), menu_name')
     .eq('visit_request_id', targetId);
 
-  const names = residents?.map(r => r.members?.name).filter(Boolean) || [];
-
-  // 3. キャンセル用Stateに名簿情報もセット
+  // 2. Stateにセット（ここを修正！）
   setFacCancelTarget({ 
     id: visitId, 
     date: dateStr, 
     name: facilityName, 
     type: 'visit',
-    residentNames: names,    // 🚀 名前リストを追加
-    totalCount: names.length // 🚀 合計人数を追加
+    residents: residents || [], // ✅ 'residents' に修正
+    totalCount: residents?.length || 0 // ✅ 'residents' に修正
   });
 
   setFacCancelPass('');
@@ -3191,39 +3187,60 @@ else if (
   <div style={overlayStyle} onClick={() => setShowFacCancelModal(false)}>
     <div 
       onClick={(e) => e.stopPropagation()} 
-      style={{ ...modalContentStyle, maxWidth: '380px', textAlign: 'center', padding: '35px' }}
+      style={{ ...modalContentStyle, maxWidth: '600px', width: '95%', textAlign: 'center', padding: '35px' }} // 🚀 横幅を600pxに拡大
     >
       <div style={{ fontSize: '2.5rem', marginBottom: '15px' }}>⚠️</div>
-      <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontWeight: '900', fontSize: '1.2rem' }}>予定のキャンセル確認</h3>
+      <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontWeight: '900', fontSize: '1.3rem' }}>予定のキャンセル・削除</h3>
       
-      <div style={{ background: '#fff1f2', padding: '15px', borderRadius: '15px', border: '1px solid #fecdd3', marginBottom: '20px' }}>
-        <p style={{ fontSize: '0.85rem', color: '#e11d48', margin: '0 0 10px 0', fontWeight: 'bold', lineHeight: '1.6' }}>
-          {facCancelTarget.date.replace(/-/g, '/')} の予定をキャンセルしますか？
+      <div style={{ background: '#fff1f2', padding: '20px', borderRadius: '20px', border: '1px solid #fecdd3', marginBottom: '25px' }}>
+        <p style={{ fontSize: '1rem', color: '#e11d48', margin: '0 0 15px 0', fontWeight: 'bold' }}>
+          {facCancelTarget.date.replace(/-/g, '/')} の訪問予定を消去しますか？
         </p>
         
-        {/* 🚀 🆕 ここに追加：施術希望者の人数と名前の表示セクション */}
-        <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', border: '1px solid rgba(225,29,72,0.1)', textAlign: 'left' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px dashed #fecdd3', paddingBottom: '5px' }}>
-            <span style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold' }}>施術予定者</span>
+        {/* 🚀 🆕 【目玉機能】メニュー別の人員集計 */}
+        {facCancelTarget.residents?.length > 0 && (
+          <div style={{ background: 'rgba(255,255,255,0.6)', padding: '15px', borderRadius: '15px', marginBottom: '15px', textAlign: 'left' }}>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #fecdd3', paddingBottom: '5px' }}>📋 メニュー別集計</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+              {(() => {
+                const counts = facCancelTarget.residents.reduce((acc, r) => {
+                  const m = r.menu_name || '未設定';
+                  acc[m] = (acc[m] || 0) + 1;
+                  return acc;
+                }, {});
+                return Object.entries(counts).map(([name, count]) => (
+                  <div key={name} style={{ background: '#fff', padding: '4px 10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '900', color: '#be123c', border: '1px solid #fecdd3' }}>
+                    {name}：{count}名
+                  </div>
+                ));
+              })()}
+            </div>
+          </div>
+        )}
+
+        {/* 🚀 修正：名簿リストを「名前 ＋ メニュー」形式で表示 */}
+        <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', border: '1px solid rgba(225,29,72,0.1)', textAlign: 'left' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+            <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>名簿プレビュー</span>
             <span style={{ fontSize: '0.9rem', color: '#b91c1c', fontWeight: '900' }}>合計 {facCancelTarget.totalCount || 0} 名</span>
           </div>
           
-          {/* 💡 maxHeight を少し広げ、lineHeight を調整して読みやすくしました */}
-          <div style={{ maxHeight: '150px', overflowY: 'auto', fontSize: '0.85rem', color: '#3d2b1f', lineHeight: '1.8' }}>
-            {facCancelTarget.residentNames?.length > 0 ? (
-              facCancelTarget.residentNames.map((name, idx) => (
-                <div key={idx} style={{ borderBottom: '1px solid #fff5f5', padding: '2px 0' }}>
-                  ・ <b>{name}</b> 様
+          <div style={{ maxHeight: '350px', overflowY: 'auto', fontSize: '0.9rem', color: '#3d2b1f' }}>
+            {facCancelTarget.residents?.length > 0 ? (
+              facCancelTarget.residents.map((res, idx) => (
+                <div key={idx} style={{ borderBottom: '1px solid #fff5f5', padding: '10px 5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <span style={{ fontWeight: 'bold' }}>{res.members?.name} 様</span>
+                  <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: '#f8fafc', padding: '2px 8px', borderRadius: '4px' }}>{res.menu_name}</span>
                 </div>
               ))
             ) : (
-              <div style={{ color: '#94a3b8', textAlign: 'center', padding: '10px' }}>（名簿データがありません）</div>
+              <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>（名簿データがありません）</div>
             )}
           </div>
         </div>
       </div>
 
-      <div style={{ textAlign: 'left', marginBottom: '25px' }}>
+      <div style={{ textAlign: 'left', marginBottom: '25px', maxWidth: '300px', margin: '0 auto 25px' }}>
         <label style={labelStyle}>解除パスワード（1234）</label>
         <input 
           type="password" 
@@ -3231,17 +3248,14 @@ else if (
           placeholder="数字4桁を入力"
           value={facCancelPass}
           onChange={(e) => setFacCancelPass(e.target.value)}
-          style={{ ...inputStyle, textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3em', marginBottom: 0, border: `2px solid ${themeColor}44` }}
+          style={{ ...inputStyle, textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3em', borderRadius: '15px', border: `2px solid ${themeColor}44` }}
         />
-        <p style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '8px', textAlign: 'center' }}>
-          ※誤操作防止のためパスワードが必要です
-        </p>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '400px', margin: '0 auto' }}>
         <button 
           onClick={executeFacCancel}
-          style={{ width: '100%', padding: '16px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 12px rgba(225,29,72,0.2)' }}
+          style={{ width: '100%', padding: '18px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 8px 20px rgba(225,29,72,0.2)' }}
         >
           パスワードを確認して削除
         </button>
