@@ -793,14 +793,18 @@ const handleSave = async (e) => {
                   <div style={ruleSectionStyle}>
                     <div style={sectionLabelStyle}><Clock size={14} /> 定期キープ：</div>
                     <div style={ruleBadgeContainer}>
-                      {f.regular_rules?.map((r, i) => (
-                        <span key={i} style={ruleBadgeStyle}>
-                          {r.monthType === 1 ? '奇数月 ' : r.monthType === 2 ? '偶数月 ' : ''}
-                          {WEEKS.find(w => w.value === r.week)?.label}{DAYS.find(d=>d.value===r.day)?.label}曜
-                        </span>
-                      ))}
-                      {(!f.regular_rules || f.regular_rules.length === 0) && <span style={{fontSize:'12px', color:'#cbd5e1'}}>設定なし</span>}
-                    </div>
+  {f.regular_rules?.map((r, i) => (
+    <span key={i} style={ruleBadgeStyle}>
+      {r.monthType === 1 ? '奇数月 ' : r.monthType === 2 ? '偶数月 ' : ''}
+      {WEEKS.find(w => w.value === r.week)?.label}{DAYS.find(d=>d.value===r.day)?.label}曜
+      {/* 🚀 🆕 開始時間を追加（HH:mm 形式にカット） */}
+      <span style={{ marginLeft: '5px', fontSize: '0.65rem', opacity: 0.8 }}>
+        ({(r.time || '09:00').substring(0, 5)})
+      </span>
+    </span>
+  ))}
+  {(!f.regular_rules || f.regular_rules.length === 0) && <span style={{fontSize:'12px', color:'#cbd5e1'}}>設定なし</span>}
+</div>
                   </div>
                   
                   {/* 🆕 修正：image_4107ca.png と同じリッチレイアウトの詳細エリア */}
@@ -901,30 +905,56 @@ const handleSave = async (e) => {
                     {/* 🚀 🆕 追加：施設プロフィールの入力セクション */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginBottom: '20px' }}>
                       <label style={labelStyle}>施設名
-                        <input type="text" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} style={inputStyle} required />
-                      </label>
+  <input 
+    type="text" 
+    value={formData.name} 
+    onChange={e => setFormData({...formData, name: e.target.value})} 
+    style={{ ...inputStyle, background: editingId ? '#f1f5f9' : '#fff', cursor: editingId ? 'not-allowed' : 'text' }} 
+    readOnly={!!editingId}
+    required 
+  />
+</label>
 
                       <label style={labelStyle}>施設名のふりがな
-                        <input 
-                          type="text" 
-                          placeholder="例：まりあのおか" 
-                          value={formData.furigana} 
-                          onChange={e => setFormData({...formData, furigana: e.target.value})} 
-                          style={inputStyle} 
-                        />
-                      </label>
+  <input 
+    type="text" 
+    placeholder="例：まりあのおか" 
+    value={formData.furigana} 
+    onChange={e => setFormData({...formData, furigana: e.target.value})} 
+    style={{ ...inputStyle, background: editingId ? '#f1f5f9' : '#fff', cursor: editingId ? 'not-allowed' : 'text' }} 
+    readOnly={!!editingId}
+  />
+</label>
 
                       <label style={labelStyle}>住所
-                        <input type="text" value={formData.address} onChange={e => setFormData({...formData, address: e.target.value})} style={inputStyle} />
-                      </label>
+  <input 
+    type="text" 
+    value={formData.address} 
+    onChange={e => setFormData({...formData, address: e.target.value})} 
+    style={{ ...inputStyle, background: editingId ? '#f1f5f9' : '#fff', cursor: editingId ? 'not-allowed' : 'text' }} 
+    readOnly={!!editingId}
+  />
+</label>
 
                       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                         <label style={labelStyle}>電話番号
-                          <input type="tel" value={formData.tel} onChange={e => setFormData({...formData, tel: e.target.value})} style={inputStyle} />
-                        </label>
+  <input 
+    type="tel" 
+    value={formData.tel} 
+    onChange={e => setFormData({...formData, tel: e.target.value})} 
+    style={{ ...inputStyle, background: editingId ? '#f1f5f9' : '#fff', cursor: editingId ? 'not-allowed' : 'text' }} 
+    readOnly={!!editingId}
+  />
+</label>
                         <label style={labelStyle}>メールアドレス
-                          <input type="email" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} style={inputStyle} />
-                        </label>
+  <input 
+    type="email" 
+    value={formData.email} 
+    onChange={e => setFormData({...formData, email: e.target.value})} 
+    style={{ ...inputStyle, background: editingId ? '#f1f5f9' : '#fff', cursor: editingId ? 'not-allowed' : 'text' }} 
+    readOnly={!!editingId}
+  />
+</label>
                       </div>
                     </div>
 
@@ -1000,16 +1030,20 @@ const handleSave = async (e) => {
   <button type="button" onClick={addRule} style={ruleAddBtnStyle}>ルールを追加 ➔</button>
                       
                       <div style={ruleListAreaStyle}>
-                        {formData.regular_rules?.map((r, i) => (
-                          <div key={i} style={ruleBadgeItemStyle}>
-                            <span>
-                              {r.monthType === 1 ? '奇数 ' : r.monthType === 2 ? '偶数 ' : ''}
-                              {WEEKS.find(w=>w.value===r.week)?.label}{DAYS.find(d=>d.value===r.day)?.label}曜
-                            </span>
-                            <button type="button" onClick={() => removeRule(i)} style={{border:'none', background:'none', color:'#ef4444', cursor:'pointer'}}>✕</button>
-                          </div>
-                        ))}
-                      </div>
+  {formData.regular_rules?.map((r, i) => (
+    <div key={i} style={ruleBadgeItemStyle}>
+      <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+        {r.monthType === 1 ? '奇数 ' : r.monthType === 2 ? '偶数 ' : ''}
+        {WEEKS.find(w=>w.value===r.week)?.label}{DAYS.find(d=>d.value===r.day)?.label}曜
+        {/* 🚀 🆕 設定された開始時間を追加 */}
+        <span style={{ fontSize: '0.65rem', color: '#4f46e5', fontWeight: 'bold', marginLeft: '2px' }}>
+          ({(r.time || '09:00').substring(0, 5)})
+        </span>
+      </span>
+      <button type="button" onClick={() => removeRule(i)} style={{border:'none', background:'none', color:'#ef4444', cursor:'pointer', padding: '0 4px'}}>✕</button>
+    </div>
+  ))}
+</div>
                     </div>
                   </div>
                 </div>
