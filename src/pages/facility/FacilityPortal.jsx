@@ -185,7 +185,7 @@ const FacilityPortal = () => {
   const menuGroups = [
     {
       groupName: '基礎管理',
-      items: [{ id: 'residents', label: 'あつまれ綺麗にする人', icon: <Users size={20} />, sub: '入居者名簿' }]
+      items: [{ id: 'residents', label: '名簿', icon: <Users size={20} />, sub: '入居者名簿' }]
     },
     {
       groupName: '予約の3ステップ',
