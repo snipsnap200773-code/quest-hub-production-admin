@@ -390,7 +390,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
         // 🚀 🆕 追加：自分の予約（個人・私用）で埋まっている場合
         full: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '満員', icon: '✕' }, 
         'limit-closed': { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '受付終了', icon: '✕' },
-        other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '他施設', icon: '✕' },
+        other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '満員', icon: '✕' },
         past: { bg: '#fff', border: '#fff', color: '#eee', label: '-', icon: '' },
         available: { bg: '#fff', border: '#f0f0f0', color: '#c5a059', label: '空き', icon: '◎' }
       };
