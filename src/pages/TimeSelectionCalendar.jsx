@@ -658,64 +658,77 @@ const checkAvailability = (date, timeStr) => {
     .filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled')
     .map(r => ({ 
       s: new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
-      e: new Date(r.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }) 
+      e: new Date(r.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
+      type: 'res' // 🚀 予約
     })),
   ...privateTasks
     .filter(p => p.start_time.startsWith(dateStr))
     .map(p => ({ 
       s: new Date(p.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
-      e: new Date(p.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }) 
+      e: new Date(p.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
+      type: 'private' // 🚀 プライベート予定
     })),
-  ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), e: shop.business_hours[dayOfWeek].rest_end.slice(0,5) }] : [])
+  ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ 
+      s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), 
+      e: shop.business_hours[dayOfWeek].rest_end.slice(0,5),
+      type: 'rest' // 🚀 休憩
+    }] : [])
 ];
 
           const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
 
           // 🚀 🆕 B: 「自動詰め（隙間防止）」判定関数
           const isFillingSlot = (time) => {
-    // 1. 基本設定のチェック
-    if (!shop?.auto_fill_logic || shop?.max_capacity > 1) return true; 
-    if (busyTimes.length === 0) return true; 
+  if (!shop?.auto_fill_logic || shop?.max_capacity > 1) return true; 
 
-    // 🚀 🆕 判定に必要な「曜日」「開店時間」「閉店時間」をここで定義します
-    const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
-    const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
-    const closeTime = shop?.business_hours[dayOfWeek]?.close || "18:00";
+  const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
+  const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
+  const closeTime = shop?.business_hours[dayOfWeek]?.close || "18:00";
 
-    const interval = shop?.slot_interval_min || 15; 
-    const myDuration = totalSlotsNeeded * interval; 
-    const dateStr = selectedDate.toLocaleDateString('sv-SE');
-    
-    // 💡 すべての時間計算に +09:00 を足して日本時間に統一します
-    const startMs = new Date(`${dateStr}T${time}:00+09:00`).getTime();
-    const endMs = startMs + (myDuration * 60000);
+  // 🚀 🆕 プライベート予定のうち、営業時間外のものは隙間判定から除外する
+  const gapTasks = busyTimes.filter(b => {
+    if (b.type === 'private') {
+      // 開始が閉店後、または終了が開店前なら「隙間判定」には含めない
+      return b.s < closeTime && b.e > openTime;
+    }
+    return true; // 予約や休憩はそのまま含める
+  });
 
-    // 2. 【前】との隙間チェック
-    const prevTask = busyTimes
-      .filter(b => b.e <= time)
-      .sort((a, b) => b.e.localeCompare(a.e))[0];
+  if (gapTasks.length === 0) return true; 
 
-    const gapBefore = prevTask
-      ? (startMs - new Date(`${dateStr}T${prevTask.e}:00+09:00`).getTime()) / 60000
-      : (startMs - new Date(`${dateStr}T${openTime}:00+09:00`).getTime()) / 60000;
+  // --- 💡 以降、busyTimes を gapTasks に書き換えます ---
 
-    // 30分の隙間（死に時間）ができるならブロック！
-    if (gapBefore > 0 && gapBefore < 60) return false;
+  const interval = shop?.slot_interval_min || 15; 
+  const myDuration = totalSlotsNeeded * interval; 
+  const dateStr = selectedDate.toLocaleDateString('sv-SE');
+  
+  const startMs = new Date(`${dateStr}T${time}:00+09:00`).getTime();
+  const endMs = startMs + (myDuration * 60000);
 
-    // 3. 【後】との隙間チェック
-    const nextTask = busyTimes
-      .filter(b => b.s >= new Date(endMs).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone: 'Asia/Tokyo'}))
-      .sort((a, b) => a.s.localeCompare(b.s))[0];
+  // 2. 【前】との隙間チェック (busyTimes -> gapTasks)
+  const prevTask = gapTasks
+    .filter(b => b.e <= time)
+    .sort((a, b) => b.e.localeCompare(a.e))[0];
 
-    const gapAfter = nextTask
-      ? (new Date(`${dateStr}T${nextTask.s}:00+09:00`).getTime() - endMs) / 60000
-      : (new Date(`${dateStr}T${closeTime}:00+09:00`).getTime() - endMs) / 60000;
+  const gapBefore = prevTask
+    ? (startMs - new Date(`${dateStr}T${prevTask.e}:00+09:00`).getTime()) / 60000
+    : (startMs - new Date(`${dateStr}T${openTime}:00+09:00`).getTime()) / 60000;
 
-    // 後ろに30分の隙間ができるならブロック！
-    if (gapAfter > 0 && gapAfter < 60) return false;
+  if (gapBefore > 0 && gapBefore < 60) return false;
 
-    return true;
-  };
+  // 3. 【後】との隙間チェック (busyTimes -> gapTasks)
+  const nextTask = gapTasks
+    .filter(b => b.s >= new Date(endMs).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone: 'Asia/Tokyo'}))
+    .sort((a, b) => a.s.localeCompare(b.s))[0];
+
+  const gapAfter = nextTask
+    ? (new Date(`${dateStr}T${nextTask.s}:00+09:00`).getTime() - endMs) / 60000
+    : (new Date(`${dateStr}T${closeTime}:00+09:00`).getTime() - endMs) / 60000;
+
+  if (gapAfter > 0 && gapAfter < 60) return false;
+
+  return true;
+};
 
           let firstValidTime = null;
           const shouldApplyStrictFill = shop?.is_strict_fill_mode && !hasRestrictedMenu;
