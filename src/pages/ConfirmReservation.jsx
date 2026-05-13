@@ -284,8 +284,12 @@ const handleInputChange = (e) => {
 
 // ✅ 修正後の保存ロジック（handleReserve）
 const handleReserve = async () => {
-    // --- 1. バリデーションチェック（標準項目 ＆ カスタム質問） ---
-    
+    // 🚀 🆕 【ガード1】そもそも名前や日時がない場合は処理を完全に中断する
+    if (!customerData.name || (!adminDate && !date) || (!adminTime && !time)) {
+      console.error("🚫 予約データが不足しています。処理を中断しました。");
+      alert("予約情報が正しく読み込めていません。もう一度最初からやり直してください。");
+      return;
+    }
     // A. 標準項目のチェック（お名前、電話番号、住所など）
     for (const [key, config] of Object.entries(formConfig)) {
       // 🆕 カスタム質問の配列はここではスキップする [cite: 2025-12-01]
@@ -575,23 +579,21 @@ const handleReserve = async () => {
 
       if (dbError) throw dbError;
 
-      // 通知の送信
-// ✅ 修正ポイント：宛先メールアドレスと詳細データをすべて backend へ送る
-// 通知の送信
-      if (!isAdminEntry) {
+// 🚀 🆕 【ガード2】isAdminEntryでない、かつ名前・日付・時間が揃っている時だけ通知を送る
+      if (!isAdminEntry && finalDisplayName && targetDate && targetTime) {
         // 🆕 名簿(existingCust)に名前があればそちらを、なければ入力された名前(customerData.name)を使用
         const displayNameForEmail = (existingCust && existingCust.name) 
                                       ? existingCust.name 
                                       : customerData.name;
 
-        const allFlattenedOptions = people.flatMap(p => Object.values(p.options || {}).flat()).filter(Boolean);
+        const allFlattenedOptions = people.flatMap(p => Object.values(p.options || {}).flat()).filter(Boolean);
 
-        await supabaseAnon.functions.invoke('resend', {
-          body: {
-            type: 'booking', 
-            shopId,
-            customerName: finalDisplayName, // ✅ 書き換えられた名前を送る
-            staffName: finalStaffName || staffName,
+        await supabaseAnon.functions.invoke('resend', {
+          body: {
+            type: 'booking', 
+            shopId,
+            customerName: finalDisplayName, // ✅ 書き換えられた名前を送る
+            staffName: finalStaffName || staffName,
             shopName: customShopName || shop.business_name, // 🆕 追加
             startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`,
             services: menuLabel,
@@ -608,8 +610,12 @@ const handleReserve = async () => {
             requestDetails: customerData.request_details
           }
         });
-      }      
-if (isAdminEntry) {
+      } else if (!isAdminEntry) {
+        // 🚀 🆕 データが空だった場合のログを残す（デバッグ用）
+        console.warn("⚠️ 予約データが不完全なため通知をスキップしました:", { finalDisplayName, targetDate, targetTime });
+      }
+      
+      if (isAdminEntry) {
   // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
   // 🆕 state に「fromReserve: true」を追加して、カレンダー側にスクロール禁止を伝えます
   navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
