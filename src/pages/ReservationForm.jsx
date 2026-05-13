@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
-// ✅ 修正：通知専用の supabaseAnon もインポートに追加
 import { supabase, supabaseAnon } from '../supabaseClient';
-// 💡 重要：LINEログイン（LIFF）を操作するためのSDK
 import liff from '@line/liff';
-// ✅ アイコンとボタン部品を追加
-import { MapPin, CheckCircle2, ChevronRight, AlertCircle } from 'lucide-react';
+
+// 🚀 🆕 修正：User アイコンを追加
+import { MapPin, CheckCircle2, ChevronRight, AlertCircle, User } from 'lucide-react';
+
+// 🚀 🆕 修正：アニメーション用のパッケージを追加
+import { motion, AnimatePresence } from 'framer-motion';
 
 function ReservationForm() {
   const { shopId } = useParams();
@@ -34,7 +36,9 @@ function ReservationForm() {
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
   const [options, setOptions] = useState([]);
-const [targetStaffName, setTargetStaffName] = useState(''); 
+  const [stylists, setStylists] = useState([]); // 技術者だけのリスト
+  const [showStaffModal, setShowStaffModal] = useState(false);
+  const [targetStaffName, setTargetStaffName] = useState(''); 
   const [autoStaffId, setAutoStaffId] = useState(null); // 🆕 自動セットされたスタッフIDを保存  
 
   // ✅ 1. 訪問型とみなす業種リスト（BasicSettingsの選択肢と合わせる）
@@ -192,11 +196,18 @@ const optRes = await supabase.from('service_options').select('*');
 
         // ✅ スタッフが一人なら自動セットするロジック（State版）
         const { data: staffList } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
-        if (staffList && staffList.length === 1 && !isAdminMode && !staffIdFromUrl) {
-          console.log("👤 1人営業のため担当者を自動設定:", staffList[0].name);
-          setTargetStaffName(staffList[0].name);
-setAutoStaffId(staffList[0].id); // Stateに保存
-        }
+        if (staffList) {
+          // 役割が stylist（技術者）の人だけを抽出
+          const onlyStylists = staffList.filter(s => s.role_type === 'stylist' && s.name);
+          setStylists(onlyStylists);
+
+          // 技術者が1人しかいない場合は、従来通り自動セットして指名ステップを不要にする
+          if (onlyStylists.length === 1 && !isAdminMode && !staffIdFromUrl) {
+            console.log("👤 技術者が1人のため担当者を自動設定:", onlyStylists[0].name);
+            setTargetStaffName(onlyStylists[0].name);
+            setAutoStaffId(onlyStylists[0].id);
+          }
+        }
 
 // 🆕 Googleログインユーザー情報の取得
         // 🛡️ 管理者ねじ込みモード(isAdminMode)の場合は、ログイン情報を無視する
@@ -426,7 +437,16 @@ fetchPreviousAddress();
     }
   };
 
-const handleNextStep = () => {
+const handleNextStep = (input = null) => {
+    // 🚀 🆕 引数が「クリックイベント」の場合は無視して null 扱いにする（エラー防止）
+    const selectedStaffId = (typeof input === 'string') ? input : null;
+    // 🚀 🆕 【指名ステップの判定】
+    // 管理者ではなく、URL指名もなく、技術者が2人以上いて、まだスタッフを選んでいない場合
+    if (!isAdminMode && !staffIdFromUrl && stylists.length > 1 && !selectedStaffId) {
+      setShowStaffModal(true); // 指名画面（モーダル）を表示
+      return; // ここで処理を中断して指名を待つ
+    }
+
     window.scrollTo(0, 0);
 
     // 1. 今回の選択分も含めた「最終的な予約者リスト」を一時的に作成
@@ -443,15 +463,17 @@ const handleNextStep = () => {
     }];
 
     // 🆕 2. 【重要】全メニューが「売上対象外」設定かどうかを判定
-    // every を使って「全員の全メニューが is_sales_excluded === true であるか」を調べます
     const isExcluded = finalPeople.every(p => 
       p.services.every(s => s.is_sales_excluded === true)
     );
 
-    // 3. 次のステップへ引き継ぐ共通データ一式
+    // 🚀 🆕 3. 最終的なスタッフIDを決定（直接選ばれたIDを最優先）
+    const finalStaffId = selectedStaffId === 'free' ? null : (selectedStaffId || adminStaffId || staffIdFromUrl || autoStaffId);
+
+    // 4. 次のステップへ引き継ぐ共通データ一式
     const commonState = { 
       people: finalPeople,
-      isSalesExcluded: isExcluded, // 🆕 このフラグを次の画面へバトンタッチ！
+      isSalesExcluded: isExcluded,
       totalSlotsNeeded,
       lineUser,
       authUserProfile, 
@@ -459,20 +481,18 @@ const handleNextStep = () => {
       visitorAddress,
       customShopName: displayBranding.name,
       bizType: entryType || location.state?.adminBizType,
-      staffId: adminStaffId || staffIdFromUrl || autoStaffId,
+      staffId: finalStaffId, // 👈 決定したIDを渡す
       fromView: fromView
     };
 
-    // 4. 画面遷移
+    // 5. 画面遷移
     if (isAdminMode) {
-      // 管理者ねじ込みモードなら直接「確認画面」へ
-      const confirmUrl = `/shop/${shopId}/confirm${adminStaffId ? `?staff=${adminStaffId}` : ''}`;
+      const confirmUrl = `/shop/${shopId}/confirm${finalStaffId ? `?staff=${finalStaffId}` : ''}`;
       navigate(confirmUrl, { 
         state: { ...commonState, date: adminDate, time: adminTime, adminDate, adminTime } 
       });
     } else {
-      // 一般客なら「日時選択画面」へ
-      const nextUrl = `/shop/${shopId}/reserve/time${staffIdFromUrl ? `?staff=${staffIdFromUrl}` : ''}`;
+      const nextUrl = `/shop/${shopId}/reserve/time${finalStaffId ? `?staff=${finalStaffId}` : ''}`;
       navigate(nextUrl, { state: commonState });
     }
   };
@@ -859,7 +879,7 @@ const handleNextStep = () => {
               !allOptionsSelected || !isRequiredMet || !isTotalTimeOk || 
               (isVisitService && !isAdminMode && (!isAddressFixed || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))))
             } 
-            onClick={handleNextStep} 
+            onClick={() => handleNextStep()} 
             style={{ 
               width: '100%', maxWidth: '400px', padding: '16px', 
               // 🚀 🆕 背景色も管理者の時は住所を無視！
@@ -880,8 +900,66 @@ const handleNextStep = () => {
           </button>
         </div>
       )}
+
+      {/* 🚀 🆕 ここに追加：スタッフ指名モーダル本体 */}
+      <AnimatePresence>
+        {showStaffModal && (
+          <div style={modalOverlayStyle} onClick={() => setShowStaffModal(false)}>
+            <motion.div 
+              initial={{ y: 50, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 50, opacity: 0 }}
+              style={modalContentStyle} onClick={e => e.stopPropagation()}
+            >
+              <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+                <div style={{ width: '50px', height: '50px', background: `${themeColor}15`, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 15px' }}>
+                  <User color={themeColor} size={28} />
+                </div>
+                <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900' }}>担当スタッフの指名</h3>
+                <p style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '5px' }}>ご希望のスタッフを選択してください</p>
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {/* 指名なし（フリー） */}
+                <button onClick={() => handleNextStep('free')} style={staffCardStyle(false, themeColor)}>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>指名なし（最短時間で予約）</div>
+                  <ChevronRight size={18} opacity={0.5} />
+                </button>
+
+                {/* 技術者（Stylists）のリスト表示 */}
+                {stylists.map(s => (
+                  <button key={s.id} onClick={() => handleNextStep(s.id)} style={staffCardStyle(true, themeColor)}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${themeColor}10`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: themeColor }}>
+                        {s.name[0]}
+                      </div>
+                      <div style={{ textAlign: 'left' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{s.name}</div>
+                        <div style={{ fontSize: '0.65rem', color: '#94a3b8' }}>技術者</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={18} opacity={0.5} />
+                  </button>
+                ))}
+              </div>
+
+              <button onClick={() => setShowStaffModal(false)} style={closeLinkStyle}>
+                キャンセルして戻る
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
+
+// 🚀 🆕 ここに追加：モーダルおよびスタッフカード用のスタイル定義
+const modalOverlayStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', zIndex: 2000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' };
+const modalContentStyle = { background: '#fff', width: '100%', maxWidth: '400px', borderRadius: '32px', padding: '30px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', maxHeight: '90vh', overflowY: 'auto' };
+const staffCardStyle = (isStylist, themeColor) => ({
+  width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', 
+  borderRadius: '16px', border: '1px solid #e2e8f0', background: isStylist ? '#fff' : '#f8fafc', 
+  cursor: 'pointer', transition: '0.2s', outline: 'none', textAlign: 'left'
+});
+const closeLinkStyle = { width: '100%', marginTop: '20px', background: 'none', border: 'none', color: '#94a3b8', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' };
 
 export default ReservationForm;
