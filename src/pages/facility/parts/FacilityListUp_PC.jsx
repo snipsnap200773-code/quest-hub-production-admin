@@ -15,29 +15,34 @@ const FacilityListUp_PC = ({
   const [residents, setResidents] = useState([]);
   const [draftList, setDraftList] = useState([]);
   const [draftSortMode, setDraftSortMode] = useState('floor'); // 🚀 追加：右側の並べ替えモード
+  const [completedMemberIds, setCompletedMemberIds] = useState([]);
+  const [dbReservedResidents, setDbReservedResidents] = useState([]);
+
 
   // 🚀 追加：施術希望者（右側）のソート済みリストを計算
   const sortedDraftList = useMemo(() => {
-  return [...draftList].sort((a, b) => {
-    const m1 = a.members || {};
-    const m2 = b.members || {};
-    
-    if (draftSortMode === 'floor') {
-      // 階数順（数字を抽出して比較）
-      const f1 = parseInt(String(m1.floor).replace(/[^0-9]/g, '')) || 999;
-      const f2 = parseInt(String(m2.floor).replace(/[^0-9]/g, '')) || 999;
-      if (f1 !== f2) return f1 - f2;
-      // 階数が同じなら部屋番号順
-      return (m1.room || "").localeCompare(m2.room || "", undefined, { numeric: true });
-    } else {
-      // 名前順（ふりがな優先）
-      const k1 = (m1.kana || m1.name || "").trim();
-      const k2 = (m2.kana || m2.name || "").trim();
-      return k1.localeCompare(k2, 'ja');
-    }
-  });
-}, [draftList, draftSortMode]);
-  const [completedMemberIds, setCompletedMemberIds] = useState([]);
+    // 🚀 🆕 DB保存済みメンバーと、ドラフト中のメンバーを一つに合体させる
+    const combined = [
+      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), // 確定済み
+      ...draftList.map(d => ({ ...d, isFromDB: false }))           // 新規追加
+    ];
+
+    return combined.sort((a, b) => {
+      const m1 = a.members || {};
+      const m2 = b.members || {};
+      
+      if (draftSortMode === 'floor') {
+        const f1 = parseInt(String(m1.floor).replace(/[^0-9]/g, '')) || 999;
+        const f2 = parseInt(String(m2.floor).replace(/[^0-9]/g, '')) || 999;
+        if (f1 !== f2) return f1 - f2;
+        return (m1.room || "").localeCompare(m2.room || "", undefined, { numeric: true });
+      } else {
+        const k1 = (m1.kana || m1.name || "").trim();
+        const k2 = (m2.kana || m2.name || "").trim();
+        return k1.localeCompare(k2, 'ja');
+      }
+    });
+  }, [draftList, dbReservedResidents, draftSortMode]);
   const [confirmedDates, setConfirmedDates] = useState([]);
   const [lastVisitMap, setLastVisitMap] = useState({});
   const [manualKeeps, setManualKeeps] = useState([]);
@@ -110,37 +115,47 @@ const FacilityListUp_PC = ({
       const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-      const [resData, draftData, connData, visitedRes, visitDatesRes, allHistoryRes] = await Promise.all([
+      const [resData, draftData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
         supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
         supabase.from('visit_list_drafts').select('*, members(*)').eq('facility_user_id', facilityId),
-        // 🚀 🆕 profiles(*) に変更して、すべての設定値を取得します
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
-        supabase.from('visit_request_residents').select('member_id, visit_requests!inner(scheduled_date)').eq('status', 'completed').eq('visit_requests.facility_user_id', facilityId).gte('visit_requests.scheduled_date', startOfMonth).lte('visit_requests.scheduled_date', endOfMonth),
-        supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth),
-        // 🚀 🆕 追加：全期間の完了履歴をすべて取得（ここから最新日を算出します）
-        supabase.from('visit_request_residents').select('member_id, visit_requests!inner(scheduled_date)').eq('status', 'completed').eq('visit_requests.facility_user_id', facilityId)
+        // 🚀 🆕 今月の全予約メンバーを、名簿情報（members）と一緒に取得する
+        supabase.from('visit_request_residents')
+          .select('*, members(*), visit_requests!inner(scheduled_date, status)')
+          .eq('visit_requests.facility_user_id', facilityId)
+          .gte('visit_requests.scheduled_date', startOfMonth)
+          .lte('visit_requests.scheduled_date', endOfMonth)
+          .neq('visit_requests.status', 'canceled'), // キャンセル以外
+        supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth)
       ]);
 
-      // 🚀 🆕 各メンバーの「一番新しい訪問日」を割り出すロジック
+      // 🚀 🆕 各メンバーの「一番新しい訪問日」を割り出すために、完了分だけを別途サクッと取得
+      const { data: allHistoryData } = await supabase
+        .from('visit_request_residents')
+        .select('member_id, visit_requests!inner(scheduled_date)')
+        .eq('status', 'completed')
+        .eq('visit_requests.facility_user_id', facilityId);
+
       const vMap = {};
-      allHistoryRes.data?.forEach(v => {
+      allHistoryData?.forEach(v => {
         const mid = v.member_id;
         const date = v.visit_requests.scheduled_date;
-        // まだ登録がない、または記録されている日付より新しい日付なら上書き
         if (!vMap[mid] || date > vMap[mid]) {
           vMap[mid] = date;
         }
       });
       setLastVisitMap(vMap);
 
+      // 🚀 🆕 今月のDB保存済みメンバーをセット
+      setDbReservedResidents(visitResidentsRes.data || []);
+      
+      // 🚀 🆕 その中から完了済み(completed)の人のみIDを抽出
+      const doneIds = visitResidentsRes.data?.filter(r => r.status === 'completed').map(r => r.member_id) || [];
+      setCompletedMemberIds(doneIds);
+
       setResidents(resData.data || []);
       setDraftList(draftData.data || []);
-      setCompletedMemberIds(visitedRes.data?.map(r => r.member_id) || []);
       setConfirmedDates(visitDatesRes.data || []);
-
-      // 🚀 🆕 完了したメンバーのIDだけを配列にまとめる
-      const doneIds = visitedRes.data?.map(r => r.member_id) || [];
-      setCompletedMemberIds(doneIds);
       
       if (connData.data) {
         const sid = connData.data.shop_id;
@@ -249,7 +264,7 @@ const FacilityListUp_PC = ({
     return allEnsuredDates.reduce((sum, date) => sum + (date.capacity || 0), 0);
   }, [allEnsuredDates]);
 
-  const isOverCapacity = draftList.length > totalMonthlyCapacity;
+  const isOverCapacity = sortedDraftList.length > totalMonthlyCapacity;
 
   // 🚀 🆕 ここに追加：判定結果が変わるたびに親へ報告する
   useEffect(() => {
@@ -278,14 +293,39 @@ const FacilityListUp_PC = ({
     if (data) setDraftList([...draftList, data]);
   };
 
-  const removeFromList = async (id) => {
-    await supabase.from('visit_list_drafts').delete().eq('id', id);
-    setDraftList(draftList.filter(d => d.id !== id));
+  const removeFromList = async (item) => {
+    const table = item.isFromDB ? 'visit_request_residents' : 'visit_list_drafts';
+    
+    // 🚀 🆕 お名前を含めた確認メッセージに変更
+    if (item.isFromDB) {
+      const targetName = item.members?.name || 'この方';
+      if (!window.confirm(`${targetName} 様は既に予約が確定していますが、削除してもよろしいですか？`)) return;
+    }
+
+    const { error } = await supabase.from(table).delete().eq('id', item.id);
+    if (error) { alert("削除に失敗しました"); return; }
+
+    // Stateを更新して画面から消す
+    if (item.isFromDB) {
+      setDbReservedResidents(dbReservedResidents.filter(r => r.id !== item.id));
+    } else {
+      setDraftList(draftList.filter(d => d.id !== item.id));
+    }
   };
 
-  const updateMenu = async (id, menu) => {
-    await supabase.from('visit_list_drafts').update({ menu_name: menu }).eq('id', id);
-    setDraftList(draftList.map(d => d.id === id ? { ...d, menu_name: menu } : d));
+  // 🚀 🆕 修正：メニュー更新を判別対応
+  const updateMenu = async (item, newMenu) => {
+    const table = item.isFromDB ? 'visit_request_residents' : 'visit_list_drafts';
+    
+    const { error } = await supabase.from(table).update({ menu_name: newMenu }).eq('id', item.id);
+    if (error) { alert("更新に失敗しました"); return; }
+
+    // Stateを更新して反映
+    if (item.isFromDB) {
+      setDbReservedResidents(dbReservedResidents.map(r => r.id === item.id ? { ...r, menu_name: newMenu } : r));
+    } else {
+      setDraftList(draftList.map(d => d.id === item.id ? { ...d, menu_name: newMenu } : d));
+    }
   };
 
   // 🚀 🆕 ここから追加：キーボードの「↑」「↓」「Enter」入力を判定する関数
@@ -313,13 +353,13 @@ const FacilityListUp_PC = ({
   // 💡 以降、既存のフィルタリング処理へ続く
   const unselectedResidents = residents
     .filter(r => 
+      // 🚀 🆕 ドラフト（今選んだ人）にも、DB（確定済みの人）にもいない人だけを表示
       !draftList.some(d => d.member_id === r.id) && 
-      !completedMemberIds.includes(r.id) &&
-      // 🚀 🆕 修正：name, room に加えて kana（ふりがな）も検索対象に含める！
+      !dbReservedResidents.some(db => db.member_id === r.id) && 
       (
         r.name.includes(searchTerm) || 
         (r.room || '').includes(searchTerm) || 
-        (r.kana || '').includes(searchTerm) // 👈 ここを追加
+        (r.kana || '').includes(searchTerm)
       )
     )
     .sort((a, b) => {
@@ -498,7 +538,8 @@ const FacilityListUp_PC = ({
     <div style={headerTextGroup}>
       <h3 style={{...sectionTitle, color: isOverCapacity ? '#ef4444' : '#c5a059'}}><ListChecks size={20} /> 施術希望者</h3>
       <span style={isOverCapacity ? countBadgeRed : countBadgeGold}>
-        {draftList.length} / {totalMonthlyCapacity}名
+        {/* 🚀 🆕 合計人数を表示するように変更 */}
+        {sortedDraftList.length} / {totalMonthlyCapacity}名
       </span>
     </div>
 
@@ -566,14 +607,21 @@ const FacilityListUp_PC = ({
           <span style={nameTextMain}>{res.name} 様</span>
         </div>
         <div style={menuRow}>
-          <select value={item.menu_name} onChange={(e) => updateMenu(item.id, e.target.value)} style={menuSelect}>
+          {/* 🚀 item まるごと渡すように変更 */}
+          <select 
+            value={item.menu_name} 
+            onChange={(e) => updateMenu(item, e.target.value)} 
+            style={menuSelect}
+          >
             {shopServices.map(s => (
               <option key={s.name} value={s.name}>{s.name}</option>
             ))}
           </select>
         </div>
       </div>
-      <button onClick={() => removeFromList(item.id)} style={removeBtn}>
+      
+      {/* 🚀 item まるごと渡すように変更。確定済みでも削除ボタンを出す */}
+      <button onClick={() => removeFromList(item)} style={removeBtn}>
         <UserMinus size={20} />
       </button>
     </div>

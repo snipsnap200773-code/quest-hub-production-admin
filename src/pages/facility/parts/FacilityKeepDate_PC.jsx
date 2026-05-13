@@ -416,27 +416,51 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
             </div>
 
             {/* 🚀 🆕 3. 下部に出現するアクションバー + 自動スクロールRef */}
-            <div ref={nextStepRef} style={{marginTop:'30px', paddingBottom:'50px'}}>
+            <div ref={nextStepRef} style={{marginTop:'30px', paddingBottom:'80px'}}>
               <AnimatePresence>
                 {allActiveKeeps.length > 0 && (
                   <motion.div initial={{y:20, opacity:0}} animate={{y:0, opacity:1}} style={bottomNoticeBar}>
-                     <div style={{display:'flex', flexDirection:'column', gap:'4px'}}>
+                      <div style={{display:'flex', flexDirection:'column', gap:'4px'}}>
                         <span style={{fontSize:'0.8rem', color:'#c5a059', fontWeight:'900'}}>STEP 1 完了！</span>
                         <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                           <div style={keepCountBadge}>{allActiveKeeps.length}</div>
-                           <span style={{fontWeight:'bold', fontSize:'0.9rem'}}>日間の訪問日をキープ中</span>
+                            <div style={keepCountBadge}>{allActiveKeeps.length}</div>
+                            <span style={{fontWeight:'bold', fontSize:'0.9rem'}}>日間の訪問日をキープ中</span>
                         </div>
                         {/* 🚀 🆕 合計可能人数を表示 */}
                         <div style={{fontSize: '0.75rem', color: '#f0e6d2', marginTop: '2px'}}>
                           想定受入キャパ：合計 <strong>{allActiveKeeps.reduce((sum, k) => sum + (k.capacity || 0), 0)}</strong> 名
                         </div>
                       </div>
-                     <button onClick={() => setActiveTab('list-up')} style={jumpBtn}>
-                       次に利用者を選ぶ <ArrowRight size={18} />
-                     </button>
+                      <button onClick={() => setActiveTab('list-up')} style={jumpBtn}>
+                        次に利用者を選ぶ <ArrowRight size={18} />
+                      </button>
                   </motion.div>
                 )}
               </AnimatePresence>
+
+              {/* 🚀 🆕 ここに追加：確定済みがあっても追加で予約ができるボタン */}
+              {selectedShop && (
+                <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                  <button 
+                    onClick={() => setActiveTab('list-up')}
+                    style={{ 
+                      ...jumpBtn, 
+                      background: '#fff', 
+                      color: '#3d2b1f', 
+                      border: '2px solid #c5a059', 
+                      width: isMobile ? '100%' : 'auto', 
+                      minWidth: '300px',
+                      justifyContent: 'center',
+                      boxShadow: '0 4px 10px rgba(0,0,0,0.05)'
+                    }}
+                  >
+                    <Users size={18} /> 予約日または施術希望者を追加
+                  </button>
+                  <p style={{ marginTop: '10px', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center', lineHeight: '1.4' }}>
+                    既に確定した予約がある場合でも、<br/>新しく日程や人を選んで追加で予約を入れることができます。
+                  </p>
+                </div>
+              )}
             </div>
           </>
         )}

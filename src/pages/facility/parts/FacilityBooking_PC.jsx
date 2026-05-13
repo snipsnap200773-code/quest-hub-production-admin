@@ -4,13 +4,29 @@ import { CheckCircle2, Calendar, Users, ArrowLeft, Send, Loader2 } from 'lucide-
 import { motion } from 'framer-motion';
 
 const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
+  // 🚀 1. まず全ての useState（箱作り）を一番上にまとめます
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
-  const [bookingSortMode, setBookingSortMode] = useState('floor'); // 🚀 追加：並べ替え状態
+  const [bookingSortMode, setBookingSortMode] = useState('floor');
+  const [shopInfo, setShopInfo] = useState(null);
+  const [facilityName, setFacilityName] = useState('');
+  const [facilityEmail, setFacilityEmail] = useState('');
+  const [facilityFurigana, setFacilityFurigana] = useState('');
+  const [manualKeeps, setManualKeeps] = useState([]);
+  const [regularRules, setRegularRules] = useState([]);
+  const [confirmedDates, setConfirmedDates] = useState([]);
+  const [exclusions, setExclusions] = useState([]);
+  // 💡 これを sortedDrafts より上に持ってくるのがポイントです！
+  const [dbReservedResidents, setDbReservedResidents] = useState([]);
 
-  // 🚀 追加：最終確認用のソート済みリストを計算
+  // 🚀 2. 全ての箱が準備できた後に、useMemo（計算）を書きます
   const sortedDrafts = useMemo(() => {
-    return [...drafts].sort((a, b) => {
+    const combined = [
+      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })),
+      ...drafts.map(d => ({ ...d, isFromDB: false }))
+    ];
+
+    return combined.sort((a, b) => {
       const m1 = a.members || {};
       const m2 = b.members || {};
       
@@ -25,18 +41,9 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         return k1.localeCompare(k2, 'ja');
       }
     });
-  }, [drafts, bookingSortMode]);
-  const [shopInfo, setShopInfo] = useState(null);
-  const [facilityName, setFacilityName] = useState('');
-  const [facilityEmail, setFacilityEmail] = useState('');
-  const [facilityFurigana, setFacilityFurigana] = useState('');
+  }, [drafts, dbReservedResidents, bookingSortMode]);
 
-  // 🚀 🆕 【ここを確実に！】定期キープ ＆ すでに予約済みのState
-  const [manualKeeps, setManualKeeps] = useState([]);
-  const [regularRules, setRegularRules] = useState([]);
-  const [confirmedDates, setConfirmedDates] = useState([]); // 💡 履歴表示用
-  const [exclusions, setExclusions] = useState([]);
-
+  // 🚀 3. その後に useEffect や関数を続けます
   useEffect(() => { fetchSummary(); }, [facilityId]);
 
   const fetchSummary = async () => {
@@ -89,17 +96,27 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       // 4. 三土手さんが提示した「既存予約」の取得部分（日付変数を安全にして実行）
       const { data: visitDatesRes } = await supabase
         .from('visit_requests')
-        .select('scheduled_date, status, start_time')
+        .select('id, scheduled_date, status, start_time') // 🚀 🆕 IDも取得するように修正
         .eq('facility_user_id', facilityId)
         .gte('scheduled_date', startOfMonth)
         .lte('scheduled_date', endOfMonth)
         .neq('status', 'canceled');
+
+      // 🚀 🆕 追加：今月すでに予約が確定しているメンバー情報を取得
+      const { data: reservedData } = await supabase
+        .from('visit_request_residents')
+        .select('*, members(*), visit_requests!inner(id, scheduled_date, status, parent_id)')
+        .eq('visit_requests.facility_user_id', facilityId)
+        .gte('visit_requests.scheduled_date', startOfMonth)
+        .lte('visit_requests.scheduled_date', endOfMonth)
+        .neq('visit_requests.status', 'canceled');
 
       // --- 各Stateへの反映 ---
       setDrafts(draftData || []);
       setShopInfo(connData?.profiles || null);
       setRegularRules(connData?.regular_rules || []);
       setConfirmedDates(visitDatesRes || []);
+      setDbReservedResidents(reservedData || []); // 🚀 🆕 追加：取得したメンバー情報をセット
 
       // 5. 確保済み日程の取得（手動キープ ＆ 除外日）
       const [keepRes, exclRes] = await Promise.all([
@@ -180,52 +197,57 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   // 🚀 🆕 ここまで追加
 
   const handleFinalSubmit = async () => {
-    if (ensuredDates.length === 0) return alert("訪問日が確保されていません。");
-    if (drafts.length === 0) return alert("希望者が選択されていません。");
+    // 🚀 🆕 修正：新しい日程がなくても、既存の確定日があり、かつ追加する希望者がいれば実行可能にする
+    if (ensuredDates.length === 0 && confirmedDates.length === 0) return alert("訪問予定日が設定されていません。");
+    if (drafts.length === 0) return alert("追加する希望者が選択されていません。");
 
     setLoading(true);
     try {
-      // 🆕 複数日連動のための「親ID」を保持する変数
-      let firstRequestId = null;
+      let targetRequestId = null;
 
-      // 🚀 1. 訪問予定日の日数分、ループして予約を作成します
-      for (let i = 0; i < ensuredDates.length; i++) {
-        const { data: request, error: reqErr } = await supabase
-          .from('visit_requests')
-          .insert([{
-            facility_user_id: facilityId,
-            shop_id: shopInfo.id,
-            scheduled_date: ensuredDates[i].date, // 💡 ループごとの日付を保存
-            start_time: ensuredDates[i].time, 
-            status: 'confirmed',
-            // 🆕 1日目ならnull、2日目以降なら1日目のIDをセット！
-            parent_id: firstRequestId 
-          }])
-          .select().single();
+      // --- パターンA：新しく確保した日程（キープ枠）がある場合 ---
+      if (ensuredDates.length > 0) {
+        let firstRequestId = null;
+        for (let i = 0; i < ensuredDates.length; i++) {
+          const { data: request, error: reqErr } = await supabase
+            .from('visit_requests')
+            .insert([{
+              facility_user_id: facilityId,
+              shop_id: shopInfo.id,
+              scheduled_date: ensuredDates[i].date,
+              start_time: ensuredDates[i].time,
+              status: 'confirmed',
+              parent_id: firstRequestId
+            }]).select().single();
 
-        if (reqErr) throw reqErr;
-
-        // 💡 1日目（親）の時だけの特別処理
-        if (i === 0) {
-          // A. 2日目以降のためにこのIDを覚えておく
-          firstRequestId = request.id;
-
-          // B. 「利用者名簿」をこの親IDに紐付けて登録する
-          // ※名簿は「親」にだけ登録し、子はそれを参照しにいく仕組みです
-          const residentPayloads = drafts.map(d => ({
-            visit_request_id: firstRequestId,
-            member_id: d.member_id,
-            menu_name: d.menu_name
-          }));
-
-          const { error: resErr } = await supabase.from('visit_request_residents').insert(residentPayloads);
-          if (resErr) throw resErr;
+          if (reqErr) throw reqErr;
+          if (i === 0) firstRequestId = request.id;
         }
+        targetRequestId = firstRequestId;
+      } 
+      // --- パターンB：新しい日程はなく、既存の予約枠に追加するだけの場合 ---
+      else {
+        // 今月の既存予約（キャンセル以外）の中から最初のものを親IDとして特定する
+        const parentRequest = confirmedDates.find(d => d.status !== 'canceled');
+        if (!parentRequest) throw new Error("追加先の予約枠が見つかりませんでした。");
+        targetRequestId = parentRequest.id;
       }
 
-      // 🚀 2. メール送信（内容は全日程をまとめて送る既存のままでOK）
+      // 🚀 🆕 共通処理：「新しく選んだ人(drafts)」だけを、特定したIDに紐付けて追加登録する
+      const residentPayloads = drafts.map(d => ({
+        visit_request_id: targetRequestId,
+        member_id: d.member_id,
+        menu_name: d.menu_name,
+        status: 'pending' // 追加分も初期ステータスはpending
+      }));
+
+      const { error: resErr } = await supabase.from('visit_request_residents').insert(residentPayloads);
+      if (resErr) throw resErr;
+
+      // 🚀 メール送信：今回は「追加分」であることを伝える
       const residentListText = drafts.map(d => `・${d.members?.name} 様 (${d.menu_name})`).join('\n');
-      const formattedDatesForMail = ensuredDates.map(d => `${d.date.replace(/-/g, '/')} (${d.time})`);
+      const datesForMail = ensuredDates.length > 0 ? ensuredDates : confirmedDates; // 新規日程があればそれ、なければ既存日程
+      const formattedDatesForMail = datesForMail.map(d => `${(d.date || d.scheduled_date).replace(/-/g, '/')} (${d.time || d.start_time?.substring(0,5)})`);
 
       await supabase.functions.invoke('resend', {
         body: {
@@ -243,11 +265,11 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         }
       });
 
-      // 🚀 3. お掃除（下書きとキープを消去）
+      // 🚀 お掃除
       await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId);
       await supabase.from('keep_dates').delete().eq('facility_user_id', facilityId);
 
-      alert(`${ensuredDates.length}日間の訪問予約を確定しました！`);
+      alert(`予約の送信が完了しました！✨`);
       setActiveTab('status'); 
     } catch (err) {
       console.error(err);
@@ -271,7 +293,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
             <div style={label}><Calendar size={16} /> 今月の訪問予定（{allDisplayVisits.length}日間）</div>
             <div style={dateList}>
               {allDisplayVisits.map(item => {
-                // 🎨 ステータスによって色を出し分け
+                // ...（日付の表示ループは変更なしなのでそのまま）...
                 const isCompleted = item.type === 'completed';
                 const isConfirmed = item.type === 'confirmed';
 
@@ -300,66 +322,76 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
           </div>
 
           <div style={infoBox}>
-            <div style={label}><Users size={16} /> 今回の施術希望者</div>
-            <div style={countNum}>{drafts.length} <small>名</small></div>
+            <div style={label}><Users size={16} /> 今月の施術予定の合計</div>
+            <div style={countNum}>
+              {sortedDrafts.length} <small>名</small>
+              {/* 🚀 🆕 内訳を表示 */}
+              <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '5px' }}>
+                (内訳: 追加分 {drafts.length}名 / 確定済 {dbReservedResidents.length}名)
+              </div>
+            </div>
           </div>
         </div>
 
         <div style={residentPreview}>
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-    <h4 style={{ ...smallTitle, margin: 0 }}>希望者一覧（各日程共通）</h4>
-    
-    {/* 🚀 追加：並べ替えタブ */}
-    <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
-      <button onClick={() => setBookingSortMode('floor')} style={miniSortTabStyle(bookingSortMode === 'floor')}>階数</button>
-      <button onClick={() => setBookingSortMode('name')} style={miniSortTabStyle(bookingSortMode === 'name')}>名前</button>
-    </div>
-  </div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <h4 style={{ ...smallTitle, margin: 0 }}>希望者一覧（各日程共通）</h4>
+            {/* ...（ソートタブは変更なし）... */}
+            <div style={{ display: 'flex', gap: '4px', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
+              <button onClick={() => setBookingSortMode('floor')} style={miniSortTabStyle(bookingSortMode === 'floor')}>階数</button>
+              <button onClick={() => setBookingSortMode('name')} style={miniSortTabStyle(bookingSortMode === 'name')}>名前</button>
+            </div>
+          </div>
 
-  <div style={previewScroll}>
-    {(() => {
-      let lastLabel = ""; 
-      return sortedDrafts.map((d) => { 
-        const res = d.members || {};
-        let currentLabel = "";
-        if (bookingSortMode === 'floor') {
-          currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "未設定";
-        } else {
-          currentLabel = (res.kana || res.name || "？").charAt(0);
-        }
+          <div style={previewScroll}>
+            {(() => {
+              let lastLabel = ""; 
+              return sortedDrafts.map((d) => { 
+                const res = d.members || {};
+                let currentLabel = "";
+                if (bookingSortMode === 'floor') {
+                  currentLabel = res.floor ? (String(res.floor).includes('F') ? res.floor : `${res.floor}F`) : "未設定";
+                } else {
+                  currentLabel = (res.kana || res.name || "？").charAt(0);
+                }
 
-        const isNewGroup = currentLabel !== lastLabel;
-        lastLabel = currentLabel;
+                const isNewGroup = currentLabel !== lastLabel;
+                lastLabel = currentLabel;
 
-        return (
-          <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-            {/* 🚀 グループ見出し（階数や50音） */}
-            {isNewGroup && (
-              <div style={bookingGroupHeader}>
-                {currentLabel}
-              </div>
-            )}
-            
-            <div style={pRow}>
-  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-    {/* 🚀 修正：res.room があれば表示。なければハイフンなどを出すか非表示に */}
-    <span style={pRoomBadge}>
-      {res.room ? res.room : "---"} 
-    </span>
-    <span style={pName}>{res.name} 様</span>
-  </div>
-  <span style={pMenu}>{d.menu_name}</span>
-</div>
-          </motion.div>
-        );
-      });
-    })()}
-  </div>
-</div>
+                return (
+                  <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                    {isNewGroup && (
+                      <div style={bookingGroupHeader}>
+                        {currentLabel}
+                      </div>
+                    )}
+                    
+                    <div style={pRow}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {/* 🚀 🆕 確定済みの場合はバッジを表示 */}
+                        {d.isFromDB && (
+                          <span style={{ fontSize: '0.65rem', background: d.status === 'completed' ? '#94a3b8' : '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                            {d.status === 'completed' ? '完了' : '確定済'}
+                          </span>
+                        )}
+                        <span style={pRoomBadge}>
+                          {res.room ? res.room : "---"} 
+                        </span>
+                        <span style={pName}>{res.name} 様</span>
+                      </div>
+                      <span style={{ ...pMenu, color: d.isFromDB ? '#94a3b8' : '#c5a059' }}>{d.menu_name}</span>
+                    </div>
+                  </motion.div>
+                );
+              });
+            })()}
+          </div>
+        </div>
 
         <button 
           onClick={handleFinalSubmit} 
-          disabled={loading || ensuredDates.length === 0} 
+          // 🚀 🆕 修正：新規日程がなくても、追加するドラフトメンバーがいればボタンを押せるようにする
+          disabled={loading || drafts.length === 0} 
           style={finalBtn(loading)}
         >
           {loading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
