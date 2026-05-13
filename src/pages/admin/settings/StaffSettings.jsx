@@ -3,14 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   Users, Plus, Trash2, ArrowLeft, Save, 
-  Calendar, Copy, QrCode, Check 
+  Calendar, Copy, QrCode, Check, Scissors 
 } from 'lucide-react';
 
 const StaffSettings = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
 
-  // 🆕 画面サイズ管理を追加（ボタンをレスポンシブにするため）
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -43,7 +42,8 @@ const StaffSettings = () => {
     if (data) {
       const initialized = data.map(s => ({
         ...s,
-        weekly_holidays: s.weekly_holidays || []
+        weekly_holidays: s.weekly_holidays || [],
+        role_type: s.role_type || 'stylist' // 🚀 🆕 技術者/アシスタントの初期値
       }));
       setStaffs(initialized);
     }
@@ -67,6 +67,7 @@ const StaffSettings = () => {
       shop_id: shopId,
       name: newStaffName,
       role: isFirstStaff ? 'owner' : 'staff',
+      role_type: 'stylist', // 🚀 🆕 新規作成時はデフォルトで技術者
       weekly_holidays: []
     }]);
 
@@ -76,7 +77,6 @@ const StaffSettings = () => {
     }
   };
 
-  // 🆕 スタッフ削除を実行する関数 (追加分)
   const deleteStaff = async (id) => {
     const targetStaff = staffs.find(s => s.id === id);
     if (!window.confirm(`${targetStaff?.name} さんを削除しますか？\n（過去の予約データには影響しません）`)) {
@@ -110,7 +110,8 @@ const StaffSettings = () => {
       .update({ 
         name: staff.name,
         weekly_holidays: staff.weekly_holidays,
-        concurrent_capacity: staff.concurrent_capacity || 1 
+        concurrent_capacity: staff.concurrent_capacity || 1,
+        role_type: staff.role_type // 🚀 🆕 役割も一緒に保存する
       })
       .eq('id', staff.id);
 
@@ -118,7 +119,7 @@ const StaffSettings = () => {
       alert(`${staff.name}さんの設定を保存しました！`);
     } else {
       console.error(error); 
-      alert("保存に失敗しました。SQLでカラム追加はお済みですか？");
+      alert("保存に失敗しました。SQLで role_type カラムの追加はお済みですか？");
     }
     setIsSaving(null);
   };
@@ -126,26 +127,16 @@ const StaffSettings = () => {
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
 
   return (
-<div style={{ maxWidth: '700px', margin: isPC ? '40px auto' : '20px auto', padding: '20px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '700px', margin: isPC ? '40px auto' : '20px auto', padding: '20px', fontFamily: 'sans-serif' }}>
       
-      {/* 🚀 ナビゲーションヘッダー（オシャレ＆レスポンシブ版） */}
       <div style={{ marginBottom: '30px' }}>
         <button 
           onClick={() => navigate(`/admin/${shopId}/dashboard`)} 
           style={{ 
-            background: '#fff', 
-            border: '1px solid #e2e8f0', 
-            padding: isPC ? '10px 20px' : '10px 12px', 
-            borderRadius: '30px', 
-            fontWeight: 'bold', 
-            color: '#64748b', 
-            cursor: 'pointer', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            fontSize: isPC ? '1rem' : '0.8rem',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            whiteSpace: 'nowrap'
+            background: '#fff', border: '1px solid #e2e8f0', padding: isPC ? '10px 20px' : '10px 12px', 
+            borderRadius: '30px', fontWeight: 'bold', color: '#64748b', cursor: 'pointer', 
+            display: 'flex', alignItems: 'center', gap: '8px', fontSize: isPC ? '1rem' : '0.8rem',
+            boxShadow: '0 2px 4px rgba(0,0,0,0.05)', whiteSpace: 'nowrap'
           }}
         >
           <ArrowLeft size={18} /> {isPC ? 'ダッシュボードへ' : '戻る'}
@@ -177,20 +168,46 @@ const StaffSettings = () => {
           {staffs.map(staff => {
             const bookingUrl = `${window.location.origin}/shop/${shopId}/reserve?staff=${staff.id}`;
             const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(bookingUrl)}`;
+            // 🚀 🆕 このスタッフが技術者かどうかを判定
+            const isStylist = staff.role_type === 'stylist';
 
             return (
               <div key={staff.id} style={{ padding: '20px', borderRadius: '20px', border: '1px solid #f1f5f9', background: '#f8fafc' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <input 
-                      style={{ fontWeight: 'bold', color: '#1e293b', border: 'none', background: 'transparent', fontSize: '1.1rem', width: '150px' }}
-                      value={staff.name}
-                      onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, name: e.target.value } : s))}
-                    />
-                    <span style={{ fontSize: '0.7rem', color: '#64748b', background: '#e2e8f0', padding: '2px 8px', borderRadius: '99px' }}>
-                      {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
-                    </span>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
+                  
+                  {/* 左側：名前とバッジ */}
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                      <input 
+                        style={{ fontWeight: 'bold', color: '#1e293b', border: '1px dashed transparent', background: 'transparent', fontSize: '1.1rem', width: '100%', maxWidth: '200px', padding: '4px', outline: 'none' }}
+                        value={staff.name}
+                        onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, name: e.target.value } : s))}
+                        onFocus={(e) => e.target.style.border = '1px dashed #cbd5e1'}
+                        onBlur={(e) => e.target.style.border = '1px dashed transparent'}
+                      />
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <span style={{ fontSize: '0.65rem', color: '#64748b', background: '#e2e8f0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+                        {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
+                      </span>
+                      {/* 🚀 🆕 役割の切り替えボタン（技術者 or アシスタント） */}
+                      <select 
+                        value={staff.role_type}
+                        onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, role_type: e.target.value } : s))}
+                        style={{ 
+                          fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', outline: 'none',
+                          background: isStylist ? '#f43f5e15' : '#f1f5f9',
+                          color: isStylist ? '#f43f5e' : '#64748b'
+                        }}
+                      >
+                        <option value="stylist">✂️ 技術者（指名可能）</option>
+                        <option value="assistant">🧹 アシスタント（指名不可）</option>
+                      </select>
+                    </div>
                   </div>
+
+                  {/* 右側：アクションボタン */}
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button 
                       onClick={() => saveStaffSetting(staff)} 
@@ -199,49 +216,58 @@ const StaffSettings = () => {
                     >
                       <Save size={16} /> {isSaving === staff.id ? '保存中...' : '保存'}
                     </button>
-                    <button onClick={() => deleteStaff(staff.id)} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer' }}>
+                    <button onClick={() => deleteStaff(staff.id)} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}>
                       <Trash2 size={20} />
                     </button>
                   </div>
                 </div>
 
-                <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
-                  <button 
-                    onClick={() => copyUrl(staff.id)} 
-                    style={{ 
-                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', 
-                      background: copiedId === staff.id ? '#10b981' : '#fff', 
-                      color: copiedId === staff.id ? '#fff' : '#1e293b', 
-                      border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s' 
-                    }}
-                  >
-                    {copiedId === staff.id ? <Check size={16} /> : <Copy size={16} />} 
-                    {copiedId === staff.id ? 'コピー完了！' : '予約URLをコピー'}
-                  </button>
-                  <button 
-                    onClick={() => setShowQrId(showQrId === staff.id ? null : staff.id)} 
-                    style={{ 
-                      flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', 
-                      background: showQrId === staff.id ? '#1e293b' : '#fff', 
-                      color: showQrId === staff.id ? '#fff' : '#1e293b', 
-                      border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer' 
-                    }}
-                  >
-                    <QrCode size={16} /> QRコードを表示
-                  </button>
-                </div>
-
-                {showQrId === staff.id && (
-                  <div style={{ textAlign: 'center', background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
-                    <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '10px' }}>{staff.name}さん専用の予約QRコード</p>
-                    <img 
-                      src={qrImageUrl} 
-                      alt="QR Code" 
-                      style={{ width: '150px', height: '150px', marginBottom: '10px', border: '1px solid #f1f5f9' }} 
-                    />
-                    <div style={{ fontSize: '0.7rem', color: '#94a3b8', wordBreak: 'break-all', maxWidth: '300px', margin: '0 auto' }}>
-                      {bookingUrl}
+                {/* 🚀 🆕 技術者（stylist）の場合だけURL発行エリアを表示する */}
+                {isStylist ? (
+                  <>
+                    <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                      <button 
+                        onClick={() => copyUrl(staff.id)} 
+                        style={{ 
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', 
+                          background: copiedId === staff.id ? '#10b981' : '#fff', 
+                          color: copiedId === staff.id ? '#fff' : '#1e293b', 
+                          border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s' 
+                        }}
+                      >
+                        {copiedId === staff.id ? <Check size={16} /> : <Copy size={16} />} 
+                        {copiedId === staff.id ? 'コピー完了！' : '専用予約URLをコピー'}
+                      </button>
+                      <button 
+                        onClick={() => setShowQrId(showQrId === staff.id ? null : staff.id)} 
+                        style={{ 
+                          flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', padding: '10px', 
+                          background: showQrId === staff.id ? '#1e293b' : '#fff', 
+                          color: showQrId === staff.id ? '#fff' : '#1e293b', 
+                          border: '1px solid #e2e8f0', borderRadius: '10px', fontSize: '0.8rem', cursor: 'pointer' 
+                        }}
+                      >
+                        <QrCode size={16} /> QRコードを表示
+                      </button>
                     </div>
+
+                    {showQrId === staff.id && (
+                      <div style={{ textAlign: 'center', background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                        <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '10px' }}>{staff.name}さん専用の予約QRコード</p>
+                        <img 
+                          src={qrImageUrl} 
+                          alt="QR Code" 
+                          style={{ width: '150px', height: '150px', marginBottom: '10px', border: '1px solid #f1f5f9' }} 
+                        />
+                        <div style={{ fontSize: '0.7rem', color: '#94a3b8', wordBreak: 'break-all', maxWidth: '300px', margin: '0 auto' }}>
+                          {bookingUrl}
+                        </div>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center', border: '1px dashed #cbd5e1', marginBottom: '20px' }}>
+                    このスタッフは「アシスタント」のため、専用の指名予約URLは発行されません。
                   </div>
                 )}
 

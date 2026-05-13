@@ -199,7 +199,8 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       .from('staffs')
       .select('*')
       .eq('shop_id', shopId)
-      .order('sort_order', { ascending: true });
+      .eq('role_type', 'stylist') // 🚀 🆕 技術者(stylist)のみを表示し、アシスタントを除外
+      .order('created_at', { ascending: true }); // 🚀 🆕 StaffSettingsと同じく「登録順」で表示
     setStaffs(staffsData || []);
 
 // 3. 予約データ取得（担当者名結合）
@@ -342,7 +343,7 @@ const finalizeOpenDetail = async (res, cust) => {
 
     const { data: history } = await supabase
       .from('reservations')
-      .select('*')
+      .select('*, staffs(name)')
       .eq('shop_id', shopId)
       .eq('res_type', 'normal')
       .or(`customer_name.eq."${res.customer_name}"${cust?.id ? `,customer_id.eq.${cust.id}` : ''}`)
@@ -1201,8 +1202,13 @@ const timeSlots = useMemo(() => {
                           </div>
 
                           {/* 🚀 🆕 中段：メニュー名は1枚目画像のように「横並び」で表示 */}
-                          <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', marginBottom: '4px' }}>
-                            {h.menu_name || d.menuName}
+                          <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', marginBottom: '4px', display: 'flex', gap: '8px' }}>
+                            {staffs.length > 1 && (
+                              <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85' }}>
+                                👤 {h.staffs?.name || 'フリー'}
+                              </span>
+                            )}
+                            <span>{h.menu_name || d.menuName}</span>
                           </div>
 
                           {/* 下段：調整や商品があれば小さく表示 */}
@@ -1364,6 +1370,13 @@ const timeSlots = useMemo(() => {
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4b2c85', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
                           <Scissors size={16} /> 施術・技術メニュー
                         </div>
+
+                        {/* 🚀 🆕 追加：担当スタッフ名の表示（技術者が2人以上の場合のみ） */}
+                        {staffs.length > 1 && (
+                          <div style={{ fontSize: '0.85rem', color: '#4b2c85', fontWeight: 'bold', marginBottom: '15px', paddingLeft: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <User size={14} /> 担当: {selectedHistory.staffs?.name || '担当なし'}
+                          </div>
+                        )}
                         
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {/* ① メインメニューの内訳（単価付き） */}

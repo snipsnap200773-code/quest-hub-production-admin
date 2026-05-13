@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => {
@@ -475,7 +475,8 @@ const isPC = windowWidth > 1024;
       .from('staffs')
       .select('*')
       .eq('shop_id', shopId)
-      .order('sort_order', { ascending: true });
+      .eq('role_type', 'stylist') // 🚀 🆕 技術者(stylist)のみを表示
+      .order('created_at', { ascending: true }); // 🚀 🆕 登録順
     setStaffs(staffsData || []);
 
     // 2. スケジュール共有設定（schedule_sync_id）を確認
@@ -1042,7 +1043,8 @@ const { data: resData } = await supabase
             customer_name: normalizedName,
             customer_phone: editFields.phone,
             customer_id: finalCustomerId,
-            options: { ...currentOptions, visit_info: updatedVisitInfo } // 👈 予約票側の住所も同期
+            staff_id: selectedRes.staff_id, // 🚀 🆕 変更したスタッフIDを保存対象に追加！
+            options: { ...currentOptions, visit_info: updatedVisitInfo }
           })
           .eq('id', selectedRes.id);
       }
@@ -2431,7 +2433,7 @@ else if (
                   <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                     
                     {/* 📋 予約メニュー内訳 */}
-                    <div style={{ background: themeColorLight, padding: '16px', borderRadius: '15px', marginBottom: '20px', border: `1px solid ${themeColor}` }}>
+                    <div style={{ background: themeColorLight, padding: '16px', borderRadius: '15px', marginBottom: '15px', border: `1px solid ${themeColor}` }}>
       {/* 🆕 事業名の表示を追加 */}
       {categoryMap[selectedRes?.category] && (
         <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>
@@ -2452,6 +2454,23 @@ else if (
         );
       })()}
     </div>
+
+                    {/* 🚀 🆕 担当スタッフの変更（技術者が2人以上の時だけ表示） */}
+                    {staffs.length > 1 && !editFields.is_facility && (
+                      <div style={{ marginBottom: '20px' }}>
+                        <label style={labelStyle}>担当スタッフの変更</label>
+                        <select 
+                          value={selectedRes?.staff_id || ''} 
+                          onChange={(e) => setSelectedRes({ ...selectedRes, staff_id: e.target.value || null })} 
+                          style={inputStyle}
+                        >
+                          <option value="">フリー（担当なし）</option>
+                          {staffs.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {/* 🆕 修正：ここから動的フォーム（順番固定版） */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
@@ -2712,7 +2731,15 @@ else if (
                                 ¥{(h.total_price || parseReservationDetails(h).totalPrice).toLocaleString()}
                               </span>
                             </div>
-                            <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', textDecoration: isCanceled ? 'line-through' : 'none' }}>{h.menu_name}</div>
+                            <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+  {/* 🚀 🆕 2人以上いる場合のみ担当者を表示 */}
+  {staffs.length > 1 && (
+    <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>
+      👤 {h.staffs?.name || 'フリー'}
+    </span>
+  )}
+  {h.menu_name}
+</p>
 
                             {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
                             {(() => {
@@ -3543,6 +3570,13 @@ else if (
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4b2c85', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
                           <Scissors size={16} /> 施術・技術メニュー
                         </div>
+
+                        {/* 🚀 🆕 追加：担当スタッフ名の表示（2人以上の場合のみ） */}
+                        {staffs.length > 1 && (
+                          <div style={{ fontSize: '0.85rem', color: '#4b2c85', fontWeight: 'bold', marginBottom: '15px', paddingLeft: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <User size={14} /> 担当: {selectedHistory.staffs?.name || '担当なし'}
+                          </div>
+                        )}
                         
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                           {/* ① メインメニューの内訳（カット・カラー等） */}

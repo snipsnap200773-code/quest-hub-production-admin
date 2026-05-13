@@ -727,7 +727,8 @@ const completePayment = async () => {
 
   // 🚀 🆕 修正：技術売上と店販売上を分離して集計するロジック
   const salesBreakdown = useMemo(() => {
-    const breakdown = { total: 0, common: 0, technical: 0, product: 0, byBiz: {} };
+    // 🚀 🆕 byStaff を追加
+    const breakdown = { total: 0, common: 0, technical: 0, product: 0, byBiz: {}, byStaff: {} };
 
     salesRecords.filter(s => {
       if (!s.sale_date) return false;
@@ -738,13 +739,16 @@ const completePayment = async () => {
       const amount = Number(s.total_amount) || 0;
       breakdown.total += amount;
 
-      // 🛒 店販売上を計算（details内のproductsの合計）
       const prodSum = (s.details?.products || []).reduce((sum, p) => sum + (Number(p.price || 0) * (Number(p.quantity) || 1)), 0);
       breakdown.product += prodSum;
-      breakdown.technical += (amount - prodSum); // 合計から店販を引いた残りが技術売上
+      breakdown.technical += (amount - prodSum);
 
-      // 💡 事業別（屋号別）の集計
       const associatedRes = allReservations.find(r => r.id === s.reservation_id);
+      
+      // 🚀 🆕 担当者別の集計ロジックを追加
+      const staffName = associatedRes?.staffs?.name || 'フリー';
+      breakdown.byStaff[staffName] = (breakdown.byStaff[staffName] || 0) + amount;
+
       const bType = associatedRes?.biz_type;
       if (bType && categoryMap[bType]) {
         const name = categoryMap[bType];
@@ -781,10 +785,11 @@ const completePayment = async () => {
     const mainName = shop?.business_name || '通常';
     
     const months = Array.from({ length: 12 }, (_, i) => ({
-      month: i + 1, total: 0, count: 0, technical: 0, product: 0, // 👈 月間合計用
+      month: i + 1, total: 0, count: 0, technical: 0, product: 0,
       breakdown: { [mainName]: 0 }, 
+      staffBreakdown: {}, // 🚀 🆕 担当者別集計用の箱を追加
       days: Array.from({ length: new Date(currentYear, i + 1, 0).getDate() }, (_, j) => ({ 
-        day: j + 1, total: 0, count: 0, technical: 0, product: 0, breakdown: { [mainName]: 0 } // 👈 日別用
+        day: j + 1, total: 0, count: 0, technical: 0, product: 0, breakdown: { [mainName]: 0 }
       }))
     }));
 
@@ -795,22 +800,23 @@ const completePayment = async () => {
         const dIdx = d.getDate() - 1;
         const amount = Number(s.total_amount) || 0;
 
-        // 🛒 店販売上を算出（details.productsの合計）
         const prodSum = (s.details?.products || []).reduce((sum, p) => sum + (Number(p.price || 0) * (Number(p.quantity) || 1)), 0);
         const techSum = amount - prodSum;
 
         const res = allReservations.find(r => r.id === s.reservation_id);
         const bizName = (res?.biz_type && categoryMap[res.biz_type]) ? categoryMap[res.biz_type] : mainName;
+        // 🚀 🆕 担当者名を取得
+        const staffName = res?.staffs?.name || '担当なし';
 
         if (months[mIdx] && months[mIdx].days[dIdx]) {
-          // 月間集計
           months[mIdx].total += amount;
           months[mIdx].count += 1;
           months[mIdx].technical += techSum;
           months[mIdx].product += prodSum;
           months[mIdx].breakdown[bizName] = (months[mIdx].breakdown[bizName] || 0) + amount;
+          // 🚀 🆕 月ごとの担当者別合計を加算
+          months[mIdx].staffBreakdown[staffName] = (months[mIdx].staffBreakdown[staffName] || 0) + amount;
 
-          // 日別集計
           months[mIdx].days[dIdx].total += amount;
           months[mIdx].days[dIdx].count += 1;
           months[mIdx].days[dIdx].technical += techSum;
@@ -1594,6 +1600,18 @@ return (
                       <span style={{ fontWeight: 'bold' }}>¥{amount.toLocaleString()}</span>
                     </div>
                   ))}
+
+                  {/* 🚀 🆕 追加：担当者別の内訳表示（技術者が2人以上いる場合のみ） */}
+                  {staffs.filter(s => s.role_type === 'stylist').length > 1 && (
+                    <div style={{ display: 'flex', gap: '15px', flexWrap: 'wrap', alignItems: 'center', borderLeft: '1px solid rgba(255,255,255,0.2)', paddingLeft: '15px', marginLeft: '5px' }}>
+                      {Object.entries(salesBreakdown.byStaff).map(([name, amount]) => (
+                        <div key={name} style={{ fontSize: '0.8rem' }}>
+                          <span style={{ opacity: 0.6, fontSize: '0.7rem', fontWeight: 'bold', marginRight: '4px' }}>👤 {name}</span>
+                          <span style={{ fontWeight: 'bold', color: '#fbbf24' }}>¥{amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* 💰 右側：施術/店販の内訳 ＆ 総合計 */}
@@ -1881,25 +1899,23 @@ return (
                   </div>
 
                   {/* 🚀 🆕 ここに追加：この月の事業別合計内訳を表示するパネル */}
-                  <div style={{ 
-                    background: '#f8fafc', 
-                    padding: '15px', 
-                    borderRadius: '15px', 
-                    marginBottom: '15px', 
-                    display: 'flex', 
-                    flexWrap: 'wrap', 
-                    gap: '20px', 
-                    border: '1px solid #e2e8f0' 
-                  }}>
-                    {Object.entries(selectedMonthData.breakdown).map(([name, price]) => (
+                  <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px solid #e2e8f0' }}>
+                    {Object.entries(selectedMonthData.breakdown).map(([name, price]) => price > 0 && (
                       <div key={name}>
                         <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>{name} 合計</div>
-                        <div style={{ 
-                          fontSize: '1.1rem', 
-                          fontWeight: '900', 
-                          // フットなら青、その他なら黒っぽい色
-                          color: name.includes('フット') ? '#4285f4' : '#1e293b' 
-                        }}>
+                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: name.includes('フット') ? '#4285f4' : '#1e293b' }}>
+                          ¥{price.toLocaleString()}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* 🚀 🆕 追加：担当者別の売上内訳パネル */}
+                  <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', marginBottom: '15px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px dashed #00800044' }}>
+                    {Object.entries(selectedMonthData.staffBreakdown || {}).map(([name, price]) => (
+                      <div key={name}>
+                        <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>👤 {name} 担当分</div>
+                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#008000' }}>
                           ¥{price.toLocaleString()}
                         </div>
                       </div>
@@ -2880,6 +2896,11 @@ return (
                       <div style={{ marginBottom: '25px' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4b2c85', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
                           <Scissors size={16} /> 施術・技術メニュー
+                        </div>
+
+                        {/* 🚀 🆕 追加：担当スタッフ名の表示 */}
+                        <div style={{ fontSize: '0.85rem', color: '#4b2c85', fontWeight: 'bold', marginBottom: '15px', paddingLeft: '5px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <User size={14} /> 担当: {selectedHistory.staffs?.name || '担当なし'}
                         </div>
                         
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

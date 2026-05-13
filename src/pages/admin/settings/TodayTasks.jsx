@@ -68,6 +68,7 @@ const TodayTasks = () => {
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [categoryMap, setCategoryMap] = useState({});
+  const [staffCount, setStaffCount] = useState(0);
 
   // 🆕 お客様情報ポップアップ用の状態 [cite: 2026-03-08]
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -199,11 +200,25 @@ const fetchTodayTasks = async () => {
   setLoading(true);
   const dateStr = targetDate;
   try {
-    // 💡 シンプルに「自分の店舗ID」で予約を検索するだけ！
-    const { data: resData, error: resError } = await supabase
-      .from('reservations')
-      .select('*, customers(name, admin_name, memo)') 
-      .eq('shop_id', shopId)
+    const [allCatsRes, adjRes, prodRes, servRes, optRes, staffRes] = await Promise.all([
+  // ...既存の5つ...
+  supabase.from('service_categories').select('*').eq('shop_id', shopId).order('sort_order'),
+  supabase.from('admin_adjustments').select('*').eq('shop_id', shopId).is('service_id', null).order('sort_order'),
+  supabase.from('products').select('*').eq('shop_id', shopId).order('sort_order'),
+  supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order'),
+  supabase.from('service_options').select('*'),
+  // 🚀 🆕 スタッフ一覧（技術者のみ）を取得して人数を数える
+  supabase.from('staffs').select('id').eq('shop_id', shopId).eq('role_type', 'stylist')
+]);
+
+// 🚀 🆕 技術者の人数を保持する（Stateを後述の通り追加してください）
+setStaffCount(staffRes.data?.length || 0);
+
+// --- 修正箇所B: 140行目付近 fetchTodayTasks 内 ---
+const { data: resData, error: resError } = await supabase
+  .from('reservations')
+  .select('*, customers(name, admin_name, memo), staffs(name)') // 🚀 🆕 staffs(name) を追加
+  .eq('shop_id', shopId)
       .neq('status', 'canceled') // 🚀 追記：キャンセルされた個人予約を除外
       .gte('start_time', `${dateStr} 00:00:00`)
       .lte('start_time', `${dateStr} 23:59:59`)
@@ -787,7 +802,7 @@ const openCustomerInfo = async (task) => {
       // 👤 個人の場合：reservationsテーブルから取得
       let historyQuery = supabase
         .from('reservations')
-        .select('*')
+        .select('*, staffs(name)')
         .eq('shop_id', shopId)
         .eq('res_type', 'normal')
         .in('status', ['completed', 'canceled']);
@@ -1005,17 +1020,23 @@ const handleSaveMemo = async () => {
                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
                       {isFacility ? <Building2 size={18} color={isCanceled ? '#cbd5e1' : "#4f46e5"} strokeWidth={2.5} /> : <User size={18} />}
                       <span style={{ 
-                        fontWeight: '900', 
-                        fontSize: '1.2rem',
-                        textDecoration: isCanceled ? 'line-through' : 'none',
-                        display: 'inline-flex', alignItems: 'center', gap: '5px' // 🚀 🆕 追加
-                      }}>
-                        {task.customer_name} {isFacility ? '' : '様'}
-                        
-                        {/* 🚀 🆕 名前ラベルの中に追加 */}
-                        {task.customers?.is_blocked && <span style={{ color: '#ef4444', textDecoration: 'none' }}>🚫</span>}
-                        {task.customers?.cancel_count >= 3 && <span style={{ color: '#ef4444', textDecoration: 'none' }}>‼️</span>}
-                      </span>
+  fontWeight: '900', 
+  fontSize: '1.2rem',
+  textDecoration: isCanceled ? 'line-through' : 'none',
+  display: 'inline-flex', alignItems: 'center', gap: '5px', flexWrap: 'wrap' 
+}}>
+  {task.customer_name} {isFacility ? '' : '様'}
+  
+  {/* 🚀 🆕 2人以上いる場合のみ、お名前の横に担当者を表示 */}
+  {staffCount > 1 && task.staffs?.name && !isCanceled && (
+    <span style={{ fontSize: '0.7rem', color: '#64748b', background: '#f1f5f9', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold', marginLeft: '5px', verticalAlign: 'middle' }}>
+      担当: {task.staffs.name}
+    </span>
+  )}
+
+  {task.customers?.is_blocked && <span style={{ color: '#ef4444', textDecoration: 'none' }}>🚫</span>}
+  {task.customers?.cancel_count >= 3 && <span style={{ color: '#ef4444', textDecoration: 'none' }}>‼️</span>}
+</span>
                     </div>
 
                     <div style={{ fontSize: '0.85rem', color: isCanceled ? '#cbd5e1' : (isFacility ? '#4f46e5' : themeColor), marginTop: '8px', fontWeight: 'bold', paddingLeft: '26px' }}>
@@ -1128,10 +1149,18 @@ const handleSaveMemo = async () => {
             style={{ background: '#fff', width: '100%', borderTopLeftRadius: '30px', borderTopRightRadius: '30px', padding: '30px', maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 -10px 25px rgba(0,0,0,0.2)' }}
           >
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <div>
-                <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{selectedTask?.customers?.admin_name || selectedTask?.customer_name} 様</h3>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>レジ・お会計確定</p>
-              </div>
+  <div>
+    <h3 style={{ margin: 0, fontSize: '1.2rem' }}>{selectedTask?.customers?.admin_name || selectedTask?.customer_name} 様</h3>
+    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+      <p style={{ margin: 0, fontSize: '0.8rem', color: '#64748b' }}>レジ・お会計確定</p>
+      {/* 🚀 🆕 2人以上いる場合のみ、担当者を表示 */}
+      {staffCount > 1 && selectedTask?.staffs?.name && (
+        <span style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold' }}>
+          👤 担当: {selectedTask.staffs.name}
+        </span>
+      )}
+    </div>
+  </div>
               <button onClick={() => setIsCheckoutOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }}>✕</button>
             </div>
 
@@ -1648,7 +1677,15 @@ const handleSaveMemo = async () => {
                     return (
                       <div key={h.id} style={{ padding: '15px', background: isToday ? '#fff' : '#f8fafc', borderRadius: '16px', border: isToday ? `2px solid ${themeColor}` : '1px solid #f1f5f9', boxShadow: isToday ? `0 4px 15px ${themeColor}33` : 'none' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 'bold', fontSize: '0.85rem', marginBottom: '6px' }}>
-                          <span style={{ color: isToday ? themeColor : '#1e293b' }}>📅 {hDate.toLocaleDateString('ja-JP')}</span>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: isToday ? themeColor : '#1e293b' }}>📅 {hDate.toLocaleDateString('ja-JP')}</span>
+                            {/* 🚀 🆕 2人以上なら担当者を表示 */}
+                            {staffCount > 1 && h.staffs?.name && (
+                              <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'normal' }}>
+                                (担当: {h.staffs.name})
+                              </span>
+                            )}
+                          </div>
                           <div style={{ color: '#d34817', fontWeight: 'bold' }}>¥{calculateInitialPrice(h).toLocaleString()}</div>
                         </div>
                         <div style={{ fontSize: '0.8rem', color: '#475569', fontWeight: 'bold' }}>{h.menu_name || 'メニュー記録なし'}</div>
@@ -1784,6 +1821,14 @@ const handleSaveMemo = async () => {
                     <div style={{ fontSize: '0.85rem', color: themeColor, fontWeight: '900', letterSpacing: '1px' }}>
                       {selectedTask.task_type === 'facility' ? '🏢 施設訪問・明細一覧' : '👤 個別会計・内容確認'}
                     </div>
+
+                    {/* 🚀 🆕 2人以上なら担当者を表示 */}
+                    {staffCount > 1 && selectedTask.staffs?.name && (
+                      <span style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold', background: `${themeColor}15`, padding: '2px 10px', borderRadius: '6px' }}>
+                        担当: {selectedTask.staffs.name}
+                      </span>
+                    )}
+
                     {/* 日付を右側に配置 */}
                     <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
                       {new Date(selectedTask.start_time).toLocaleDateString('ja-JP')}
