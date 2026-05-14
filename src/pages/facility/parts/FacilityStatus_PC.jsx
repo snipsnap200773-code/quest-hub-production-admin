@@ -195,10 +195,19 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
             <div key={visit.id} style={visitCard(visit.id === expandedId)}>
               <div style={cardHeader(isMobile)} onClick={() => setExpandedId(visit.id === expandedId ? null : visit.id)}>
                 <div style={dateBox(isMobile)}>
-                  <Calendar size={18} />
-                  <strong style={dateText(isMobile)}>{visit.scheduled_date.replace(/-/g, '/')}</strong>
-                  <span style={shopBadge(visit.profiles?.theme_color)}>{visit.profiles?.business_name}</span>
-                </div>
+  <Calendar size={18} />
+  <strong style={dateText(isMobile)}>{visit.scheduled_date.replace(/-/g, '/')}</strong>
+  
+  {/* 🚀 🆕 追加：開始時間のバッジを表示 */}
+  {visit.start_time && (
+    <span style={timeBadgeStyle}>
+      <Clock size={13} strokeWidth={3} />
+      {visit.start_time.substring(0, 5)}
+    </span>
+  )}
+
+  <span style={shopBadge(visit.profiles?.theme_color)}>{visit.profiles?.business_name}</span>
+</div>
                 <div style={progressArea(isMobile)}>
                   <div style={countBadge(progress === 100)}>
   本日： {doneThisDay.length}名 / あと {totalRemaining}名
@@ -276,6 +285,21 @@ const visitCard = (active) => ({ background: '#fff', borderRadius: '20px', borde
 const cardHeader = (isMobile) => ({ padding: isMobile ? '15px' : '20px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: '10px', cursor: 'pointer' });
 const dateBox = (isMobile) => ({ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' });
 const dateText = (isMobile) => ({ fontSize: isMobile ? '0.95rem' : '1.1rem', fontWeight: '900', color: '#1e293b' });
+// 🚀 🆕 時間表示用のスタイリッシュなバッジ
+const timeBadgeStyle = {
+  display: 'inline-flex',
+  alignItems: 'center',
+  gap: '4px',
+  background: '#f8fafc',
+  color: '#3d2b1f',
+  padding: '3px 10px',
+  borderRadius: '8px',
+  fontSize: '0.8rem',
+  fontWeight: '900',
+  border: '1px solid #e2e8f0',
+  boxShadow: '0 1px 2px rgba(0,0,0,0.05)',
+  marginLeft: '4px'
+};
 const shopBadge = (color) => ({ background: color ? `${color}15` : '#f1f5f9', color: color || '#64748b', padding: '3px 10px', borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold', border: `1px solid ${color}33` });
 const progressArea = (isMobile) => ({ display: 'flex', alignItems: 'center', gap: '15px', width: isMobile ? '100%' : 'auto', justifyContent: 'space-between' });
 const countBadge = (isDone) => ({ background: isDone ? '#10b981' : '#3d2b1f', color: '#fff', padding: '5px 15px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: '900' });

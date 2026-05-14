@@ -255,51 +255,52 @@ const FacilityListUp_PC = ({
 
   const allEnsuredDates = useMemo(() => {
     if (!shopProfile) return [];
-
     const list = [];
-    const todayStr = new Date().toLocaleDateString('sv-SE'); // 今日の日付
+    const todayStr = new Date().toLocaleDateString('sv-SE');
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
 
-    // 🚀 1. 確定済み予約分（5/29, 30, 31など）
+    // 🚀 1. まず「確定済み予約」をベースにする
     confirmedDates
       .filter(cd => cd.scheduled_date.startsWith(currentMonthPrefix))
       .forEach(cd => {
-        if (!list.some(l => l.date === cd.scheduled_date)) {
-          const cap = calculateCapacity(cd.scheduled_date, cd.start_time || '09:00', shopProfile);
-          list.push({ date: cd.scheduled_date, time: cd.start_time || '09:00', capacity: cap });
-        }
+        // 💡 その日に対して「時間の変更（手動キープ）」があるか探す
+        const change = manualKeeps.find(k => k.date === cd.scheduled_date);
+        const activeTime = change?.start_time || cd.start_time || '09:00';
+        const isTimeChanged = change && cd.start_time && change.start_time !== cd.start_time;
+
+        const cap = calculateCapacity(cd.scheduled_date, activeTime, shopProfile);
+        list.push({ 
+          date: cd.scheduled_date, 
+          time: activeTime, 
+          originalTime: cd.start_time, // 元の時間を保持
+          isTimeChanged,               // 変更フラグ
+          capacity: cap, 
+          isConfirmed: true 
+        });
       });
 
-    // 🚀 2. 手動キープ分（黄色：今月分）
+    // 🚀 2. 純粋な「新規手動キープ（まだ予約になっていない日）」を追加
     manualKeeps
-      .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix))
+      .filter(k => k.date.startsWith(currentMonthPrefix) && !list.some(l => l.date === k.date))
       .forEach(k => {
-        if (k.date < todayStr) return; // 過去日は表示しない
-        if (!list.some(l => l.date === k.date)) {
-          const cap = calculateCapacity(k.date, k.start_time || '09:00', shopProfile); 
-          list.push({ date: k.date, time: k.start_time || '09:00', capacity: cap });
-        }
+        if (k.date < todayStr) return;
+        const cap = calculateCapacity(k.date, k.start_time || '09:00', shopProfile); 
+        list.push({ date: k.date, time: k.start_time || '09:00', capacity: cap, isConfirmed: false });
       });
 
-    // 🚀 3. 定期キープ分（ルール日：6月などの未来分を反映）
+    // 🚀 3. 定期キープ（未来の空き日）を追加
     const lastDate = new Date(year, month + 1, 0).getDate();
     for (let d = 1; d <= lastDate; d++) {
       const date = new Date(year, month, d);
       const dateStr = date.toLocaleDateString('sv-SE');
       const regTime = checkIsRegularKeep(date);
-
-      // 💡 重複チェック ＆ 過去日チェック ＆ 除外日チェック
-      if (list.some(item => item.date === dateStr)) continue; 
-      if (dateStr < todayStr || exclusions.includes(dateStr)) continue;
-
-      if (regTime) {
-        // 🚩 ここでリストに「追加」します。これで6月の未来の日付も反映されます！
+      if (regTime && dateStr >= todayStr && !exclusions.includes(dateStr) && !list.some(l => l.date === dateStr)) {
         const cap = calculateCapacity(dateStr, regTime, shopProfile);
-        list.push({ date: dateStr, time: regTime, capacity: cap });
+        list.push({ date: dateStr, time: regTime, capacity: cap, isConfirmed: false });
       }
     }
     return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [manualKeeps, regularRules, exclusions, year, month, shopProfile, confirmedDates, facilityId]);
+  }, [manualKeeps, regularRules, exclusions, year, month, shopProfile, confirmedDates]);
 
   // 🚀 🆕 直後に追加：合計キャパと判定
   const totalMonthlyCapacity = useMemo(() => {
@@ -464,24 +465,25 @@ const FacilityListUp_PC = ({
 
               return (
                 <span 
-                  key={item.date} 
-                  style={{
-                    ...keepBadge,
-                    // 🎨 ステータスに合わせて色を変える
-                    background: isCompleted ? '#f1f5f9' : (isConfirmed ? '#10b981' : '#3d2b1f'),
-                    color: isCompleted ? '#94a3b8' : '#fff',
-                    border: isCompleted ? '1px solid #e2e8f0' : 'none',
-                    opacity: isCompleted ? 0.8 : 1,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '4px'
-                  }}
-                >
-                  {isCompleted && <CheckCircle2 size={12} />}
-                  {item.date.replace(/-/g, '/')}
-                  <span style={{ fontSize: '0.65rem', opacity: 0.7 }}>({item.time?.substring(0, 5)})</span>
-                  {isCompleted && <span style={{ fontSize: '0.6rem', fontWeight: 'normal' }}>[完了]</span>}
-                </span>
+  key={item.date} 
+  style={{
+    ...keepBadge,
+    background: isCompleted ? '#f1f5f9' : (isConfirmed ? (item.isTimeChanged ? '#0ea5e9' : '#10b981') : '#3d2b1f'),
+    color: isCompleted ? '#94a3b8' : '#fff',
+    border: item.isTimeChanged ? '2px solid #bae6fd' : (isCompleted ? '1px solid #e2e8f0' : 'none'),
+  }}
+>
+  {isCompleted && <CheckCircle2 size={12} />}
+  {item.date.replace(/-/g, '/')}
+  <span style={{ fontSize: '0.65rem', marginLeft: '4px', fontWeight: '900' }}>
+    {item.isTimeChanged ? (
+      `(${item.originalTime?.substring(0,5)} ➔ ${item.time.substring(0,5)})`
+    ) : (
+      `(${item.time.substring(0,5)})`
+    )}
+  </span>
+  {isCompleted && <span style={{ fontSize: '0.6rem', fontWeight: 'normal' }}>[完了]</span>}
+</span>
               );
             })}
             {allEnsuredDates.length === 0 && <span style={noDataText}>訪問日が確保されていません</span>}

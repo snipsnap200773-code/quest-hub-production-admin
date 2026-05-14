@@ -205,15 +205,45 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
 
   // 🚀 🆕 【表示用】全日程（完了・確定・新規）を合算
   const allDisplayVisits = useMemo(() => {
-    const list = ensuredDates.map(d => ({ ...d, type: 'new' }));
+    const list = [];
+    
+    // 1. 確定済みの日程（変更チェック付き）
     confirmedDates.forEach(cd => {
-      if (!list.some(l => l.date === cd.scheduled_date)) {
-        list.push({ date: cd.scheduled_date, time: cd.start_time, type: cd.status }); 
+      const change = manualKeeps.find(k => k.date === cd.scheduled_date);
+      const isTimeChanged = change && cd.start_time && change.start_time !== cd.start_time;
+      
+      list.push({ 
+        date: cd.scheduled_date, 
+        time: change?.start_time || cd.start_time, 
+        originalTime: cd.start_time,
+        isTimeChanged,
+        type: cd.status 
+      });
+    });
+
+    // 2. まったく新しいキープ日
+    ensuredDates.forEach(ed => {
+      if (!list.some(l => l.date === ed.date)) {
+        list.push({ ...ed, type: 'new' });
       }
     });
+
     return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [ensuredDates, confirmedDates]);
-  // 🚀 🆕 ここまで追加
+  }, [ensuredDates, confirmedDates, manualKeeps]);
+
+  // 🚀 🆕 1. 既存の予約に対して「時間の変更」があるか判定
+  const hasTimeChanges = useMemo(() => {
+    return confirmedDates.some(cd => {
+      const keep = manualKeeps.find(k => k.date === cd.scheduled_date);
+      // 手動キープがあり、かつ時間が既存の予約と違う場合に true
+      return keep && keep.start_time && keep.start_time !== cd.start_time;
+    });
+  }, [confirmedDates, manualKeeps]);
+
+  // 🚀 🆕 2. 全体として「何かしらの変更」があるか（新規日程 or 新規メンバー or 時間変更）
+  const isAnythingChanged = useMemo(() => {
+    return ensuredDates.length > 0 || drafts.length > 0 || hasTimeChanges;
+  }, [ensuredDates, drafts, hasTimeChanges]);
 
   const handleFinalSubmit = async () => {
     if (allDisplayVisits.length === 0) return alert("訪問予定日が設定されていません。");
@@ -335,23 +365,23 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
 
                 return (
                   <span 
-                    key={item.date} 
-                    style={{
-                      ...dateTag,
-                      background: isCompleted ? '#f1f5f9' : (isConfirmed ? '#10b981' : '#3d2b1f'),
-                      color: isCompleted ? '#94a3b8' : '#fff',
-                      border: isCompleted ? '1px solid #e2e8f0' : 'none',
-                      opacity: isCompleted ? 0.7 : 1,
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '4px'
-                    }}
-                  >
-                    {isCompleted && <CheckCircle2 size={12} />}
-                    {item.date.replace(/-/g,'/')}
-                    <small style={{ marginLeft: '4px', opacity: 0.8 }}>({item.time?.substring(0, 5)})</small>
-                    {isCompleted && <span style={{ fontSize: '0.6rem' }}>[完了]</span>}
-                  </span>
+  key={item.date} 
+  style={{
+    ...dateTag,
+    background: isCompleted ? '#f1f5f9' : (isConfirmed ? (item.isTimeChanged ? '#0ea5e9' : '#10b981') : '#3d2b1f'),
+    color: isCompleted ? '#94a3b8' : '#fff',
+  }}
+>
+  {isCompleted && <CheckCircle2 size={12} />}
+  {item.date.replace(/-/g,'/')}
+  <small style={{ marginLeft: '4px', opacity: 0.9, fontWeight: '900' }}>
+    {item.isTimeChanged ? (
+      `(${item.originalTime?.substring(0,5)} ➔ ${item.time.substring(0,5)}に変更)`
+    ) : (
+      `(${item.time?.substring(0, 5)})`
+    )}
+  </small>
+</span>
                 );
               })}
             </div>
@@ -424,34 +454,34 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
           </div>
         </div>
 
-        {/* 🚀 🆕 追加：新規の追加内容がない場合のアナウンス */}
-        {ensuredDates.length === 0 && drafts.length === 0 && (
-          <div style={{ 
-            background: '#f8fafc', 
-            border: '2px dashed #cbd5e1', 
-            borderRadius: '20px', 
-            padding: '20px', 
-            marginBottom: '20px', 
-            textAlign: 'center' 
-          }}>
-            <p style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', margin: 0, lineHeight: '1.6' }}>
-              ℹ️ 現在、新しく追加された内容はありません。<br/>
-              予約日または施術希望者を追加する場合は、<br/>
-              「キープ！この日とった！」か「リストアップしよう！」で追加して、<br/>
-              再度この画面で予約を確定してください。
-            </p>
-          </div>
-        )}
+        {/* 🚀 修正：何らかの変更（時間変更含む）があれば、この案内を非表示にする */}
+{!isAnythingChanged && (
+  <div style={{ 
+    background: '#f8fafc', 
+    border: '2px dashed #cbd5e1', 
+    borderRadius: '20px', 
+    padding: '20px', 
+    marginBottom: '20px', 
+    textAlign: 'center' 
+  }}>
+    <p style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', margin: 0, lineHeight: '1.6' }}>
+      ℹ️ 現在、新しく追加された内容はありません。<br/>
+      予約日または施術希望者を追加する場合は、<br/>
+      「キープ！この日とった！」か「リストアップしよう！」で追加して、<br/>
+      再度この画面で予約を確定してください。
+    </p>
+  </div>
+)}
 
         <button 
-  onClick={handleFinalSubmit} 
-  // 🚀 修正：合計で日程とメンバーがいれば、loading中でない限りいつでも押せる
-  disabled={loading || allDisplayVisits.length === 0 || sortedDrafts.length === 0} 
-  style={{
-    ...finalBtn(loading),
-    background: (loading || allDisplayVisits.length === 0 || sortedDrafts.length === 0) ? '#ccc' : '#3d2b1f'
-  }}
->
+          onClick={handleFinalSubmit} 
+          // 🚀 修正：ローディング中、または「全く変更がない」場合にボタンを無効化
+          disabled={loading || !isAnythingChanged} 
+          style={{
+            ...finalBtn(loading),
+            background: (loading || !isAnythingChanged) ? '#ccc' : '#3d2b1f'
+          }}
+        >
           {loading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
           {loading ? '送信中...' : 'この内容で予約を確定して依頼する'}
         </button>
