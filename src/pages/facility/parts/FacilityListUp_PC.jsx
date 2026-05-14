@@ -126,14 +126,15 @@ const FacilityListUp_PC = ({
       const today = new Date();
       const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
 
-      // 🚀 2. 下書き（ドラフト）の取得。今月を見ている時だけ取得し、それ以外は空にする。
-      let draftResponse = { data: [] };
-      if (isCurrentMonth) {
-        draftResponse = await supabase
-          .from('visit_list_drafts')
-          .select('*, members(*)')
-          .eq('facility_user_id', facilityId);
-      }
+      // 🚀 1. 選択されている「年-月」のキーを作成 (例: "2026-05")
+      const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+
+      // 🚀 2. 下書きの取得。表示している月の分だけを確実に持ってくる
+      const draftResponse = await supabase
+        .from('visit_list_drafts')
+        .select('*, members(*)')
+        .eq('facility_user_id', facilityId)
+        .eq('scheduled_month', currentMonthKey); // 💡 月情報でフィルター
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
       const [resData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
@@ -298,19 +299,34 @@ const FacilityListUp_PC = ({
 
   const addToList = async (resident) => {
     if (!shopId) return alert("提携業者が未設定です");
+    
+    // 💡 すでにリストにいるかチェック
     if (draftList.some(d => d.member_id === resident.id)) return;
     
-    // 初期メニューとして施設専用メニューの1番目を選択（もしあれば）
+    // 🚀 現在表示している「年-月」のキーを作成
+    const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+    
+    // 初期メニューの決定
     const defaultMenu = shopServices[0]?.name === '（施設用メニュー未設定）' ? 'カット' : (shopServices[0]?.name || 'カット');
 
-    const { data } = await supabase.from('visit_list_drafts').insert([{ 
-      facility_user_id: facilityId, 
-      shop_id: shopId, 
-      member_id: resident.id,
-      menu_name: defaultMenu 
-    }]).select('*, members(*)').single();
-    if (data) setDraftList([...draftList, data]);
-  };
+    try {
+      const { data, error } = await supabase.from('visit_list_drafts').insert([{ 
+        facility_user_id: facilityId, 
+        shop_id: shopId, 
+        member_id: resident.id,
+        menu_name: defaultMenu,
+        scheduled_month: currentMonthKey // 💡 月情報を追加して保存
+      }]).select('*, members(*)').single();
+
+      if (error) throw error;
+      if (data) setDraftList([...draftList, data]);
+
+    } catch (err) {
+      console.error("追加エラー:", err);
+      // 💡 もしここで409エラーが出る場合は、以前お伝えしたSQLでの「制約（Constraint）の削除と再作成」が必要です。
+      alert("この月には既に追加されているか、登録に失敗しました。");
+    }
+  }; // ✅ addToList はここで終了
 
   const removeFromList = async (item) => {
     const table = item.isFromDB ? 'visit_request_residents' : 'visit_list_drafts';
