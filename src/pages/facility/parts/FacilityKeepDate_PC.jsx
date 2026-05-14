@@ -62,7 +62,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
     const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes] = await Promise.all([
       // ① この施設の予約
-      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
+      supabase.from('visit_requests').select('scheduled_date, start_time').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
       // ② 全キープ日程
       supabase.from('keep_dates').select('*').eq('shop_id', shopId),
       // ③ 提携ルール
@@ -199,16 +199,20 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     
     if (dateStr < todayStr) return 'past';
 
+    // 🚀 1. 手動キープ（オレンジ色・時間変更中）を最優先でチェック
+    const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
+    if (manualKeep) return { type: 'keeping', time: manualKeep.start_time };
+
+    // 🚀 2. 確定済み予約（緑色）を次にチェック
+    const confirmed = confirmedVisits.find(v => v.scheduled_date === dateStr);
+    if (confirmed) return { type: 'booked', time: confirmed.start_time };
+
+    // 🚀 3. 予約制限日や定休日の判定（ここからは既存のまま）
     const limitDate = new Date();
     limitDate.setDate(new Date().getDate() + advanceDays);
     const limitDateStr = limitDate.toLocaleDateString('sv-SE');
-
-    const isBooked = confirmedVisits.some(v => v.scheduled_date === dateStr);
-    if (isBooked) return 'booked';
-
     if (dateStr < limitDateStr) return 'limit-closed';
 
-    // A: 長期休暇・定休日（店舗が設定した休み）
     const specialHolidays = selectedShop?.special_holidays || [];
     if (specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end)) return 'ng';
 
@@ -223,34 +227,25 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const holidays = selectedShop?.business_hours?.regular_holidays || {};
     const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || (isL1 && holidays[`L1-${dayKey}`]) || (isL2 && holidays[`L2-${dayKey}`]);
     
-    if (isRegularHoliday) return 'ng'; // 🚩 これは本当の「定休」
+    if (isRegularHoliday) return 'ng';
 
-    // B: 予定の重なりを詳しくチェック
     const dayEvents = shopBlocks.filter(e => e.date === dateStr);
     if (dayEvents.length > 0) {
-      // 他施設の予約（isAllDay）が入っている場合
       if (dayEvents.some(e => e.isAllDay)) return 'other-keep';
-
-      // 営業時間内の重なりを判定
       const bHours = selectedShop?.business_hours || {};
       const startStr = bHours[dayKey]?.open || '09:00';
       const endStr = bHours[dayKey]?.close || '18:00';
       const bizStart = new Date(`${dateStr}T${startStr}:00`).getTime();
       const bizEnd = new Date(`${dateStr}T${endStr}:00`).getTime();
-
       const hasOverlap = dayEvents.some(e => e.start < bizEnd && e.end > bizStart);
-      if (hasOverlap) return 'full'; // 🚀 🆕 自分の予約・私用がある場合は「満員」を返す
+      if (hasOverlap) return 'full';
     }
 
-    const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
-    if (manualKeep) return { type: 'keeping', time: manualKeep.start_time || '09:00' };
-
-    // 次に定期キープを判定する
+    // 🚀 4. 定期キープ（ルール）を最後に判定
     if (regKeep && !exclusions.includes(dateStr)) {
       return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
     }
     
-    // 他施設のキープ
     if (keepDates.some(k => k.date === dateStr)) return 'other-keep';
 
     return 'available';
@@ -300,28 +295,35 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     return enrichedList.sort((a, b) => a.date.localeCompare(b.date));
   }, [keepDates, regularRules, exclusions, year, month, days, facilityId, confirmedVisits]);
 
+  const hasConfirmedVisitThisMonth = useMemo(() => {
+    const targetMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    return confirmedVisits.some(v => v.scheduled_date.startsWith(targetMonthPrefix));
+  }, [confirmedVisits, year, month]);
+
   const handleDateClick = async (day) => {
     if (!day || !selectedShop) return;
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
     
-    // 現在のステータスを取得（定期か手動かは問わず、現在の表示状態を取得）
     const statusData = getStatus(dateStr);
     const status = typeof statusData === 'object' ? statusData.type : statusData;
     
-    // 過去やNG日は無視
-    if (['past', 'ng', 'booked', 'other-keep'].includes(status)) return;
+    // 🚀 修正：'booked'（確定済）をリストから外して、クリックできるようにします
+    if (['past', 'ng', 'other-keep'].includes(status)) return;
 
-    // 🚀 🆕 修正：定期キープでも手動キープでも、まずはモーダルを開く
-    if (status === 'keeping') {
-      // 選択中（定期キープ or 手動キープ）なら、今の時間を渡してモーダルを開く
+    // 🚀 確定済（booked）の日をタップした場合の処理を追加
+    if (status === 'booked' || status === 'keeping') {
+      // 確定済みの予約データから時間を探す
+      const confirmedTime = confirmedVisits.find(v => v.scheduled_date === dateStr)?.start_time;
+
       setTimeModal({ 
         show: true, 
         dateStr, 
-        currentTime: typeof statusData === 'object' ? statusData.time : '09:00',
-        isRegular: !!checkIsRegularKeep(new Date(dateStr)) // 💡 定期キープ日かどうかのフラグを持たせる
+        // 優先順位：1.選択中の時間(statusData.time) 2.確定済みの時間(confirmedTime) 3.デフォルト
+        currentTime: (typeof statusData === 'object' ? statusData.time : confirmedTime) || '09:00',
+        isRegular: !!checkIsRegularKeep(new Date(dateStr))
       });
     } else {
-      // 何もない空き日をクリックした場合は、とりあえず1番目の時間でキープしてモーダルを開く
+      // (空き日をクリックした時の既存ロジックはそのまま)
       const defaultTime = selectedShop.facility_visit_slots?.[0] || '09:00';
       await supabase.from('keep_dates').upsert({ 
         date: dateStr, 
@@ -425,9 +427,20 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                 return (
                   <div key={i} onClick={() => handleDateClick(day)} style={dayBox(s.bg, s.border, status, isMobile)}>
                     <div style={{display:'flex', justifyContent:'space-between', alignItems:'flex-start'}}>
-                      <span style={dayNum(status)}>{day}</span>
-                      {!isMobile && status === 'keeping' && <div style={timeBadgeSmall}>{(statusData.time || '09:00').substring(0, 5)}</div>}
-                    </div>
+  <span style={dayNum(status)}>{day}</span>
+  {/* 🚀 修正：'keeping'（黄色）だけでなく 'booked'（緑色）の時も時間を表示する */}
+  {!isMobile && (status === 'keeping' || status === 'booked') && (
+  <div style={timeBadgeSmall}>
+    {(() => {
+      // 🚀 修正：statusData自体が時間を持っているので、そこから直接取るのが一番確実です
+      const t = (typeof statusData === 'object' && statusData.time) 
+        ? statusData.time 
+        : '09:00';
+      return t.substring(0, 5);
+    })()}
+  </div>
+)}
+</div>
                     <div style={statusIconArea(s.color, isMobile)}>{s.icon}</div>
                     <span style={statusLabel(s.color, isMobile)}>{s.label}</span>
                   </div>
@@ -465,7 +478,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
               </AnimatePresence>
 
               {/* 🚀 🆕 ここに追加：確定済みがあっても追加で予約ができるボタン */}
-              {selectedShop && confirmedVisits.length > 0 && (
+              {selectedShop && hasConfirmedVisitThisMonth && (
                 <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <button 
                     onClick={() => setActiveTab('list-up')}
@@ -596,7 +609,16 @@ const dayBox = (bg, border, status, isMobile) => ({ minHeight: isMobile ? '60px'
 const dayNum = (status) => ({ fontSize: '0.85rem', fontWeight: '900', color: status === 'available' || status === 'keeping' ? '#1e293b' : '#cbd5e1' });
 const statusIconArea = (color, isMobile) => ({ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: isMobile ? '14px' : '20px', fontWeight: '900', color: color });
 const statusLabel = (color, isMobile) => ({ textAlign:'center', fontSize: isMobile ? '0.45rem' : '0.55rem', fontWeight: 'bold', color: color });
-const timeBadgeSmall = { fontSize: '0.5rem', background: '#3d2b1f', color: '#fff', padding: '1px 3px', borderRadius: '3px' };
+const timeBadgeSmall = { 
+  fontSize: '0.75rem',      // 文字を大きく
+  background: '#3d2b1f', 
+  color: '#fff', 
+  padding: '2px 8px',       // パディングを広げて見やすく
+  borderRadius: '6px',      // 角丸を少し滑らかに
+  fontWeight: '900',        // 極太にして視認性を最大化
+  boxShadow: '0 2px 4px rgba(0,0,0,0.2)', // 影をつけて浮き上がらせる
+  lineHeight: '1.2'
+};
 
 const legendArea = { display: 'flex', gap: '12px', justifyContent: 'center', marginTop: '15px' };
 const legendItem = { display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' };

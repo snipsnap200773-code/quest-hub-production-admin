@@ -137,19 +137,25 @@ const FacilityListUp_PC = ({
         .eq('scheduled_month', currentMonthKey); // 💡 月情報でフィルター
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
-      const [resData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
+      const [resData, connData, visitResidentsRes, visitDatesRes, otherVisits, personalRes, privateTasksRes] = await Promise.all([
         supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
         
-        // 今月の全予約メンバー（確定・保留分）
+        // ① この施設の予約メンバー
         supabase.from('visit_request_residents')
-          .select('*, members(*), visit_requests!inner(scheduled_date, status)')
+          .select('*, members(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .gte('visit_requests.scheduled_date', startOfMonth)
           .lte('visit_requests.scheduled_date', endOfMonth)
           .neq('visit_requests.status', 'canceled'),
-          
-        supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth)
+        
+        // ② この施設の予約日程
+        supabase.from('visit_requests').select('scheduled_date, status, start_time').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth).neq('status', 'canceled'),
+
+        // ③ 🆕 ショップ側の「他の予定」を取得（ availability 判定用）
+        supabase.from('visit_requests').select('scheduled_date').neq('facility_user_id', facilityId).neq('status', 'canceled'),
+        supabase.from('reservations').select('start_time, end_time').neq('status', 'canceled'),
+        supabase.from('private_tasks').select('start_time, end_time')
       ]);
 
       // 🚀 4. 各メンバーの「一番新しい訪問日」を割り出す（履歴取得）
@@ -248,36 +254,52 @@ const FacilityListUp_PC = ({
   };
 
   const allEnsuredDates = useMemo(() => {
-    if (!shopProfile) return []; // 店舗データがまだ無い時は空で返す
+    if (!shopProfile) return [];
 
     const list = [];
+    const todayStr = new Date().toLocaleDateString('sv-SE'); // 今日の日付
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
 
-    // 1. 手動キープ分
-    manualKeeps
-      .filter(k => k.date.startsWith(currentMonthPrefix))
-      .forEach(k => {
-        // 🚀 shopProfile を使って計算
-        const cap = calculateCapacity(k.date, k.start_time || '09:00', shopProfile); 
-        list.push({ date: k.date, time: k.start_time || '09:00', capacity: cap });
+    // 🚀 1. 確定済み予約分（5/29, 30, 31など）
+    confirmedDates
+      .filter(cd => cd.scheduled_date.startsWith(currentMonthPrefix))
+      .forEach(cd => {
+        if (!list.some(l => l.date === cd.scheduled_date)) {
+          const cap = calculateCapacity(cd.scheduled_date, cd.start_time || '09:00', shopProfile);
+          list.push({ date: cd.scheduled_date, time: cd.start_time || '09:00', capacity: cap });
+        }
       });
 
-    // 2. 定期キープ分
+    // 🚀 2. 手動キープ分（黄色：今月分）
+    manualKeeps
+      .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix))
+      .forEach(k => {
+        if (k.date < todayStr) return; // 過去日は表示しない
+        if (!list.some(l => l.date === k.date)) {
+          const cap = calculateCapacity(k.date, k.start_time || '09:00', shopProfile); 
+          list.push({ date: k.date, time: k.start_time || '09:00', capacity: cap });
+        }
+      });
+
+    // 🚀 3. 定期キープ分（ルール日：6月などの未来分を反映）
     const lastDate = new Date(year, month + 1, 0).getDate();
     for (let d = 1; d <= lastDate; d++) {
       const date = new Date(year, month, d);
       const dateStr = date.toLocaleDateString('sv-SE');
       const regTime = checkIsRegularKeep(date);
-      if (regTime && !exclusions.includes(dateStr)) {
-        if (!list.some(item => item.date === dateStr)) {
-          // 🚀 shopProfile を使って計算
-          const cap = calculateCapacity(dateStr, regTime, shopProfile);
-          list.push({ date: dateStr, time: regTime, capacity: cap });
-        }
+
+      // 💡 重複チェック ＆ 過去日チェック ＆ 除外日チェック
+      if (list.some(item => item.date === dateStr)) continue; 
+      if (dateStr < todayStr || exclusions.includes(dateStr)) continue;
+
+      if (regTime) {
+        // 🚩 ここでリストに「追加」します。これで6月の未来の日付も反映されます！
+        const cap = calculateCapacity(dateStr, regTime, shopProfile);
+        list.push({ date: dateStr, time: regTime, capacity: cap });
       }
     }
     return list.sort((a, b) => a.date.localeCompare(b.date));
-  }, [manualKeeps, regularRules, exclusions, year, month, shopProfile]); // 🚀 依存配列に shopProfile を追加
+  }, [manualKeeps, regularRules, exclusions, year, month, shopProfile, confirmedDates, facilityId]);
 
   // 🚀 🆕 直後に追加：合計キャパと判定
   const totalMonthlyCapacity = useMemo(() => {
@@ -675,12 +697,11 @@ const FacilityListUp_PC = ({
       <footer style={footerStyle}>
         <div style={saveNotice}>✨ リストは自動保存されています</div>
 <button 
-          // 🚀 🆕 条件：リストが空ではなく、かつキャパオーバーでない時だけ動く
-          onClick={() => !isOverCapacity && setActiveTab('booking')} 
-          style={nextStepBtn(draftList.length > 0 && !isOverCapacity)}
-          // 🚀 🆕 リストが空、またはキャパオーバーならボタンを無効化
-          disabled={draftList.length === 0 || isOverCapacity}
-        >
+  // 🚀 修正：合計リスト（sortedDraftList）に誰かいれば進めるように変更
+  onClick={() => !isOverCapacity && setActiveTab('booking')} 
+  style={nextStepBtn(sortedDraftList.length > 0 && !isOverCapacity)}
+  disabled={sortedDraftList.length === 0 || isOverCapacity}
+>
           これで決まり！予約確定へ進む <ArrowRight size={22} />
         </button>
         </footer>

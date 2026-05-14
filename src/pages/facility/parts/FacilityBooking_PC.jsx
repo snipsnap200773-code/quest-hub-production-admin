@@ -44,7 +44,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   }, [drafts, dbReservedResidents, bookingSortMode]);
 
   // 🚀 3. その後に useEffect や関数を続けます
-  useEffect(() => { fetchSummary(); }, [facilityId]);
+  useEffect(() => { fetchSummary(); }, [facilityId, sharedDate]);
 
   const fetchSummary = async () => {
     setLoading(true); // 読み込み開始
@@ -66,11 +66,15 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
     console.log("🔍 取得対象月:", startOfMonth, "〜", endOfMonth);
 
     try {
+      // 🚀 表示月キーを作成 (例: "2026-05")
+      const currentMonthKey = `${year}-${month}`;
+
       // 1. 基本情報の取得（ドラフト）
       const { data: draftData } = await supabase
         .from('visit_list_drafts')
         .select('*, members(*)')
-        .eq('facility_user_id', facilityId);
+        .eq('facility_user_id', facilityId)
+        .eq('scheduled_month', currentMonthKey);
 
       // 2. 提携情報の取得（single を maybeSingle に変更して 406 エラーを回避）
       const { data: connData } = await supabase
@@ -212,17 +216,30 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   // 🚀 🆕 ここまで追加
 
   const handleFinalSubmit = async () => {
-    // 🚀 🆕 修正：新しい日程がなくても、既存の確定日があり、かつ追加する希望者がいれば実行可能にする
-    if (ensuredDates.length === 0 && confirmedDates.length === 0) return alert("訪問予定日が設定されていません。");
-    if (drafts.length === 0) return alert("追加する希望者が選択されていません。");
+    if (allDisplayVisits.length === 0) return alert("訪問予定日が設定されていません。");
+    if (sortedDrafts.length === 0) return alert("施術希望者が選択されていません。");
 
     setLoading(true);
     try {
-      let targetRequestId = null;
+      // 🚀 🆕 その月の「マスターID（名簿の親）」を特定します
+      let masterRequestId = null;
 
-      // --- パターンA：新しく確保した日程（キープ枠）がある場合 ---
+      // 1. まず既存の予約から、その月の「一番最初の日（parent_idがないもの）」を探す
+      const existingMaster = confirmedDates.find(d => !d.parent_id && d.status !== 'canceled');
+
+      // 🚀 🆕 既存予約の開始時間に変更があればDBを更新する
+      for (const cd of confirmedDates) {
+        const matchingKeep = manualKeeps.find(k => k.date === cd.scheduled_date);
+        if (matchingKeep && matchingKeep.start_time && matchingKeep.start_time !== cd.start_time) {
+          await supabase.from('visit_requests')
+            .update({ start_time: matchingKeep.start_time })
+            .eq('id', cd.id);
+        }
+      }
+
+      // --- パターンA：新しく確保した日程がある場合 ---
       if (ensuredDates.length > 0) {
-        let firstRequestId = null;
+        let firstNewId = null;
         for (let i = 0; i < ensuredDates.length; i++) {
           const { data: request, error: reqErr } = await supabase
             .from('visit_requests')
@@ -232,36 +249,37 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
               scheduled_date: ensuredDates[i].date,
               start_time: ensuredDates[i].time,
               status: 'confirmed',
-              parent_id: firstRequestId
+              // 💡 既存のマスターがいればそれを、なければ今回の1日目を親にする
+              parent_id: existingMaster ? existingMaster.id : firstNewId
             }]).select().single();
 
           if (reqErr) throw reqErr;
-          if (i === 0) firstRequestId = request.id;
+          if (i === 0) firstNewId = request.id;
         }
-        targetRequestId = firstRequestId;
+        // 新しく作った場合、その1日目をマスターとする（既存がなければ）
+        masterRequestId = existingMaster ? existingMaster.id : firstNewId;
       } 
-      // --- パターンB：新しい日程はなく、既存の予約枠に追加するだけの場合 ---
+      // --- パターンB：既存の枠への追加のみ ---
       else {
-        // 今月の既存予約（キャンセル以外）の中から最初のものを親IDとして特定する
-        const parentRequest = confirmedDates.find(d => d.status !== 'canceled');
-        if (!parentRequest) throw new Error("追加先の予約枠が見つかりませんでした。");
-        targetRequestId = parentRequest.id;
+        masterRequestId = existingMaster?.id;
       }
 
-      // 🚀 🆕 共通処理：「新しく選んだ人(drafts)」だけを、特定したIDに紐付けて追加登録する
-      const residentPayloads = drafts.map(d => ({
-        visit_request_id: targetRequestId,
-        member_id: d.member_id,
-        menu_name: d.menu_name,
-        status: 'pending' // 追加分も初期ステータスはpending
-      }));
+      // 🚀 2. 全ての新規メンバー(drafts)を、この「マスターID」に紐付けて一括登録！
+      if (drafts.length > 0 && masterRequestId) {
+        const residentPayloads = drafts.map(d => ({
+          visit_request_id: masterRequestId, // 💡 全員同じ「親」に紐付ける（プール化）
+          member_id: d.member_id,
+          menu_name: d.menu_name,
+          status: 'pending'
+        }));
 
-      const { error: resErr } = await supabase.from('visit_request_residents').insert(residentPayloads);
-      if (resErr) throw resErr;
+        const { error: resErr } = await supabase.from('visit_request_residents').insert(residentPayloads);
+        if (resErr) throw resErr;
+      }
 
-      // 🚀 メール送信：今回は「追加分」であることを伝える
+      // --- 🚀 3. メール送信ロジック（ここからは元のコードとほぼ同じです） ---
       const residentListText = drafts.map(d => `・${d.members?.name} 様 (${d.menu_name})`).join('\n');
-      const datesForMail = ensuredDates.length > 0 ? ensuredDates : confirmedDates; // 新規日程があればそれ、なければ既存日程
+      const datesForMail = ensuredDates.length > 0 ? ensuredDates : confirmedDates;
       const formattedDatesForMail = datesForMail.map(d => `${(d.date || d.scheduled_date).replace(/-/g, '/')} (${d.time || d.start_time?.substring(0,5)})`);
 
       await supabase.functions.invoke('resend', {
@@ -281,7 +299,10 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       });
 
       // 🚀 お掃除
-      await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId);
+      const targetDate = (sharedDate && !isNaN(new Date(sharedDate).getTime())) ? new Date(sharedDate) : new Date();
+      const targetMonthKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
+
+      await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId).eq('scheduled_month', targetMonthKey);
       await supabase.from('keep_dates').delete().eq('facility_user_id', facilityId);
 
       alert(`予約の送信が完了しました！✨`);
@@ -423,15 +444,14 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         )}
 
         <button 
-          onClick={handleFinalSubmit} 
-          // 🚀 🆕 修正：日程もドラフトも空（＝何も新しく追加していない）ならボタンを無効化
-          disabled={loading || (ensuredDates.length === 0 && drafts.length === 0)} 
-          style={{
-            ...finalBtn(loading),
-            // 🚀 🆕 追加分がない場合は背景を灰色にする
-            background: (loading || (ensuredDates.length === 0 && drafts.length === 0)) ? '#ccc' : '#3d2b1f'
-          }}
-        >
+  onClick={handleFinalSubmit} 
+  // 🚀 修正：合計で日程とメンバーがいれば、loading中でない限りいつでも押せる
+  disabled={loading || allDisplayVisits.length === 0 || sortedDrafts.length === 0} 
+  style={{
+    ...finalBtn(loading),
+    background: (loading || allDisplayVisits.length === 0 || sortedDrafts.length === 0) ? '#ccc' : '#3d2b1f'
+  }}
+>
           {loading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
           {loading ? '送信中...' : 'この内容で予約を確定して依頼する'}
         </button>
