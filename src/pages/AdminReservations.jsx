@@ -118,6 +118,7 @@ function AdminReservations() {
   const [exclusions, setExclusions] = useState([]);
   const [irregularKeeps, setIrregularKeeps] = useState([]);
   const [urgentKeeps, setUrgentKeeps] = useState([]);
+  const [timeChangedKeeps, setTimeChangedKeeps] = useState([]);
   const [dismissedKeeps, setDismissedIrregularIds] = useState(() => {
     const saved = localStorage.getItem(`dismissed_keeps_${shopId}`);
     return saved ? JSON.parse(saved) : [];
@@ -542,21 +543,21 @@ const { data: resData } = await supabase
     // 🚀 🆕 【修正】単発キープ ＆ 期限間近キープ の抽出
     const todayStr = getJapanDateStr(new Date());
     const irregularList = [];
-    const urgentList = []; // 🚨 3日前警告用リスト
-    
-    (mData || []).forEach(k => {
-      if (k.date < todayStr) return; // 過去は無視
+    const urgentList = []; 
+    const timeChangedList = []; // 👈 時間変更専用
 
-      // 既に確定済みの予約になっていれば無視
+    (mData || []).forEach(k => {
+      if (k.date < todayStr) return;
       const isBooked = (visitData || []).some(v => 
         (v.status === 'confirmed' || v.status === 'completed') && 
         v.facility_user_id === k.facility_user_id &&
-        (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
+        (v.scheduled_date === k.date)
       );
       if (isBooked) return;
 
-      // 定期かどうかの判定
-      let isRegular = false;
+      let isRegularDay = false;
+      let originalRuleTime = null; // ルールの本来の時間を記憶
+
       const dObj = new Date(k.date);
       const day = dObj.getDay();
       const dom = dObj.getDate();
@@ -577,27 +578,32 @@ const { data: resData } = await supabase
           if (rule.week === -1) weekMatch = isLastWeek;
           if (rule.week === -2) weekMatch = isSecondToLastWeek;
 
-          if (monthMatch && dayMatch && weekMatch && rule.time === k.start_time.substring(0, 5)) {
-            isRegular = true;
+          if (monthMatch && dayMatch && weekMatch) {
+            isRegularDay = true;
+            originalRuleTime = rule.time; // ルール上の時間をセット
           }
         });
       }
 
-      if (!isRegular) irregularList.push(k);
+      // 🏆 ここで3パターンに仕分けます
+      if (isRegularDay) {
+        // A: 定期の日だけど、保存されている時間がルールと違う場合 ➔ 「時間変更リスト」へ
+        if (originalRuleTime && k.start_time.substring(0, 5) !== originalRuleTime) {
+          timeChangedList.push({ ...k, originalTime: originalRuleTime });
+        }
+      } else {
+        // B: 定期の日じゃない ➔ 「単発リスト（アラート）」へ
+        irregularList.push(k);
 
-      // 🚀 🚨 【追加】3日前かどうかの判定
-      const diffTime = dObj.getTime() - new Date(todayStr).getTime();
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-      if (diffDays >= 0 && diffDays <= 3) {
-        urgentList.push({ ...k, diffDays }); // 何日後かも入れておく
+        const diffTime = dObj.getTime() - new Date(todayStr).getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
       }
     });
 
-    irregularList.sort((a, b) => new Date(`${a.date}T${a.start_time}`).getTime() - new Date(`${b.date}T${b.start_time}`).getTime());
-    urgentList.sort((a, b) => new Date(`${a.date}T${a.start_time}`).getTime() - new Date(`${b.date}T${b.start_time}`).getTime());
-    
     setIrregularKeeps(irregularList);
-    setUrgentKeeps(urgentList); // 🚨 Stateに保存
+    setUrgentKeeps(urgentList);
+    setTimeChangedKeeps(timeChangedList);
 
     setLoading(false);
   };
@@ -1471,10 +1477,17 @@ const getStatusAt = (dateStr, timeStr) => {
 
     const rKeep = checkIsRegularKeep(dateObj);
     if (rKeep && rKeep.time === currentSlotTime) {
+      // 🚀 🆕 追加：この施設に対して、同じ日に「手動変更(manualKeeps)」または「確定予約」があるかチェック
+      const hasManualOverride = manualKeeps.some(k => k.date === dateStr && k.facility_user_id === rKeep.facility_user_id);
+      const hasConfirmedVisit = visitRequests.some(v => v.scheduled_date === dateStr && v.facility_user_id === rKeep.facility_user_id);
+
+      // 💡 もし既に実体データがあるなら、計算上の「定期枠」は表示しない（これで重複が消えます！）
+      if (hasManualOverride || hasConfirmedVisit) return null;
+
       return [{
         res_type: 'facility_keep',
         customer_name: `${rKeep.name} 予定`,
-        facility_user_id: rKeep.facility_user_id, // 🆕 追加
+        facility_user_id: rKeep.facility_user_id,
         start_time: `${dateStr}T${timeStr}:00`,
         isKeep: true
       }];
@@ -1911,6 +1924,43 @@ return (
                 </div>
               </motion.div>
             ))}
+
+          {/* 🔵 3. 定期訪問の時間変更通知 */}
+          {timeChangedKeeps
+  .filter(k => !dismissedKeeps.includes(k.id)) // 🚀 既読（消された）ものを除外
+  .map((keep) => (
+    <motion.div
+      key={`changed-${keep.id}`}
+      initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+      style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ fontSize: '1.2rem' }}>ℹ️</span>
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+            定期訪問の時間変更：{keep.facility_users?.facility_name} 様
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#0ea5e9' }}>
+            {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ 変更後 {keep.start_time.substring(0, 5)}）
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
+          style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+        >
+          枠を確認
+        </button>
+        <button
+          onClick={() => handleForceDeleteKeep(keep)} // 🚀 オレンジと同様に強制削除
+          style={{ background: '#fff', color: '#0ea5e9', border: '1px solid #0ea5e9', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+        >
+          🗑 解放
+        </button>
+      </div>
+    </motion.div>
+  ))}
         </AnimatePresence>
       </div>
 
@@ -2059,14 +2109,17 @@ else if (
   activeTask.res_type === 'facility_keep_regular' || 
   activeTask.res_type === 'facility_keep_single'
 ) {
-  
+  // 🚀 追加：タップされたらアラートを消す（既読リストに追加）
+  if (activeTask.id) {
+    markKeepAsDismissed(activeTask.id);
+  }
+
   if (activeTask.res_type === 'facility_keep_single') {
-    markKeepAsDismissed(activeTask.id); 
+    // 単発キープの動作
     setSelectedSlotReservations([activeTask]); 
     setShowSlotListModal(true);
   } else {
-    // 📅 定期キープ（施設日）のキャンセル確認を開く
-    // すでに実装済みの handleCancelKeep を呼び出せばOKです
+    // 施設訪問日のキャンセル確認（定期などの動作）
     handleCancelKeep(
       activeTask.facility_user_id, 
       dStr, 
