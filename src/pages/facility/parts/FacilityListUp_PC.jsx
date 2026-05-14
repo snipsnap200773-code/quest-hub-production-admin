@@ -90,6 +90,13 @@ const FacilityListUp_PC = ({
   useEffect(() => { 
     const init = async () => {
       setLoading(true);
+      
+      // 🚀 🆕 月を切り替えた瞬間、Stateを一度空にして前の月の残像を消す
+      setDbReservedResidents([]);
+      setDraftList([]);
+      setConfirmedDates([]);
+      setResidents([]);
+
       const { data: fac } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
       if (fac) {
         setFacilityName(fac.facility_name);
@@ -115,21 +122,36 @@ const FacilityListUp_PC = ({
       const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
 
-      const [resData, draftData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
+      // 🚀 1. 「表示している月」が「今の月」かどうかを判定
+      const today = new Date();
+      const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+
+      // 🚀 2. 下書き（ドラフト）の取得。今月を見ている時だけ取得し、それ以外は空にする。
+      let draftResponse = { data: [] };
+      if (isCurrentMonth) {
+        draftResponse = await supabase
+          .from('visit_list_drafts')
+          .select('*, members(*)')
+          .eq('facility_user_id', facilityId);
+      }
+
+      // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
+      const [resData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
         supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
-        supabase.from('visit_list_drafts').select('*, members(*)').eq('facility_user_id', facilityId),
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
-        // 🚀 🆕 今月の全予約メンバーを、名簿情報（members）と一緒に取得する
+        
+        // 今月の全予約メンバー（確定・保留分）
         supabase.from('visit_request_residents')
           .select('*, members(*), visit_requests!inner(scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .gte('visit_requests.scheduled_date', startOfMonth)
           .lte('visit_requests.scheduled_date', endOfMonth)
-          .neq('visit_requests.status', 'canceled'), // キャンセル以外
+          .neq('visit_requests.status', 'canceled'),
+          
         supabase.from('visit_requests').select('scheduled_date, status').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth)
       ]);
 
-      // 🚀 🆕 各メンバーの「一番新しい訪問日」を割り出すために、完了分だけを別途サクッと取得
+      // 🚀 4. 各メンバーの「一番新しい訪問日」を割り出す（履歴取得）
       const { data: allHistoryData } = await supabase
         .from('visit_request_residents')
         .select('member_id, visit_requests!inner(scheduled_date)')
@@ -140,23 +162,20 @@ const FacilityListUp_PC = ({
       allHistoryData?.forEach(v => {
         const mid = v.member_id;
         const date = v.visit_requests.scheduled_date;
-        if (!vMap[mid] || date > vMap[mid]) {
-          vMap[mid] = date;
-        }
+        if (!vMap[mid] || date > vMap[mid]) vMap[mid] = date;
       });
       setLastVisitMap(vMap);
 
-      // 🚀 🆕 今月のDB保存済みメンバーをセット
+      // 🚀 5. 各 State にデータをセット
+      setResidents(resData.data || []);
+      setDraftList(draftResponse.data || []); // 💡 ここで判定済みのドラフトをセット
       setDbReservedResidents(visitResidentsRes.data || []);
-      
-      // 🚀 🆕 その中から完了済み(completed)の人のみIDを抽出
+      setConfirmedDates(visitDatesRes.data || []);
+
+      // 完了済み(completed)の人のみIDを抽出してセット
       const doneIds = visitResidentsRes.data?.filter(r => r.status === 'completed').map(r => r.member_id) || [];
       setCompletedMemberIds(doneIds);
 
-      setResidents(resData.data || []);
-      setDraftList(draftData.data || []);
-      setConfirmedDates(visitDatesRes.data || []);
-      
       if (connData.data) {
         const sid = connData.data.shop_id;
         setShopId(sid);

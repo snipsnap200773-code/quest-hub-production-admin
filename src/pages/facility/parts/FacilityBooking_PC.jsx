@@ -120,8 +120,16 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
 
       // 5. 確保済み日程の取得（手動キープ ＆ 除外日）
       const [keepRes, exclRes] = await Promise.all([
-        supabase.from('keep_dates').select('date, start_time').eq('facility_user_id', facilityId),
-        supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId)
+        supabase.from('keep_dates')
+          .select('date, start_time')
+          .eq('facility_user_id', facilityId)
+          .gte('date', startOfMonth)
+          .lte('date', endOfMonth), // 👈 追加
+        supabase.from('regular_keep_exclusions')
+          .select('excluded_date')
+          .eq('facility_user_id', facilityId)
+          .gte('excluded_date', startOfMonth)
+          .lte('excluded_date', endOfMonth) // 👈 追加
       ]);
 
       setManualKeeps(keepRes.data || []);
@@ -158,15 +166,22 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   // 🚀 🆕 【ここがポイント！】今回送る「新規予約」だけを抽出
   const ensuredDates = useMemo(() => {
     const list = [];
+    
+    // 🚀 🆕 今表示している「年月（例：2026-05）」を特定
+    const baseDate = sharedDate || new Date();
+    const targetMonthPrefix = `${baseDate.getFullYear()}-${String(baseDate.getMonth() + 1).padStart(2, '0')}`;
+
     manualKeeps.forEach(k => {
-      // すでに予約(confirmedDates)に入っている日は除外
-      if (!confirmedDates.some(cd => cd.scheduled_date === k.date)) {
+      // 🚀 🆕 日付が「今表示している月」で始まり、かつまだ予約確定されていないものだけを抽出
+      const isCorrectMonth = k.date.startsWith(targetMonthPrefix);
+      const isAlreadyBooked = confirmedDates.some(cd => cd.scheduled_date === k.date);
+
+      if (isCorrectMonth && !isAlreadyBooked) {
         list.push({ date: k.date, time: k.start_time || '09:00' });
       }
     });
 
-    // 🚀 🆕 【修正！】今日ではなく、Portalで選んだ月（sharedDate）を基準にする
-    const baseDate = sharedDate || new Date();
+    // 定期キープの判定ロジック（以下、baseDateを使って月の日数分ループする処理へ続く）
     const targetYear = baseDate.getFullYear();
     const targetMonth = baseDate.getMonth();
     const lastDate = new Date(targetYear, targetMonth + 1, 0).getDate();
@@ -388,11 +403,34 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
           </div>
         </div>
 
+        {/* 🚀 🆕 追加：新規の追加内容がない場合のアナウンス */}
+        {ensuredDates.length === 0 && drafts.length === 0 && (
+          <div style={{ 
+            background: '#f8fafc', 
+            border: '2px dashed #cbd5e1', 
+            borderRadius: '20px', 
+            padding: '20px', 
+            marginBottom: '20px', 
+            textAlign: 'center' 
+          }}>
+            <p style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', margin: 0, lineHeight: '1.6' }}>
+              ℹ️ 現在、新しく追加された内容はありません。<br/>
+              予約日または施術希望者を追加する場合は、<br/>
+              「キープ！この日とった！」か「リストアップしよう！」で追加して、<br/>
+              再度この画面で予約を確定してください。
+            </p>
+          </div>
+        )}
+
         <button 
           onClick={handleFinalSubmit} 
-          // 🚀 🆕 修正：新規日程がなくても、追加するドラフトメンバーがいればボタンを押せるようにする
-          disabled={loading || drafts.length === 0} 
-          style={finalBtn(loading)}
+          // 🚀 🆕 修正：日程もドラフトも空（＝何も新しく追加していない）ならボタンを無効化
+          disabled={loading || (ensuredDates.length === 0 && drafts.length === 0)} 
+          style={{
+            ...finalBtn(loading),
+            // 🚀 🆕 追加分がない場合は背景を灰色にする
+            background: (loading || (ensuredDates.length === 0 && drafts.length === 0)) ? '#ccc' : '#3d2b1f'
+          }}
         >
           {loading ? <Loader2 className="animate-spin" /> : <Send size={20} />}
           {loading ? '送信中...' : 'この内容で予約を確定して依頼する'}

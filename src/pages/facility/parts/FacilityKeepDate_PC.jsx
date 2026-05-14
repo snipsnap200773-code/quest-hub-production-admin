@@ -242,11 +242,13 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       if (hasOverlap) return 'full'; // 🚀 🆕 自分の予約・私用がある場合は「満員」を返す
     }
 
+    const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
+    if (manualKeep) return { type: 'keeping', time: manualKeep.start_time || '09:00' };
+
+    // 次に定期キープを判定する
     if (regKeep && !exclusions.includes(dateStr)) {
       return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
     }
-    const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
-    if (manualKeep) return { type: 'keeping', time: manualKeep.start_time || '09:00' };
     
     // 他施設のキープ
     if (keepDates.some(k => k.date === dateStr)) return 'other-keep';
@@ -255,14 +257,19 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   };
 
   const allActiveKeeps = useMemo(() => {
-    // 🚀 🆕 現在の月のプレフィックス（例: "2026-03"）を作成
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
+    const list = [];
 
-    // 🚀 🆕 マニュアルキープを表示中の月だけに限定してリストを開始
-    const list = [...keepDates
-      .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix)) 
-      .map(k => ({...k, isRegular: false}))
-    ];
+    // 🚀 🆕 修正：手動キープ（keep_dates）のデータを処理する際、定期ルールの日かどうかも判定する
+    keepDates
+      .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix))
+      .forEach(k => {
+        const d = new Date(k.date);
+        const regKeep = checkIsRegularKeep(d); // その日が定期ルールの対象日かチェック
+        
+        // 定期ルールの日なら true（定期）、違うなら false（単発）にする
+        list.push({ ...k, isRegular: !!(regKeep && regKeep.keeperId === facilityId) });
+      });
 
     days.forEach(day => {
       if (!day) return;
@@ -296,22 +303,25 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const handleDateClick = async (day) => {
     if (!day || !selectedShop) return;
     const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    const regKeep = checkIsRegularKeep(new Date(dateStr));
-    if (regKeep && regKeep.keeperId === facilityId) {
-      if (!exclusions.includes(dateStr)) {
-        await supabase.from('regular_keep_exclusions').insert([{ facility_user_id: facilityId, shop_id: selectedShop.id, excluded_date: dateStr }]);
-      } else {
-        await supabase.from('regular_keep_exclusions').delete().match({ facility_user_id: facilityId, shop_id: selectedShop.id, excluded_date: dateStr });
-      }
-      fetchData(); return;
-    }
+    
+    // 現在のステータスを取得（定期か手動かは問わず、現在の表示状態を取得）
     const statusData = getStatus(dateStr);
     const status = typeof statusData === 'object' ? statusData.type : statusData;
+    
+    // 過去やNG日は無視
     if (['past', 'ng', 'booked', 'other-keep'].includes(status)) return;
+
+    // 🚀 🆕 修正：定期キープでも手動キープでも、まずはモーダルを開く
     if (status === 'keeping') {
-      setTimeModal({ show: true, dateStr, currentTime: statusData.time || '09:00' });
+      // 選択中（定期キープ or 手動キープ）なら、今の時間を渡してモーダルを開く
+      setTimeModal({ 
+        show: true, 
+        dateStr, 
+        currentTime: typeof statusData === 'object' ? statusData.time : '09:00',
+        isRegular: !!checkIsRegularKeep(new Date(dateStr)) // 💡 定期キープ日かどうかのフラグを持たせる
+      });
     } else {
-      // 🚀 🆕 設定された時間枠の1番目（例: 09:00）を初期値にする
+      // 何もない空き日をクリックした場合は、とりあえず1番目の時間でキープしてモーダルを開く
       const defaultTime = selectedShop.facility_visit_slots?.[0] || '09:00';
       await supabase.from('keep_dates').upsert({ 
         date: dateStr, 
@@ -320,13 +330,29 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
         start_time: defaultTime 
       });
       fetchData();
-      setTimeModal({ show: true, dateStr, currentTime: defaultTime });
+      setTimeModal({ show: true, dateStr, currentTime: defaultTime, isRegular: false });
     }
   };
 
   const handleTimeChange = async (dateStr, newTime) => {
-    await supabase.from('keep_dates').update({ start_time: newTime }).match({ date: dateStr, facility_user_id: facilityId, shop_id: selectedShop.id });
-    fetchData();
+    // 1. まず同じ日のデータを削除（定期時間の上書きデータも含めて掃除）
+    await supabase.from('keep_dates')
+      .delete()
+      .match({ date: dateStr, facility_user_id: facilityId, shop_id: selectedShop.id });
+    
+    // 2. 新しい時間で登録
+    const { error } = await supabase.from('keep_dates').insert([{
+      date: dateStr,
+      facility_user_id: facilityId,
+      shop_id: selectedShop.id,
+      start_time: newTime
+    }]);
+
+    if (error) {
+      alert("時間の変更に失敗しました");
+    } else {
+      fetchData(); // 画面を更新
+    }
   };
 
   const renderShopSelector = () => (
@@ -439,7 +465,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
               </AnimatePresence>
 
               {/* 🚀 🆕 ここに追加：確定済みがあっても追加で予約ができるボタン */}
-              {selectedShop && (
+              {selectedShop && confirmedVisits.length > 0 && (
                 <div style={{ marginTop: '25px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
                   <button 
                     onClick={() => setActiveTab('list-up')}
@@ -474,19 +500,27 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
               <div style={modalHeader}>
                 <h3 style={{ margin: 0 }}>開始時間の選択</h3>
                 <div style={{ fontSize: '0.85rem', color: '#888' }}>{timeModal.dateStr.replace(/-/g, '/')}</div>
+                {/* 💡 定期キープ日であることを知らせる */}
+                {timeModal.isRegular && (
+                  <div style={{ fontSize: '0.7rem', color: '#c5a059', fontWeight: 'bold', marginTop: '4px' }}>
+                    🔄 定期訪問日
+                  </div>
+                )}
               </div>
               <div style={timeListScroll}>
-                {/* 🚀 🆕 三土手さんが管理画面で選んだ時間枠（facility_visit_slots）だけを回す */}
                 {(selectedShop.facility_visit_slots || ['09:00', '13:00']).map(t => {
                   const cap = calculateCapacity(timeModal.dateStr, t);
                   return (
                     <button 
                       key={t} 
-                      onClick={() => { handleTimeChange(timeModal.dateStr, t); setTimeModal({ ...timeModal, show: false }); }} 
+                      onClick={() => { 
+                        // 🚀 🆕 時間変更：定期日でも上書きで keep_dates に保存されるため、これでOK
+                        handleTimeChange(timeModal.dateStr, t); 
+                        setTimeModal({ ...timeModal, show: false }); 
+                      }} 
                       style={{...timeCard(timeModal.currentTime.substring(0,5) === t), flexDirection: 'column', gap: '2px'}}
                     >
                       <div style={{display:'flex', alignItems:'center', gap:'4px'}}><Clock size={14} /> {t}</div>
-                      {/* キャパが1名以上なら人数、0名なら「受付不可」と出す親切設計 */}
                       <div style={{fontSize: '0.65rem', color: cap > 0 ? '#10b981' : '#ef4444', fontWeight: 'bold'}}>
                         {cap > 0 ? `最大 ${cap}名` : '時間外です'}
                       </div>
@@ -494,7 +528,27 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
                   );
                 })}
               </div>
-              <button onClick={async () => { await supabase.from('keep_dates').delete().match({ date: timeModal.dateStr, facility_user_id: facilityId }); fetchData(); setTimeModal({ ...timeModal, show: false }); }} style={deleteKeepBtn}><Trash2 size={16} /> 解除する</button>
+              
+              {/* 🚀 🆕 修正：解除ボタンの挙動を切り分け */}
+              <button 
+                onClick={async () => { 
+                  if (timeModal.isRegular) {
+                    // 定期キープ日の場合：除外リストに入れる ＋ 念のため上書き手動キープも消す
+                    await supabase.from('regular_keep_exclusions').upsert({ facility_user_id: facilityId, shop_id: selectedShop.id, excluded_date: timeModal.dateStr });
+                    await supabase.from('keep_dates').delete().match({ date: timeModal.dateStr, facility_user_id: facilityId });
+                  } else {
+                    // 手動キープの場合：単純にキープを消す
+                    await supabase.from('keep_dates').delete().match({ date: timeModal.dateStr, facility_user_id: facilityId }); 
+                  }
+                  fetchData(); 
+                  setTimeModal({ ...timeModal, show: false }); 
+                }} 
+                style={deleteKeepBtn}
+              >
+                <Trash2 size={16} /> 
+                {timeModal.isRegular ? 'この日の訪問をキャンセル（除外）' : '解除する'}
+              </button>
+
               <button onClick={() => setTimeModal({ ...timeModal, show: false })} style={closeBtn}>閉じる</button>
             </motion.div>
           </div>
