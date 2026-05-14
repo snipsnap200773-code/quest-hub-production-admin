@@ -1926,31 +1926,36 @@ return (
             ))}
 
           {/* 🔵 3. 定期訪問の時間変更通知 */}
-          {timeChangedKeeps.map((keep) => (
-            <motion.div
-              key={`changed-${keep.id}`}
-              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-              style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.2rem' }}>ℹ️</span>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
-                    定期訪問の時間変更：{keep.facility_users?.facility_name} 様
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#0ea5e9' }}>
-                    {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ 変更後 {keep.start_time.substring(0, 5)}）
-                  </div>
-                </div>
-              </div>
-              <button
-                onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
-                style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-              >
-                枠を確認
-              </button>
-            </motion.div>
-          ))}
+          {timeChangedKeeps
+  .filter(k => !dismissedKeeps.includes(k.id)) // 🚀 既読（タップ済み）のものは表示しない
+  .map((keep) => (
+    <motion.div
+      key={`changed-${keep.id}`}
+      initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
+      style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        <span style={{ fontSize: '1.2rem' }}>ℹ️</span>
+        <div style={{ textAlign: 'left' }}>
+          <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+            定期訪問の時間変更：{keep.facility_users?.facility_name} 様
+          </div>
+          <div style={{ fontSize: '0.75rem', color: '#0ea5e9' }}>
+            {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ 変更後 {keep.start_time.substring(0, 5)}）
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button
+          onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
+          style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+        >
+          枠を確認
+        </button>
+        {/* 🚀 「解放」ボタンを削除しました */}
+      </div>
+    </motion.div>
+  ))}
         </AnimatePresence>
       </div>
 
@@ -2101,8 +2106,8 @@ else if (
 ) {
   // 🚀 追加：タップされたらアラートを消す（既読リストに追加）
   if (activeTask.id) {
-    markKeepAsDismissed(activeTask.id);
-  }
+  markKeepAsDismissed(activeTask.id);
+}
 
   if (activeTask.res_type === 'facility_keep_single') {
     // 単発キープの動作
