@@ -1191,11 +1191,11 @@ const { data: resData } = await supabase
   };
   
   // 🆕 定期キープ（施設とのお約束）の判定：エラー修正版
-  const checkIsRegularKeep = (date) => {
+  const checkIsRegularKeep = (date, ignoreExclusion = false) => {
     const dStr = getJapanDateStr(date);
     
-    // 🆕 【ここを追加！】もし除外リストに入っていたら、予定なしとして返す
-    if (exclusions.includes(dStr)) return null;
+    // 🚀 修正：ignoreExclusion が false の時だけ除外リストをチェックする
+    if (!ignoreExclusion && exclusions.includes(dStr)) return null;
 
     const day = date.getDay(); // 0:日, 1:月...
     const dom = date.getDate();
@@ -1473,7 +1473,8 @@ const getStatusAt = (dateStr, timeStr) => {
     });
 
     if (mKeep) {
-      const matchedRule = checkIsRegularKeep(dateObj);
+      // 🚀 修正：ignoreExclusion を true にして「本来は定期か」を判定！
+      const matchedRule = checkIsRegularKeep(dateObj, true); 
       const isRegular = matchedRule && matchedRule.facility_user_id === mKeep.facility_user_id;
 
       return [{
@@ -2111,23 +2112,21 @@ if (activeTask.res_type === 'facility_visit') {
     handleDeleteVisit(activeTask.visitId, dStr, activeTask.customer_name);
   }
 } 
-// 💡 ここ！ 'facility_keep' を追加することで定期枠も反応するようになります
+// 🚀 修正ポイント：定期(regular)か単発(single)かでポップアップを出し分ける
 else if (
   activeTask.res_type === 'facility_keep' || 
   activeTask.res_type === 'facility_keep_regular' || 
   activeTask.res_type === 'facility_keep_single'
 ) {
-  // 🚀 追加：タップされたらアラートを消す（既読リストに追加）
-  if (activeTask.id) {
-  markKeepAsDismissed(activeTask.id);
-}
+  // アラートが出ていれば既読にする
+  if (activeTask.id) markKeepAsDismissed(activeTask.id);
 
   if (activeTask.res_type === 'facility_keep_single') {
-    // 単発キープの動作
+    // ⚠️ ルールにない「ガチの単発」の時だけ、オレンジの警告ポップアップを出す
     setSelectedSlotReservations([activeTask]); 
     setShowSlotListModal(true);
   } else {
-    // 施設訪問日のキャンセル確認（定期などの動作）
+    // 📅 「本来は定期の日（時間は変えてあってもOK）」なら、通常のキャンセル画面へ
     handleCancelKeep(
       activeTask.facility_user_id, 
       dStr, 
