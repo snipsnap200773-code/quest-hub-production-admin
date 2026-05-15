@@ -100,7 +100,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       // 4. 三土手さんが提示した「既存予約」の取得部分（日付変数を安全にして実行）
       const { data: visitDatesRes } = await supabase
         .from('visit_requests')
-        .select('id, scheduled_date, status, start_time') // 🚀 🆕 IDも取得するように修正
+        .select('id, scheduled_date, status, start_time, parent_id')
         .eq('facility_user_id', facilityId)
         .gte('scheduled_date', startOfMonth)
         .lte('scheduled_date', endOfMonth)
@@ -307,22 +307,37 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         if (resErr) throw resErr;
       }
 
-      // --- 🚀 3. メール送信ロジック（ここからは元のコードとほぼ同じです） ---
-      const residentListText = drafts.map(d => `・${d.members?.name} 様 (${d.menu_name})`).join('\n');
-      const datesForMail = ensuredDates.length > 0 ? ensuredDates : confirmedDates;
-      const formattedDatesForMail = datesForMail.map(d => `${(d.date || d.scheduled_date).replace(/-/g, '/')} (${d.time || d.start_time?.substring(0,5)})`);
+      // --- 🚀 3. メール送信ロジックの強化 ---
+      
+      // ① 今回新しく追加された人のリスト
+      const addedListText = drafts.map(d => `・${d.members?.name} 様 (${d.menu_name}) [追加分]`).join('\n');
+      
+      // ② 既に確定している人のリスト（完了済みかどうかも記載）
+      const confirmedListText = dbReservedResidents.map(r => 
+        `・${r.members?.name} 様 (${r.menu_name}) ${r.status === 'completed' ? '[施術完了済]' : '[既存予定]'}`
+      ).join('\n');
+
+      // ③ 日程リスト（時間変更があればそれも反映されるように）
+      const formattedDatesForMail = allDisplayVisits.map(d => 
+        `${d.date.replace(/-/g, '/')} (${d.time.substring(0,5)})${d.isTimeChanged ? ' ※時間変更あり' : ''}`
+      );
+
+      // ④ 判定：これが「新規」か「追加修正」か
+      const isUpdate = dbReservedResidents.length > 0;
 
       await supabase.functions.invoke('resend', {
         body: {
-          type: 'facility_booking',
+          // 🚀 🆕 type を条件によって切り替える
+          type: isUpdate ? 'facility_booking_update' : 'facility_booking',
           shopName: shopInfo.business_name,
           shopEmail: shopInfo.email_contact,
           facilityName: facilityName,
           facilityFurigana: facilityFurigana,
           facilityEmail: facilityEmail,
           scheduledDates: formattedDatesForMail, 
-          residentCount: drafts.length,
-          residentListText: residentListText,
+          residentCount: sortedDrafts.length, // 合計人数
+          addedCount: drafts.length,          // 今回追加した人数
+          residentListText: `${addedListText}\n\n【全体の名簿（確認用）】\n${confirmedListText}`,
           shopId: shopInfo.id,
           facilityId: facilityId
         }
@@ -435,11 +450,17 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
                     <div style={pRow}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {/* 🚀 🆕 確定済みの場合はバッジを表示 */}
-                        {d.isFromDB && (
-                          <span style={{ fontSize: '0.65rem', background: d.status === 'completed' ? '#94a3b8' : '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-                            {d.status === 'completed' ? '完了' : '確定済'}
-                          </span>
-                        )}
+                        {d.isFromDB ? (
+  // すでにDBにある人（確定済 or 完了）
+  <span style={{ fontSize: '0.65rem', background: d.status === 'completed' ? '#94a3b8' : '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+    {d.status === 'completed' ? '完了' : '確定済'}
+  </span>
+) : (
+  // 今回の操作で新しく追加された人
+  <span style={{ fontSize: '0.65rem', background: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+    新規追加
+  </span>
+)}
                         <span style={pRoomBadge}>
                           {res.room ? res.room : "---"} 
                         </span>

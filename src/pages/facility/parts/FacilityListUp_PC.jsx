@@ -21,16 +21,21 @@ const FacilityListUp_PC = ({
 
   // 🚀 追加：施術希望者（右側）のソート済みリストを計算
   const sortedDraftList = useMemo(() => {
-    // 🚀 🆕 DB保存済みメンバーと、ドラフト中のメンバーを一つに合体させる
     const combined = [
       ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), // 確定済み
       ...draftList.map(d => ({ ...d, isFromDB: false }))           // 新規追加
     ];
 
     return combined.sort((a, b) => {
+      // 🚀 1. 完了ステータス優先：完了(completed)を 1、未完了を 0 として、完了を下に並べる
+      const aDone = a.status === 'completed' ? 1 : 0;
+      const bDone = b.status === 'completed' ? 1 : 0;
+      if (aDone !== bDone) return aDone - bDone;
+
+      // 🚀 2. 以下は既存の並び替え（階数 or 名前）
       const m1 = a.members || {};
       const m2 = b.members || {};
-      
+            
       if (draftSortMode === 'floor') {
         const f1 = parseInt(String(m1.floor).replace(/[^0-9]/g, '')) || 999;
         const f2 = parseInt(String(m2.floor).replace(/[^0-9]/g, '')) || 999;
@@ -649,40 +654,67 @@ const FacilityListUp_PC = ({
     initial={{ opacity: 0, y: 10 }} 
     animate={{ opacity: 1, y: 0 }} 
     exit={{ opacity: 0, scale: 0.95 }}
-    style={{ marginBottom: '10px' }} // カード間の余白をここで制御
+    style={{ marginBottom: '10px' }}
   >
-    {/* グループ見出し */}
     {isNewGroup && (
       <div style={groupHeaderStyle}>
         {currentLabel}
       </div>
     )}
     
-    {/* 施術希望者カード本体 */}
-    <div style={selectedCard}>
+    {/* 🚀 修正：完了済み(completed)なら背景を灰色、操作不可(not-allowed)にする */}
+    <div style={{
+      ...selectedCard,
+      background: item.status === 'completed' ? '#f1f5f9' : '#fff',
+      borderColor: item.status === 'completed' ? '#cbd5e1' : '#c5a059',
+      opacity: item.status === 'completed' ? 0.7 : 1,
+      cursor: item.status === 'completed' ? 'not-allowed' : 'default',
+      boxShadow: item.status === 'completed' ? 'none' : '0 4px 15px rgba(197, 160, 89, 0.1)'
+    }}>
       <div style={{flex: 1}}>
         <div style={resInfo}>
           <span style={roomBadgeSimple}>{item.members?.room || "---"}</span>
-          <span style={nameTextMain}>{res.name} 様</span>
+          <span style={nameTextMain}>
+            {res.name} 様
+            {/* 🚀 🆕 完了バッジを表示 */}
+            {item.status === 'completed' && (
+              <span style={{ fontSize: '0.65rem', color: '#059669', marginLeft: '8px', fontWeight: '900', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px' }}>
+                ✅ 完了済み
+              </span>
+            )}
+          </span>
         </div>
+        
         <div style={menuRow}>
-          {/* 🚀 item まるごと渡すように変更 */}
-          <select 
-            value={item.menu_name} 
-            onChange={(e) => updateMenu(item, e.target.value)} 
-            style={menuSelect}
-          >
-            {shopServices.map(s => (
-              <option key={s.name} value={s.name}>{s.name}</option>
-            ))}
-          </select>
+          {/* 🚀 修正：完了済みならメニュー選択を「ただの表示」にして変更不可にする */}
+          {item.status === 'completed' ? (
+            <div style={{ padding: '8px 12px', fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
+              メニュー：{item.menu_name}
+            </div>
+          ) : (
+            <select 
+              value={item.menu_name} 
+              onChange={(e) => updateMenu(item, e.target.value)} 
+              style={menuSelect}
+            >
+              {shopServices.map(s => (
+                <option key={s.name} value={s.name}>{s.name}</option>
+              ))}
+            </select>
+          )}
         </div>
       </div>
       
-      {/* 🚀 item まるごと渡すように変更。確定済みでも削除ボタンを出す */}
-      <button onClick={() => removeFromList(item)} style={removeBtn}>
-        <UserMinus size={20} />
-      </button>
+      {/* 🚀 修正：完了済みでなければ「削除ボタン」を表示。完了済みなら「チェックアイコン」を出す */}
+      {item.status !== 'completed' ? (
+        <button onClick={() => removeFromList(item)} style={removeBtn}>
+          <UserMinus size={20} />
+        </button>
+      ) : (
+        <div style={{ padding: '10px', color: '#10b981' }}>
+          <CheckCircle2 size={24} />
+        </div>
+      )}
     </div>
   </motion.div>
 );

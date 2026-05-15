@@ -506,6 +506,90 @@ if (type === 'facility_booking') {
 
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
 }
+
+// 🚀 🆕 ここに差し込みます！！ ==========================================
+if (type === 'facility_booking_update') {
+  const { 
+    shopName, shopEmail, facilityName, facilityFurigana, facilityEmail,
+    scheduledDates, residentCount, addedCount, residentListText, shopId, facilityId
+  } = payload;
+
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+
+  // 日付リストを整形（既存のロジックと同じ）
+  const dateListHtml = scheduledDates.map((d: string) => {
+    const cleanedDate = d.replace(':00)', ')').replace(/-/g, '/');
+    return `<span style="display:inline-block; background:#0ea5e9; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
+  }).join(' ');
+
+  // 1. 店舗様への通知（名簿の追加・修正）
+  await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({
+      from: 'QUEST HUB 通知センター <infec@snipsnap.biz>',
+      to: [shopEmail],
+      subject: `【名簿の追加・修正】${facilityName} 様（合計${residentCount}名）`,
+      html: `
+        <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #0ea5e9;">
+          <h2 style="color: #0ea5e9; margin-top: 0;">📝 名簿の追加・修正通知</h2>
+          <p><strong>${shopName} 様</strong></p>
+          <p>提携施設より訪問予約の名簿に<strong>追加または時間の修正</strong>がありました。</p>
+          
+          <div style="background: #f0f9ff; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #bae6fd;">
+            <p style="margin: 0 0 10px 0;"><b>■ 施設名:</b> ${facilityName} 様</p>
+            <p style="margin: 0 0 10px 0;"><b>■ 訪問予定日:</b><br>${dateListHtml}</p>
+            <p style="margin: 0;"><b>■ 合計人数:</b> ${residentCount} 名（今回追加：${addedCount}名）</p>
+          </div>
+
+          <div style="margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; border-radius: 8px;">
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #64748b; font-weight: bold;">更新後の最新名簿（内訳）:</p>
+            <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #1e293b;">${residentListText}</pre>
+          </div>
+
+          <div style="text-align: center;">
+            <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #0ea5e9; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で詳細を確認する</a>
+          </div>
+          <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 20px; text-align: center;">※本日のタスク（名簿）を最新の状態に更新してください。</p>
+        </div>`
+    })
+  });
+
+  // 2. 施設様への通知（修正受付メール）
+  if (facilityEmail) {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: `${shopName} <infec@snipsnap.biz>`,
+        to: [facilityEmail],
+        subject: `【QUEST HUB】予約内容の追加・修正を承りました`,
+        html: `
+          <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px;">
+            <h2 style="color: #0ea5e9; margin-top: 0;">✅ 修正を承りました</h2>
+            <p><strong>${facilityName} 様</strong></p>
+            <p>いつもお世話になっております。${shopName} です。</p>
+            <p>予約内容の追加・時間の変更を承りました。最新の状況をお知らせいたします。</p>
+            
+            <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #e2e8f0;">
+              <p style="margin: 0 0 10px 0;"><b>■ 訪問先:</b> ${shopName}</p>
+              <p style="margin: 0 0 10px 0;"><b>■ 訪問予定日:</b><br>${dateListHtml}</p>
+              <p style="margin: 0;"><b>■ 合計人数:</b> ${residentCount} 名</p>
+            </div>
+
+            <p style="font-size: 0.9rem;">更新後の内容は「予約状況・進捗管理」からご確認いただけます。</p>
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #0ea5e9; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
+            </div>
+          </div>`
+      })
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+}
+// 🏢 ここまで追加 ======================================================
+
 // ==========================================
 // 🚀 🆕 パターンP：施設への「つつく」通知（店舗名・店主名の完全反映版）
 // ==========================================
