@@ -61,8 +61,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const shopId = selectedShop.id;
 
     const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes] = await Promise.all([
-      // ① この施設の予約
-      supabase.from('visit_requests').select('scheduled_date, start_time').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
+      // ① この施設の予約（🚀 修正：status を追加）
+      supabase.from('visit_requests').select('scheduled_date, start_time, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
       // ② 全キープ日程
       supabase.from('keep_dates').select('*').eq('shop_id', shopId),
       // ③ 提携ルール
@@ -205,7 +205,11 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
     // 🚀 2. 確定済み予約（緑色）を次にチェック
     const confirmed = confirmedVisits.find(v => v.scheduled_date === dateStr);
-    if (confirmed) return { type: 'booked', time: confirmed.start_time };
+    if (confirmed) {
+      // 💡 🆕 追加：もしステータスが完了(completed)なら専用のタイプを返す
+      if (confirmed.status === 'completed') return { type: 'completed', time: confirmed.start_time };
+      return { type: 'booked', time: confirmed.start_time };
+    }
 
     // 🚀 3. 予約制限日や定休日の判定（ここからは既存のまま）
     const limitDate = new Date();
@@ -307,8 +311,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const statusData = getStatus(dateStr);
     const status = typeof statusData === 'object' ? statusData.type : statusData;
     
-    // 🚀 修正：'booked'（確定済）をリストから外して、クリックできるようにします
-    if (['past', 'ng', 'other-keep'].includes(status)) return;
+    // 🚀 修正：タップを無効化するリストに 'full' 'limit-closed' 'completed' を追加
+    // これにより ✕ の日や完了した日がクリックできなくなります
+    if (['past', 'ng', 'other-keep', 'full', 'limit-closed', 'completed'].includes(status)) return;
 
     // 🚀 確定済（booked）の日をタップした場合の処理を追加
     if (status === 'booked' || status === 'keeping') {
@@ -414,8 +419,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const config = {
         keeping: { bg: '#fff9e6', border: '#c5a059', color: '#c5a059', label: '選択中', icon: '★' },
         booked: { bg: '#f0fdf4', border: '#10b981', color: '#10b981', label: '確定済', icon: '✓' },
+        // 🚀 🆕 追加：店舗が完了処理をした日のデザイン（グレー背景＋緑チェック）
+        completed: { bg: '#f1f5f9', border: '#cbd5e1', color: '#10b981', label: '完了', icon: '✓' },
         ng: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: 'おやすみ', icon: '✕' },
-        // 🚀 🆕 追加：自分の予約（個人・私用）で埋まっている場合
         full: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '満員', icon: '✕' }, 
         'limit-closed': { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '受付終了', icon: '✕' },
         other_keep: { bg: '#f8fafc', border: '#f1f5f9', color: '#94a3b8', label: '満員', icon: '✕' },

@@ -105,21 +105,29 @@ const StaffSettings = () => {
 
   const saveStaffSetting = async (staff) => {
     setIsSaving(staff.id);
+    
+    // 🚀 🆕 デフォルト設定を保存する（この人がデフォルトなら、他の人を全て解除する）
+    if (staff.is_default_for_admin) {
+      await supabase.from('staffs').update({ is_default_for_admin: false }).eq('shop_id', shopId);
+    }
+
     const { error } = await supabase
       .from('staffs')
       .update({ 
         name: staff.name,
         weekly_holidays: staff.weekly_holidays,
         concurrent_capacity: staff.concurrent_capacity || 1,
-        role_type: staff.role_type // 🚀 🆕 役割も一緒に保存する
+        role_type: staff.role_type,
+        is_default_for_admin: staff.is_default_for_admin // 👈 ここを追加
       })
       .eq('id', staff.id);
 
     if (!error) {
       alert(`${staff.name}さんの設定を保存しました！`);
+      fetchStaffs(); // 状態を再同期
     } else {
       console.error(error); 
-      alert("保存に失敗しました。SQLで role_type カラムの追加はお済みですか？");
+      alert("保存に失敗しました。SQLでのカラム追加はお済みですか？");
     }
     setIsSaving(null);
   };
@@ -188,12 +196,27 @@ const StaffSettings = () => {
                     </div>
 
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <span style={{ fontSize: '0.65rem', color: '#64748b', background: '#e2e8f0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-                        {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
-                      </span>
-                      {/* 🚀 🆕 役割の切り替えボタン（技術者 or アシスタント） */}
-                      <select 
-                        value={staff.role_type}
+  <span style={{ fontSize: '0.65rem', color: '#64748b', background: '#e2e8f0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
+    {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
+  </span>
+
+  {/* 🚀 🆕 追加：デフォルト設定ボタン */}
+  <button
+    onClick={() => setStaffs(prev => prev.map(s => ({
+      ...s,
+      is_default_for_admin: s.id === staff.id ? !s.is_default_for_admin : false
+    })))}
+    style={{
+      fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 'bold',
+      background: staff.is_default_for_admin ? '#f59e0b' : '#fff',
+      color: staff.is_default_for_admin ? '#fff' : '#64748b'
+    }}
+  >
+    {staff.is_default_for_admin ? '⭐ デフォルト予約先' : '☆ デフォルトに設定'}
+  </button>
+
+  <select 
+    value={staff.role_type}
                         onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, role_type: e.target.value } : s))}
                         style={{ 
                           fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', outline: 'none',

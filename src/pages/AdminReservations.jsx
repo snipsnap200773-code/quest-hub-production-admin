@@ -301,27 +301,28 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
     }
   };
 
-// 🚀 🆕 確定済みの施設訪問（visit_request）を削除する関数
+// 🚀 修正：単発の日程キャンセルを許容する
 const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
   setLoading(true);
   
+  // 表示中の予約データを特定
   const visit = visitRequests.find(v => v.id === visitId);
-  const targetId = visit?.parent_id || visitId;
+  // 名簿の親玉（Master ID）を特定
+  const masterId = visit?.parent_id || visitId;
 
-  // 1. データを取得
-  const { data: residents } = await supabase 
+  // 確認画面用に、その「月」の全名簿を取得（これは表示用）
+  const { data: allResidents } = await supabase 
     .from('visit_request_residents')
-    .select('members(name), menu_name')
-    .eq('visit_request_id', targetId);
+    .select('members(name), menu_name, status')
+    .eq('visit_request_id', masterId);
 
-  // 2. Stateにセット（ここを修正！）
   setFacCancelTarget({ 
-    id: visitId, 
+    id: visitId, // 🚩 消すのは「この日（visitId）」だけ！
     date: dateStr, 
     name: facilityName, 
     type: 'visit',
-    residents: residents || [], // ✅ 'residents' に修正
-    totalCount: residents?.length || 0 // ✅ 'residents' に修正
+    residents: allResidents || [],
+    totalCount: allResidents?.length || 0
   });
 
   setFacCancelPass('');
@@ -2988,8 +2989,9 @@ else if (
                         state: { 
                           adminDate: selectedDate, adminTime: targetTime, 
                           fromView: 'calendar', isAdminMode: true,
-                          adminStaffId: staffs.length === 1 ? staffs[0].id : null
-                        } 
+  // 🚀 🆕 優先順位：①デフォルトスタッフID ➔ ②1人しかいない場合はそのID ➔ ③null(フリー)
+  adminStaffId: staffs.find(s => s.is_default_for_admin)?.id || (staffs.length === 1 ? staffs[0].id : null)
+} 
                       });
                     }} 
                     style={{ padding: '20px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', boxShadow: `0 4px 10px ${themeColor}44` }}
@@ -3282,9 +3284,22 @@ else if (
         )}
       </div>
 
-      <button onClick={() => setShowVisitDetailModal(false)} style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#3d2b1f', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-        詳細を閉じる
-      </button>
+      {/* 🚀 🆕 特定の日だけをキャンセルするボタンを追加 */}
+      <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <button 
+          onClick={() => {
+            setShowVisitDetailModal(false); // 一旦詳細を閉じて
+            handleDeleteVisit(selectedRes.id, selectedRes.scheduled_date, selectedRes.customer_name); // 削除確認へ
+          }}
+          style={{ width: '100%', padding: '12px', background: '#fff', color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+        >
+          🗑 この日の訪問をキャンセル（枠を解放）
+        </button>
+
+        <button onClick={() => setShowVisitDetailModal(false)} style={{ width: '100%', padding: '15px', background: '#3d2b1f', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+          詳細を閉じる
+        </button>
+      </div>
     </div>
   </div>
 )}

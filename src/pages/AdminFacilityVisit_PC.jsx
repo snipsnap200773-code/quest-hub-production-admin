@@ -661,7 +661,7 @@ const AdminFacilityVisit_PC = () => {
                             </div>
                           ) : res.status === 'cancelled' ? (
                             <div style={{color:'#ef4444', display:'flex', alignItems:'center', gap:'4px'}}>
-                              <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>中止</span>
+                              <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>キャンセル</span>
                             </div>
                           ) : (
                             <div style={{color:'#cbd5e1', display:'flex', alignItems:'center', gap:'4px'}}>
