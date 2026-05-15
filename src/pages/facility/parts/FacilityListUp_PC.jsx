@@ -17,6 +17,7 @@ const FacilityListUp_PC = ({
   const [draftSortMode, setDraftSortMode] = useState('floor'); // 🚀 追加：右側の並べ替えモード
   const [completedMemberIds, setCompletedMemberIds] = useState([]);
   const [dbReservedResidents, setDbReservedResidents] = useState([]);
+  const [isTestMode, setIsTestMode] = useState(false);
 
 
   // 🚀 追加：施術希望者（右側）のソート済みリストを計算
@@ -102,9 +103,11 @@ const FacilityListUp_PC = ({
       setConfirmedDates([]);
       setResidents([]);
 
-      const { data: fac } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
+      // 💡 修正ポイント：is_test_mode も一緒に取得するように変更
+      const { data: fac } = await supabase.from('facility_users').select('facility_name, is_test_mode').eq('id', facilityId).single();
       if (fac) {
         setFacilityName(fac.facility_name);
+        setIsTestMode(fac.is_test_mode); // 👈 ここでテストモード状態を保存！
         await fetchData(fac.facility_name);
       }
       setLoading(false);
@@ -286,9 +289,11 @@ const FacilityListUp_PC = ({
 
     // 🚀 2. 純粋な「新規手動キープ（まだ予約になっていない日）」を追加
     manualKeeps
-      .filter(k => k.date.startsWith(currentMonthPrefix) && !list.some(l => l.date === k.date))
+      .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix) && !list.some(l => l.date === k.date))
       .forEach(k => {
-        if (k.date < todayStr) return;
+        // 🚀 修正：テストモードがOFFの時だけ、過去日を非表示にする
+        if (!isTestMode && k.date < todayStr) return; 
+
         const cap = calculateCapacity(k.date, k.start_time || '09:00', shopProfile); 
         list.push({ date: k.date, time: k.start_time || '09:00', capacity: cap, isConfirmed: false });
       });
@@ -299,7 +304,10 @@ const FacilityListUp_PC = ({
       const date = new Date(year, month, d);
       const dateStr = date.toLocaleDateString('sv-SE');
       const regTime = checkIsRegularKeep(date);
-      if (regTime && dateStr >= todayStr && !exclusions.includes(dateStr) && !list.some(l => l.date === dateStr)) {
+      // 🚀 修正：テストモード中、または今日以降であれば表示する
+      const isTimeToShow = isTestMode || dateStr >= todayStr;
+
+      if (regTime && isTimeToShow && !exclusions.includes(dateStr) && !list.some(l => l.date === dateStr)) {
         const cap = calculateCapacity(dateStr, regTime, shopProfile);
         list.push({ date: dateStr, time: regTime, capacity: cap, isConfirmed: false });
       }

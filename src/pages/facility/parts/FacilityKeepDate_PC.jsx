@@ -49,10 +49,16 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     }
   }, [keepDates, timeModal.show]); // キープ状況やモーダルが閉じたタイミングで発動
 
+  const [isTestMode, setIsTestMode] = useState(false);
+
   const fetchInitialData = async () => {
     const { data } = await supabase.from('shop_facility_connections').select(`*, profiles (*)`).eq('facility_user_id', facilityId).eq('status', 'active');
     setShops(data || []);
     if (data?.length > 0 && !selectedShop) setSelectedShop(data[0].profiles);
+
+    // 🚀 🆕 自分（施設）のテストモード設定を取得してStateに入れる
+    const { data: fac } = await supabase.from('facility_users').select('is_test_mode').eq('id', facilityId).single();
+    if (fac) setIsTestMode(fac.is_test_mode);
   };
 
   const fetchData = async () => {
@@ -197,10 +203,10 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const d = new Date(dateStr);
     const regKeep = checkIsRegularKeep(d);
     
-    // 🚀 修正：テストモードがOFF、かつ過去の日付なら 'past' にする
-    // つまり、テストモードがONならここをスルーして未来と同じ扱いになる！
-    if (!selectedShop.is_test_mode && dateStr < todayStr) return 'past'; 
+    // 🚀 修正：テストモードがOFFの時だけ、過去日をロックする
+    if (!isTestMode && dateStr < todayStr) return 'past'; 
 
+    // 🚀 1. 手動キープ（オレンジ色）をチェック...（ここはそのまま）
     const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
     if (manualKeep) return { type: 'keeping', time: manualKeep.start_time };
 
@@ -216,6 +222,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const limitDate = new Date();
     limitDate.setDate(new Date().getDate() + advanceDays);
     const limitDateStr = limitDate.toLocaleDateString('sv-SE');
+    // 🚀 修正：テストモードがOFFの時だけ、予約制限（受付終了）をロックする
+    if (!isTestMode && dateStr < limitDateStr) return 'limit-closed';
     if (dateStr < limitDateStr) return 'limit-closed';
 
     const specialHolidays = selectedShop?.special_holidays || [];
@@ -312,9 +320,12 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const statusData = getStatus(dateStr);
     const status = typeof statusData === 'object' ? statusData.type : statusData;
     
-    // 🚀 修正：タップを無効化するリストに 'full' 'limit-closed' 'completed' を追加
-    // これにより ✕ の日や完了した日がクリックできなくなります
-    if (['past', 'ng', 'other-keep', 'full', 'limit-closed', 'completed'].includes(status)) return;
+    // 🚀 修正：テストモード中なら、'past'（過去）や 'limit-closed'（受付終了）を禁止リストから外す
+    const blockedStatuses = isTestMode 
+      ? ['ng', 'other-keep', 'full', 'completed'] 
+      : ['past', 'ng', 'other-keep', 'full', 'limit-closed', 'completed'];
+
+    if (blockedStatuses.includes(status)) return;
 
     // 🚀 確定済（booked）の日をタップした場合の処理を追加
     if (status === 'booked' || status === 'keeping') {

@@ -29,6 +29,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
   const [expandedId, setExpandedId] = useState(null);
   const [isMonthPanelOpen, setIsMonthPanelOpen] = useState(false);
   const [sortMode, setSortMode] = useState('floor'); // 🚀 共通のソートモード ('floor' or 'name')
+  const [isTestMode, setIsTestMode] = useState(false);
 
   // 🚀 汎用ソートロジック
   const sortResidents = (list, mode) => {
@@ -64,6 +65,10 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
   const fetchVisits = async () => {
     setLoading(true);
     const now = new Date();
+
+    // 🚀 🆕 ここに差し込み：自分のテストモード設定を確認
+    const { data: fac } = await supabase.from('facility_users').select('is_test_mode').eq('id', facilityId).single();
+    if (fac) setIsTestMode(fac.is_test_mode);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('sv-SE');
 
     const { data: visitsData } = await supabase
@@ -179,7 +184,11 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
           const residents = visit.residents || [];
           const filtered = residents.filter(r => {
             const isDoneOnThisDay = r.status === 'completed' && isSameDay(r.completed_at, visit.scheduled_date);
-            if (visit.scheduled_date >= todayStr) return isDoneOnThisDay || r.status === 'pending';
+            
+            // 🚀 修正：テストモード中、または今日以降なら「未完了(pending)」も表示対象にする
+            const isTimeToShowPending = isTestMode || visit.scheduled_date >= todayStr;
+
+            if (isTimeToShowPending) return isDoneOnThisDay || r.status === 'pending';
             return isDoneOnThisDay;
           });
 
