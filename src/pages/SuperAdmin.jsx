@@ -157,8 +157,11 @@ function SuperAdmin() {
     active: createdShops.filter(s => !s.is_suspended).length,
     suspended: createdShops.filter(s => s.is_suspended).length,
     fullPlan: createdShops.filter(s => s.service_plan === 2).length,
-    ledgerPlan: createdShops.filter(s => s.service_plan === 1).length
-  }), [createdShops]);
+    ledgerPlan: createdShops.filter(s => s.service_plan === 1).length,
+    // 🚀 🆕 ここを追加：施設の稼働状況を計算
+    totalFacilities: facilities.length,
+    activeFacilities: facilities.filter(f => !f.is_suspended).length
+  }), [createdShops, facilities]); // 👈 facilities も監視対象に追加
 
 // 🚀 修正後：店舗アカウント発行（全自動版）
   const createNewShop = async () => {
@@ -294,6 +297,34 @@ function SuperAdmin() {
       }
     } else if (input !== null) {
       alert('パスワードが違います');
+    }
+  };
+
+  // --- 🚀 🆕 ここに差し込み：施設の一時停止切り替え ---
+  const toggleFacilitySuspension = async (facility) => {
+    const { error } = await supabase
+      .from('facility_users')
+      .update({ is_suspended: !facility.is_suspended })
+      .eq('id', facility.id);
+
+    if (!error) {
+      fetchFacilities(); // リストを再読み込み
+    } else {
+      alert('切り替えに失敗しました: ' + error.message);
+    }
+  };
+
+  // --- 🚀 🆕 ここに差し込み：テストモード（過去予約許可）の切り替え ---
+  const toggleTestMode = async (facility) => {
+    const { error } = await supabase
+      .from('facility_users')
+      .update({ is_test_mode: !facility.is_test_mode })
+      .eq('id', facility.id);
+
+    if (!error) {
+      fetchFacilities();
+    } else {
+      alert('テストモードの切り替えに失敗しました: ' + error.message);
     }
   };
 
@@ -722,12 +753,50 @@ const updateShopInfo = async (id) => {
                       <span style={{ fontSize: '0.7rem', color: '#64748b' }}>ID: <strong>{f.login_id}</strong></span>
                       <span style={{ fontSize: '0.7rem', color: '#64748b' }}>PW: <strong>{f.password}</strong></span>
                     </div>
-                    <button 
-                      onClick={() => window.open(`/facility-portal/${f.id}/residents`, '_blank')}
-                      style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
-                    >
-                      ポータルを開く <ExternalLink size={12} />
-                    </button>
+
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {/* 🚀 🆕 テストモード（過去予約許可）ボタンをここに追加！ */}
+                      <button 
+                        onClick={() => toggleTestMode(f)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: f.is_test_mode ? 'none' : '1px solid #e2e8f0',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          background: f.is_test_mode ? '#4b2c85' : '#fff',
+                          color: f.is_test_mode ? '#fff' : '#64748b',
+                          boxShadow: f.is_test_mode ? '0 2px 4px rgba(75,44,133,0.2)' : 'none'
+                        }}
+                      >
+                        {f.is_test_mode ? '🛠 テスト中 (過去OK)' : '通常モード'}
+                      </button>
+
+                      {/* 🚀 稼働・停止切り替えボタン */}
+                      <button 
+                        onClick={() => toggleFacilitySuspension(f)}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: '8px',
+                          border: 'none',
+                          fontSize: '0.7rem',
+                          fontWeight: 'bold',
+                          cursor: 'pointer',
+                          background: f.is_suspended ? '#fee2e2' : '#dcfce7',
+                          color: f.is_suspended ? '#ef4444' : '#10b981',
+                        }}
+                      >
+                        {f.is_suspended ? '● 停止中' : '● 稼働中'}
+                      </button>
+
+                      <button 
+                        onClick={() => window.open(`/facility-portal/${f.id}/residents`, '_blank')}
+                        style={{ background: 'none', border: 'none', color: '#4f46e5', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+                      >
+                        開く <ExternalLink size={12} />
+                      </button>
+                    </div>
                   </div>
                 </>
               )}

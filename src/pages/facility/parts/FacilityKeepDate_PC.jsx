@@ -197,9 +197,10 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const d = new Date(dateStr);
     const regKeep = checkIsRegularKeep(d);
     
-    if (dateStr < todayStr) return 'past';
+    // 🚀 修正：テストモードがOFF、かつ過去の日付なら 'past' にする
+    // つまり、テストモードがONならここをスルーして未来と同じ扱いになる！
+    if (!selectedShop.is_test_mode && dateStr < todayStr) return 'past'; 
 
-    // 🚀 1. 手動キープ（オレンジ色・時間変更中）を最優先でチェック
     const manualKeep = keepDates.find(k => k.date === dateStr && k.facility_user_id === facilityId);
     if (manualKeep) return { type: 'keeping', time: manualKeep.start_time };
 
