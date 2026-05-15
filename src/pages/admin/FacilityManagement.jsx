@@ -7,8 +7,8 @@ import {
   ChevronRight, X, Save, User, ArrowLeft, Phone, Mail, Trash2, Edit3, Clock, Copy, Link2,
   Search, AlertCircle,
   ArrowRight, CheckCircle2, Send, Filter, Store,
-  // 🚀 🆕 重複を削除し、必要な2つを追加
-  ReceiptText, ChevronLeft 
+  ReceiptText, ChevronLeft, 
+  Printer, Loader2 // 🚀 🆕 この2つが確実に含まれている必要があります
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -56,8 +56,72 @@ const FacilityManagement = () => {
   const [editingId, setEditingId] = useState(null);
   const visitingSubCategories = INDUSTRY_PRESETS.visiting.subCategories;
 
+  // 🚀 🆕 1. ワークシート印刷用の関数をここに追加！！
+  const handlePrintWorkSheet = async () => {
+    if (!worksheetTarget) return;
+    setLoading(true);
+    try {
+      const monthStr = String(worksheetMonth).padStart(2, '0');
+      const firstDay = `${worksheetYear}-${monthStr}-01`;
+      const lastDay = `${worksheetYear}-${monthStr}-${new Date(worksheetYear, worksheetMonth, 0).getDate()}`;
+
+      const { data: allVisits } = await supabase
+        .from('visit_requests')
+        .select('id, parent_id, scheduled_date')
+        .eq('facility_user_id', worksheetTarget.facility_user_id)
+        .eq('shop_id', shopId)
+        .neq('status', 'canceled')
+        .gte('scheduled_date', firstDay)
+        .lte('scheduled_date', lastDay)
+        .order('scheduled_date', { ascending: true });
+
+      if (!allVisits || allVisits.length === 0) {
+        alert(`${worksheetMonth}月の予約が見つかりませんでした。`);
+        setLoading(false); return;
+      }
+
+      // 🚀 🆕 ここで「15日(金)」という短い形式に変換します
+      const visitDates = allVisits.map(v => {
+        const d = new Date(v.scheduled_date);
+        const day = d.getDate();
+        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+        return `${day}日(${dayOfWeek})`;
+      });
+
+      const [histRes, memRes] = await Promise.all([
+        supabase.from('visit_request_residents').select('member_id, completed_at, visit_requests!inner(shop_id)').eq('status', 'completed').eq('visit_requests.shop_id', shopId).order('completed_at', { ascending: false }),
+        supabase.from('members').select('*').eq('facility_user_id', worksheetTarget.facility_user_id).order('floor', { ascending: true }).order('room', { ascending: true })
+      ]);
+
+      const visitMap = {};
+      histRes.data?.forEach(h => { 
+        if (!visitMap[h.member_id]) visitMap[h.member_id] = h.completed_at.split('T')[0].slice(5).replace('-', '/'); 
+      });
+
+      const masterId = allVisits[0].parent_id || allVisits[0].id;
+      const { data: appData } = await supabase.from('visit_request_residents').select('*, members(*)').eq('visit_request_id', masterId);
+
+      const printWin = window.open('', '_blank');
+      if (printWin) {
+        const html = renderWorkSheet(worksheetTarget.name, worksheetYear, worksheetMonth, visitDates, appData || [], memRes.data || [], visitMap, shopSettings);
+        printWin.document.write(html);
+        printWin.document.close();
+      }
+      setShowWorksheetModal(false); 
+    } catch (err) {
+      console.error(err);
+      alert("印刷データの準備に失敗しました。");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   // 🚀 🆕 請求書発行用のStateを追加
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
+  const [showWorksheetModal, setShowWorksheetModal] = useState(false);
+  const [worksheetTarget, setWorksheetTarget] = useState(null);
+  const [worksheetYear, setWorksheetYear] = useState(new Date().getFullYear());
+  const [worksheetMonth, setWorksheetMonth] = useState(new Date().getMonth() + 1);
   const [invoiceTarget, setInvoiceTarget] = useState(null); // { customer_id, name }
   const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
   const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
@@ -857,10 +921,20 @@ const handleSave = async (e) => {
                     )}
                   </div>
 
+                  {/* 🚀 🆕 2. ここに印刷ボタンを設置！！ */}
                   <button 
-    onClick={() => {
-      // 🚀 🆕 修正：名前だけでなく、施設の持つ様々なIDをすべて渡す（最強の紐付け用）
-      const cust = allCustomers.find(c => c.name === f.facility_name);
+  onClick={() => {
+    setWorksheetTarget({ name: f.facility_name, facility_user_id: f.id });
+    setShowWorksheetModal(true);
+  }}
+  style={{ ...linkBtnStyle, background: '#1e293b', marginBottom: '10px', border: 'none', cursor: 'pointer' }}
+>
+  <Printer size={18} /> 現場用ワークシートを印刷 <ChevronRight size={18} />
+</button>
+
+                  <button 
+                    onClick={() => {
+                      const cust = allCustomers.find(c => c.name === f.facility_name);
       setInvoiceTarget({ 
         id: cust?.id, // 顧客名簿のID
         name: f.facility_name,
@@ -1117,8 +1191,50 @@ const handleSave = async (e) => {
           </div>
         </div>
       )}
-      {/* 🚀 🆕 ここまで追加 */}
-    </div>
+
+      {/* 🚀 🆕 ここから：現場用ワークシート発行モーダルを差し込む！！ */}
+      {showWorksheetModal && worksheetTarget && (
+        <div style={modalOverlayStyle} onClick={() => setShowWorksheetModal(false)}>
+          <div style={{ ...modalContentStyle, maxWidth: '600px', background: '#f8fafc' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '20px', borderBottom: '2px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h3 style={{ margin: 0 }}>🖨 現場用ワークシート作成</h3>
+              <button onClick={() => setShowWorksheetModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24}/></button>
+            </div>
+            <div style={{ padding: '25px' }}>
+              {/* 年月選択エリア */}
+              <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '20px', marginBottom: '15px' }}>
+                  <button type="button" style={circleBtn} onClick={() => setWorksheetYear(y => y - 1)}>◀</button>
+                  <span style={{ fontSize: '1.5rem', fontWeight: 'bold' }}>{worksheetYear}年</span>
+                  <button type="button" style={circleBtn} onClick={() => setWorksheetYear(y => y + 1)}>▶</button>
+                </div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: '8px' }}>
+                  {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => (
+                    <button key={m} type="button" onClick={() => setWorksheetMonth(m)} style={{ padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', cursor: 'pointer', fontWeight: 'bold', backgroundColor: worksheetMonth === m ? '#1e293b' : 'white', color: worksheetMonth === m ? 'white' : '#334155' }}>{m}月</button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ background: '#fff', padding: '20px', borderRadius: '15px', border: '1px solid #e2e8f0', textAlign: 'center' }}>
+                <p style={{ color: '#64748b', fontWeight: 'bold', marginBottom: '15px' }}>{worksheetTarget.name} 様 / {worksheetYear}年{worksheetMonth}月用</p>
+                <button 
+                  type="button" 
+                  onClick={handlePrintWorkSheet} 
+                  style={{ ...saveBtnStyle, width: '100%', padding: '16px' }}
+                >
+                  {loading ? <Loader2 className="animate-spin" /> : 'この内容で印刷プレビューを表示'}
+                </button>
+                <p style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '12px' }}>
+                  ※予約確定済みのメンバーと、当日追加用の予備名簿がセットで作成されます。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 🏢 ここまで差し込み ========================================== */}
+
+    </div> // 👈 コンポーネント全体の最後の閉じタグ
   );
 };
 
@@ -1235,6 +1351,167 @@ const circleBtn = {
   justifyContent: 'center',
   fontSize: '16px',
   transition: 'all 0.2s'
+};
+
+// 🚀 修正版：フリガナ（kana）を最優先して「あいうえお順」に並び替える
+const renderWorkSheet = (facilityName, year, month, visitDates, appointments, allMembers, visitMap, shop) => {
+  
+  const sortByKana = (a, b) => {
+    const objA = a.members || a;
+    const objB = b.members || b;
+    const valA = (objA.kana || objA.name || "").trim();
+    const valB = (objB.kana || objB.name || "").trim();
+    return valA.localeCompare(valB, 'ja');
+  };
+
+  const groupedAppointments = appointments.reduce((acc, a) => {
+    const f = a.members?.floor ? a.members.floor.toString().replace(/F|ｆ/g, '') : '不明';
+    if (!acc[f]) acc[f] = [];
+    acc[f].push(a);
+    return acc;
+  }, {});
+  Object.keys(groupedAppointments).forEach(f => groupedAppointments[f].sort(sortByKana));
+
+  const appointedMemberIds = appointments.map(a => a.members?.id).filter(id => !!id);
+  const spareMembers = allMembers.filter(m => !appointedMemberIds.includes(m.id));
+  const groupedSpareMembers = spareMembers.reduce((acc, m) => {
+    const f = m.floor ? m.floor.toString().replace(/F|ｆ/g, '') : '不明';
+    if (!acc[f]) acc[f] = [];
+    acc[f].push(m);
+    return acc;
+  }, {});
+  Object.keys(groupedSpareMembers).forEach(f => groupedSpareMembers[f].sort(sortByKana));
+
+  return `
+    <html>
+      <head>
+        <title>施術指示書_${facilityName}</title>
+        <style>
+          @page { size: A4; margin: 10mm; }
+          body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", sans-serif; font-size: 10pt; color: #000; line-height: 1.2; margin: 0; }
+          
+          .header { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #000; padding-bottom: 5px; margin-bottom: 15px; }
+          .title { font-size: 17pt; font-weight: 600; margin: 0; }
+          
+          table { width: 100%; border-collapse: collapse; margin-bottom: 15px; table-layout: fixed; }
+          
+          /* 🚀 見出し行（一番上）：高さとサイズを固定 */
+          th { 
+            border: 1px solid #000; 
+            background: #f0f0f0; 
+            font-size: 8.5pt !important; 
+            height: 20px !important; 
+            padding: 2px; 
+            text-align: center; 
+            font-weight: 600;
+            vertical-align: middle;
+          }
+          
+          /* 🚀 データ行（中身）：高さを 55px に広げてゆとりを確保 */
+          td { 
+            border: 1px solid #000; 
+            padding: 4px 8px; 
+            height: 45px !important;    /* 👈 ここを広げたので、デカい文字も収まります */
+            word-wrap: break-word; 
+            vertical-align: middle;      /* 👈 上下中央に配置 */
+          }
+          
+          /* --- 🏁 チェックボックス列（連動解除済） --- */
+          .col-chk { width: 50px; }
+          th.col-chk { font-size: 8pt !important; }
+          td.col-chk { 
+            font-size: 26pt !important;  /* 👈 ▢のサイズ */
+            text-align: center; 
+            line-height: 1; 
+            font-weight: 100;
+            padding: 0 !important;
+          }
+
+          /* --- 👤 お名前列（連動解除済） --- */
+          .col-name { width: 180px; }    /* 👈 名前が入り切るように幅を少し広げました */
+          th.col-name { font-size: 8.5pt !important; }
+          td.col-name { 
+            font-size: 14pt !important;  /* 👈 お客様の名前のサイズ */
+            font-weight: 500;
+            line-height: 1.1;
+          }
+
+          /* --- その他 --- */
+          .col-room { width: 60px; text-align: center; }
+          .col-menu { width: auto; font-weight: 500; font-size: 10.5pt; }
+          .col-last { width: 65px; text-align: center; font-size: 9.5pt; color: #333; }
+          
+          .section-title { background: #000; color: #fff; padding: 4px 12px; font-weight: 600; margin-bottom: 10px; border-radius: 4px; font-size: 11pt; }
+          .page-break { page-break-before: always; }
+          .floor-label { font-weight: 600; margin-bottom: 5px; font-size: 11pt; border-left: 6px solid #000; padding-left: 10px; color: #000; }
+          .visit-dates { font-size: 10.5pt; margin-top: 5px; font-weight: 600; }
+          .footer-note { font-size: 8pt; color: #666; text-align: right; margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <div class="header">
+          <div>
+            <p style="margin:0; font-size:9pt; font-weight:600;">${shop.business_name}</p>
+            <h1 class="title">${month}月度 施設訪問 施術指示書</h1>
+            <div class="visit-dates">
+              訪問予定日：${visitDates.join(' ・ ')}
+            </div>
+          </div>
+          <div style="text-align:right; font-size:8pt;">
+            <p style="margin:0;">訪問先：<b>${facilityName} 様</b></p>
+            <p style="margin:0;">印刷日：${new Date().toLocaleDateString('ja-JP')}</p>
+          </div>
+        </div>
+
+        <div class="section-title">1. 予約リスト（${appointments.length}名）</div>
+        ${Object.keys(groupedAppointments).sort().map(floor => `
+          <div class="floor-label">${floor}F</div>
+          <table>
+            <thead>
+              <tr><th class="col-chk">予約</th><th class="col-room">部屋</th><th class="col-name">お名前</th><th class="col-menu">メニュー・現場メモ</th><th class="col-last">前回</th></tr>
+            </thead>
+            <tbody>
+              ${groupedAppointments[floor].map(a => `
+                <tr>
+                  <td class="col-chk">□</td>
+                  <td class="col-room">${a.members?.room || '-'}</td>
+                  <td class="col-name">${a.members?.name} 様</td>
+                  <td class="col-menu">${a.menu_name}</td>
+                  <td class="col-last">${visitMap[a.members?.id] || 'ー'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `).join('')}
+
+        <div class="footer-note">1/2ページ</div>
+
+        <div class="page-break section-title">2. 予備名簿（当日追加用）</div>
+        ${Object.keys(groupedSpareMembers).sort().map(floor => `
+          <div class="floor-label">${floor}F</div>
+          <table>
+            <thead>
+              <tr><th class="col-chk">追加</th><th class="col-room">部屋</th><th class="col-name">お名前</th><th class="col-menu">当日メニュー・メモ</th><th class="col-last">前回</th></tr>
+            </thead>
+            <tbody>
+              ${groupedSpareMembers[floor].map(m => `
+                <tr>
+                  <td class="col-chk">□</td>
+                  <td class="col-room">${m.room || '-'}</td>
+                  <td class="col-name">${m.name} 様</td>
+                  <td class="col-menu"></td>
+                  <td class="col-last">${visitMap[m.id] || 'ー'}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+        `).join('')}
+        
+        <div class="footer-note">2/2ページ | SnipSnap 施設訪問管理システム</div>
+        <script>window.onload = function() { window.print(); window.close(); };</script>
+      </body>
+    </html>
+  `;
 };
 
 export default FacilityManagement;
