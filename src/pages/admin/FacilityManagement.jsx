@@ -1420,11 +1420,15 @@ const renderWorkSheet = (facilityName, year, month, visitDates, appointments, al
           .col-chk { width: 50px; }
           th.col-chk { font-size: 8pt !important; }
           td.col-chk { 
-            font-size: 26pt !important;  /* 👈 ▢のサイズ */
+            font-size: 30pt !important;  /* 👈 ▢のサイズ */
             text-align: center; 
-            line-height: 1; 
-            font-weight: 100;
+            font-weight: 100; 
             padding: 0 !important;
+            line-height: 1;
+            /* 💡 ここで微調整（少しだけ上に持ち上げてセンターに見せる） */
+            display: table-cell;
+            vertical-align: middle;
+            transform: translateY(-4.5px); 
           }
 
           /* --- 👤 お名前列（連動解除済） --- */
