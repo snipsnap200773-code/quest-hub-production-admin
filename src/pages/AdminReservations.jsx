@@ -126,6 +126,7 @@ function AdminReservations() {
   const [facilityConnections, setFacilityConnections] = useState([]);
   const [message, setMessage] = useState('');
   const [categoryMap, setCategoryMap] = useState({});
+  const [showAlertModal, setShowAlertModal] = useState(false);
 
   const [startDate, setStartDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -553,14 +554,20 @@ const { data: resData } = await supabase
     setManualKeeps(mData || []); 
     setExclusions(exclData?.map(e => e.excluded_date) || []);
     
-    // 🚀 🆕 【修正】単発キープ ＆ 期限間近キープ の抽出
+    // 🚀 🆕 【修正】単発キープ ＆ 定期キープ ＆ 期限間近キープ の全網羅抽出
     const todayStr = getJapanDateStr(new Date());
     const irregularList = [];
     const urgentList = []; 
-    const timeChangedList = []; // 👈 時間変更専用
+    const timeChangedList = []; 
 
+    // 重複を避けるための名寄せ用セット（施設ID_日付）
+    const processedKeys = new Set();
+
+    // 🚀 A: まずは手動変更・単発保存されているデータをスキャン
     (mData || []).forEach(k => {
       if (k.date < todayStr) return;
+      processedKeys.add(`${k.facility_user_id}_${k.date}`);
+
       const isBooked = (visitData || []).some(v => 
         (v.status === 'confirmed' || v.status === 'completed') && 
         v.facility_user_id === k.facility_user_id &&
@@ -569,7 +576,7 @@ const { data: resData } = await supabase
       if (isBooked) return;
 
       let isRegularDay = false;
-      let originalRuleTime = null; // ルールの本来の時間を記憶
+      let originalRuleTime = null; 
 
       const dObj = new Date(k.date);
       const day = dObj.getDay();
@@ -593,24 +600,94 @@ const { data: resData } = await supabase
 
           if (monthMatch && dayMatch && weekMatch) {
             isRegularDay = true;
-            originalRuleTime = rule.time; // ルール上の時間をセット
+            originalRuleTime = rule.time; 
           }
         });
       }
 
-      // 🏆 ここで3パターンに仕分けます
+      const diffTime = dObj.getTime() - new Date(todayStr).getTime();
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
       if (isRegularDay) {
-        // A: 定期の日だけど、保存されている時間がルールと違う場合 ➔ 「時間変更リスト」へ
         if (originalRuleTime && k.start_time.substring(0, 5) !== originalRuleTime) {
           timeChangedList.push({ ...k, originalTime: originalRuleTime });
         }
+        // 📅 定期の日で名簿未確定（予約がない）状態
+        // 🚀 修正：3日前を切った緊急時のみ urgentList に追加し、4日以上先なら何もしない（通常アラートから除外）
+        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: true });
       } else {
-        // B: 定期の日じゃない ➔ 「単発リスト（アラート）」へ
-        irregularList.push(k);
+        // ⚠️ 単発キープ（イレギュラー）の場合：こちらは今まで通り余裕があってもアラートに出す
+        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: false });
+        else irregularList.push({ ...k, isRegular: false });
+      }
+    });
 
-        const diffTime = dObj.getTime() - new Date(todayStr).getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
-        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
+    // 🚀 B: 次に、各提携施設の「手動データがない純粋な定期キープの日」も未来30日分自動スキャン
+    (connData || []).forEach(conn => {
+      if (!conn.regular_rules) return;
+      
+      const scanDate = new Date();
+      for (let i = 0; i < 30; i++) {
+        const dStr = getJapanDateStr(scanDate);
+        const comboKey = `${conn.facility_user_id}_${dStr}`;
+
+        if (!processedKeys.has(comboKey) && dStr >= todayStr) {
+          const day = scanDate.getDay();
+          const dom = scanDate.getDate();
+          const m = scanDate.getMonth() + 1;
+          const nthWeek = Math.ceil(dom / 7);
+          
+          const tempNext = new Date(scanDate); tempNext.setDate(dom + 7);
+          const isLastWeek = tempNext.getMonth() !== scanDate.getMonth();
+          const tempNext2 = new Date(scanDate); tempNext2.setDate(dom + 14);
+          const isSecondToLastWeek = (tempNext2.getMonth() !== scanDate.getMonth()) && !isLastWeek;
+
+          let isRegularDay = false;
+          let regTime = '09:00';
+
+          conn.regular_rules.forEach(rule => {
+            const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
+            const dayMatch = (rule.day === day);
+            let weekMatch = (rule.week === nthWeek);
+            if (rule.week === -1) weekMatch = isLastWeek;
+            if (rule.week === -2) weekMatch = isSecondToLastWeek;
+
+            if (monthMatch && dayMatch && weekMatch) {
+              isRegularDay = true;
+              regTime = rule.time || '09:00';
+            }
+          });
+
+          // 定期除外に入っていないかもチェック
+          const isExcluded = exclusions.includes(dStr);
+
+          if (isRegularDay && !isExcluded) {
+            // すでに予約確定しているかチェック
+            const isBooked = (visitData || []).some(v => 
+              (v.status === 'confirmed' || v.status === 'completed') && 
+              v.facility_user_id === conn.facility_user_id &&
+              (v.scheduled_date === dStr)
+            );
+
+            if (!isBooked) {
+              const fakeKeep = { 
+                id: `reg-${conn.facility_user_id}-${dStr}`, 
+                date: dStr, 
+                start_time: regTime, 
+                facility_user_id: conn.facility_user_id,
+                facility_users: conn.facility_users,
+                isRegular: true 
+              };
+
+              const diffTime = scanDate.getTime() - new Date(todayStr).getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+              // 🚀 修正：3日前を切った時だけ緊急アラート（urgentList）にいれる！4日以上先ならスルー！
+              if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
+            }
+          }
+        }
+        scanDate.setDate(scanDate.getDate() + 1);
       }
     });
 
@@ -891,22 +968,30 @@ const { data: resData } = await supabase
   /* ============================================================
      🌟🌟🌟 ここに追加します！ 🌟🌟🌟
      ============================================================ */
-  // 🚀 🆕 追加：単発キープを強制削除する命令
+  // 🚀 🆕 追加：キープ枠を強制削除する命令
   const handleForceDeleteKeep = async (keep) => {
     const facilityName = keep.facility_users?.facility_name || "施設";
     if (!window.confirm(`【強制キャンセル】\n${facilityName} 様の ${keep.date.replace(/-/g, '/')} のキープ枠を強制的に削除しますか？\nこの操作は取り消せません。`)) return;
 
     setLoading(true);
     try {
-      const { error } = await supabase
-        .from('keep_dates')
-        .delete()
-        .eq('id', keep.id);
-
-      if (error) throw error;
+      if (keep.isRegular) {
+        // 定期枠の場合：除外テーブルに放り込む
+        await supabase.from('regular_keep_exclusions').upsert([{ 
+          facility_user_id: keep.facility_user_id, shop_id: shopId, excluded_date: keep.date 
+        }]);
+        // もしすでに時間変更等で keep_dates 側に実体レコードがあればそれも消す
+        if (!String(keep.id).startsWith('reg-')) {
+          await supabase.from('keep_dates').delete().eq('id', keep.id);
+        }
+      } else {
+        // 純粋な単発キープの場合
+        const { error } = await supabase.from('keep_dates').delete().eq('id', keep.id);
+        if (error) throw error;
+      }
 
       showMsg("キープ枠を強制的に解放しました。");
-      fetchData(); // 画面を更新して枠を空ける
+      fetchData();
     } catch (err) {
       console.error("Force Delete Error:", err);
       alert("解除に失敗しました: " + err.message);
@@ -1864,114 +1949,38 @@ return (
 )}
           </div>
 
-      {/* 🚀 🆕 ここに追加：イレギュラーキープのアラートバナー */}
-      <div style={{ zIndex: 100, display: 'flex', flexDirection: 'column' }}>
-        <AnimatePresence>
-          {/* 🔴 1. 確定期限間近の緊急アラートを1件ずつ表示 */}
-          {urgentKeeps.map((keep) => (
-            <motion.div
-              key={`urgent-${keep.id}`} // 🚀 IDをkeyにして個別管理
-              initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-              style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <span style={{ fontSize: '1.2rem' }}>🚨</span>
-                <div style={{ textAlign: 'left' }}>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
-                    名簿未確定：{keep.facility_users?.facility_name} 様
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#e11d48' }}>
-                    予定日：{keep.date.replace(/-/g, '/')}（あと {keep.diffDays} 日）
-                  </div>
-                </div>
-              </div>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => handleEmailNudge(keep)}
-                  style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-                >
-                  📧 つつく
-                </button>
-                <button
-                  onClick={() => handleForceDeleteKeep(keep)}
-                  style={{ background: '#be123c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-                >
-                  🗑 強制キャンセル
-                </button>
-              </div>
-            </motion.div>
-          ))}
+  {/* 🚀 🆕 修正：ヘッダーを占領しないスッキリ1行の「まとめバナー」に変更！ */}
+  {(() => {
+    // 未確定の全日程から重複のない「月（YYYY-MM）」のリストを作成
+    const alertMonths = new Set([
+      ...urgentKeeps.map(k => k.date?.slice(0, 7)),
+      ...irregularKeeps.filter(k => !dismissedKeeps.includes(k.id)).map(k => k.date?.slice(0, 7)),
+      ...timeChangedKeeps.filter(k => !dismissedKeeps.includes(k.id)).map(k => k.date?.slice(0, 7))
+    ].filter(Boolean));
 
-          {/* 🟠 2. 単発キープ（イレギュラー）を1件ずつ表示 */}
-          {irregularKeeps
-            .filter(k => !dismissedKeeps.includes(k.id))
-            .map((keep) => (
-              <motion.div
-                key={`irregular-${keep.id}`} // 🚀 IDをkeyにして個別管理
-                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
-              >
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                  <span style={{ fontSize: '1.2rem' }}>⚠️</span>
-                  <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
-                      単発キープあり：{keep.facility_users?.facility_name} 様
-                    </div>
-                    <div style={{ fontSize: '0.75rem', color: '#ea580c' }}>
-                      候補日：{keep.date.replace(/-/g, '/')}
-                    </div>
-                  </div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button
-                    onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
-                    style={{ background: '#f97316', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-                  >
-                    枠を確認 ➔
-                  </button>
-                  <button
-                    onClick={() => handleForceDeleteKeep(keep)}
-                    style={{ background: '#fff', color: '#f97316', border: '1px solid #f97316', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
-                  >
-                    🗑 解放
-                  </button>
-                </div>
-              </motion.div>
-            ))}
+    // 1つもアラートがなければ何も表示しない
+    if (alertMonths.size === 0) return null;
 
-          {/* 🔵 3. 定期訪問の時間変更通知 */}
-          {timeChangedKeeps
-  .filter(k => !dismissedKeeps.includes(k.id)) // 🚀 既読（タップ済み）のものは表示しない
-  .map((keep) => (
-    <motion.div
-      key={`changed-${keep.id}`}
-      initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}
-      style={{ background: '#f0f9ff', borderBottom: '1px solid #bae6fd', padding: '10px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1px' }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ fontSize: '1.2rem' }}>ℹ️</span>
-        <div style={{ textAlign: 'left' }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
-            定期訪問の時間変更：{keep.facility_users?.facility_name} 様
-          </div>
-          <div style={{ fontSize: '0.75rem', color: '#0ea5e9' }}>
-            {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ 変更後 {keep.start_time.substring(0, 5)}）
-          </div>
+    const isEmergency = urgentKeeps.length > 0;
+
+    return (
+      <div style={{ zIndex: 100, padding: '8px 20px', background: isEmergency ? '#fef2f2' : '#fff7ed', borderBottom: isEmergency ? '1px solid #fecdd3' : '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '1.1rem' }}>{isEmergency ? '🚨' : '⚠️'}</span>
+          <span style={{ fontSize: '0.85rem', fontWeight: '900', color: isEmergency ? '#be123c' : '#c2410c' }}>
+            {/* 🚀 「〇ヶ月分」の表記を削り、スッキリさせました */}
+            {isEmergency ? '【至急確認】期限間近の予約を含め、未確定の訪問キープ枠があります' : '未確定の訪問キープ枠があります'}
+          </span>
         </div>
-      </div>
-      <div style={{ display: 'flex', gap: '8px' }}>
         <button
-          onClick={() => { setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }}
-          style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+          onClick={() => setShowAlertModal(true)}
+          style={{ background: isEmergency ? '#be123c' : '#f97316', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}
         >
-          枠を確認
+          内訳を確認 ➔
         </button>
-        {/* 🚀 「解放」ボタンを削除しました */}
       </div>
-    </motion.div>
-  ))}
-        </AnimatePresence>
-      </div>
+    );
+  })()}
 
 {/* ✅ 親要素：はみ出しを隠し、高さを固定 */}
         <div style={{ flex: 1, overflow: 'hidden', position: 'relative', display: 'flex', flexDirection: 'column' }}>
@@ -2392,6 +2401,92 @@ else if (
         </button>
       </div>
           </div>
+  </div>
+)}
+
+{/* 🚀 🆕 新設：未確定アラート詳細ポップアップモーダル */}
+{showAlertModal && (
+  <div style={overlayStyle} onClick={() => setShowAlertModal(false)}>
+    <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '550px', padding: '0', overflow: 'hidden', borderRadius: '28px' }}>
+      
+      {/* モーダルヘッダー */}
+      <div style={{ background: urgentKeeps.length > 0 ? '#be123c' : '#f97316', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>📋 未確定キープ枠・通知の内訳</div>
+          <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>施設側の名簿作成状況と変更通知の一覧です</div>
+        </div>
+        <button onClick={() => setShowAlertModal(false)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff', fontWeight: 'bold' }}>✕</button>
+      </div>
+
+      {/* スクロールコンテンツエリア */}
+      <div style={{ padding: '20px', maxHeight: '60vh', overflowY: 'auto', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        
+        {/* 🔴 1. 確定期限間近の緊急アラート */}
+        {urgentKeeps.map((keep) => (
+          <div key={`modal-urg-${keep.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+            <div style={{ textAlign: 'left' }}>
+              <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                🚨 名簿未確定({keep.isRegular ? '定期' : '単発'})：{keep.facility_users?.facility_name} 様
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                予定日：<strong>{keep.date.replace(/-/g, '/')}</strong> （あと <span style={{color:'#ef4444', fontWeight:'bold'}}>{keep.diffDays}</span> 日）
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button onClick={() => { setShowAlertModal(false); handleEmailNudge(keep); }} style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>📧 つつく</button>
+              <button onClick={() => { setShowAlertModal(false); handleForceDeleteKeep(keep); }} style={{ background: '#be123c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>🗑 強制解放</button>
+            </div>
+          </div>
+        ))}
+
+        {/* 🟠 2. 通常の未確定キープ枠 */}
+        {irregularKeeps
+          .filter(k => !dismissedKeeps.includes(k.id))
+          .map((keep) => (
+            <div key={`modal-irreg-${keep.id}`} style={{ background: '#fff', border: '1px solid #fed7aa', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
+                  ⚠️ {keep.isRegular ? '定期枠名簿が未確定' : '単発キープあり'}：{keep.facility_users?.facility_name} 様
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                  対象日：<strong>{keep.date.replace(/-/g, '/')}</strong>
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => { setShowAlertModal(false); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#f97316', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                <button onClick={() => { setShowAlertModal(false); handleForceDeleteKeep(keep); }} style={{ background: '#fff', color: '#f97316', border: '1px solid #f97316', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>開放</button>
+              </div>
+            </div>
+          ))}
+
+        {/* 🔵 3. 定期訪問の時間変更通知 */}
+        {timeChangedKeeps
+          .filter(k => !dismissedKeeps.includes(k.id))
+          .map((keep) => (
+            <div key={`modal-change-${keep.id}`} style={{ background: '#fff', border: '1px solid #bae6fd', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+              <div style={{ textAlign: 'left' }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+                  ℹ️ 定期訪問の時間変更：{keep.facility_users?.facility_name} 様
+                </div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                  {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ <span style={{color:'#0ea5e9', fontWeight:'bold'}}>変更後 {keep.start_time.substring(0, 5)}</span>）
+                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '6px' }}>
+                <button onClick={() => { setShowAlertModal(false); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                <button onClick={() => { markKeepAsDismissed(keep.id); }} style={{ background: '#fff', color: '#64748b', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>既読にする</button>
+              </div>
+            </div>
+          ))}
+      </div>
+
+      {/* フッター閉じるボタン */}
+      <div style={{ padding: '15px 20px', background: '#fff', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+        <button onClick={() => setShowAlertModal(false)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}>
+          一覧を閉じる
+        </button>
+      </div>
+    </div>
   </div>
 )}
 
