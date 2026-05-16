@@ -361,7 +361,7 @@ const FacilityPortal = () => {
                   <span style={{ fontSize: '1.2rem' }}>🚨</span>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>確定期限（3日前）が過ぎています！</div>
-                    <p style={{ fontSize: '0.7rem', color: '#e11d48', margin: 0 }}>{urgentKeeps[0].date.replace(/-/g, '/')} の名簿を至急作成して確定してください。</p>
+                    <p style={{ fontSize: '0.7rem', color: '#e11d48', margin: 0 }}>{urgentKeeps[0].date.replace(/-/g, '/')} の希望者を選んで予約確定してください。</p>
                   </div>
                 </div>
                 <button 
@@ -383,9 +383,9 @@ const FacilityPortal = () => {
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
                       {/* 🚀 🆕 修正：日付（YYYY-MM-DD）の頭7文字（YYYY-MM）だけを抽出して、重複のない「月」の数を数えます */}
-                      未確定の「訪問キープ月」が {new Set(unconfirmedKeeps.map(k => k.date.slice(0, 7))).size} 件あります
+                      「訪問キープ月」が {new Set(unconfirmedKeeps.map(k => k.date.slice(0, 7))).size} 件あります
                     </div>
-                    <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>忘れないうちに「STEP 2: 利用者選択」へ進んでください。</p>
+                    <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>「STEP 2: 利用者選択」で希望者を選択してください。</p>
                   </div>
                 </div>
                 <button 
