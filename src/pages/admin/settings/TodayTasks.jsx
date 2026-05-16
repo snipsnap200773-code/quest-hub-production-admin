@@ -1118,7 +1118,7 @@ const handleSaveMemo = async () => {
                           fontSize: '0.9rem' 
                         }}
                       >
-                        {isFacility ? '名簿入力' : 'お会計 ＆ 完了'}
+                        {isFacility ? 'タスク実行' : 'お会計 ＆ 完了'}
                       </button>
                     </div>
                   )}
