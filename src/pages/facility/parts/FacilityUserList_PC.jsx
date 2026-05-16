@@ -10,16 +10,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 const getKanaGroup = (kana) => {
   if (!kana) return "その他";
   const firstChar = kana.charAt(0);
-  if (firstChar.match(/[あ-お]/)) return "あ行";
-  if (firstChar.match(/[か-こ]/)) return "か行";
-  if (firstChar.match(/[さ-そ]/)) return "さ行";
-  if (firstChar.match(/[た-と]/)) return "た行";
-  if (firstChar.match(/[な-の]/)) return "な行";
-  if (firstChar.match(/[は-ほ]/)) return "は行";
-  if (firstChar.match(/[ま-も]/)) return "ま行";
-  if (firstChar.match(/[や-よ]/)) return "や行";
-  if (firstChar.match(/[ら-ろ]/)) return "ら行";
-  if (firstChar.match(/[わ-を]/)) return "わ行";
+  if (firstChar.match(/[あいうえおアイウエオぁぃぅぇぉァィゥェォ]/)) return "あ行";
+  if (firstChar.match(/[かきくけこがぎぐげごカキクケコガギグゲゴ]/)) return "か行";
+  if (firstChar.match(/[さしすせそざじずぜぞサシスセソザジズゼゾ]/)) return "さ行";
+  if (firstChar.match(/[たちつてとだぢづでどタチツテトダヂヅデドっッ]/)) return "た行";
+  if (firstChar.match(/[なにぬねのナニヌネノ]/)) return "な行";
+  if (firstChar.match(/[はひふへほばびぶべぼぱぴぷぺぽハヒフヘホバビブベボパピプペポ]/)) return "は行";
+  if (firstChar.match(/[まみむめもマミムメモ]/)) return "ま行";
+  if (firstChar.match(/[やゆよヤユヨゃゅょャュョ]/)) return "や行";
+  if (firstChar.match(/[らりるれろラリルレロ]/)) return "ら行";
+  if (firstChar.match(/[わをんワヲン]/)) return "わ行";
   return "その他";
 };
 
@@ -169,11 +169,27 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
     }
   };
 
-  const filteredResidents = residents.filter(r => 
-    (r.name || '').includes(searchTerm) || 
-    (r.room || '').includes(searchTerm) || 
-    (r.kana || '').includes(searchTerm)
-  );
+  // 🚀 🆕 相互かなカナ変換ヘルパー
+  const toKatakana = (str) => str.replace(/[ぁ-ん]/g, m => String.fromCharCode(m.charCodeAt(0) + 96));
+  const toHiragana = (str) => str.replace(/[ァ-ン]/g, m => String.fromCharCode(m.charCodeAt(0) - 96));
+
+  // 🚀 🆕 漢字・ひらがな・カタカナ・部屋番号に全対応したリアルタイムフィルター
+  const filteredResidents = residents.filter(r => {
+    if (!searchTerm) return true;
+    const term = searchTerm.trim().toLowerCase();
+    const hiraTerm = toHiragana(term);
+    const kataTerm = toKatakana(term);
+
+    const name = (r.name || '').toLowerCase();
+    const kana = (r.kana || '').toLowerCase();
+    const room = (r.room || '').toLowerCase();
+
+    return name.includes(term) || 
+           kana.includes(term) || 
+           kana.includes(hiraTerm) || 
+           kana.includes(kataTerm) || 
+           room.includes(term);
+  });
 
   // 🚀 🆕 キーボード操作関数
   const handleKeyDown = (e) => {

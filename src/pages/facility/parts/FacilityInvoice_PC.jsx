@@ -77,16 +77,53 @@ const FacilityInvoice_PC = ({ facilityId }) => {
 
   const totalAmount = filteredSales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
 
-  const handlePrintInvoice = () => {
+  const handlePrintInvoice = async () => {
     const printWin = window.open('', '_blank', 'width=900,height=1000');
+
+    // 🚀 🆕 【超重要】名簿（membersテーブル）から、この施設の全員の「お名前 ➔ ふりがな」の最新マップをサクッと取得
+    const { data: memberKanas } = await supabase
+      .from('members')
+      .select('name, kana')
+      .eq('facility_user_id', facilityId);
+
+    const kanaLookup = {};
+    memberKanas?.forEach(m => {
+      if (m.name) kanaLookup[m.name.trim()] = m.kana || "";
+    });
+
     const members = filteredSales.flatMap(s => {
       const details = typeof s.details === 'string' ? JSON.parse(s.details || '{}') : (s.details || {});
       if (details.members_list && details.members_list.length > 0) {
-        return details.members_list.map(m => ({ ...m, date: s.sale_date || s.created_at.split('T')[0] }));
+        return details.members_list.map(m => {
+          const trimmedName = (m.name || "").trim();
+          return { 
+            ...m, 
+            date: s.sale_date || s.created_at.split('T')[0],
+            // 🚀 🆕 もし売上データ側にふりがなが無ければ、今名簿にある最新のふりがなを全自動でドッキング！
+            kana: m.kana || kanaLookup[trimmedName] || "" 
+          };
+        });
       }
       return [{ date: s.sale_date, name: facilityName, floor: '-', menu: '施設訪問 施術一式', price: s.total_amount }];
     });
-    members.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    
+    // 🚀 これで確実に全員分のふりがなが揃った状態で、美しい2段階ソートが行われます！
+    members.sort((a, b) => {
+      // ① まずは日付で比較（古い順）
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+
+      // ② 日付が同じなら、フロア・階数で比較（低い階から順）
+      // 💡 1F や 2F といった文字列から数字だけを抜き出して正しく1階➔2階と並べます
+      const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
+      const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
+      if (fA !== fB) return fA - fB;
+
+      // ③ 日付も階数も同じなら、最後にふりがな（あいうえお順）で並び替え
+      const kanaA = (a.kana || a.name || "").trim();
+      const kanaB = (b.kana || b.name || "").trim();
+      return kanaA.localeCompare(kanaB, 'ja');
+    });
 
     let content = `
       <html>

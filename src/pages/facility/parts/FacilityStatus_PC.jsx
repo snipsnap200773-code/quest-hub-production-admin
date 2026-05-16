@@ -10,16 +10,16 @@ import { motion, AnimatePresence } from 'framer-motion';
 const getKanaGroup = (kana) => {
   if (!kana) return "その他";
   const firstChar = kana.charAt(0);
-  if (firstChar.match(/[あ-お]/)) return "あ行";
-  if (firstChar.match(/[か-こ]/)) return "か行";
-  if (firstChar.match(/[さ-そ]/)) return "さ行";
-  if (firstChar.match(/[た-と]/)) return "た行";
-  if (firstChar.match(/[な-の]/)) return "な行";
-  if (firstChar.match(/[は-ほ]/)) return "は行";
-  if (firstChar.match(/[ま-も]/)) return "ま行";
-  if (firstChar.match(/[や-よ]/)) return "や行";
-  if (firstChar.match(/[ら-ろ]/)) return "ら行";
-  if (firstChar.match(/[わ-を]/)) return "わ行";
+  if (firstChar.match(/[あいうえおアイウエオぁぃぅぇぉァィゥェォ]/)) return "あ行";
+  if (firstChar.match(/[かきくけこがぎぐげごカキクケコガギグゲゴ]/)) return "か行";
+  if (firstChar.match(/[さしすせそざじずぜぞサシスセソザジズゼゾ]/)) return "さ行";
+  if (firstChar.match(/[たちつてとだぢづでどタチツテトダヂヅデドっッ]/)) return "た行";
+  if (firstChar.match(/[なにぬねのナニヌネノ]/)) return "な行";
+  if (firstChar.match(/[はひふへほばびぶべぼぱぴぷぺぽハヒフヘホバビブベボパピプペポ]/)) return "は行";
+  if (firstChar.match(/[まみむめもマミムメモ]/)) return "ま行";
+  if (firstChar.match(/[やゆよヤユヨゃゅょャュョ]/)) return "や行";
+  if (firstChar.match(/[らりるれろラリルレロ]/)) return "ら行";
+  if (firstChar.match(/[わをんワヲン]/)) return "わ行";
   return "その他";
 };
 

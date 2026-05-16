@@ -5,22 +5,23 @@ import {
   ArrowLeft, CheckCircle2, Clock, XCircle, 
   Building2, Loader2, CheckCircle, Calculator, ReceiptText,
   Plus,
-  Edit2
+  Edit2,
+  Search // 🚀 🆕 ここに Search を追加！
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 const getKanaGroup = (kana) => {
-  if (!kana) return "その他";
+  if (!kana) return "misc";
   const firstChar = kana.charAt(0);
-  if (firstChar.match(/[あ-おア-オ]/)) return "あ行";
-  if (firstChar.match(/[か-こカ-コ]/)) return "か行";
-  if (firstChar.match(/[さ-そサ-ソ]/)) return "さ行";
-  if (firstChar.match(/[た-とタ-ト]/)) return "た行";
-  if (firstChar.match(/[な-のナ-ノ]/)) return "な行";
-  if (firstChar.match(/[は-ほハ-ホ]/)) return "は行";
-  if (firstChar.match(/[ま-もマ-モ]/)) return "ま行";
-  if (firstChar.match(/[や-よヤ-ヨ]/)) return "や行";
-  if (firstChar.match(/[ら-ろラ-ロ]/)) return "ら行";
-  if (firstChar.match(/[わ-をワ-ヲ]/)) return "わ行";
+  if (firstChar.match(/[あいうえおアイウエオぁぃぅぇぉァィゥェォ]/)) return "あ行";
+  if (firstChar.match(/[かきくけこがぎぐげごカキクケコガギグゲゴ]/)) return "か行"; // 🚀 「ご」をキャッチ！
+  if (firstChar.match(/[さしすせそざじずぜぞサシスセソザジズゼゾ]/)) return "さ行"; // 🚀 「ざ」行をキャッチ！
+  if (firstChar.match(/[たちつてとだぢづでどタチツテトダヂヅデドっッ]/)) return "た行"; // 🚀 「だ」行をキャッチ！
+  if (firstChar.match(/[なにぬねのナニヌネノ]/)) return "な行";
+  if (firstChar.match(/[はひふへほばびぶべぼぱぴぷぺぽハヒフヘホバビブベボパピプペポ]/)) return "は行"; // 🚀 「ば・ぱ」行をキャッチ！
+  if (firstChar.match(/[まみむめもマミムメモ]/)) return "ま行";
+  if (firstChar.match(/[やゆよヤユヨゃゅょャュョ]/)) return "や行";
+  if (firstChar.match(/[らりるれろラリルレロ]/)) return "ら行";
+  if (firstChar.match(/[わをんワヲン]/)) return "わ行";
   return "その他";
 };
 
@@ -58,6 +59,7 @@ const AdminFacilityVisit_PC = () => {
   const [isAdding, setIsAdding] = useState(false);
   const [sortMode, setSortMode] = useState('name');
   const [lastVisits, setLastVisits] = useState({});
+  const [addSearchTerm, setAddSearchTerm] = useState('');
 
   // 🆕 メインの名簿リスト用の並び替え設定
   const [listSortMode, setListSortMode] = useState('floor');
@@ -346,7 +348,7 @@ const AdminFacilityVisit_PC = () => {
           const opt = options.find(o => o.service_id === master.id && o.option_name === optionName);
           extraPrice = Number(opt?.additional_price) || 0;
         }
-        return { name: r.members?.name, floor: r.members?.floor, menu: r.menu_name, price: basePrice + extraPrice };
+        return { name: r.members?.name, kana: r.members?.kana, floor: r.members?.floor, menu: r.menu_name, price: basePrice + extraPrice };
       });
 
     setIsFinalizing(true);
@@ -735,36 +737,76 @@ const AdminFacilityVisit_PC = () => {
               zIndex: 1000, display: 'flex', alignItems: 'flex-end', 
               backdropFilter: 'blur(4px)' 
             }}
-            onClick={() => setShowAddModal(false)}
+            onClick={() => { setShowAddModal(false); setAddSearchTerm(''); }}
           >
             <motion.div 
               initial={{ y: "100%" }} 
               animate={{ y: 0 }} 
               exit={{ y: "100%" }}
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              transition={{ type: 'spring', damping: 28, stiffness: 220 }}
               onClick={e => e.stopPropagation()}
               style={{ 
-                background: '#fff', width: '100%', borderTopLeftRadius: '32px', 
-                borderTopRightRadius: '32px', padding: '32px 24px', 
-                maxHeight: '80vh', overflowY: 'auto', boxShadow: '0 -10px 25px rgba(0,0,0,0.1)'
+                background: '#fff', 
+                width: '100%', 
+                height: '100dvh', // 🚀 🆕 高さを画面いっぱいに固定して上まで表示！
+                borderTopLeftRadius: '32px', 
+                borderTopRightRadius: '32px', 
+                padding: '32px 24px 20px', 
+                display: 'flex', 
+                flexDirection: 'column', // 🚀 🆕 検索バー固定＆名簿スクロールを可能にするコンテナ化
+                boxShadow: '0 -10px 25px rgba(0,0,0,0.1)',
+                boxSizing: 'border-box'
               }}
             >
-              {/* ヘッダー部分 */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+              {/* ヘッダー部分（上部固定） */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', color: '#1e293b' }}>追加する方を選択</h3>
                   <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>名簿に未登録の方のみ表示されています</p>
                 </div>
                 <button 
-                  onClick={() => setShowAddModal(false)} 
+                  onClick={() => { setShowAddModal(false); setAddSearchTerm(''); }}
                   style={{ background: '#f1f5f9', border: 'none', borderRadius: '50%', width: '36px', height: '36px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
                   <XCircle size={24} color="#94a3b8" />
                 </button>
               </div>
 
-              {/* メンバーリスト */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+              {/* 検索バー（上部固定） */}
+              <div style={{ position: 'relative', marginBottom: '15px', flexShrink: 0 }}>
+                <input
+                  type="text"
+                  placeholder="名前、ふりがな、部屋番号で検索..."
+                  value={addSearchTerm}
+                  onChange={(e) => setAddSearchTerm(e.target.value)}
+                  style={{
+                    width: '100%',
+                    padding: '14px 16px 14px 44px',
+                    borderRadius: '16px',
+                    border: '2px solid #e2e8f0',
+                    fontSize: '0.95rem',
+                    outline: 'none',
+                    boxSizing: 'border-box',
+                    transition: '0.2s',
+                    fontWeight: 'bold',
+                    color: '#1e293b'
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = '#4f46e5'}
+                  onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
+                />
+                <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
+                {addSearchTerm && (
+                  <button 
+                    onClick={() => setAddSearchTerm('')}
+                    style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
+                  >
+                    クリア
+                  </button>
+                )}
+              </div>
+
+              {/* 並び替えスイッチ（上部固定） */}
+              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0 }}>
                 <button 
                   onClick={() => setSortMode('name')}
                   style={{ 
@@ -787,49 +829,61 @@ const AdminFacilityVisit_PC = () => {
                 </button>
               </div>
 
-              {/* メンバーリスト */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '40px' }}>
+              {/* 📜 メンバーリスト（ここだけが独立して綺麗にスクロールする） */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '40px', paddingRight: '2px' }}>
                 {availableMembers.length === 0 ? (
                   <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#f8fafc', borderRadius: '20px' }}>
                     追加可能なメンバーは全員リストに入っています。
                   </div>
                 ) : (
                   (() => {
-                    let lastLabel = ""; // 🚀 直前のグループ名を記憶する変数
+                    let lastLabel = ""; 
 
-                    // 1. まず、指定されたモードで並び替えを実行
                     const sortedList = [...availableMembers].sort((a, b) => {
                       if (sortMode === 'room') {
-                        // 【階数順】
                         const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
                         const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
                         if (fA !== fB) return fA - fB;
                         return (a.room || "").localeCompare(b.room || "", undefined, { numeric: true });
                       } else {
-                        // 【あいうえお順】🚀 修正：必ず kana（ふりがな）を使って比較する
                         const kanaA = (a.kana || a.name || "").trim();
                         const kanaB = (b.kana || b.name || "").trim();
                         return kanaA.localeCompare(kanaB, 'ja');
                       }
                     });
 
-                    // 2. ループを回して「見出し札」を挟みながら表示
-                    return sortedList.map((m) => {
-                      // 🚀 現在のラベルを決定（階数 or あ行）
-                      let currentLabel = "";
-                      if (sortMode === 'room') {
-                        currentLabel = m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : "階数未設定";
-                      } else {
-                        currentLabel = getKanaGroup(m.kana);
-                      }
+                    // リアルタイム検索フィルターの適用
+                    const toKatakana = (str) => str.replace(/[ぁ-ん]/g, m => String.fromCharCode(m.charCodeAt(0) + 96));
+                    const toHiragana = (str) => str.replace(/[ァ-ン]/g, m => String.fromCharCode(m.charCodeAt(0) - 96));
 
-                      // 🚀 グループが変わったか判定
+                    const filteredList = sortedList.filter(m => {
+                      if (!addSearchTerm) return true;
+                      const term = addSearchTerm.trim().toLowerCase();
+                      const hiraTerm = toHiragana(term);
+                      const kataTerm = toKatakana(term);
+
+                      return (m.name || '').toLowerCase().includes(term) || 
+                             (m.kana || '').toLowerCase().includes(term) || 
+                             (m.kana || '').toLowerCase().includes(hiraTerm) || 
+                             (m.kana || '').toLowerCase().includes(kataTerm) || 
+                             (m.room || '').toLowerCase().includes(term);
+                    });
+
+                    if (filteredList.length === 0) {
+                      return (
+                        <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#f8fafc', borderRadius: '20px' }}>
+                          該当する入居者が見つかりません。
+                        </div>
+                      );
+                    }
+
+                    return filteredList.map((m) => {
+                      let currentLabel = sortMode === 'room' ? (m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : "階数未設定") : getKanaGroup(m.kana);
                       const isNewGroup = currentLabel !== lastLabel;
                       lastLabel = currentLabel;
 
                       return (
                         <React.Fragment key={m.id}>
-                          {/* 🚀 グループ見出しを表示 */}
                           {isNewGroup && (
                             <div style={groupHeaderStyle}>
                               {currentLabel}
@@ -840,12 +894,12 @@ const AdminFacilityVisit_PC = () => {
                             onClick={() => handleAddMember(m)}
                             disabled={isAdding}
                             style={{ 
-                              width: '100%', padding: '20px', borderRadius: '20px', 
+                              width: '100%', padding: '16px 20px', borderRadius: '20px', 
                               border: '1px solid #e2e8f0', background: '#fff', 
                               textAlign: 'left', display: 'flex', justifyContent: 'space-between', 
                               alignItems: 'center', cursor: 'pointer',
                               boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                              marginTop: '4px'
+                              flexShrink: 0
                             }}
                           >
                             <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>

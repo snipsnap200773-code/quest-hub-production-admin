@@ -437,12 +437,31 @@ const handleSave = async (e) => {
   };
 
   // 🚀 🆕 【追加】請求書・領収書の印刷実行ロジック
-  const handlePrintInvoice = (mode, data) => {
+  const handlePrintInvoice = async (mode, data) => {
     const printWin = window.open('', '_blank', 'width=900,height=1000');
+
+    // 🚀 🆕 【超重要】データベースの名簿から、この施設の最新のふりがなマップを自動取得
+    const { data: memberKanas } = await supabase
+      .from('members')
+      .select('name, kana')
+      .eq('facility_user_id', invoiceTarget.facility_user_id);
+
+    const kanaLookup = {};
+    memberKanas?.forEach(m => {
+      if (m.name) kanaLookup[m.name.trim()] = m.kana || "";
+    });
     
     const members = data.flatMap(s => {
       if (s.details?.members_list) {
-        return s.details.members_list.map(m => ({ ...m, date: s.sale_date }));
+        return s.details.members_list.map(m => {
+          const trimmedName = (m.name || "").trim();
+          return { 
+            ...m, 
+            date: s.sale_date,
+            // 🚀 🆕 過去のデータにふりがなが無ければ、今名簿にある最新のふりがなを全自動でドッキング！
+            kana: m.kana || kanaLookup[trimmedName] || ""
+          };
+        });
       }
       return [{
         date: s.sale_date,
@@ -453,7 +472,23 @@ const handleSave = async (e) => {
       }];
     });
 
-    members.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    // 🚀 🆕 理想の3段階ソートを実行！
+    members.sort((a, b) => {
+      // ① まずは日付で比較（古い順）
+      const dateCompare = (a.date || "").localeCompare(b.date || "");
+      if (dateCompare !== 0) return dateCompare;
+
+      // ② 日付が同じなら、フロア・階数で比較（低い階から順：1F ➔ 2F ➔ 3F）
+      const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
+      const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
+      if (fA !== fB) return fA - fB;
+
+      // ③ 日付も階数も同じなら、最後にふりがな（あいうえお順）で並び替え
+      const kanaA = (a.kana || a.name || "").trim();
+      const kanaB = (b.kana || b.name || "").trim();
+      return kanaA.localeCompare(kanaB, 'ja');
+    });
+
     const total = data.reduce((sum, s) => sum + Number(s.total_amount), 0);
     
     let content = `

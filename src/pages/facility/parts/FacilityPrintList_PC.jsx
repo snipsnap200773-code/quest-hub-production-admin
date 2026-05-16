@@ -10,6 +10,7 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   const [lastVisits, setLastVisits] = useState({});
   const [loading, setLoading] = useState(false);
   const [printLayout, setPrintLayout] = useState('portrait'); 
+  const [sortBy, setSortBy] = useState('room');
 
   useEffect(() => { fetchPartners(); }, [facilityId]);
 
@@ -39,13 +40,27 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   };
 
   const floorGroups = useMemo(() => {
-    return members.reduce((acc, m) => {
+    // 🚀 🆕 まず、選択されたモードに合わせてメンバーをソート
+    const sortedMembers = [...members].sort((a, b) => {
+      if (sortBy === 'room') {
+        // 居室・部屋番号順（数値交じりの部屋番号を正しく並び替える）
+        return (a.room || "").localeCompare(b.room || "", undefined, { numeric: true });
+      } else {
+        // あいうえお順（濁点や空白も自動で名寄せして綺麗に並べます）
+        const kanaA = (a.kana || a.name || "").trim();
+        const kanaB = (b.kana || b.name || "").trim();
+        return kanaA.localeCompare(kanaB, 'ja');
+      }
+    });
+
+    // 🚀 ソートが終わった綺麗なデータをフロアごとにグループ化
+    return sortedMembers.reduce((acc, m) => {
       const f = m.floor || '不明';
       if (!acc[f]) acc[f] = [];
       acc[f].push(m);
       return acc;
     }, {});
-  }, [members]);
+  }, [members, sortBy]); // 👈 依存配列に sortBy を追加
 
   // 1. 業者選択画面（共通）
   if (!selectedShop) {
@@ -88,6 +103,13 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
               <button onClick={() => setPrintLayout('portrait')} style={layoutBtn(printLayout === 'portrait')}>縦向き</button>
               <button onClick={() => setPrintLayout('landscape')} style={layoutBtn(printLayout === 'landscape')}>横向き</button>
             </div>
+
+            {/* 🚀 🆕 スマホリモコンに並び順スイッチを追加 */}
+            <p style={{ ...mLabel, marginTop: '20px' }}>並び順を選択</p>
+            <div style={layoutSwitchContainer}>
+              <button onClick={() => setSortBy('room')} style={layoutBtn(sortBy === 'room')}>部屋番号順</button>
+              <button onClick={() => setSortBy('name')} style={layoutBtn(sortBy === 'name')}>あいうえお順</button>
+            </div>
           </div>
 
           <button style={mPrintExecBtn} onClick={() => window.print()}>
@@ -116,6 +138,13 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
         </div>
 
         <div style={{display:'flex', alignItems:'center', gap:'20px'}}>
+          {/* 🚀 🆕 PC版のヘッダーに並び順切り替えを設置 */}
+          <div style={layoutSwitchContainer}>
+            <span style={{fontSize:'0.8rem', fontWeight:'bold', color:'#64748b', marginRight:'5px'}}>並び順：</span>
+            <button onClick={() => setSortBy('room')} style={layoutBtn(sortBy === 'room')}>部屋順</button>
+            <button onClick={() => setSortBy('name')} style={layoutBtn(sortBy === 'name')}>名前順</button>
+          </div>
+
           <div style={layoutSwitchContainer}>
             <span style={{fontSize:'0.8rem', fontWeight:'bold', color:'#64748b', marginRight:'5px'}}>向き：</span>
             <button onClick={() => setPrintLayout('portrait')} style={layoutBtn(printLayout === 'portrait')}>縦向き</button>
