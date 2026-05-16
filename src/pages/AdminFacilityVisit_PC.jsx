@@ -841,11 +841,17 @@ const AdminFacilityVisit_PC = () => {
 
                     const sortedList = [...availableMembers].sort((a, b) => {
                       if (sortMode === 'room') {
+                        // ① まずは階数（フロア）で並び替え（低い階から順）
                         const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
                         const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
                         if (fA !== fB) return fA - fB;
-                        return (a.room || "").localeCompare(b.room || "", undefined, { numeric: true });
+
+                        // 🚀 🆕 ② 階数が同じだった場合、そのフロア内でお名前（あいうえお順）に並び替える！
+                        const kanaA = (a.kana || a.name || "").trim();
+                        const kanaB = (b.kana || b.name || "").trim();
+                        return kanaA.localeCompare(kanaB, 'ja');
                       } else {
+                        // こちらは全体の「あいうえお順」（既存のまま）
                         const kanaA = (a.kana || a.name || "").trim();
                         const kanaB = (b.kana || b.name || "").trim();
                         return kanaA.localeCompare(kanaB, 'ja');
