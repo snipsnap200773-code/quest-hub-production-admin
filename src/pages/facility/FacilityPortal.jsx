@@ -136,23 +136,55 @@ const FacilityPortal = () => {
       const unconList = [];
       const rules = connRes.data?.regular_rules || [];
 
-      // 🚀 アラート判定ロジック
+      // 重複チェック用のセット
+      const processedDates = new Set();
+
+      // 🚀 A: まずは手動キープ（単発や、時間変更した定期）をスキャン
       (mData || []).forEach(k => {
         if (k.date < todayStr) return;
+        processedDates.add(k.date);
 
-        const isRegularDay = checkIsRegularKeep(new Date(k.date), rules);
         const isBooked = (visitData || []).some(v => 
           (v.status === 'confirmed' || v.status === 'completed') && 
           (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
         );
 
-        if (!isBooked && !isRegularDay) {
-          unconList.push(k);
+        if (!isBooked) {
+          const isRegularDay = checkIsRegularKeep(new Date(k.date), rules);
+          unconList.push({ ...k, isRegular: isRegularDay });
+          
           const diffTime = new Date(k.date).getTime() - new Date(todayStr).getTime();
           const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...k, diffDays });
+          if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...k, diffDays, isRegular: isRegularDay });
         }
       });
+
+      // 🚀 B: 次に、手動キープにデータがない「純粋な定期キープの日」も未来30日分自動スキャン
+      const scanDate = new Date();
+      for (let i = 0; i < 30; i++) {
+        const dStr = scanDate.toLocaleDateString('sv-SE');
+        
+        if (!processedDates.has(dStr)) {
+          const isRegularDay = checkIsRegularKeep(scanDate, rules);
+          
+          if (isRegularDay) {
+            const isBooked = (visitData || []).some(v => 
+              (v.status === 'confirmed' || v.status === 'completed') && 
+              (v.scheduled_date === dStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === dStr)))
+            );
+
+            if (!isBooked) {
+              const fakeKeep = { id: `reg-${dStr}`, date: dStr, start_time: '09:00', isRegular: true };
+              unconList.push(fakeKeep);
+
+              const diffTime = scanDate.getTime() - new Date(todayStr).getTime();
+              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...fakeKeep, diffDays });
+            }
+          }
+        }
+        scanDate.setDate(scanDate.getDate() + 1); // 1日進める
+      }
 
       setUrgentKeeps(urgList);
       setUnconfirmedKeeps(unconList); 
@@ -349,7 +381,10 @@ const FacilityPortal = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                   <div style={{ textAlign: 'left' }}>
-                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>未確定の「単発キープ」が {unconfirmedKeeps.length} 件あります</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
+                      {/* 🚀 🆕 修正：日付（YYYY-MM-DD）の頭7文字（YYYY-MM）だけを抽出して、重複のない「月」の数を数えます */}
+                      未確定の「訪問キープ月」が {new Set(unconfirmedKeeps.map(k => k.date.slice(0, 7))).size} 件あります
+                    </div>
                     <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>忘れないうちに「STEP 2: 利用者選択」へ進んでください。</p>
                   </div>
                 </div>
