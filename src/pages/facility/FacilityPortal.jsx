@@ -132,6 +132,8 @@ const FacilityPortal = () => {
       const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
 
       const todayStr = new Date().toLocaleDateString('sv-SE');
+      // 🚀 🆕 修正：夕方の時間(18時など)に影響されないよう、今日の00:00:00を基準日として作成
+      const baseToday = new Date(`${todayStr}T00:00:00`); 
       const urgList = [];
       const unconList = [];
       const rules = connRes.data?.regular_rules || [];
@@ -150,17 +152,20 @@ const FacilityPortal = () => {
         );
 
         if (!isBooked) {
-          const isRegularDay = checkIsRegularKeep(new Date(k.date), rules);
+          const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules);
           unconList.push({ ...k, isRegular: isRegularDay });
           
-          const diffTime = new Date(k.date).getTime() - new Date(todayStr).getTime();
-          const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+          // 🚀 🆕 修正：時刻を00:00に揃えた状態で、純粋な日数差を計算
+          const dObj = new Date(`${k.date}T00:00:00`);
+          const diffTime = dObj.getTime() - baseToday.getTime();
+          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
           if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...k, diffDays, isRegular: isRegularDay });
         }
       });
 
       // 🚀 B: 次に、手動キープにデータがない「純粋な定期キープの日」も未来30日分自動スキャン
-      const scanDate = new Date();
+      // 🚀 🆕 修正：こちらも現在時刻ではなく、今日の00:00スタートに固定！
+      const scanDate = new Date(`${todayStr}T00:00:00`); 
       for (let i = 0; i < 30; i++) {
         const dStr = scanDate.toLocaleDateString('sv-SE');
         
@@ -177,8 +182,9 @@ const FacilityPortal = () => {
               const fakeKeep = { id: `reg-${dStr}`, date: dStr, start_time: '09:00', isRegular: true };
               unconList.push(fakeKeep);
 
-              const diffTime = scanDate.getTime() - new Date(todayStr).getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+              // 🚀 🆕 修正：00:00同士で純粋な引き算を行い、四捨五入で日数をジャッジ
+              const diffTime = scanDate.getTime() - baseToday.getTime();
+              const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
               if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...fakeKeep, diffDays });
             }
           }
