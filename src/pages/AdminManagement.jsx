@@ -1211,7 +1211,8 @@ return (
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
                 <h2 style={{ margin: 0, fontStyle: 'italic', fontSize: isPC ? '1.4rem' : '1.1rem' }}>
-                  台帳：{selectedDate.replace(/-/g, '/')}
+                  {/* 🚀 🆕 曜日を (日) の形式で自動表示するロジックを合流 */}
+                  台帳：{selectedDate.replace(/-/g, '/')} ({['日', '月', '火', '水', '木', '金', '土'][new Date(selectedDate).getDay()]})
                 </h2>
 
                 {/* 🚀 自動売上確定モードONなら一括確定ボタン、OFFなら日付ジャンプ */}
