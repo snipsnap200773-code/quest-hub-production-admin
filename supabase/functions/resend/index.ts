@@ -102,14 +102,35 @@ Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
 
   try {
-const payload = await req.json();
+    const payload = await req.json();
+    
+    // 🚀 🆕 ここから差し込み！！！ ───────────────────────────────
+    const { type } = payload; // まず合言葉（type）だけをピンポイントでチェック
+
+    // 🏆 システム内で使用するすべての正規の合言葉（ホワイトリスト）
+    const allowedTypes = [
+      'remind_all', 'auto_sales_batch', 'signup_otp', 'partnership_approved', 
+      'facility_booking', 'facility_booking_update', 'facility_nudge', 'inquiry', 
+      'CREATE_SHOP_FULL', 'REPAIR_AUTH', 'UPDATE_PASSWORD', 'DELETE_SHOP_FULL', 
+      'welcome', 'booking', 'cancel'
+    ];
+
+    // 🚨 侵入検知：もし合言葉が空っぽだったり、リストにない不審な通信（幽霊リクエスト）が来たら、ここで即座に射殺！
+    if (!type || !allowedTypes.includes(type)) {
+      console.log(`[GUARD] 不審なリクエスト（type: ${type}）を水際でブロックしました。メール誤爆を防ぎます。`);
+      return new Response(JSON.stringify({ success: false, message: "Invalid request type" }), { status: 400, headers: corsHeaders });
+    }
+    // ───────────────────────────────────────────────────────────
+
+    // ─── ここから下は、検問を突破した「本物の通信」だけが通れる安全地帯 ───
     let { 
-      type, shopId, customerEmail, customerName, shopName, 
+      shopId, customerEmail, customerName, shopName, 
       startTime, services, shopEmail, cancelUrl, lineUserId, 
       notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
       reserve_url, password, ownerName, phone, businessType,
       staffName, furigana, address, parking, buildingType, careNotes, 
-      companyName, symptoms, requestDetails, notes, allOptions, custom_answers
+      companyName, symptoms, requestDetails, notes, allOptions, custom_answers,
+      facilityId, facilityEmail, facilityName // 🚀 施設用の変数もここに合流させておくと安全です
     } = payload;
 
     // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
@@ -965,12 +986,6 @@ if (type === 'inquiry') {
 
       const welcomeData = await welcomeRes.json();
       return new Response(JSON.stringify(welcomeData), { status: 200, headers: corsHeaders });
-    }
-
-    // 🚀 🆕 修正：ここでおかしなリクエスト（typeが空など）を完全にシャットアウト！
-    if (type !== 'booking' && type !== 'cancel' && type !== 'facility_booking' && type !== 'facility_booking_update') {
-      console.log(`[GUARD] 想定外のtype（${type}）を検知したため、メール誤爆を防ぐために処理を終了します。`);
-      return new Response(JSON.stringify({ success: false, message: "Invalid notification type" }), { status: 400, headers: corsHeaders });
     }
 
     // ==========================================

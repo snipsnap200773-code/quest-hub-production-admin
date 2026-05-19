@@ -317,6 +317,7 @@ const handleSave = async (e) => {
         if (f && myShop) {
           // 🚀 修正：ハードコードされたURLを廃止し、標準の invoke を使用
           const { error: funcError } = await supabase.functions.invoke('resend', {
+            method: 'POST', // 🚀 🆕 ここにこれを明示的に1行追加！
             body: {
               type: 'partnership_approved',
               shopName: myShop.business_name,
