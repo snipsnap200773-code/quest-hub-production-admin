@@ -519,6 +519,14 @@ if (type === 'facility_booking') {
             <div style="text-align: center; margin-top: 20px;">
               <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #c5a059; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
             </div>
+
+            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+              <p style="margin: 0 0 5px 0;">⚠️ ※本メールは送信専用のシステムより自動送信されています。このメールに直接返信することはできません。</p>
+              <p style="margin: 0;">✉️ <b>${shopName} 様への直接のご連絡・ご相談：</b><br>
+                急なご連絡や調整等は、以下の店舗直通アドレスへ直接メールをお送りください。<br>
+                👉 <a href="mailto:${shopEmail}" style="color: #c5a059; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
+              </p>
+            </div>
           </div>`
       })
     });
@@ -601,6 +609,13 @@ if (type === 'facility_booking_update') {
             <div style="text-align: center; margin-top: 20px;">
               <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #0ea5e9; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルへログイン</a>
             </div>
+
+            <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+              <p style="margin: 0 0 5px 0;">⚠️ ※本メールは送信専用のシステムより自動送信されています。このメールに直接返信することはできません。</p>
+              <p style="margin: 0;">✉️ <b>${shopName} 様への直接のご連絡：</b><br>
+                👉 <a href="mailto:${shopEmail}" style="color: #0ea5e9; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
+              </p>
+            </div>
           </div>`
       })
     });
@@ -659,9 +674,12 @@ if (type === 'facility_nudge') {
         <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面へログインして確定する</a>
       </div>
 
-      <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 30px; border-top: 1px solid #eee; padding-top: 15px;">
-        ※本メールは Quest Hub システムより自動送信されています。
-      </p>
+      <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+        <p style="margin: 0 0 5px 0;">⚠️ ※本メールは送信専用アドレスより自動送信されています。このままご返信いただいても店舗には届きません。</p>
+        <p style="margin: 0;">✉️ <b>本件に関するお問い合わせ（${finalShopName}）：</b><br>
+          👉 <a href="mailto:${shop?.email_contact || shop?.email || shopEmail}" style="color: #3d2b1f; font-weight: bold; text-decoration: underline;">${shop?.email_contact || shop?.email || shopEmail}</a>
+        </p>
+      </div>
     </div>`;
 
   await fetch('https://api.resend.com/emails', {
@@ -1118,11 +1136,15 @@ const sendMail = async (to: string, isOwner: boolean) => {
               
               ${optionsListHtml} 
 
-              ${payload.phone ? `
-                <div style="margin-top: 15px; border-top: 1px solid #eee; padding-top: 15px;">
-                  <a href="tel:${payload.phone}" style="display: inline-block; background: #10b981; color: #fff; padding: 10px 20px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.9rem;">📞 お客様へ電話をかける</a>
-                </div>
-              ` : ''}
+              <div style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
+                ${payload.phone ? `
+                  <a href="tel:${payload.phone}" style="display: inline-block; background: #10b981; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">📞 電話をかける</a>
+                ` : ''}
+                
+                ${(customerEmail && customerEmail !== 'admin@example.com') ? `
+                  <a href="mailto:${customerEmail}" style="display: inline-block; background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">✉️ お客様へメール返信</a>
+                ` : ''}
+              </div>
             </div>
 
             <div style="margin-top: 20px; padding: 15px; border-left: 4px solid #cbd5e1; background: #fff;">
@@ -1176,18 +1198,26 @@ const sendMail = async (to: string, isOwner: boolean) => {
           ` : '';
 
           finalHtml = `
-            <div lang="ja" style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
-              <h2 style="color: #2563eb; margin-top: 0;">${isVisit ? '訪問' : '予約'}確定のお知らせ</h2>
-              <div>${body}</div>
-              
-              ${shopMapHtml} 
+              <div lang="ja" style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
+                <h2 style="color: #2563eb; margin-top: 0;">${isVisit ? '訪問' : '予約'}確定のお知らせ</h2>
+                <div>${body}</div>
+                
+                ${shopMapHtml} 
 
-              ${cancelUrl ? `<p style="font-size: 0.85rem; border-top: 1px solid #eee; padding-top: 15px; margin-top:20px;"><a href="${cancelUrl}" style="color: #2563eb;">ご予約の確認・キャンセルはこちら</a></p>` : ''}
-            </div>`;
+                ${cancelUrl ? `<p style="font-size: 0.85rem; border-top: 1px solid #eee; padding-top: 15px; margin-top:20px;"><a href="${cancelUrl}" style="color: #2563eb;">ご予約の確認・キャンセルはこちら</a></p>` : ''}
+                
+                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
+                  <p style="margin: 0 0 5px 0;">⚠️ <b>ご注意：</b>本メールはシステムより自動送信されています。このメールに直接返信することはできません。</p>
+                  <p style="margin: 0;">✉️ <b>お問い合わせ・ご連絡：</b><br>
+                    ご不明な点や日時の変更等は、店舗の公式メールアドレスへ直接ご連絡ください。<br>
+                    👉 <a href="mailto:${shopEmail}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
+                  </p>
+                </div>
+              </div>`;
+          }
         }
-      }
 
-      return await fetch('https://api.resend.com/emails', {
+        return await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
         body: JSON.stringify({ from: `${shopName} <infec@snipsnap.biz>`, to: [to], subject: finalSubject, html: finalHtml }),
