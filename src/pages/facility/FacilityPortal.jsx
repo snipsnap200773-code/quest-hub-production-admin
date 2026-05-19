@@ -30,6 +30,7 @@ const FacilityPortal = () => {
   const [shopProfile, setShopProfile] = useState(null);
   const [draftCount, setDraftCount] = useState(0); 
   const [totalCapacity, setTotalCapacity] = useState(0);
+  const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   const [urgentKeeps, setUrgentKeeps] = useState([]); 
   const [unconfirmedKeeps, setUnconfirmedKeeps] = useState([]); 
@@ -120,13 +121,16 @@ const FacilityPortal = () => {
       const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
       if (fac) setFacility(fac);
 
-      const [connRes, draftRes] = await Promise.all([
+      const [connRes, draftRes, pendingReqRes] = await Promise.all([
         supabase.from('shop_facility_connections').select('regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').maybeSingle(),
-        supabase.from('visit_list_drafts').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId)
+        supabase.from('visit_list_drafts').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId),
+        // 🚀 🆕 訪問業者（shop）からこの施設宛に届いている「承認待ち」の件数をDBから直接カウント！
+        supabase.from('shop_facility_connections').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId).eq('status', 'pending').eq('created_by_type', 'shop')
       ]);
       
       if (connRes.data) setShopProfile(connRes.data.profiles);
       setDraftCount(draftRes.count || 0);
+      setPendingRequestCount(pendingReqRes.count || 0); // 🚀 🆕 カウント結果をステートに保存！
 
       const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
       const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
@@ -358,6 +362,27 @@ const FacilityPortal = () => {
       <main style={getMainAreaStyle(isMobile)}>
         <div style={{ width: '100%', zIndex: 100 }}>
           <AnimatePresence>
+            {/* 🚀 🆕 【新設】店舗からの新規提携リクエストを最優先で通知するバナー */}
+            {pendingRequestCount > 0 && (
+              <motion.div
+                initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
+                style={{ background: '#f5f3ff', borderBottom: '1px solid #ddd6fe', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                  <span style={{ fontSize: '1.3rem' }}>🎉</span>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#4f46e5' }}>訪問理美容の業者から、新しい「提携リクエスト」が届いています！</div>
+                    <p style={{ fontSize: '0.7rem', color: '#6d28d9', margin: 0 }}>提携を承認すると訪問予約が可能になります。</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setActiveTab('settings')} // 🚀 ポチッと押したら「受付・通知設定」タブへひとっ飛び！
+                  style={{ background: '#4f46e5', color: '#fff', border: 'none', padding: '7px 16px', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', boxShadow: '0 2px 8px rgba(79,70,229,0.25)', transition: '0.2s' }}
+                >
+                  確認・承認する ➔
+                </button>
+              </motion.div>
+            )}
             {urgentKeeps.length > 0 && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}

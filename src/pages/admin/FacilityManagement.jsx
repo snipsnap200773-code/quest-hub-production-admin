@@ -181,6 +181,7 @@ const FacilityManagement = () => {
         ...item.facility_users,
         id: item.facility_users.id,
         status: item.status,
+        created_by_type: item.created_by_type,
         regular_rules: item.regular_rules || [],
         advance_booking_days: item.advance_booking_days || 0,
         connection_id: item.id
@@ -627,7 +628,11 @@ const handleSave = async (e) => {
   };
 
   // 🆕 3. 表示用にリストを「承認待ち」と「提携済み」に分ける
-  const pendingFacilities = facilities.filter(f => f.status === 'pending');
+  const pendingFacilities = facilities.filter(f => f.status === 'pending' && f.created_by_type === 'facility');
+
+  // 💡 🚀 🆕 店舗（自分）からアタックを仕掛けたもの（相手がOKを出すのを待つ側）
+  const outgoingFacilities = facilities.filter(f => f.status === 'pending' && f.created_by_type === 'shop');
+
   const activeFacilities = facilities.filter(f => f.status === 'active');
 
   const openEdit = (f) => {
@@ -869,6 +874,49 @@ const handleSave = async (e) => {
                     )}
                   </div>
                   </motion.div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {/* --- 🚀 🆕 【新設】店舗（自分）から送信した提携申請（相手の承認待ち）セクション --- */}
+          {outgoingFacilities.length > 0 && (
+            <section style={{ marginBottom: '30px' }}>
+              <h3 style={{ ...sectionTitleStyle, color: '#475569' }}>
+                <Clock size={18} color="#475569" /> 送信済みの提携申請（施設側の承認待ち）
+              </h3>
+              <div style={gridStyle}>
+                {outgoingFacilities.map((f) => (
+                  <div key={f.id} style={{ ...cardStyle, border: '1px solid #cbd5e1', background: '#f8fafc' }}>
+                    <div style={cardHeaderStyle}>
+                      <div style={{ flex: 1 }}>
+                        <h2 style={facilityNameStyle}>{f.facility_name}</h2>
+                        <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', marginTop: '4px' }}>
+                          ⏳ 施設へ提携リクエストを送信しました。相手の承認を待っています...
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                        <button 
+                          onClick={() => handleReject(f.connection_id)} 
+                          style={{ ...iconBtnStyle, color: '#64748b', fontSize: '0.8rem', padding: '8px 16px', background: '#fff', fontWeight: 'bold' }}
+                        >
+                          申請を取り消す
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* 💡 ここにある3箇所の infoItem をすべて infoItemStyle に修正しました */}
+                    <div style={{ ...infoGridStyle, marginTop: '15px', opacity: 0.8 }}>
+                      {f.email && <div style={infoItemStyle}><Mail size={14} /> {f.email}</div>}
+                      {f.tel && <div style={infoItemStyle}><Phone size={14} /> {f.tel}</div>}
+                      <div style={infoItemStyle}><User size={14} /> 担当：{f.contact_name || "未登録"}</div>
+                      {f.address && (
+                        <div style={{ ...infoItemStyle, gridColumn: '1 / -1' }}>
+                          <MapPin size={14} /> <span>{f.address}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 ))}
               </div>
             </section>
