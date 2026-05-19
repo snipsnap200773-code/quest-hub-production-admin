@@ -482,7 +482,7 @@ if (type === 'facility_booking') {
           </div>
 
           <div style="margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; border-radius: 8px;">
-            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #948b83; font-weight: bold;">利用者様リスト（共通）:</p>
+            <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #948b83; font-weight: bold;">利用者様リスト:</p>
             <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #3d2b1f;">${residentListText}</pre>
           </div>
 

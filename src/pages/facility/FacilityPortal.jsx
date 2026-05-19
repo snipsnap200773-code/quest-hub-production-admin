@@ -33,7 +33,9 @@ const FacilityPortal = () => {
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
   const [urgentKeeps, setUrgentKeeps] = useState([]); 
-  const [unconfirmedKeeps, setUnconfirmedKeeps] = useState([]); 
+  const [unconfirmedKeeps, setUnconfirmedKeeps] = useState([]);
+  // 🚀 🆕 修正：月単位ではなく、7日前を切った未確定枠をピュアに格納する部屋
+  const [warningKeeps, setWarningKeeps] = useState([]);
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -133,42 +135,48 @@ const FacilityPortal = () => {
       setPendingRequestCount(pendingReqRes.count || 0); // 🚀 🆕 カウント結果をステートに保存！
 
       const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
+      // 💡 確実に確定データをすくうため、隠れ本物カラム【facility_user_id】で検索
       const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
 
       const todayStr = new Date().toLocaleDateString('sv-SE');
-      // 🚀 🆕 修正：夕方の時間(18時など)に影響されないよう、今日の00:00:00を基準日として作成
       const baseToday = new Date(`${todayStr}T00:00:00`); 
       const urgList = [];
+      const warnList = []; // 🚀 🆕 オレンジバナー用の下書き配列
       const unconList = [];
       const rules = connRes.data?.regular_rules || [];
 
-      // 重複チェック用のセット
       const processedDates = new Set();
 
-      // 🚀 A: まずは手動キープ（単発や、時間変更した定期）をスキャン
+      // 🚀 A: まずは手動キープをスキャン
       (mData || []).forEach(k => {
         if (k.date < todayStr) return;
         processedDates.add(k.date);
 
         const isBooked = (visitData || []).some(v => 
           (v.status === 'confirmed' || v.status === 'completed') && 
-          (v.scheduled_date === k.date || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === k.date)))
+          v.scheduled_date === k.date
         );
 
         if (!isBooked) {
           const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules);
           unconList.push({ ...k, isRegular: isRegularDay });
           
-          // 🚀 🆕 修正：時刻を00:00に揃えた状態で、純粋な日数差を計算
           const dObj = new Date(`${k.date}T00:00:00`);
           const diffTime = dObj.getTime() - baseToday.getTime();
           const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...k, diffDays, isRegular: isRegularDay });
+          
+          // 🛑 3日前を切っていたら緊急赤アラートへ
+          if (diffDays >= 0 && diffDays <= 3) {
+            urgList.push({ ...k, diffDays, isRegular: isRegularDay });
+          }
+          // ⚠️ 7日前を切っていたらオレンジアラートへ（月をまたいでいても検知します！）
+          if (diffDays >= 0 && diffDays <= 7) {
+            warnList.push({ ...k, diffDays, isRegular: isRegularDay });
+          }
         }
       });
 
-      // 🚀 B: 次に、手動キープにデータがない「純粋な定期キープの日」も未来30日分自動スキャン
-      // 🚀 🆕 修正：こちらも現在時刻ではなく、今日の00:00スタートに固定！
+      // 🚀 B: 次に手動データがない「純粋な定期キープの日」も未来30日分自動スキャン
       const scanDate = new Date(`${todayStr}T00:00:00`); 
       for (let i = 0; i < 30; i++) {
         const dStr = scanDate.toLocaleDateString('sv-SE');
@@ -179,25 +187,34 @@ const FacilityPortal = () => {
           if (isRegularDay) {
             const isBooked = (visitData || []).some(v => 
               (v.status === 'confirmed' || v.status === 'completed') && 
-              (v.scheduled_date === dStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === dStr)))
+              v.scheduled_date === dStr
             );
 
             if (!isBooked) {
               const fakeKeep = { id: `reg-${dStr}`, date: dStr, start_time: '09:00', isRegular: true };
               unconList.push(fakeKeep);
 
-              // 🚀 🆕 修正：00:00同士で純粋な引き算を行い、四捨五入で日数をジャッジ
               const diffTime = scanDate.getTime() - baseToday.getTime();
               const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-              if (diffDays >= 0 && diffDays <= 3) urgList.push({ ...fakeKeep, diffDays });
+              
+              // 🛑 3日前を切っていたら緊急赤アラートへ
+              if (diffDays >= 0 && diffDays <= 3) {
+                urgList.push({ ...fakeKeep, diffDays });
+              }
+              // ⚠️ 7日前を切っていたらオレンジアラートへ
+              if (diffDays >= 0 && diffDays <= 7) {
+                warnList.push({ ...fakeKeep, diffDays });
+              }
             }
           }
         }
-        scanDate.setDate(scanDate.getDate() + 1); // 1日進める
+        scanDate.setDate(scanDate.getDate() + 1);
       }
 
+      // 🚀 最後に各Stateへ一括セット（前回のややこしい月の引き算は完全消去！）
       setUrgentKeeps(urgList);
       setUnconfirmedKeeps(unconList); 
+      setWarningKeeps(warnList); // 🚀 🆕 オレンジリストをガチッと反映！
 
     } catch (err) {
       console.error("データ取得エラー:", err);
@@ -362,7 +379,7 @@ const FacilityPortal = () => {
       <main style={getMainAreaStyle(isMobile)}>
         <div style={{ width: '100%', zIndex: 100 }}>
           <AnimatePresence>
-            {/* 🚀 🆕 【新設】店舗からの新規提携リクエストを最優先で通知するバナー */}
+            {/* 🚀 ❶ 提携リクエスト（紫バナー） */}
             {pendingRequestCount > 0 && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
@@ -383,7 +400,10 @@ const FacilityPortal = () => {
                 </button>
               </motion.div>
             )}
-            {urgentKeeps.length > 0 && (
+
+            {/* 🚀 ❷ 3日前を過ぎた緊急アラート（赤バナー） */}
+            {/* 💡 修正：名簿作成中(list-up)や確定確認中(booking)のタブの時は、バナーを非表示にします！ */}
+            {urgentKeeps.length > 0 && activeTab !== 'booking' && activeTab !== 'list-up' && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
                 style={{ background: '#fef2f2', borderBottom: '1px solid #fecdd3', padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
@@ -404,19 +424,22 @@ const FacilityPortal = () => {
               </motion.div>
             )}
 
-            {urgentKeeps.length === 0 && unconfirmedKeeps.length > 0 && (
+            {/* 🚀 ❸ 通常の未確定アラート（オレンジバナー） */}
+            {/* 🚀 🆕 【最終解決】7日前カウントダウン方式のオレンジバナー */}
+            {urgentKeeps.length === 0 && warningKeeps.length > 0 && activeTab !== 'booking' && activeTab !== 'list-up' && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
+                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 20px', display: 'flex', justifycontent: 'space-between', alignItems: 'center' }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '1.2rem' }}>⚠️</span>
                   <div style={{ textAlign: 'left' }}>
                     <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#c2410c' }}>
-                      {/* 🚀 🆕 修正：日付（YYYY-MM-DD）の頭7文字（YYYY-MM）だけを抽出して、重複のない「月」の数を数えます */}
-                      「訪問キープ月」が {new Set(unconfirmedKeeps.map(k => k.date.slice(0, 7))).size} 件あります
+                      期日が近づいている「訪問キープ枠」が {warningKeeps.length} 件あります！
                     </div>
-                    <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>「STEP 2: 利用者選択」で希望者を選択してください。</p>
+                    <p style={{ fontSize: '0.7rem', color: '#ea580c', margin: 0 }}>
+                      直近の訪問予定日（<strong>{warningKeeps[0].date.replace(/-/g, '/')}</strong> 等）の名簿を作成し、予約を確定させてください。
+                    </p>
                   </div>
                 </div>
                 <button 
