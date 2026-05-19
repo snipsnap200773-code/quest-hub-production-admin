@@ -311,13 +311,13 @@ const handleSave = async (e) => {
     if (!error) {
       try {
         const f = facilities.find(item => item.connection_id === connectionId);
-        // 1. 店舗の情報を最新の状態で取得
-        const { data: myShop } = await supabase.from('profiles').select('id, business_name, email_contact, email').eq('id', shopId).single();
+        // 1. 店舗の情報を最新の状態で取得（🚀 安全なアスタリスクに変更して400エラーを粉砕します！）
+        const { data: myShop } = await supabase.from('profiles').select('*').eq('id', shopId).single();
 
         if (f && myShop) {
-          // 🚀 修正：ハードコードされたURLを廃止し、標準の invoke を使用
-          const { error: funcError } = await supabase.functions.invoke('resend', {
-            method: 'POST', // 🚀 🆕 ここにこれを明示的に1行追加！
+          // 🚀 修正：method と body を正しい同階層のオプションとして引き渡します
+          const { data: funcData, error: funcError } = await supabase.functions.invoke('resend', {
+            method: 'POST', // 💡 前回の同階層に配置する修正もここにドッキング！
             body: {
               type: 'partnership_approved',
               shopName: myShop.business_name,

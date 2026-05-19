@@ -124,14 +124,13 @@ Deno.serve(async (req) => {
 
     // ─── ここから下は、検問を突破した「本物の通信」だけが通れる安全地帯 ───
     let { 
-      shopId, customerEmail, customerName, shopName, 
-      startTime, services, shopEmail, cancelUrl, lineUserId, 
-      notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
-      reserve_url, password, ownerName, phone, businessType,
-      staffName, furigana, address, parking, buildingType, careNotes, 
-      companyName, symptoms, requestDetails, notes, allOptions, custom_answers,
-      facilityId, facilityEmail, facilityName // 🚀 施設用の変数もここに合流させておくと安全です
-    } = payload;
+              shopId, customerEmail, customerName, shopName, 
+              startTime, services, shopEmail, cancelUrl, lineUserId, 
+              notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
+              reserve_url, password, ownerName, phone, businessType,
+              staffName, furigana, address, parking, buildingType, careNotes, 
+              companyName, symptoms, requestDetails, notes, allOptions, custom_answers
+            } = payload;
 
     // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
     if (type === 'cancel' && payload.reservation) {
