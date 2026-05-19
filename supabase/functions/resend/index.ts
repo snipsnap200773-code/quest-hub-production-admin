@@ -1206,12 +1206,19 @@ const sendMail = async (to: string, isOwner: boolean) => {
 
                 ${cancelUrl ? `<p style="font-size: 0.85rem; border-top: 1px solid #eee; padding-top: 15px; margin-top:20px;"><a href="${cancelUrl}" style="color: #2563eb;">ご予約の確認・キャンセルはこちら</a></p>` : ''}
                 
-                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
-                  <p style="margin: 0 0 5px 0;">⚠️ <b>ご注意：</b>本メールはシステムより自動送信されています。このメールに直接返信することはできません。</p>
-                  <p style="margin: 0;">✉️ <b>お問い合わせ・ご連絡：</b><br>
-                    ご不明な点や日時の変更等は、店舗の公式メールアドレスへ直接ご連絡ください。<br>
-                    👉 <a href="mailto:${shopEmail}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
-                  </p>
+                <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #e2e8f0; font-size: 0.8rem; color: #64748b; line-height: 1.6;">
+                  <p style="margin: 0 0 8px 0;">⚠️ <b>ご注意：</b>本メールは自動送信専用のシステムより送信されています。このメールに直接返信することはできません。</p>
+                  
+                  <div style="background: #f8fafc; padding: 15px; border-radius: 12px; border: 1px solid #e2e8f0; margin-top: 10px;">
+                    <p style="margin: 0 0 8px 0; font-weight: bold; color: #334155;">📞 ご予約の確認・キャンセル</p>
+                    <p style="margin: 0 0 12px 0;">ご予約の確認や取り消しは、上記の「ご予約の確認・キャンセルはこちら」のリンクから画面上でも24時間いつでもお手続きいただけます。</p>
+                    
+                    <p style="margin: 0; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
+                      画面での操作が難しい場合や、急なご連絡、その他ご不明な点がございましたら、恐れ入りますが<b>店舗へ直接お電話またはメール</b>にてご連絡をお願いいたします。<br><br>
+                      ${payload.phone || profile?.phone ? `👉 <b>お電話：</b> <a href="tel:${payload.phone || profile?.phone}" style="color: #10b981; font-weight: bold; text-decoration: underline;">${payload.phone || profile?.phone}</a>（タップで発信）<br>` : ''}
+                      👉 <b>メール：</b> <a href="mailto:${shopEmail}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
+                    </p>
+                  </div>
                 </div>
               </div>`;
           }

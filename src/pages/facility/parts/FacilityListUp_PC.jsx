@@ -23,17 +23,25 @@ const FacilityListUp_PC = ({
   // 🚀 追加：施術希望者（右側）のソート済みリストを計算
   const sortedDraftList = useMemo(() => {
     const combined = [
-      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), // 確定済み
+      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), // 確定済み（pending または completed）
       ...draftList.map(d => ({ ...d, isFromDB: false }))           // 新規追加
     ];
 
     return combined.sort((a, b) => {
-      // 🚀 1. 完了ステータス優先：完了(completed)を 1、未完了を 0 として、完了を下に並べる
-      const aDone = a.status === 'completed' ? 1 : 0;
-      const bDone = b.status === 'completed' ? 1 : 0;
-      if (aDone !== bDone) return aDone - bDone;
+      // 🚀 1. 状態の優先順位をスコア化 (新規=10, 確定済=20, 完了済=30)
+      const getStatusScore = (item) => {
+        if (!item.isFromDB) return 10; // 新規追加（まだDBの予約になっていない）
+        if (item.status === 'completed') return 30; // 完了済み
+        return 20; // 確定済（pending）
+      };
 
-      // 🚀 2. 以下は既存の並び替え（階数 or 名前）
+      const scoreA = getStatusScore(a);
+      const scoreB = getStatusScore(b);
+
+      // スコアが違う場合は、スコアが低い（＝新規や確定済）を上に並べる
+      if (scoreA !== scoreB) return scoreA - scoreB;
+
+      // 🚀 2. 同じステータス同士の中での並び替え（既存の階数 or 名前順）
       const m1 = a.members || {};
       const m2 = b.members || {};
             
@@ -367,10 +375,10 @@ const FacilityListUp_PC = ({
   const removeFromList = async (item) => {
     const table = item.isFromDB ? 'visit_request_residents' : 'visit_list_drafts';
     
-    // 🚀 🆕 お名前を含めた確認メッセージに変更
+    // 🚀 🆕 確定済みメンバーを外す際のメッセージを分かりやすくカスタム
     if (item.isFromDB) {
       const targetName = item.members?.name || 'この方';
-      if (!window.confirm(`${targetName} 様は既に予約が確定していますが、削除してもよろしいですか？`)) return;
+      if (!window.confirm(`⚠️【予約キャンセル確認】\n${targetName} 様はすでに今月の予約として確定しています。\nこのリストから外すと、今回の訪問予定メンバーからキャンセル（削除）されますが、よろしいですか？`)) return;
     }
 
     const { error } = await supabase.from(table).delete().eq('id', item.id);
@@ -655,77 +663,125 @@ const FacilityListUp_PC = ({
           const isNewGroup = currentLabel !== lastLabel;
           lastLabel = currentLabel;
 
+// 🚀 🆕 トリプル出し分けロジックの定義
+          const isCompleted = item.status === 'completed'; // 完了済み
+          const isConfirmed = item.isFromDB && item.status !== 'completed'; // 確定済み（まだ施術前）
+          const isNewDraft = !item.isFromDB; // 新規追加分
+
+          // 状態に合わせたカードの「背景色」「枠線」「影」を決定
+          let cardBg = '#fff';
+          let cardBorder = '2px solid #c5a059';
+          let cardShadow = '0 4px 15px rgba(197, 160, 89, 0.1)';
+          let cardOpacity = 1;
+
+          if (isCompleted) {
+            cardBg = '#f1f5f9'; // 完了済みはグレーアウト
+            cardBorder = '1px solid #cbd5e1';
+            cardShadow = 'none';
+            cardOpacity = 0.75;
+          } else if (isConfirmed) {
+            cardBg = '#f0fdf4'; // 確定済みは優しいグリーン背景
+            cardBorder = '2px solid #10b981'; // グリーン枠
+            cardShadow = '0 4px 12px rgba(16, 185, 129, 0.08)';
+          }
+
           return (
-  <motion.div 
-    key={item.id} 
-    layout 
-    initial={{ opacity: 0, y: 10 }} 
-    animate={{ opacity: 1, y: 0 }} 
-    exit={{ opacity: 0, scale: 0.95 }}
-    style={{ marginBottom: '10px' }}
-  >
-    {isNewGroup && (
-      <div style={groupHeaderStyle}>
-        {currentLabel}
-      </div>
-    )}
-    
-    {/* 🚀 修正：完了済み(completed)なら背景を灰色、操作不可(not-allowed)にする */}
-    <div style={{
-      ...selectedCard,
-      background: item.status === 'completed' ? '#f1f5f9' : '#fff',
-      borderColor: item.status === 'completed' ? '#cbd5e1' : '#c5a059',
-      opacity: item.status === 'completed' ? 0.7 : 1,
-      cursor: item.status === 'completed' ? 'not-allowed' : 'default',
-      boxShadow: item.status === 'completed' ? 'none' : '0 4px 15px rgba(197, 160, 89, 0.1)'
-    }}>
-      <div style={{flex: 1}}>
-        <div style={resInfo}>
-          <span style={roomBadgeSimple}>{item.members?.room || "---"}</span>
-          <span style={nameTextMain}>
-            {res.name} 様
-            {/* 🚀 🆕 完了バッジを表示 */}
-            {item.status === 'completed' && (
-              <span style={{ fontSize: '0.65rem', color: '#059669', marginLeft: '8px', fontWeight: '900', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px' }}>
-                ✅ 完了済み
-              </span>
-            )}
-          </span>
-        </div>
-        
-        <div style={menuRow}>
-          {/* 🚀 修正：完了済みならメニュー選択を「ただの表示」にして変更不可にする */}
-          {item.status === 'completed' ? (
-            <div style={{ padding: '8px 12px', fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
-              メニュー：{item.menu_name}
-            </div>
-          ) : (
-            <select 
-              value={item.menu_name} 
-              onChange={(e) => updateMenu(item, e.target.value)} 
-              style={menuSelect}
+            <motion.div 
+              key={item.id} 
+              layout 
+              initial={{ opacity: 0, y: 10 }} 
+              animate={{ opacity: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95 }}
+              style={{ marginBottom: '10px' }}
             >
-              {shopServices.map(s => (
-                <option key={s.name} value={s.name}>{s.name}</option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-      
-      {/* 🚀 修正：完了済みでなければ「削除ボタン」を表示。完了済みなら「チェックアイコン」を出す */}
-      {item.status !== 'completed' ? (
-        <button onClick={() => removeFromList(item)} style={removeBtn}>
-          <UserMinus size={20} />
-        </button>
-      ) : (
-        <div style={{ padding: '10px', color: '#10b981' }}>
-          <CheckCircle2 size={24} />
-        </div>
-      )}
-    </div>
-  </motion.div>
-);
+              {isNewGroup && (
+                <div style={groupHeaderStyle}>
+                  {currentLabel}
+                </div>
+              )}
+              
+              <div style={{
+                ...selectedCard,
+                background: cardBg,
+                borderColor: cardBorder.split(' ')[2], // スタイルオブジェクトの都合上、カラー部分を抽出
+                border: cardBorder,
+                opacity: cardOpacity,
+                boxShadow: cardShadow,
+                cursor: isCompleted ? 'not-allowed' : 'default',
+              }}>
+                <div style={{ flex: 1 }}>
+                  <div style={resInfo}>
+                    <span style={{
+                      ...roomBadgeSimple,
+                      background: isCompleted ? '#64748b' : (isConfirmed ? '#10b981' : '#3d2b1f')
+                    }}>{item.members?.room || "---"}</span>
+                    
+                    <span style={nameTextMain}>
+                      {res.name} 様
+                      
+                      {/* 🚀 🆕 状態に合わせたバッジ表示 */}
+                      {isCompleted && (
+                        <span style={{ fontSize: '0.65rem', color: '#059669', marginLeft: '8px', fontWeight: '900', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px' }}>
+                          ✅ 施術完了
+                        </span>
+                      )}
+                      {isConfirmed && (
+                        <span style={{ fontSize: '0.65rem', color: '#047857', marginLeft: '8px', fontWeight: '900', background: '#e6fbf1', padding: '2px 6px', border: '1px solid #a7f3d0', borderRadius: '4px' }}>
+                          📌 予約確定済
+                        </span>
+                      )}
+                      {isNewDraft && (
+                        <span style={{ fontSize: '0.65rem', color: '#b45309', marginLeft: '8px', fontWeight: '900', background: '#fef3c7', padding: '2px 6px', borderRadius: '4px' }}>
+                          ✨ 追加分
+                        </span>
+                      )}
+                    </span>
+                  </div>
+                  
+                  <div style={menuRow}>
+                    {/* 🚀 完了済みならメニュー選択を完全ロック、それ以外なら変更可能 */}
+                    {isCompleted ? (
+                      <div style={{ padding: '6px 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>
+                        メニュー：{item.menu_name}
+                      </div>
+                    ) : (
+                      <select 
+                        value={item.menu_name} 
+                        onChange={(e) => updateMenu(item, e.target.value)} 
+                        style={{
+                          ...menuSelect,
+                          borderColor: isConfirmed ? '#a7f3d0' : '#e2e8f0'
+                        }}
+                      >
+                        {shopServices.map(s => (
+                          <option key={s.name} value={s.name}>{s.name}</option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+                </div>
+                
+                {/* 🚀 削除ボタンエリア：完了済みなら非表示に、それ以外なら「×」または「外す」ボタン */}
+                {isCompleted ? (
+                  <div style={{ padding: '10px', color: '#94a3b8' }}>
+                    <CheckCircle2 size={24} />
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => removeFromList(item)} 
+                    style={{
+                      ...removeBtn,
+                      border: isConfirmed ? '1px solid #fca5a5' : '1px solid #fee2e2',
+                      background: '#fff'
+                    }}
+                    title={isConfirmed ? "予約をキャンセルしてリストから外す" : "リストから削除"}
+                  >
+                    <UserMinus size={20} />
+                  </button>
+                )}
+              </div>
+            </motion.div>
+          );
         });
       })()}
     </AnimatePresence>
