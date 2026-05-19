@@ -555,9 +555,12 @@ const { data: resData } = await supabase
     setManualKeeps(mData || []); 
     setExclusions(exclData?.map(e => e.excluded_date) || []);
     
-    // 🚀 🆕 【修正】単発キープ ＆ 定期キープ ＆ 期限間近キープ の全網羅抽出
-    const todayStr = getJapanDateStr(new Date());
-    const baseToday = new Date(`${todayStr}T00:00:00`);
+    // 🚀 🆕 修正：ここから下の「仕分け＆自動スキャン」をこの無敵バージョンに差し替えます
+    const today = new Date();
+    // 💡 タイムゾーンのバグを地球上から消し去るため、年・月・日を数値で指定してローカルの00:00:00を強制作成
+    const baseToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+    const todayStr = getJapanDateStr(baseToday);
+    
     const irregularList = [];
     const urgentList = []; 
     const timeChangedList = []; 
@@ -580,7 +583,10 @@ const { data: resData } = await supabase
       let isRegularDay = false;
       let originalRuleTime = null; 
 
-      const dObj = new Date(`${k.date}T00:00:00`); // 💡 修正：時刻を00:00に固定して時差ボケを防ぐ
+      // 💡 データベースの「2026-05-20」を数値にバラして、時差の起きないローカル日付を生成
+      const [y, mon, d] = k.date.split('-').map(Number);
+      const dObj = new Date(y, mon - 1, d);
+
       const day = dObj.getDay();
       const dom = dObj.getDate();
       const m = dObj.getMonth() + 1;
@@ -607,7 +613,7 @@ const { data: resData } = await supabase
         });
       }
 
-      // 💡 修正：基準時間（baseToday）からの純粋な日数差を計算
+      // 💡 00:00:00同士の純粋な引き算なので、いつでも確実に「1日、2日」と完璧に四捨五入できます
       const diffTime = dObj.getTime() - baseToday.getTime();
       const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); 
 
@@ -615,17 +621,10 @@ const { data: resData } = await supabase
         if (originalRuleTime && k.start_time.substring(0, 5) !== originalRuleTime) {
           timeChangedList.push({ ...k, originalTime: originalRuleTime });
         }
-        // 📅 定期お約束日の未確定 ➔ 3日前を切ったら緊急赤アラート（urgentList）へ
         if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: true });
       } else {
-        // ⚠️ 単発キープ（イレギュラー）の場合
-        if (diffDays >= 0 && diffDays <= 3) {
-          // 🚀 🆕 3日前を切ったら、定期キープと同じく最優先の🚨緊急赤アラート（つつく・解放有効）へ合流！
-          urgentList.push({ ...k, diffDays, isRegular: false });
-        } else {
-          // 🚀 🆕 3日前より前なら、新着のメッセージ・相談枠として独立した青アラート（既読消去有効）へ！
-          irregularList.push({ ...k, diffDays, isRegular: false });
-        }
+        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: false });
+        else irregularList.push({ ...k, isRegular: false });
       }
     });
 
@@ -633,9 +632,8 @@ const { data: resData } = await supabase
     (connData || []).forEach(conn => {
       if (!conn.regular_rules) return;
       
-      // 💡 【超重要バグ修正】現在の「夕方18時」などの時刻を完全にリセット！
-      // 毎日24時間いつでも完全に「20日の00:00 − 17日の00:00 ＝ まるまる3日」と正しく計算させます。
-      const scanDate = new Date(`${todayStr}T00:00:00`);
+      // 💡 スキャン開始日もローカルの00:00:00で安全に初期化
+      const scanDate = new Date(baseToday.getFullYear(), baseToday.getMonth(), baseToday.getDate());
       
       for (let i = 0; i < 30; i++) {
         const dStr = getJapanDateStr(scanDate);
@@ -668,11 +666,9 @@ const { data: resData } = await supabase
             }
           });
 
-          // 定期除外に入っていないかもチェック
           const isExcluded = exclusions.includes(dStr);
 
           if (isRegularDay && !isExcluded) {
-            // すでに予約確定しているかチェック
             const isBooked = (visitData || []).some(v => 
               (v.status === 'confirmed' || v.status === 'completed') && 
               v.facility_user_id === conn.facility_user_id &&
@@ -692,76 +688,6 @@ const { data: resData } = await supabase
               const diffTime = scanDate.getTime() - baseToday.getTime();
               const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
 
-              // 3日前を切った時だけ緊急アラート（urgentList）にいれる！
-              if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
-            }
-          }
-        }
-        scanDate.setDate(scanDate.getDate() + 1);
-      }
-    });
-
-    // 🚀 B: 次に、各提携施設の「手動データがない純粋な定期キープの日」も未来30日分自動スキャン
-    (connData || []).forEach(conn => {
-      if (!conn.regular_rules) return;
-      
-      const scanDate = new Date();
-      for (let i = 0; i < 30; i++) {
-        const dStr = getJapanDateStr(scanDate);
-        const comboKey = `${conn.facility_user_id}_${dStr}`;
-
-        if (!processedKeys.has(comboKey) && dStr >= todayStr) {
-          const day = scanDate.getDay();
-          const dom = scanDate.getDate();
-          const m = scanDate.getMonth() + 1;
-          const nthWeek = Math.ceil(dom / 7);
-          
-          const tempNext = new Date(scanDate); tempNext.setDate(dom + 7);
-          const isLastWeek = tempNext.getMonth() !== scanDate.getMonth();
-          const tempNext2 = new Date(scanDate); tempNext2.setDate(dom + 14);
-          const isSecondToLastWeek = (tempNext2.getMonth() !== scanDate.getMonth()) && !isLastWeek;
-
-          let isRegularDay = false;
-          let regTime = '09:00';
-
-          conn.regular_rules.forEach(rule => {
-            const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
-            const dayMatch = (rule.day === day);
-            let weekMatch = (rule.week === nthWeek);
-            if (rule.week === -1) weekMatch = isLastWeek;
-            if (rule.week === -2) weekMatch = isSecondToLastWeek;
-
-            if (monthMatch && dayMatch && weekMatch) {
-              isRegularDay = true;
-              regTime = rule.time || '09:00';
-            }
-          });
-
-          // 定期除外に入っていないかもチェック
-          const isExcluded = exclusions.includes(dStr);
-
-          if (isRegularDay && !isExcluded) {
-            // すでに予約確定しているかチェック
-            const isBooked = (visitData || []).some(v => 
-              (v.status === 'confirmed' || v.status === 'completed') && 
-              v.facility_user_id === conn.facility_user_id &&
-              (v.scheduled_date === dStr)
-            );
-
-            if (!isBooked) {
-              const fakeKeep = { 
-                id: `reg-${conn.facility_user_id}-${dStr}`, 
-                date: dStr, 
-                start_time: regTime, 
-                facility_user_id: conn.facility_user_id,
-                facility_users: conn.facility_users,
-                isRegular: true 
-              };
-
-              const diffTime = scanDate.getTime() - new Date(todayStr).getTime();
-              const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-
-              // 🚀 修正：3日前を切った時だけ緊急アラート（urgentList）にいれる！4日以上先ならスルー！
               if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
             }
           }

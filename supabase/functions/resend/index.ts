@@ -967,6 +967,12 @@ if (type === 'inquiry') {
       return new Response(JSON.stringify(welcomeData), { status: 200, headers: corsHeaders });
     }
 
+    // 🚀 🆕 修正：ここでおかしなリクエスト（typeが空など）を完全にシャットアウト！
+    if (type !== 'booking' && type !== 'cancel' && type !== 'facility_booking' && type !== 'facility_booking_update') {
+      console.log(`[GUARD] 想定外のtype（${type}）を検知したため、メール誤爆を防ぐために処理を終了します。`);
+      return new Response(JSON.stringify({ success: false, message: "Invalid notification type" }), { status: 400, headers: corsHeaders });
+    }
+
     // ==========================================
     // 🚀 パターンB・D・E：予約完了 ＆ キャンセル通知 (三土手さん指定の5パターン)
     // ==========================================
