@@ -58,6 +58,13 @@ const AdminFacilityVisit_PC = () => {
   const [availableMembers, setAvailableMembers] = useState([]);
   const [isAdding, setIsAdding] = useState(false);
   const [sortMode, setSortMode] = useState('name');
+
+  // 🚀 🆕 スピード新規登録フォーム用の入力State
+  const [quickName, setQuickName] = useState('');
+  const [quickKana, setQuickKana] = useState('');
+  const [quickRoom, setQuickRoom] = useState('');
+  const [quickFloor, setQuickFloor] = useState('');
+
   const [lastVisits, setLastVisits] = useState({});
   const [addSearchTerm, setAddSearchTerm] = useState('');
 
@@ -289,6 +296,67 @@ const AdminFacilityVisit_PC = () => {
       alert("追加に失敗しました。");
     }
     setIsAdding(false);
+  };
+
+  // 🚀 🆕 【新設】名簿にない方をその場でスピード登録 ➔ 今日のタスクへドッキングさせる関数
+  const handleQuickRegisterAndAdd = async (e) => {
+    e.preventDefault();
+    if (!quickName.trim()) return alert("お名前を入力してください。");
+    
+    setIsAdding(true);
+    try {
+      // 🌟 ステップ1: 施設の基本名簿（membersテーブル）にササッと新規登録！
+      const { data: newMember, error: memErr } = await supabase
+        .from('members')
+        .select('*')
+        .insert([{
+          facility_user_id: visit.facility_user_id,
+          facility: visit.facility_users?.facility_name, // 施設名も自動補填
+          name: quickName.trim(),
+          kana: quickKana.trim(),
+          room: quickRoom.trim() || '---',
+          floor: quickFloor || '1F',
+          memo: '当日の現場でのスピード登録' // 施設側への目印
+        }])
+        .select()
+        .single();
+
+      if (memErr) throw memErr;
+
+      // 🌟 ステップ2: 登録できたてのほやほやのIDを使って、本日の施術タスクへドッキング！
+      const targetId = visit.parent_id || visit.id;
+      const { data: newResident, error: resErr } = await supabase
+        .from('visit_request_residents')
+        .insert([{
+          visit_request_id: targetId,
+          member_id: newMember.id,
+          status: 'pending',
+          menu_name: 'カット' 
+        }])
+        .select('*, members(name, kana, room, floor)') 
+        .single();
+
+      if (resErr) throw resErr;
+
+      // 🌟 ステップ3: 画面のStateを更新してモーダルを閉じる
+      setResidents([...residents, newResident]);
+      
+      // 入力欄をお掃除
+      setQuickName('');
+      setQuickKana('');
+      setQuickRoom('');
+      setQuickFloor('');
+      setAddSearchTerm('');
+      setShowAddModal(false);
+      
+      showMsg(`✨ ${newMember.name} 様を名簿に新しく登録し、本日のリストに追加しました！`);
+
+    } catch (err) {
+      console.error("Quick Register Error:", err);
+      alert("スピード登録に失敗しました: " + err.message);
+    } finally {
+      setIsAdding(false);
+    }
   };
   // 🏢 ここまで復活！！ ==========================================
 
@@ -748,21 +816,21 @@ const AdminFacilityVisit_PC = () => {
               style={{ 
                 background: '#fff', 
                 width: '100%', 
-                height: '100dvh', // 🚀 🆕 高さを画面いっぱいに固定して上まで表示！
+                height: '92dvh', // 🚀 🆕 画面上部に少しだけ「戻る隙間」を残した絶妙な高さに変更
                 borderTopLeftRadius: '32px', 
                 borderTopRightRadius: '32px', 
-                padding: '32px 24px 20px', 
+                padding: '24px 20px', 
                 display: 'flex', 
-                flexDirection: 'column', // 🚀 🆕 検索バー固定＆名簿スクロールを可能にするコンテナ化
+                flexDirection: 'column', 
                 boxShadow: '0 -10px 25px rgba(0,0,0,0.1)',
                 boxSizing: 'border-box'
               }}
             >
-              {/* ヘッダー部分（上部固定） */}
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexShrink: 0 }}>
+              {/* モーダルのヘッダー（ここは上部に固定） */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px', flexShrink: 0 }}>
                 <div>
                   <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: '900', color: '#1e293b' }}>追加する方を選択</h3>
-                  <p style={{ margin: '4px 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>名簿に未登録の方のみ表示されています</p>
+                  <p style={{ margin: '2px 0 0', fontSize: '0.75rem', color: '#94a3b8' }}>既存の名簿から選ぶか、新しく登録できます</p>
                 </div>
                 <button 
                   onClick={() => { setShowAddModal(false); setAddSearchTerm(''); }}
@@ -772,162 +840,129 @@ const AdminFacilityVisit_PC = () => {
                 </button>
               </div>
 
-              {/* 検索バー（上部固定） */}
-              <div style={{ position: 'relative', marginBottom: '15px', flexShrink: 0 }}>
-                <input
-                  type="text"
-                  placeholder="名前、ふりがな、部屋番号で検索..."
-                  value={addSearchTerm}
-                  onChange={(e) => setAddSearchTerm(e.target.value)}
-                  style={{
-                    width: '100%',
-                    padding: '14px 16px 14px 44px',
-                    borderRadius: '16px',
-                    border: '2px solid #e2e8f0',
-                    fontSize: '0.95rem',
-                    outline: 'none',
-                    boxSizing: 'border-box',
-                    transition: '0.2s',
-                    fontWeight: 'bold',
-                    color: '#1e293b'
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = '#4f46e5'}
-                  onBlur={(e) => e.target.style.borderColor = '#e2e8f0'}
-                />
-                <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
-                {addSearchTerm && (
-                  <button 
-                    onClick={() => setAddSearchTerm('')}
-                    style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}
-                  >
-                    クリア
-                  </button>
-                )}
-              </div>
-
-              {/* 並び替えスイッチ（上部固定） */}
-              <div style={{ display: 'flex', gap: '10px', marginBottom: '15px', flexShrink: 0 }}>
-                <button 
-                  onClick={() => setSortMode('name')}
-                  style={{ 
-                    flex: 1, padding: '10px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', border: 'none',
-                    background: sortMode === 'name' ? '#4f46e5' : '#f1f5f9',
-                    color: sortMode === 'name' ? '#fff' : '#64748b', cursor: 'pointer'
-                  }}
-                >
-                  あいうえお順
-                </button>
-                <button 
-                  onClick={() => setSortMode('room')}
-                  style={{ 
-                    flex: 1, padding: '10px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', border: 'none',
-                    background: sortMode === 'room' ? '#4f46e5' : '#f1f5f9',
-                    color: sortMode === 'room' ? '#fff' : '#64748b', cursor: 'pointer'
-                  }}
-                >
-                  階数順
-                </button>
-              </div>
-
-              {/* 📜 メンバーリスト（ここだけが独立して綺麗にスクロールする） */}
-              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingBottom: '40px', paddingRight: '2px' }}>
-                {availableMembers.length === 0 ? (
-                  <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#f8fafc', borderRadius: '20px' }}>
-                    追加可能なメンバーは全員リストに入っています。
+              {/* 📜 🚀 🆕 ここが超重要！スピードフォームと名簿の全体を「ぬるぬるスクロール」させる大部屋コンテナ */}
+              <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '15px', paddingRight: '2px', WebkitOverflowScrolling: 'touch' }}>
+                
+                {/* 📝 スピード新規登録フォーム（スクロール内に配置してスマホでも潰れないデザインに！） */}
+                <form onSubmit={handleQuickRegisterAndAdd} style={{ background: '#fdfaee', padding: '16px', borderRadius: '20px', border: '2px dashed #cbd5e1', display: 'flex', flexDirection: 'column', gap: '12px', flexShrink: 0 }}>
+                  <div style={{ fontSize: '0.8rem', fontWeight: '900', color: '#b45309' }}>
+                    📝 名簿にない方をその場で新しく登録する
                   </div>
-                ) : (
-                  (() => {
-                    let lastLabel = ""; 
+                  
+                  {/* スマホの横幅を考慮して、入力欄は1行ずつ縦並びに配置 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <input type="text" placeholder="お名前（例：鈴木 一郎）" value={quickName} onChange={(e) => setQuickName(e.target.value)} style={{ padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} />
+                    <input type="text" placeholder="ふりがな（すずき いちろう）" value={quickKana} onChange={(e) => setQuickKana(e.target.value)} style={{ padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} />
+                  </div>
+                  
+                  {/* 部屋・階数・決定ボタンの配置をスマホに最適化 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+                    <input type="text" placeholder="部屋番号（101）" value={quickRoom} onChange={(e) => setQuickRoom(e.target.value)} style={{ padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '0.9rem', width: '100%', boxSizing: 'border-box' }} />
+                    <select value={quickFloor} onChange={(e) => setQuickFloor(e.target.value)} style={{ padding: '12px', borderRadius: '12px', border: '1px solid #cbd5e1', fontSize: '0.9rem', background: '#fff', width: '100%', boxSizing: 'border-box', fontWeight: 'bold' }}>
+                      <option value="1F">1F</option>
+                      <option value="2F">2F</option>
+                      <option value="3F">3F</option>
+                      <option value="4F">4F</option>
+                      <option value="5F">5F</option>
+                    </select>
+                  </div>
+                  
+                  {/* 登録確定ボタンを一番下にドカンと配置して押しやすく！ */}
+                  <button type="submit" disabled={isAdding || !quickName} style={{ width: '100%', padding: '14px', background: !quickName ? '#cbd5e1' : '#b45309', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: !quickName ? 'default' : 'pointer', boxShadow: !quickName ? 'none' : '0 4px 10px rgba(180, 83, 9, 0.2)', transition: '0.2s' }}>
+                    {isAdding ? '登録中...' : '✨ 新規登録してリストに追加'}
+                  </button>
+                </form>
 
-                    const sortedList = [...availableMembers].sort((a, b) => {
-                      if (sortMode === 'room') {
-                        // ① まずは階数（フロア）で並び替え（低い階から順）
-                        const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
-                        const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
-                        if (fA !== fB) return fA - fB;
+                <div style={{ height: '1px', background: '#e2e8f0', margin: '5px 0' }} />
 
-                        // 🚀 🆕 ② 階数が同じだった場合、そのフロア内でお名前（あいうえお順）に並び替える！
-                        const kanaA = (a.kana || a.name || "").trim();
-                        const kanaB = (b.kana || b.name || "").trim();
-                        return kanaA.localeCompare(kanaB, 'ja');
-                      } else {
-                        // こちらは全体の「あいうえお順」（既存のまま）
-                        const kanaA = (a.kana || a.name || "").trim();
-                        const kanaB = (b.kana || b.name || "").trim();
-                        return kanaA.localeCompare(kanaB, 'ja');
+                {/* 🔍 既存名簿用の検索バー */}
+                <div style={{ position: 'relative', flexShrink: 0 }}>
+                  <input
+                    type="text"
+                    placeholder="名前、ふりがな、部屋番号で検索..."
+                    value={addSearchTerm}
+                    onChange={(e) => setAddSearchTerm(e.target.value)}
+                    style={{ width: '100%', padding: '14px 16px 14px 44px', borderRadius: '16px', border: '2px solid #e2e8f0', fontSize: '0.95rem', outline: 'none', boxSizing: 'border-box', fontWeight: 'bold', color: '#1e293b' }}
+                  />
+                  <Search size={18} color="#94a3b8" style={{ position: 'absolute', left: '16px', top: '50%', transform: 'translateY(-50%)' }} />
+                  {addSearchTerm && (
+                    <button onClick={() => setAddSearchTerm('')} style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 'bold' }}>クリア</button>
+                  )}
+                </div>
+
+                {/* 🔄 並び替えスイッチ */}
+                <div style={{ display: 'flex', gap: '10px', flexShrink: 0 }}>
+                  <button onClick={() => setSortMode('name')} style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', border: 'none', background: sortMode === 'name' ? '#4f46e5' : '#f1f5f9', color: sortMode === 'name' ? '#fff' : '#64748b', cursor: 'pointer' }}>あいうえお順</button>
+                  <button onClick={() => setSortMode('room')} style={{ flex: 1, padding: '10px', borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', border: 'none', background: sortMode === 'room' ? '#4f46e5' : '#f1f5f9', color: sortMode === 'room' ? '#fff' : '#64748b', cursor: 'pointer' }}>階数順</button>
+                </div>
+
+                {/* 👥 名簿の一覧表示部分 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {availableMembers.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8', background: '#f8fafc', borderRadius: '20px' }}>追加可能なメンバーはいません。</div>
+                  ) : (
+                    (() => {
+                      let lastLabel = ""; 
+                      const sortedList = [...availableMembers].sort((a, b) => {
+                        if (sortMode === 'room') {
+                          const fA = parseInt(String(a.floor).replace(/[^0-9]/g, '')) || 999;
+                          const fB = parseInt(String(b.floor).replace(/[^0-9]/g, '')) || 999;
+                          if (fA !== fB) return fA - fB;
+                          return (a.kana || a.name || "").trim().localeCompare((b.kana || b.name || "").trim(), 'ja');
+                        } else {
+                          return (a.kana || a.name || "").trim().localeCompare((b.kana || b.name || "").trim(), 'ja');
+                        }
+                      });
+
+                      const toKatakana = (str) => str.replace(/[ぁ-ん]/g, m => String.fromCharCode(m.charCodeAt(0) + 96));
+                      const toHiragana = (str) => str.replace(/[ァ-ン]/g, m => String.fromCharCode(m.charCodeAt(0) - 96));
+
+                      const filteredList = sortedList.filter(m => {
+                        if (!addSearchTerm) return true;
+                        const term = addSearchTerm.trim().toLowerCase();
+                        return (m.name || '').toLowerCase().includes(term) || 
+                               (m.kana || '').toLowerCase().includes(term) || 
+                               (m.kana || '').toLowerCase().includes(toHiragana(term)) || 
+                               (m.kana || '').toLowerCase().includes(toKatakana(term)) || 
+                               (m.room || '').toLowerCase().includes(term);
+                      });
+
+                      if (filteredList.length === 0) {
+                        return <div style={{ textAlign: 'center', padding: '30px', color: '#94a3b8' }}>見つかりません。</div>;
                       }
-                    });
 
-                    // リアルタイム検索フィルターの適用
-                    const toKatakana = (str) => str.replace(/[ぁ-ん]/g, m => String.fromCharCode(m.charCodeAt(0) + 96));
-                    const toHiragana = (str) => str.replace(/[ァ-ン]/g, m => String.fromCharCode(m.charCodeAt(0) - 96));
+                      return filteredList.map((m) => {
+                        let currentLabel = sortMode === 'room' ? (m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : "未設定") : getKanaGroup(m.kana);
+                        const isNewGroup = currentLabel !== lastLabel;
+                        lastLabel = currentLabel;
 
-                    const filteredList = sortedList.filter(m => {
-                      if (!addSearchTerm) return true;
-                      const term = addSearchTerm.trim().toLowerCase();
-                      const hiraTerm = toHiragana(term);
-                      const kataTerm = toKatakana(term);
-
-                      return (m.name || '').toLowerCase().includes(term) || 
-                             (m.kana || '').toLowerCase().includes(term) || 
-                             (m.kana || '').toLowerCase().includes(hiraTerm) || 
-                             (m.kana || '').toLowerCase().includes(kataTerm) || 
-                             (m.room || '').toLowerCase().includes(term);
-                    });
-
-                    if (filteredList.length === 0) {
-                      return (
-                        <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#f8fafc', borderRadius: '20px' }}>
-                          該当する入居者が見つかりません。
-                        </div>
-                      );
-                    }
-
-                    return filteredList.map((m) => {
-                      let currentLabel = sortMode === 'room' ? (m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : "階数未設定") : getKanaGroup(m.kana);
-                      const isNewGroup = currentLabel !== lastLabel;
-                      lastLabel = currentLabel;
-
-                      return (
-                        <React.Fragment key={m.id}>
-                          {isNewGroup && (
-                            <div style={groupHeaderStyle}>
-                              {currentLabel}
-                            </div>
-                          )}
-
-                          <button 
-                            onClick={() => handleAddMember(m)}
-                            disabled={isAdding}
-                            style={{ 
-                              width: '100%', padding: '16px 20px', borderRadius: '20px', 
-                              border: '1px solid #e2e8f0', background: '#fff', 
-                              textAlign: 'left', display: 'flex', justifyContent: 'space-between', 
-                              alignItems: 'center', cursor: 'pointer',
-                              boxShadow: '0 2px 4px rgba(0,0,0,0.02)',
-                              flexShrink: 0
-                            }}
-                          >
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                              <div style={{ background: '#e0e7ff', color: '#4f46e5', width: '45px', height: '45px', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '0.8rem' }}>
-                                {m.room}
+                        return (
+                          <React.Fragment key={m.id}>
+                            {isNewGroup && (
+                              <div style={groupHeaderStyle}>
+                                {currentLabel}
                               </div>
-                              <div>
-                                <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b' }}>{m.name} 様</div>
-                                <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>
-                                  {m.kana ? `${m.kana} / ` : ''}{m.floor ? `${m.floor}階` : '階数未設定'}
+                            )}
+                            <button 
+                              onClick={() => handleAddMember(m)}
+                              disabled={isAdding}
+                              style={{ width: '100%', padding: '14px 16px', borderRadius: '16px', border: '1px solid #e2e8f0', background: '#fff', textAlign: 'left', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.01)' }}
+                            >
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                <div style={{ background: '#e0e7ff', color: '#4f46e5', width: '40px', height: '40px', borderRadius: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: '900', fontSize: '0.8rem' }}>{m.room}</div>
+                                <div>
+                                  <div style={{ fontWeight: '900', fontSize: '1rem', color: '#1e293b' }}>{m.name} 様</div>
+                                  <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>{m.kana ? `${m.kana} / ` : ''}{m.floor ? `${m.floor}階` : '未設定'}</div>
                                 </div>
                               </div>
-                            </div>
-                            <div style={{ background: '#4f46e5', width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                              <Plus size={20} color="#fff" />
-                            </div>
-                          </button>
-                        </React.Fragment>
-                      );
-                    });
-                  })()
-                )}
+                              <div style={{ background: '#4f46e5', width: '28px', height: '28px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><Plus size={16} color="#fff" /></div>
+                            </button>
+                          </React.Fragment>
+                        );
+                      });
+                    })()
+                  )}
+                </div>
               </div>
             </motion.div>
           </div>
