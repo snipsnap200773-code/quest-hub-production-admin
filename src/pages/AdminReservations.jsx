@@ -1990,7 +1990,7 @@ return (
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <span style={{ fontSize: '1.1rem' }}>ℹ️</span>
           <span style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
-            🔷 施設から新しい「単発キープ（突発の訪問相談）」が届いています（確認・枠タップで非表示になります）
+            施設から新しい「単発キープ」が届いています（確認・枠タップで非表示になります）
           </span>
         </div>
         <button

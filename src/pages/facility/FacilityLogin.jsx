@@ -4,7 +4,6 @@ import { supabase } from '../../supabaseClient';
 import { Building2, Lock, User, ArrowRight, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-// 🚀 正しいEdge FunctionのURL
 const EDGE_FUNCTION_URL = "https://rdpupixaqckhkpgjqcnb.supabase.co/functions/v1/resend";
 
 const FacilityLogin = () => {
@@ -19,11 +18,9 @@ const FacilityLogin = () => {
 
   useEffect(() => {
     const initLoginScreen = async () => {
-      // 🚀 🆕 URLに ?logout=true が含まれているか確認
       const params = new URLSearchParams(window.location.search);
       const isLogoutMode = params.get('logout') === 'true';
 
-      // 🚀 ログインセッションがある、かつ「ログアウト直後ではない」時だけ自動遷移する
       const { data: { session } } = await supabase.auth.getSession();
       
       if (session && session.user && !isLogoutMode) {
@@ -38,13 +35,12 @@ const FacilityLogin = () => {
           sessionStorage.setItem(`auth_${profile.id}`, 'true');
           navigate(profile.role === 'super_admin' 
             ? '/super-admin-216-midote-snipsnap-dmaaaahkmm' 
-            : `/admin/${profile.id}/reservations` // 🚀 dashboard から reservations へ
+            : `/admin/${profile.id}/reservations`
           );
           return;
         }
       }
 
-      // 💡 以下は「ログインしていない場合」のみ実行される
       if (facilityId) {
         const { data } = await supabase
           .from('facility_users')
@@ -54,7 +50,6 @@ const FacilityLogin = () => {
         
         if (data) {
           setFacilityMetadata(data);
-          setLoginId(data.login_id);
         }
       }
       setLoading(false);
@@ -72,14 +67,12 @@ const FacilityLogin = () => {
     if (isEmail) {
       console.log("=== 店舗/総括 認証プロセス開始 ===");
       
-      // A. Supabase Auth ログイン試行（正規ルート）
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: loginId,
         password: password,
       });
 
       if (!authError && authData.user) {
-        // ✅ 正常にAuthで入れた場合
         const { data: profile } = await supabase
           .from('profiles')
           .select('id, role, business_name')
@@ -91,18 +84,15 @@ const FacilityLogin = () => {
           
           if (profile.role === 'super_admin') {
             sessionStorage.setItem('auth_super', 'true');
-            // ポップアップなしで即移動
             navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
           } else {
             setIsProcessing(false);
-            // ポップアップなしで即移動
             navigate(`/admin/${profile.id}/reservations`);
           }
           return;
         }
       }
 
-      // B. 救済 ＆ パスワード同期チェック
       const { data: shopUser } = await supabase
         .from('profiles')
         .select('id, business_name, role, admin_password')
@@ -111,10 +101,7 @@ const FacilityLogin = () => {
         .maybeSingle();
 
       if (shopUser) {
-        // DBのパスワードとは合っているが、Authで弾かれた場合（＝パスワードがズレている）
         console.log("🛠️ 認証のズレを検知。お引越し（または同期）を試みます...");
-        
-        // バトンをセット
         sessionStorage.setItem(`auth_${shopUser.id}`, 'true'); 
 
         try {
@@ -122,7 +109,7 @@ const FacilityLogin = () => {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              type: 'REPAIR_AUTH', // 🚀 ここを REPAIR_AUTH に変えるとより確実です
+              type: 'REPAIR_AUTH',
               shopId: shopUser.id,
               email: loginId,
               password: password,
@@ -133,13 +120,11 @@ const FacilityLogin = () => {
           if (!response.ok) {
             console.warn("Auth sync skipped or failed, but DB password matched.");
           }
-          // alertを削除
         } catch (err) {
           console.error("Sync Error:", err);
         }
 
         setIsProcessing(false);
-        // 🚀 救済処理後も予約状況へ
         navigate(`/admin/${shopUser.id}/reservations`); 
         return;
       } else {
@@ -148,7 +133,6 @@ const FacilityLogin = () => {
       }
 
     } else {
-      // --- 🏢 施設ログイン ---
       const { data: facilityUser, error: facilityError } = await supabase
         .from('facility_users')
         .select('id, facility_name')
@@ -156,17 +140,15 @@ const FacilityLogin = () => {
         .eq('password', password)
         .maybeSingle();
 
-      // FacilityLogin.jsx の施設ログイン成功時の処理
-if (facilityUser && !facilityError) {
-  // 🚀 sessionStorage だけでなく localStorage にも保存する
-  localStorage.setItem('facility_user_id', facilityUser.id);
-  localStorage.setItem('facility_auth_active', 'true');
-  
-  sessionStorage.setItem('facility_user_id', facilityUser.id);
-  sessionStorage.setItem(`facility_auth_active`, 'true');
-  
-  navigate(`/facility-portal/${facilityUser.id}/residents`);
-} else {
+      if (facilityUser && !facilityError) {
+        localStorage.setItem('facility_user_id', facilityUser.id);
+        localStorage.setItem('facility_auth_active', 'true');
+        
+        sessionStorage.setItem('facility_user_id', facilityUser.id);
+        sessionStorage.setItem(`facility_auth_active`, 'true');
+        
+        navigate(`/facility-portal/${facilityUser.id}/residents`);
+      } else {
         alert('施設ログインIDまたはパスワードが正しくありません。');
         setIsProcessing(false);
       }
@@ -179,8 +161,12 @@ if (facilityUser && !facilityError) {
     <div style={bgStyle}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={cardStyle}>
         <div style={iconBoxStyle}><Building2 size={32} /></div>
-        <h1 style={titleStyle}>{facilityMetadata?.facility_name || "QUEST HUB Admin"}</h1>
-        <p style={subtitleStyle}>マルチ管理ポータルログイン</p>
+        <h1 style={titleStyle}>
+          {facilityMetadata?.facility_name ? `${facilityMetadata.facility_name}` : "QUEST HUB Admin"}
+        </h1>
+        <p style={subtitleStyle}>
+          {facilityMetadata?.facility_name ? "施設専用ログインポータル" : "マルチ管理総合ログイン画面"}
+        </p>
 
         <form onSubmit={handleLogin} style={formStyle}>
           <div style={inputGroupStyle}>
@@ -207,7 +193,6 @@ if (facilityUser && !facilityError) {
   );
 };
 
-// スタイル定義（変更なし）
 const bgStyle = { minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f0f4f8', padding: '20px' };
 const cardStyle = { background: '#fff', width: '100%', maxWidth: '400px', padding: '40px 30px', borderRadius: '28px', boxShadow: '0 20px 25px -5px rgba(0,0,0,0.1)', textAlign: 'center' };
 const iconBoxStyle = { width: '64px', height: '64px', background: '#e0e7ff', color: '#4f46e5', borderRadius: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' };

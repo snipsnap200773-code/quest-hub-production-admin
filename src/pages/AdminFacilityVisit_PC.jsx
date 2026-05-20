@@ -9,21 +9,6 @@ import {
   Search // 🚀 🆕 ここに Search を追加！
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-const getKanaGroup = (kana) => {
-  if (!kana) return "misc";
-  const firstChar = kana.charAt(0);
-  if (firstChar.match(/[あいうえおアイウエオぁぃぅぇぉァィゥェォ]/)) return "あ行";
-  if (firstChar.match(/[かきくけこがぎぐげごカキクケコガギグゲゴ]/)) return "か行"; // 🚀 「ご」をキャッチ！
-  if (firstChar.match(/[さしすせそざじずぜぞサシスセソザジズゼゾ]/)) return "さ行"; // 🚀 「ざ」行をキャッチ！
-  if (firstChar.match(/[たちつてとだぢづでどタチツテトダヂヅデドっッ]/)) return "た行"; // 🚀 「だ」行をキャッチ！
-  if (firstChar.match(/[なにぬねのナニヌネノ]/)) return "な行";
-  if (firstChar.match(/[はひふへほばびぶべぼぱぴぷぺぽハヒフヘホバビブベボパピプペポ]/)) return "は行"; // 🚀 「ば・ぱ」行をキャッチ！
-  if (firstChar.match(/[まみむめもマミムメモ]/)) return "ま行";
-  if (firstChar.match(/[やゆよヤユヨゃゅょャュョ]/)) return "や行";
-  if (firstChar.match(/[らりるれろラリルレロ]/)) return "ら行";
-  if (firstChar.match(/[わをんワヲン]/)) return "わ行";
-  return "その他";
-};
 
 // 見出し札のデザイン
 const groupHeaderStyle = {
@@ -305,20 +290,18 @@ const AdminFacilityVisit_PC = () => {
     
     setIsAdding(true);
     try {
-      // 🌟 ステップ1: 施設の基本名簿（membersテーブル）にササッと新規登録！
+      // 🌟 ステップ1: memo の行を完全に削除し、確実に存在する列だけで保存します！
       const { data: newMember, error: memErr } = await supabase
         .from('members')
-        .select('*')
         .insert([{
           facility_user_id: visit.facility_user_id,
-          facility: visit.facility_users?.facility_name, // 施設名も自動補填
+          facility: visit.facility_users?.facility_name,
           name: quickName.trim(),
           kana: quickKana.trim(),
           room: quickRoom.trim() || '---',
-          floor: quickFloor || '1F',
-          memo: '当日の現場でのスピード登録' // 施設側への目印
+          floor: quickFloor || '1F' // 🚀 memo を消してここでスッキリ閉じます
         }])
-        .select()
+        .select() 
         .single();
 
       if (memErr) throw memErr;
@@ -341,7 +324,6 @@ const AdminFacilityVisit_PC = () => {
       // 🌟 ステップ3: 画面のStateを更新してモーダルを閉じる
       setResidents([...residents, newResident]);
       
-      // 入力欄をお掃除
       setQuickName('');
       setQuickKana('');
       setQuickRoom('');
@@ -1249,4 +1231,24 @@ const overlayStyle = {
   justifyContent: 'center', 
   backdropFilter: 'blur(8px)' 
 };
+
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.trim().charAt(0);
+  if (!firstChar) return "null";
+  
+  if (/[あ-おア-オ]/.test(firstChar)) return "あ行";
+  if (/[か-こカ-コが-ごガ-ゴ]/.test(firstChar)) return "か行";
+  if (/[さ-そサ-ソざ-ぞザ-ゾ]/.test(firstChar)) return "さ行";
+  if (/[た-とタ-トだ-どダ-ド]/.test(firstChar)) return "た行";
+  if (/[な-のナ-ノ]/.test(firstChar)) return "な行";
+  if (/[は-ほハ-ホば-ぼバ-ボぱ-ぽパ-ポ]/.test(firstChar)) return "は行";
+  if (/[ま-もマ-モ]/.test(firstChar)) return "ま行";
+  if (/[や-よヤ-ヨ]/.test(firstChar)) return "や行";
+  if (/[ら-ろラ-ロ]/.test(firstChar)) return "ら行";
+  if (/[わ-んワ-ン]/.test(firstChar)) return "わ行";
+  
+  return "その他";
+};
+
 export default AdminFacilityVisit_PC;
