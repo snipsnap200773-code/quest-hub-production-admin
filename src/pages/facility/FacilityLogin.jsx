@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
-import { Building2, User, ArrowRight } from 'lucide-react'; // 🚀 完璧！これで必要なアイコンがすべて揃いました！
+import { Building2, Lock, User, ArrowRight, ShieldCheck } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 // 🚀 正しいEdge FunctionのURL
@@ -54,13 +54,13 @@ const FacilityLogin = () => {
         
         if (data) {
           setFacilityMetadata(data);
-          // 🚀 余計な日本語コメントを綺麗サッパリ削除して、この1行だけにします！
+          setLoginId(data.login_id);
         }
       }
       setLoading(false);
-    }; // 💡 initLoginScreen を閉じる波カッコ
+    };
 
-    initLoginScreen(); // 🚀 復活！余計な async を削り落として綺麗に呼び出します
+    initLoginScreen();
   }, [facilityId, navigate]);
 
   const handleLogin = async (e) => {
@@ -72,7 +72,7 @@ const FacilityLogin = () => {
     if (isEmail) {
       console.log("=== 店舗/総括 認証プロセス開始 ===");
       
-      // 🚀 ここが壊れていました！綺麗に修復して同期させます
+      // A. Supabase Auth ログイン試行（正規ルート）
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: loginId,
         password: password,
@@ -91,9 +91,11 @@ const FacilityLogin = () => {
           
           if (profile.role === 'super_admin') {
             sessionStorage.setItem('auth_super', 'true');
+            // ポップアップなしで即移動
             navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
           } else {
             setIsProcessing(false);
+            // ポップアップなしで即移動
             navigate(`/admin/${profile.id}/reservations`);
           }
           return;
@@ -177,14 +179,8 @@ if (facilityUser && !facilityError) {
     <div style={bgStyle}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={cardStyle}>
         <div style={iconBoxStyle}><Building2 size={32} /></div>
-        
-        {/* 🚀 修正：施設ID経由のときは施設名を、それ以外の通常アクセスは共通タイトルを凛々しく表示します */}
-        <h1 style={titleStyle}>
-          {facilityMetadata?.facility_name ? `${facilityMetadata.facility_name}` : "QUEST HUB Admin"}
-        </h1>
-        <p style={subtitleStyle}>
-          {facilityMetadata?.facility_name ? "施設専用ログインポータル" : "マルチ管理総合ログイン画面"}
-        </p>
+        <h1 style={titleStyle}>{facilityMetadata?.facility_name || "QUEST HUB Admin"}</h1>
+        <p style={subtitleStyle}>マルチ管理ポータルログイン</p>
 
         <form onSubmit={handleLogin} style={formStyle}>
           <div style={inputGroupStyle}>
