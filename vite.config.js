@@ -8,11 +8,12 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
-      // 👇 ここから追加！
       devOptions: {
         enabled: true
       },
-      // 👆 ここまで
+      workbox: {
+        maximumFileSizeToCacheInBytes: 3145728
+      },
       manifest: {
         name: 'QUEST HUB Admin',
         short_name: 'QH Admin',
