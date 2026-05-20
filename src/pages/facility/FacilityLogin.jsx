@@ -60,8 +60,9 @@ const FacilityLogin = () => {
         }
       }
       setLoading(false);
+    }; // 💡 initLoginScreen を閉じる波カッコ
 
-    initLoginScreen();
+    initLoginScreen(); // 🚀 復活！余計な async を削り落として綺麗に呼び出します
   }, [facilityId, navigate]);
 
   const handleLogin = async (e) => {
@@ -73,7 +74,7 @@ const FacilityLogin = () => {
     if (isEmail) {
       console.log("=== 店舗/総括 認証プロセス開始 ===");
       
-      // A. Supabase Auth ログイン試行（正規ルート）
+      // 🚀 ここが壊れていました！綺麗に修復して同期させます
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email: loginId,
         password: password,
@@ -92,11 +93,9 @@ const FacilityLogin = () => {
           
           if (profile.role === 'super_admin') {
             sessionStorage.setItem('auth_super', 'true');
-            // ポップアップなしで即移動
             navigate('/super-admin-216-midote-snipsnap-dmaaaahkmm');
           } else {
             setIsProcessing(false);
-            // ポップアップなしで即移動
             navigate(`/admin/${profile.id}/reservations`);
           }
           return;
