@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
-import { Building2, User } from 'lucide-react'; // 🚀 復活！使う分の「User」をここに戻します
+import { Building2, User, ArrowRight } from 'lucide-react'; // 🚀 完璧！これで必要なアイコンがすべて揃いました！
 import { motion } from 'framer-motion';
 
 // 🚀 正しいEdge FunctionのURL
