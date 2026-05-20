@@ -53,10 +53,8 @@ const FacilityLogin = () => {
           .maybeSingle(); 
         
         if (data) {
-          // 🚀 修正：画面中央のタイトル用に施設名は保持しますが、
-          // ログインID（入力欄）を強制上書きして固定化するのを廃止します！
           setFacilityMetadata(data);
-          // setLoginId(data.login_id); 👈 ここをコメントアウト（または削除）して、入力欄を常に空っぽにして自由に打てるようにします！
+          // 🚀 余計な日本語コメントを綺麗サッパリ削除して、この1行だけにします！
         }
       }
       setLoading(false);
