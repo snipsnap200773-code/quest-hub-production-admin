@@ -115,6 +115,8 @@ function AdminTimeline() {
   const [showHistoryDetail, setShowHistoryDetail] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
 
+  const [expandedYears, setExpandedYears] = useState({});
+
   // 🆕 重複予約リスト用
   const [showSlotListModal, setShowSlotListModal] = useState(false);
   const [selectedSlotReservations, setSelectedSlotReservations] = useState([]);
@@ -952,8 +954,8 @@ const timeSlots = useMemo(() => {
 
 {/* 👤 モーダル2：予約詳細・名簿 (AdminReservationsから全機能を完全移植) */}
       {showDetailModal && (
-        <div style={overlayStyle} onClick={() => { if(selectedRes?.isRegularHoliday) return; setShowDetailModal(false); }}>
-          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '650px', position: 'relative' }}>
+  <div onClick={() => { if(selectedRes?.isRegularHoliday) return; setShowDetailModal(false); }} style={overlayStyle}>
+    <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '950px', width: '90vw', position: 'relative' }}>
             
 {selectedRes?.res_type === 'normal' && (
               <button 
@@ -1159,76 +1161,86 @@ const timeSlots = useMemo(() => {
                 </div>
 
                 {/* 🕒 右側：来店履歴 */}
-                <div>
-                  <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#64748b' }}>🕒 来店履歴 ＆ 予定</h4>
-                  <div style={{ height: isPC ? '420px' : '250px', overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: '15px', background: '#f8fafc', padding: '5px' }}>
-                    {customerHistory.map((h) => {
-                      const hDate = new Date(h.start_time);
-                      const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
-                      const hBrandLabel = categoryMap[h.biz_type];
-                      const isCanceled = h.status === 'canceled';
-                      
-                      // 🚀 🆕 詳細データは「中身」を計算するためだけに使い、表示はシンプルにします
-                      const d = parseReservationDetails(h);
+                <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+  <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#64748b' }}>🕒 来店履歴 ＆ 予定</h4>
+  <div style={{ 
+    flex: 1,             /* 🚀 高さ固定を解除し、親の空きスペースをすべて使う */
+    overflowY: 'auto',   /* リストが長い時だけここでスクロール */
+    border: '1px solid #f1f5f9', 
+    borderRadius: '15px', 
+    background: '#f8fafc', 
+    padding: '5px' 
+  }}>
+    {(() => {
+      // 1. 年ごとにグループ化
+      const groups = customerHistory.reduce((acc, h) => {
+        const year = new Date(h.start_time).getFullYear();
+        if (!acc[year]) acc[year] = [];
+        acc[year].push(h);
+        return acc;
+      }, {});
 
-                      return (
-                        <div 
-                          key={h.id} 
-                          onClick={() => !isCanceled && (setSelectedHistory(h), setShowHistoryDetail(true))}
-                          style={{ 
-                            padding: '15px', borderBottom: '1px solid #eee', 
-                            background: isCanceled ? '#fcfcfc' : '#fff', 
-                            borderRadius: isToday ? '12px' : '0', 
-                            border: isToday ? `2px solid ${themeColor}` : 'none',
-                            opacity: isCanceled ? 0.7 : 1, position: 'relative',
-                            cursor: isCanceled ? 'default' : 'pointer'
-                          }}
-                        >
-                          {/* 上段：日付と合計金額 */}
-                          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px', alignItems: 'center' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                              <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
-                                {hDate.toLocaleDateString('ja-JP')}
-                              </span>
-                              {hBrandLabel && (
-                                <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
-                                  {hBrandLabel.slice(0, 5)}
-                                </span>
-                              )}
-                            </div>
-                            <span style={{ color: isCanceled ? '#94a3b8' : '#e11d48', fontWeight: '900' }}>
-                              ¥{d.totalPrice.toLocaleString()}
-                            </span>
-                          </div>
+      const sortedYears = Object.keys(groups).sort((a, b) => b - a);
 
-                          {/* 🚀 🆕 中段：メニュー名は1枚目画像のように「横並び」で表示 */}
-                          <div style={{ color: isCanceled ? '#cbd5e1' : '#475569', fontSize: '0.8rem', marginBottom: '4px', display: 'flex', gap: '8px' }}>
-                            {staffs.length > 1 && (
-                              <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85' }}>
-                                👤 {h.staffs?.name || 'フリー'}
-                              </span>
-                            )}
-                            <span>{h.menu_name || d.menuName}</span>
-                          </div>
+      return sortedYears.map((year) => (
+        <div key={year} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff', overflow: 'hidden' }}>
+          {/* アコーディオン・ヘッダー */}
+          <div 
+            onClick={() => setExpandedYears(prev => ({ ...prev, [year]: !prev[year] }))}
+            style={{ 
+              padding: '12px 15px', background: '#f8fafc', cursor: 'pointer', 
+              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+              borderBottom: expandedYears[year] ? '1px solid #e2e8f0' : 'none'
+            }}
+          >
+            <span style={{ fontWeight: '900', color: themeColor }}>{year}年</span>
+            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>{expandedYears[year] ? '▼' : '▶'} {groups[year].length}件</span>
+          </div>
 
-                          {/* 下段：調整や商品があれば小さく表示 */}
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
-                            {d.adjustments?.length > 0 && (
-                              <div style={{ fontSize: '0.7rem', color: '#94a3b8' }}>
-                                ⚙️ 調整: {d.adjustments.map(a => a.name).join(', ')}
-                              </div>
-                            )}
-                            {d.products?.length > 0 && (
-                              <div style={{ fontSize: '0.7rem', color: '#008000', fontWeight: 'bold' }}>
-                                🛍 商品あり (詳細タップ)
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+          {/* 展開時の中身 */}
+          {expandedYears[year] && (
+            <div style={{ padding: '5px' }}>
+              {groups[year].sort((a, b) => new Date(b.start_time) - new Date(a.start_time)).map((h) => {
+                const hDate = new Date(h.start_time);
+                const isCanceled = h.status === 'canceled';
+                const d = parseReservationDetails(h); // 詳細解析
+
+                return (
+                  <div 
+                    key={h.id} 
+                    onClick={() => !isCanceled && (setSelectedHistory(h), setShowHistoryDetail(true))}
+                    style={{ 
+                      padding: '12px', borderBottom: '1px solid #f1f5f9', 
+                      background: isCanceled ? '#fcfcfc' : '#fff', 
+                      opacity: isCanceled ? 0.6 : 1, cursor: isCanceled ? 'default' : 'pointer'
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                      <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                        {hDate.toLocaleDateString('ja-JP')}
+                      </span>
+                      <span style={{ color: isCanceled ? '#cbd5e1' : '#e11d48', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                        ¥{d.totalPrice.toLocaleString()}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '4px' }}>{h.menu_name}</div>
+                    
+                    {/* 詳細情報（商品・調整・担当者） */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', color: '#64748b' }}>
+                      {d.products.length > 0 && <div>🛍 {d.products.map(p => `${p.name}(x${p.quantity})`).join(', ')}</div>}
+                      {d.adjustments.length > 0 && <div style={{ color: '#ef4444' }}>⚙️ {d.adjustments.map(a => a.name).join(', ')}</div>}
+                      {h.staffs?.name && <div style={{ fontWeight: 'bold', color: '#4b2c85' }}>👤 {h.staffs.name}</div>}
+                    </div>
                   </div>
-                </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      ));
+    })()}
+  </div>
+</div>
               </div>
             )}
             {/* ✅ 🆕 ここが出し分けの閉じ： )} */}
