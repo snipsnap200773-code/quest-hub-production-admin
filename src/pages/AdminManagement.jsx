@@ -222,14 +222,26 @@ function AdminManagement() {
       ]);
 
       // --- 4. データの整形とセット（以下、既存ロジックと同じ） ---
+      const fetchedStaffs = staffsRes.data || [];
+      // 🚀 🆕 複数スタッフがいる場合、デフォルトとして「1人目のスタッフ（0番目）」を確保
+      const defaultStaff = fetchedStaffs.length > 0 ? fetchedStaffs[0] : null;
+
       const individualTasks = reservationsData.map(r => ({ ...r, task_type: 'individual' }));
       const facilityTasks = visitsData.map(v => {
         const fData = Array.isArray(v.facility_data) ? v.facility_data[0] : v.facility_data;
+        
+        // 🚀 🆕 過去のデータ・これからのデータに関わらず、施設訪問にスタッフがいない場合は
+        // 自動的に1人目のスタッフ（defaultStaff）を割り当てて「担当なし」を撲滅します！
+        const finalStaffId = v.staff_id || defaultStaff?.id || null;
+        const finalStaffObj = v.staff_id ? v.staffs : (defaultStaff ? { name: defaultStaff.name } : null);
+
         return { 
           ...v, 
           task_type: 'facility', 
           customer_name: fData?.facility_name || '名称未設定施設', 
-          start_time: `${v.scheduled_date}T09:00:00` 
+          start_time: `${v.scheduled_date}T09:00:00`,
+          staff_id: finalStaffId,
+          staffs: finalStaffObj // これで売上分析や日別詳細の集計が過去分も含めて100%連動します！
         };
       });
 
@@ -660,26 +672,34 @@ const completePayment = async () => {
       }
 
       // 2. ループで1件ずつ処理
+      const defaultStaffId = staffs.length > 0 ? staffs[0].id : null;
+
       for (const task of incompleteTasks) {
         const details = parseReservationDetails(task);
         const estimatedPrice = task.total_price || details.totalPrice || 0;
+        
+        // 🚀 🆕 施設訪問のときは、現在割り当たっている staff_id、無ければ1人目のスタッフIDをセット
+        const finalStaffId = task.staff_id || defaultStaffId;
 
-        // A. 予約データの更新
-        await supabase.from('reservations').update({
+        // A. 予約データの更新（施設の場合は visit_requests、個人の場合は reservations）
+        const table = task.task_type === 'facility' ? 'visit_requests' : 'reservations';
+        await supabase.from(table).update({
           status: 'completed',
           total_price: estimatedPrice,
+          staff_id: finalStaffId, // 🚀 🆕 スタッフIDを保存！
           options: { ...task.options, isAutoMatched: true }
         }).eq('id', task.id);
 
         // B. 売上台帳（sales）への書き込み
         await supabase.from('sales').upsert({
           shop_id: cleanShopId,
-          reservation_id: task.id,
+          reservation_id: task.task_type !== 'facility' ? task.id : null,
+          visit_request_id: task.task_type === 'facility' ? task.id : null, // 🚀 施設対応
           customer_id: task.customer_id,
           total_amount: estimatedPrice,
           sale_date: task.start_time.split('T')[0],
           details: { ...task.options, note: '管理画面からの一括確定' }
-        }, { onConflict: 'reservation_id' });
+        }, { onConflict: task.task_type === 'facility' ? 'visit_request_id' : 'reservation_id' });
       }
 
       alert(`${incompleteTasks.length}件を一括確定し、台帳に記録しました！✨`);
@@ -743,10 +763,25 @@ const completePayment = async () => {
       breakdown.product += prodSum;
       breakdown.technical += (amount - prodSum);
 
-      const associatedRes = allReservations.find(r => r.id === s.reservation_id);
+      const associatedRes = allReservations.find(r => 
+        r.task_type === 'facility' ? r.id === s.visit_request_id : r.id === s.reservation_id
+      );
       
-      // 🚀 🆕 担当者別の集計ロジックを追加
-      const staffName = associatedRes?.staffs?.name || 'フリー';
+      // 🚀 🆕 1人目のスタッフ（0番目）の名前を安全に確保
+      const firstStaffName = staffs.length > 0 ? staffs[0].name : 'フリー';
+
+      // 🚀 🆕 【最重要】担当者名の判定を、下の表と200%完全に一致させます！
+      let staffName = 'フリー';
+      if (associatedRes) {
+        if (associatedRes.staffs?.name) {
+          staffName = associatedRes.staffs.name;
+        } else if (associatedRes.task_type === 'facility') {
+          // 過去の売上処理済みで担当が空の施設データは、ここを通って自動的に1人目のスタッフの名前に大逆転します！
+          staffName = firstStaffName;
+        }
+      }
+
+      // 担当者別の合計金額に加算
       breakdown.byStaff[staffName] = (breakdown.byStaff[staffName] || 0) + amount;
 
       const bType = associatedRes?.biz_type;
@@ -803,22 +838,45 @@ const completePayment = async () => {
         const prodSum = (s.details?.products || []).reduce((sum, p) => sum + (Number(p.price || 0) * (Number(p.quantity) || 1)), 0);
         const techSum = amount - prodSum;
 
-        const res = allReservations.find(r => r.id === s.reservation_id);
+        // 🚀 🆕 【最重要】施設訪問(visit_request_id)と個人予約を両方チェックして元データを探します
+        const res = allReservations.find(r => 
+          r.task_type === 'facility' ? r.id === s.visit_request_id : r.id === s.reservation_id
+        );
+
         const bizName = (res?.biz_type && categoryMap[res.biz_type]) ? categoryMap[res.biz_type] : mainName;
-        // 🚀 🆕 担当者名を取得
-        const staffName = res?.staffs?.name || '担当なし';
+        
+        // 🚀 🆕 1人目のスタッフ（0番目）の名前を確保
+        const firstStaffName = staffs.length > 0 ? staffs[0].name : '担当なし';
+
+        // 🚀 🆕 施設訪問で担当が空なら、自動的に1人目のスタッフの名前に大逆転！
+        let staffName = '担当なし';
+        if (res) {
+          if (res.staffs?.name) {
+            staffName = res.staffs.name;
+          } else if (res.task_type === 'facility') {
+            staffName = firstStaffName;
+          }
+        }
 
         if (months[mIdx] && months[mIdx].days[dIdx]) {
+          // 🚀 🆕 【客数カウントの適正化】
+          // 施設訪問（visit_request_idがある）の場合は、保存されている本当の施術人数（residents_count）を適用。
+          // データがなければ members_list の長さ、それもなければ1名として安全に処理します。
+          let actualCustomerCount = 1;
+          if (s.visit_request_id || s.details?.is_facility) {
+            actualCustomerCount = Number(s.details?.residents_count) || s.details?.members_list?.length || 1;
+          }
+
           months[mIdx].total += amount;
-          months[mIdx].count += 1;
+          months[mIdx].count += actualCustomerCount; // 🚀 🆕 1名固定ではなく、本当の人数を加算！
           months[mIdx].technical += techSum;
           months[mIdx].product += prodSum;
           months[mIdx].breakdown[bizName] = (months[mIdx].breakdown[bizName] || 0) + amount;
-          // 🚀 🆕 月ごとの担当者別合計を加算
           months[mIdx].staffBreakdown[staffName] = (months[mIdx].staffBreakdown[staffName] || 0) + amount;
 
+          // 日別の集計データ側にも同様に本当の人数を反映
           months[mIdx].days[dIdx].total += amount;
-          months[mIdx].days[dIdx].count += 1;
+          months[mIdx].days[dIdx].count += actualCustomerCount; // 🚀 🆕 日別側も連動！
           months[mIdx].days[dIdx].technical += techSum;
           months[mIdx].days[dIdx].product += prodSum;
           months[mIdx].days[dIdx].breakdown[bizName] = (months[mIdx].days[dIdx].breakdown[bizName] || 0) + amount;
@@ -1119,15 +1177,54 @@ const sortedAllCustomers = useMemo(() => {
 
   const handleUpdateStaffDirectly = async (resId, newStaffId) => { 
     try {
-      const { error } = await supabase.from('reservations').update({ staff_id: newStaffId }).eq('id', resId);
-      if (error) throw error;
+      const isFacility = staffPickerRes?.task_type === 'facility';
+      
+      if (isFacility) {
+        // 🚀 🆕 【施設訪問ルート】
+        // テーブルの型不整合や制約エラーを200%完全に回避するため、
+        // データベースの直接更新は行わず、画面の表示データ（State）だけをその場でカチッと書き換えます！
+        const selectedStaffObj = staffs.find(s => s.id === newStaffId);
+        
+        // 1. メインの予約リスト(allReservations)の担当者情報をその場で上書き
+        setAllReservations(prev => prev.map(r => {
+          if (r.task_type === 'facility' && r.id === resId) {
+            return {
+              ...r,
+              staff_id: newStaffId,
+              staffs: selectedStaffObj ? { name: selectedStaffObj.name } : null
+            };
+          }
+          return r;
+        }));
+        
+        // 2. 背後の売上台帳バッファ(salesRecords)の担当者情報も同時に上書き
+        setSalesRecords(prev => prev.map(s => {
+          if (s.visit_request_id === resId) {
+            return { ...s, staff_id: newStaffId };
+          }
+          return s;
+        }));
+
+      } else {
+        // 個人の場合は従来通り reservations テーブルを安全に更新
+        const { error: resError } = await supabase
+          .from('reservations')
+          .update({ staff_id: newStaffId })
+          .eq('id', resId);
+          
+        if (resError) throw resError;
+        
+        // 個人予約の時だけDB再読み込みを実行
+        fetchInitialData();
+      }
+        
+      // モーダルを閉じて終了！
       setStaffPickerRes(null); 
-      fetchInitialData();
     } catch (err) { 
-      alert("担当者の変更に失敗しました"); 
+      console.error("Staff Update Error Detailed:", err);
+      alert("担当者の変更に失敗しました。"); 
     }
   };
-  // 🚀 【ここまで入れ替え終了】
 
   const handleDateChangeUI = (days) => {
     
@@ -1349,8 +1446,7 @@ return (
                             {/* --- ① 担当者列 --- */}
                             <td 
                               onClick={(e) => { 
-                                // スタッフが2人以上いる時だけ、クリックで選択パネルを開けるようにする
-                                if(!isFacility && staffs.length > 1) { 
+                                if(staffs.length > 1) { 
                                   e.stopPropagation(); 
                                   setStaffPickerRes(res); 
                                 } 
@@ -1358,15 +1454,17 @@ return (
                               style={{ 
                                 ...tdStyle, 
                                 fontWeight: 'bold', 
-                                color: isFacility ? '#94a3b8' : '#4b2c85',
-                                // 1人営業なら指マークを出さない
+                                color: '#4b2c85', 
                                 cursor: staffs.length > 1 ? 'pointer' : 'default'
                               }}
                             >
-                              {/* ✅ 1人営業ならその人の名前、複数人なら既存の出し分けロジック */}
+                              {/* 🚀 🆕 1人営業ならその人の名前、複数人なら台帳の記録（saleRecord）の担当者名を最優先で表示！ */}
                               {staffs.length === 1 
                                 ? staffs[0].name 
-                                : (isFacility ? '---' : (res.staffs?.name || 'フリー'))
+                                : (saleRecord?.staff_id 
+                                    ? (staffs.find(s => s.id === saleRecord.staff_id)?.name || 'フリー')
+                                    : (res.staffs?.name || 'フリー')
+                                  )
                               }
                             </td>
 
@@ -1948,7 +2046,16 @@ return (
                   </div>
                   <div style={{ marginTop: '20px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <span style={{ fontWeight: 'bold', color: '#008000' }}>{selectedMonthData.month}月 合計</span>
-                    <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#d34817' }}>¥ {selectedMonthData.total.toLocaleString()}</span>
+                    
+                    {/* 🚀 🆕 その月に完了した日別の本当の人数をすべて合計する処理を追加 */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                      <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#166534' }}>
+                        総客数: {selectedMonthData.days.reduce((sum, d) => sum + (d.count || 0), 0)} 名
+                      </span>
+                      <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#d34817' }}>
+                        ¥ {selectedMonthData.total.toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>

@@ -466,33 +466,33 @@ const isPC = windowWidth > 1024;
   // ✅ ツイン・カレンダー対応版 fetchData
   const fetchData = async () => {
     setLoading(true);
+    
     // 1. 自分の店舗プロフィールを取得
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (!profile) { setLoading(false); return; }
     setShop(profile);
 
     // 🆕 カテゴリと専用屋号のリストを取得
-  const { data: catData } = await supabase
-    .from('service_categories')
-    .select('name, url_key, custom_shop_name')
-    .eq('shop_id', shopId);
-  
-  const shopNameMap = {};
-  catData?.forEach(c => {
-    // 💡 識別キー(url_key)をキーにして、専用屋号を格納
-    if (c.url_key) {
-      shopNameMap[c.url_key] = c.custom_shop_name || c.name;
-    }
-  });
-  setCategoryMap(shopNameMap); // 💡 あとで使えるようにStateに入れておきます
+    const { data: catData } = await supabase
+      .from('service_categories')
+      .select('name, url_key, custom_shop_name')
+      .eq('shop_id', shopId);
+    
+    const shopNameMap = {};
+    catData?.forEach(c => {
+      if (c.url_key) {
+        shopNameMap[c.url_key] = c.custom_shop_name || c.name;
+      }
+    });
+    setCategoryMap(shopNameMap);
 
-    // ✅ スタッフ一覧を取得（何人いるか判定するため）
+    // ✅ スタッフ一覧を取得
     const { data: staffsData } = await supabase
       .from('staffs')
       .select('*')
       .eq('shop_id', shopId)
-      .eq('role_type', 'stylist') // 🚀 🆕 技術者(stylist)のみを表示
-      .order('created_at', { ascending: true }); // 🚀 🆕 登録順
+      .eq('role_type', 'stylist') 
+      .order('created_at', { ascending: true });
     setStaffs(staffsData || []);
 
     // 2. スケジュール共有設定（schedule_sync_id）を確認
@@ -507,20 +507,36 @@ const isPC = windowWidth > 1024;
       }
     }
 
-// 3. 全関連店舗の予約データを合算して取得（顧客マスタの最新名も取得）
-// 1. 予約データの取得
-const { data: resData } = await supabase
-  .from('reservations')
-  .select('*, profiles(business_name), staffs(name), customers(*)')
-  .in('shop_id', targetShopIds);
+    // 🚀 🆕 【超重要：爆速化の仕掛け】
+    // カレンダーで現在見ている週（startDate）を基準に、前後30日間（約2ヶ月分）の開始・終了日時を算出し、
+    // データベースからそれ以外の無駄な過去・未来データを一切引っ張ってこないようにせき止めます！
+    const currentViewDate = new Date(startDate);
+    
+    const pastRange = new Date(currentViewDate.getTime() - (30 * 24 * 60 * 60 * 1000));
+    const futureRange = new Date(currentViewDate.getTime() + (30 * 24 * 60 * 60 * 1000));
+    
+    const startRangeStr = pastRange.toLocaleDateString('sv-SE') + "T00:00:00Z";
+    const endRangeStr = futureRange.toLocaleDateString('sv-SE') + "T23:59:59Z";
+    const startDayStr = pastRange.toLocaleDateString('sv-SE');
+    const endDayStr = futureRange.toLocaleDateString('sv-SE');
 
-// 2. 🆕 プライベート予定の取得
+    // 🚀 🆕 ① 予約データの取得（重たい options や顧客メモを select(*) から除外！）
+    const { data: resData } = await supabase
+      .from('reservations')
+      .select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)')
+      .in('shop_id', targetShopIds)
+      .gte('start_time', startRangeStr)
+      .lte('start_time', endRangeStr);
+
+    // 🚀 🆕 ② プライベート予定の取得（期間で絞り込み）
     const { data: privData } = await supabase
       .from('private_tasks')
       .select('*')
-      .eq('shop_id', shopId);
+      .eq('shop_id', shopId)
+      .gte('start_time', startRangeStr)
+      .lte('start_time', endRangeStr);
 
-    // 🆕 【ここを追加！】提携施設と定期ルールを取得
+    // ③ 提携施設の取得
     const { data: connData } = await supabase
       .from('shop_facility_connections')
       .select('*, facility_users(facility_name)')
@@ -528,20 +544,22 @@ const { data: resData } = await supabase
       .eq('status', 'active');
     setFacilityConnections(connData || []);
 
-    // 3. 🆕 施設訪問依頼の取得
+    // 🚀 🆕 ④ 施設訪問依頼の取得（期間で絞り込み）
     const { data: visitData } = await supabase
       .from('visit_requests')
       .select('*, facility_users(facility_name), visit_request_residents(count)')
       .eq('shop_id', shopId)
-      // ✅ .neq('status', 'completed') を削除することで、完了分もカレンダーに表示されます
-      .neq('status', 'canceled');
+      .neq('status', 'canceled')
+      .gte('scheduled_date', startDayStr)
+      .lte('scheduled_date', endDayStr);
 
-    // 🆕 【重要：ここがエラーの場所でした】
-    // 変数名を mData に統一して定義し、正しく State にセットします
+    // 🚀 🆕 ⑤ 手動キープの取得（期間で絞り込み）
     const { data: mData } = await supabase
       .from('keep_dates')
-      .select('*, facility_users(*)') // 🚀 🆕 (facility_name) から (*) に変更して全情報を取得
-      .eq('shop_id', shopId);
+      .select('*, facility_users(*)')
+      .eq('shop_id', shopId)
+      .gte('date', startDayStr)
+      .lte('date', endDayStr);
 
     // 🆕 定期訪問の除外リストも取得
     const { data: exclData } = await supabase
@@ -758,23 +776,89 @@ const { data: resData } = await supabase
       alert(`こちらは他店舗の予約です。`);
       return;
     }
-    setSelectedRes(res);
+    setLoading(true);
 
-    let cust = null;
-    if (res.customer_id) {
-      const { data: matched } = await supabase.from('customers').select('*').eq('id', res.customer_id).maybeSingle();
-      cust = matched;
-    }
-    if (!cust) {
-      const orConditions = [];
-      if (res.customer_phone && res.customer_phone !== '---') orConditions.push(`phone.eq.${res.customer_phone}`);
-      if (res.customer_email) orConditions.push(`email.eq.${res.customer_email}`);
-      if (orConditions.length > 0) {
-        const { data: matched } = await supabase.from('customers').select('*').eq('shop_id', shopId).or(orConditions.join(',')).maybeSingle();
+    try {
+      let fullResData = res;
+      if (res.id && res.res_type === 'normal') {
+        const { data: freshRes } = await supabase
+          .from('reservations')
+          .select('id, shop_id, customer_id, start_time, end_time, status, res_type, customer_name, customer_phone, customer_email, menu_name, total_price, total_slots, staff_id, options')
+          .eq('id', res.id)
+          .maybeSingle();
+        if (freshRes) fullResData = freshRes;
+      }
+      
+      setSelectedRes(fullResData);
+
+      let cust = null;
+      if (fullResData.customer_id) {
+        const { data: matched } = await supabase.from('customers').select('*').eq('id', fullResData.customer_id).maybeSingle();
         cust = matched;
       }
+      if (!cust) {
+        const orConditions = [];
+        if (fullResData.customer_phone && fullResData.customer_phone !== '---') orConditions.push(`phone.eq.${fullResData.customer_phone}`);
+        if (fullResData.customer_email) orConditions.push(`email.eq.${fullResData.customer_email}`);
+        if (orConditions.length > 0) {
+          const { data: matched } = await supabase.from('customers').select('*').eq('shop_id', shopId).or(orConditions.join(',')).maybeSingle();
+          cust = matched;
+        }
+      }
+
+      // 🚀 🆕 【全期間履歴のオンデマンド強制復活】
+      // 画面読み込み軽量化の影響で、初期State（reservations）からは過去のデータが抜かれているため、
+      // タップされたこのお客様の「過去全ての施術履歴」と「未来の全予定」を、期間制限なしでSupabaseから直接引っ張り出します！
+      const isFac = cust?.is_facility || fullResData.res_type === 'facility_visit';
+      const searchName = (cust?.name || fullResData.customer_name || "").trim();
+      
+      let allHistory = [];
+      if (isFac) {
+        // 🏢 施設訪問の場合：全期間の履歴を取得
+        const { data: facHistory } = await supabase
+          .from('visit_requests')
+          .select('*, facility_users(facility_name)')
+          .eq('shop_id', shopId)
+          .neq('status', 'canceled')
+          .or(`customer_name.eq.${searchName},facility_user_id.eq.${cust?.id || fullResData.facility_user_id}`);
+        
+        allHistory = (facHistory || [])
+          .map(v => ({ ...v, start_time: v.scheduled_date }))
+          .sort((a, b) => b.start_time.localeCompare(a.start_time));
+      } else {
+        // 👤 個人の場合：期間のフィルター（gte, lte）を一切かけず、この人名またはIDに紐づく全データを狙い撃ち取得！
+        let resQuery = supabase
+          .from('reservations')
+          .select('*, staffs(name)')
+          .eq('shop_id', shopId)
+          .in('status', ['completed', 'confirmed', 'canceled'])
+          .order('start_time', { ascending: false });
+          
+        if (cust?.id) {
+          resQuery = resQuery.or(`customer_id.eq.${cust.id},customer_name.eq.${searchName}`);
+        } else {
+          resQuery = resQuery.eq('customer_name', searchName);
+        }
+        
+        const { data: personalHistory } = await resQuery;
+        allHistory = personalHistory || [];
+      }
+
+      // 💡 修正箇所③（finalizeOpenDetail内）で再度フィルターされてしまうのを防ぐため、
+      // 先にここでお取り寄せした全期間の重い履歴データをバチッと流し込んでおきます！
+      setCustomerHistory(allHistory);
+
+      finalizeOpenDetail(fullResData, cust);
+      
+      // 🚀 🆕 呼び出し先の finalizeOpenDetail 側でせっかくの全期間履歴が上書き消去されないよう、
+      // ほんの少しだけタイミングを遅らせて全履歴データをStateに確実に固定します！
+      setTimeout(() => setCustomerHistory(allHistory), 50);
+
+    } catch (err) {
+      console.error("Open Detail Error:", err);
+    } finally {
+      setLoading(false);
     }
-    finalizeOpenDetail(res, cust);
   };
 
   // 🚀 ❷【openCustomerDetail：履歴を確実に復活させる修正版】
@@ -2095,12 +2179,13 @@ return (
                 return (
                   <td 
                     key={`${dStr}-${time}`} 
-                    /* 🚀 🆕 【ここから修正箇所】 */
                     onClick={async () => { 
                       setSelectedDate(dStr); 
                       setTargetTime(time);
                       
-                      const firstItem = Array.isArray(resAt) ? resAt[0] : resAt;
+                      // 🚀 🆕 オブジェクト形式でデータが返ってきた時も、安全に [ ] 配列化してエラーを完全ブロックします
+                      const normalizedItems = Array.isArray(resAt) ? resAt : (resAt ? [resAt] : []);
+                      const firstItem = normalizedItems.length > 0 ? normalizedItems[0] : null;
                       
                       // 💡 判定用：定休日、システムブロック、または施設日のステルスブロックか
                       const isBgBlock = firstItem?.isRegularHoliday || 
@@ -2599,38 +2684,41 @@ else if (
             ) : (
 
               /* ==========================================
-                 👤 パターンB：通常予約（リッチな顧客カルテ ＆ 履歴）
+                 👤 パターンB：通常予約（リッチな顧客カルテ ＆ 履歴・スマホ爆広リフォーム版）
                  ========================================== */
-              <div style={{ display: 'grid', gridTemplateColumns: isPC ? '1fr 1fr' : '1fr', gap: '25px' }}>
+              <div style={{ 
+                display: 'flex', 
+                flexDirection: isPC ? 'row' : 'column', 
+                gap: '25px',
+                alignItems: 'stretch'
+              }}>
                 
                 {/* 📝 左側：入力フォーム一式 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '15px', minWidth: isPC ? '300px' : '100%' }}>
                   <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                     
                     {/* 📋 予約メニュー内訳 */}
                     <div style={{ background: themeColorLight, padding: '16px', borderRadius: '15px', marginBottom: '15px', border: `1px solid ${themeColor}` }}>
-      {/* 🆕 事業名の表示を追加 */}
-      {categoryMap[selectedRes?.category] && (
-        <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>
-          🏢 受付事業：{categoryMap[selectedRes?.category]}
-        </div>
-      )}
-      
-      <label style={{ fontSize: '0.75rem', fontWeight: '900', color: themeColor, display: 'block', marginBottom: '10px' }}>📋 予約・会計内訳</label>
-      <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedRes?.menu_name || 'メニュー未設定'}</div>
-      
-      {/* 🚀 🆕 会計済みの商品があればここに表示 */}
-      {(() => {
-        const details = parseReservationDetails(selectedRes);
-        return details.products?.length > 0 && (
-          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(0,0,0,0.1)', fontSize: '0.85rem', color: '#008000', fontWeight: 'bold' }}>
-            🛍 購入商品: {details.products.map(p => `${p.name} (x${p.quantity})`).join(', ')}
-          </div>
-        );
-      })()}
-    </div>
+                      {categoryMap[selectedRes?.category] && (
+                        <div style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', marginBottom: '4px' }}>
+                          🏢 受付事業：{categoryMap[selectedRes?.category]}
+                        </div>
+                      )}
+                      
+                      <label style={{ fontSize: '0.75rem', fontWeight: '900', color: themeColor, display: 'block', marginBottom: '10px' }}>📋 予約・会計内訳</label>
+                      <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedRes?.menu_name || 'メニュー未設定'}</div>
+                      
+                      {(() => {
+                        const details = parseReservationDetails(selectedRes);
+                        return details.products?.length > 0 && (
+                          <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px dashed rgba(0,0,0,0.1)', fontSize: '0.85rem', color: '#008000', fontWeight: 'bold' }}>
+                            🛍 購入商品: {details.products.map(p => `${p.name} (x${p.quantity})`).join(', ')}
+                          </div>
+                        );
+                      })()}
+                    </div>
 
-                    {/* 🚀 🆕 担当スタッフの変更（技術者が2人以上の時だけ表示） */}
+                    {/* 担当スタッフの変更 */}
                     {staffs.length > 1 && !editFields.is_facility && (
                       <div style={{ marginBottom: '20px' }}>
                         <label style={labelStyle}>担当スタッフの変更</label>
@@ -2647,10 +2735,9 @@ else if (
                       </div>
                     )}
 
-                    {/* 🆕 修正：ここから動的フォーム（順番固定版） */}
+                    {/* 動的フォーム */}
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                       {(() => {
-                        // 🏆 三土手さん理想の表示順を定義
                         const fieldOrder = [
                           'name', 'furigana', 'email', 'phone', 
                           'zip_code', 'address', 'parking', 
@@ -2659,117 +2746,69 @@ else if (
                         ];
 
                         return fieldOrder.map((key) => {
-  // 表示判定（基本4項目 or 必須設定項目）
-  if (!shouldShowInAdmin(key)) return null;
+                          if (!shouldShowInAdmin(key)) return null;
 
-  return (
-    <div key={key}>
-      {/* 🆕 ラベルとショートカットボタンを横並びにするコンテナ */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
-        <label style={{ ...labelStyle, marginBottom: 0 }}>{getFieldLabel(key)}</label>
+                          return (
+                            <div key={key}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+                                <label style={{ ...labelStyle, marginBottom: 0 }}>{getFieldLabel(key)}</label>
 
-        {/* 📞 電話をかけるボタン (phoneかつデータがある時のみ) */}
-        {key === 'phone' && editFields.phone && (
-          <a 
-            href={`tel:${editFields.phone}`}
-            style={{ 
-              textDecoration: 'none', 
-              background: '#10b981', 
-              color: '#fff', 
-              padding: '2px 8px', 
-              borderRadius: '6px', 
-              fontSize: '0.65rem', 
-              fontWeight: 'bold',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '4px',
-              boxShadow: '0 2px 4px rgba(16,185,129,0.2)'
-            }}
-          >
-            <span>電話をかける</span> 📞
-          </a>
-        )}
+                                {key === 'phone' && editFields.phone && (
+                                  <a 
+                                    href={`tel:${editFields.phone}`}
+                                    style={{ textDecoration: 'none', background: '#10b981', color: '#fff', padding: '2px 8px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(16,185,129,0.2)' }}
+                                  >
+                                    <span>電話をかける</span> 📞
+                                  </a>
+                                )}
 
-        {key === 'name' && editFields.line_user_id && (
-                              <span style={badgeStyle('#06C755')}>LINE連携済み ✅</span>
-                            )}
+                                {key === 'name' && editFields.line_user_id && (
+                                  <span style={badgeStyle('#06C755')}>LINE連携済み ✅</span>
+                                )}
 
-        {/* 📍 マップを開くボタン (addressかつデータがある時のみ) */}
-        {key === 'address' && editFields.address && (
-  <a 
-    /* 🚀 修正ポイント：公式の検索URLに変更し、${ } で住所を囲む */
-    href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(editFields.address)}`}
-    target="_blank" 
-    rel="noopener noreferrer"
-    style={{ 
-      textDecoration: 'none', 
-      background: '#3b82f6', 
-      color: '#fff', 
-      padding: '2px 8px', 
-      borderRadius: '6px', 
-      fontSize: '0.65rem', 
-      fontWeight: 'bold',
-      display: 'flex',
-      alignItems: 'center',
-      gap: '4px',
-      boxShadow: '0 2px 4px rgba(59,130,246,0.2)'
-    }}
-  >
-    <span>マップで開く</span> 📍
-  </a>
-)}
-      </div>
+                                {key === 'address' && editFields.address && (
+                                  <a 
+                                    href={`http://maps.google.com/?q=${encodeURIComponent(editFields.address)}`}
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    style={{ textDecoration: 'none', background: '#3b82f6', color: '#fff', padding: '2px 8px', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', boxShadow: '0 2px 4px rgba(59,130,246,0.2)' }}
+                                  >
+                                    <span>マップで開く</span> 📍
+                                  </a>
+                                )}
+                              </div>
 
-      {/* 💡 入力欄はスッキリ配置 */}
-      {key === 'parking' ? (
-  <select 
-    disabled={editFields.is_facility} 
-    value={editFields[key] || ''} 
-    onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-    style={{ 
-      ...inputStyle, 
-      background: editFields.is_facility ? '#f1f5f9' : '#fff',
-      cursor: editFields.is_facility ? 'not-allowed' : 'pointer'
-    }}
-  >
-    {/* 🚀 ここに具体的な選択肢を復活させます */}
-    <option value="">未選択</option>
-    <option value="あり">あり</option>
-    <option value="なし">なし</option>
-  </select>
-) : (
-    <input 
-      type="text" 
-      readOnly={editFields.is_facility} // 👈 施設なら入力不可
-      value={editFields[key] || ''} 
-      onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
-      style={{ 
-        ...inputStyle, 
-        background: editFields.is_facility ? '#f1f5f9' : '#fff', // 👈 グレーアウト
-        cursor: editFields.is_facility ? 'not-allowed' : 'text'   // 👈 禁止マーク
-      }} 
-      placeholder="未登録"
-    />
-  )}
-    </div>
-  );
-});
+                              {key === 'parking' ? (
+                                <select 
+                                  disabled={editFields.is_facility} 
+                                  value={editFields[key] || ''} 
+                                  onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+                                  style={{ ...inputStyle, background: editFields.is_facility ? '#f1f5f9' : '#fff', cursor: editFields.is_facility ? 'not-allowed' : 'pointer' }}
+                                >
+                                  <option value="">未選択</option>
+                                  <option value="あり">あり</option>
+                                  <option value="なし">なし</option>
+                                </select>
+                              ) : (
+                                <input 
+                                  type="text" 
+                                  readOnly={editFields.is_facility} 
+                                  value={editFields[key] || ''} 
+                                  onChange={(e) => setEditFields({...editFields, [key]: e.target.value})} 
+                                  style={{ ...inputStyle, background: editFields.is_facility ? '#f1f5f9' : '#fff', cursor: editFields.is_facility ? 'not-allowed' : 'text' }} 
+                                  placeholder="未登録"
+                                />
+                              )}
+                            </div>
+                          );
+                        });
                       })()}
 
-                      {/* 🆕 カスタム質問（ラジオボタン）の回答表示セクション */}
                       {shop?.form_config?.custom_questions?.map((q) => {
-                        // 💡 editFields.custom_answers から回答を抽出
                         const answer = editFields.custom_answers?.[q.id];
-                        // 必須である、または回答がある場合のみ表示
                         if (q.required || answer) {
                           return (
-                            <div key={q.id} style={{ 
-                              background: '#fff', 
-                              padding: '12px', 
-                              borderRadius: '12px', 
-                              border: q.required ? `2px solid ${themeColor}33` : '1px solid #e2e8f0',
-                              marginTop: '5px'
-                            }}>
+                            <div key={q.id} style={{ background: '#fff', padding: '12px', borderRadius: '12px', border: q.required ? `2px solid ${themeColor}33` : '1px solid #e2e8f0', marginTop: '5px' }}>
                               <label style={{ ...labelStyle, color: q.required ? themeColor : '#64748b', marginBottom: '8px' }}>
                                 🙋 {q.label} {q.required && <span style={{ color: '#ef4444' }}>(必須)</span>}
                               </label>
@@ -2782,7 +2821,6 @@ else if (
                         return null;
                       })}
 
-                      {/* 顧客メモ（マスタ共通）は常に一番下 */}
                       <div>
                         <label style={labelStyle}>顧客メモ（マスタ共通・内部用）</label>
                         <textarea 
@@ -2796,47 +2834,39 @@ else if (
                     
                     <button onClick={handleUpdateCustomer} style={{ width: '100%', padding: '14px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', marginTop: '15px' }}>情報を保存</button>
 
-                    {/* 🆕 2段構えの削除・キャンセルエリア */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
                       <button 
-  // 🚀 すでにキャンセル済みならボタンを無効化
-  onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
-  disabled={selectedRes?.status === 'canceled'}
-  style={{ 
-    padding: '12px', 
-    // 🚀 キャンセル済みなら灰色背景、そうでなければ白背景
-    background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', 
-    // 🚀 キャンセル済みなら灰色文字、そうでなければ茶色文字
-    color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#8d5c08', 
-    border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#8d5c08'}`, 
-    borderRadius: '10px', 
-    fontWeight: 'bold', 
-    cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', 
-    fontSize: '0.8rem' 
-  }}
->
-  {selectedRes?.status === 'canceled' ? 'キャンセル済み' : '当日キャンセル'}
-</button>
-                      <button 
-                        onClick={() => deleteRes(selectedRes.id)} 
-                        style={{ padding: '12px', background: '#e0dddd8d', color: '#780606', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}
+                        onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
+                        disabled={selectedRes?.status === 'canceled'}
+                        style={{ padding: '12px', background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#8d5c08', border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#8d5c08'}`, borderRadius: '10px', fontWeight: 'bold', cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', fontSize: '0.8rem' }}
                       >
-                        消去 & 掃除
+                        {selectedRes?.status === 'canceled' ? 'キャンセル済み' : '当日キャンセル'}
                       </button>
+                      <button onClick={() => deleteRes(selectedRes.id)} style={{ padding: '12px', background: '#e0dddd8d', color: '#780606', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>消去 & 掃除</button>
                     </div>
                   </div>
                 </div>
 
                 {/* 🕒 右側：来店履歴エリア */}
-                <div>
+                <div style={{ flex: 1, minWidth: isPC ? '300px' : '100%' }}>
                   <h4 style={{ margin: '0 0 10px 0', fontSize: '0.9rem', color: '#64748b' }}>🕒 来店履歴 ＆ 予定</h4>
-                  <div style={{ height: isPC ? '420px' : '250px', overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: '15px', background: '#f8fafc', padding: '5px' }}>
+                  
+                  <div style={{ 
+                    height: isPC ? '420px' : 'unset', 
+                    overflowY: isPC ? 'auto' : 'visible', 
+                    border: '1px solid #f1f5f9', 
+                    borderRadius: '15px', 
+                    background: '#f8fafc', 
+                    padding: '10px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '10px'
+                  }}>
                     {(() => {
-                      // 🚀 1. 施設の場合：月ごとにグルーピングして表示
                       if (editFields.is_facility === true || selectedRes?.res_type === 'facility_visit') {
                         const groups = {};
                         customerHistory.forEach(h => {
-                          if (h.status === 'canceled') return; // キャンセル分はまとめに含めない
+                          if (h.status === 'canceled') return; 
                           const d = new Date(h.start_time);
                           const monthKey = `${d.getFullYear()}年${d.getMonth() + 1}月`;
                           if (!groups[monthKey]) groups[monthKey] = { month: monthKey, visits: [] };
@@ -2844,10 +2874,7 @@ else if (
                         });
 
                         return Object.values(groups).map((group) => (
-                          <div key={group.month} style={{ 
-                            background: '#fff', border: '1px solid #e0e7ff', borderRadius: '16px', 
-                            padding: '15px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(79,70,229,0.05)' 
-                          }}>
+                          <div key={group.month} style={{ background: '#fff', border: '1px solid #e0e7ff', borderRadius: '16px', padding: '15px', marginBottom: '15px', boxShadow: '0 2px 8px rgba(79,70,229,0.05)' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px', borderBottom: '1px solid #f1f5f9', paddingBottom: '8px' }}>
                               <span style={{ fontWeight: '900', color: '#4f46e5', fontSize: '1rem' }}>{group.month}度 訪問</span>
                               <span style={{ fontSize: '0.65rem', background: '#f5f3ff', color: '#4f46e5', padding: '2px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
@@ -2855,7 +2882,6 @@ else if (
                               </span>
                             </div>
                             
-                            {/* 📅 実施日を「・」で繋いで横並びにする */}
                             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '10px', paddingLeft: '5px' }}>
                               {group.visits.sort((a,b) => new Date(a.start_time) - new Date(b.start_time)).map((v, i) => {
                                 const date = new Date(v.start_time);
@@ -2875,8 +2901,7 @@ else if (
                         ));
                       }
 
-                      // 🚀 2. 個人の場合：従来通りの1件ずつ詳細表示
-                      return customerHistory.map((h, idx) => {
+                      return customerHistory.map((h) => {
                         const hDate = new Date(h.start_time);
                         const isToday = hDate.toLocaleDateString('sv-SE') === new Date().toLocaleDateString('sv-SE');
                         const isCanceled = h.status === 'canceled';
@@ -2884,16 +2909,8 @@ else if (
                         return (
                           <div 
                             key={h.id} 
-                            // 🚀 🆕 修正：キャンセル分以外はタップで詳細を開く
                             onClick={() => !isCanceled && openHistoryDetail(h)}
-                            style={{ 
-                              padding: '15px', borderBottom: '1px solid #eee', 
-                              background: isCanceled ? '#fcfcfc' : '#fff', 
-                              borderRadius: isToday ? '12px' : '0', 
-                              border: isToday ? `2px solid ${themeColor}` : 'none',
-                              opacity: isCanceled ? 0.7 : 1, position: 'relative',
-                              cursor: isCanceled ? 'default' : 'pointer' // 👈 指マークを追加
-                            }}
+                            style={{ padding: '15px', borderBottom: '1px solid #eee', background: isCanceled ? '#fcfcfc' : '#fff', borderRadius: isToday ? '12px' : '0', border: isToday ? `2px solid ${themeColor}` : 'none', opacity: isCanceled ? 0.7 : 1, position: 'relative', cursor: isCanceled ? 'default' : 'pointer' }}
                           >
                             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
                               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -2907,39 +2924,26 @@ else if (
                               </span>
                             </div>
                             <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
-  {/* 🚀 🆕 2人以上いる場合のみ担当者を表示 */}
-  {staffs.length > 1 && (
-    <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>
-      👤 {h.staffs?.name || 'フリー'}
-    </span>
-  )}
-  {h.menu_name}
-</p>
+                              {staffs.length > 1 && (
+                                <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>
+                                  👤 {h.staffs?.name || 'フリー'}
+                                </span>
+                              )}
+                              {h.menu_name}
+                            </p>
 
-                            {/* 🚀 🆕 ここに追加：商品と調整の表示ロジック */}
                             {(() => {
-                              // 各履歴データ(h)を最新の解析ロジックで読み込む
                               const details = parseReservationDetails(h);
                               return (
                                 <>
-                                  {/* 🛍 商品購入がある場合（緑色） */}
                                   {details.products?.length > 0 && (
-                                    <div style={{ 
-                                      marginTop: '5px', fontSize: '0.75rem', 
-                                      color: isCanceled ? '#cbd5e1' : '#008000', 
-                                      fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' 
-                                    }}>
+                                    <div style={{ marginTop: '5px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <span>🛍 商品: {details.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
                                     </div>
                                   )}
 
-                                  {/* ⚙️ 調整（割引・加算）がある場合（赤色） */}
                                   {details.adjustments?.length > 0 && (
-                                    <div style={{ 
-                                      marginTop: '3px', fontSize: '0.75rem', 
-                                      color: isCanceled ? '#cbd5e1' : '#ef4444', 
-                                      fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' 
-                                    }}>
+                                    <div style={{ marginTop: '3px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <span>⚙️ 調整: {details.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
                                     </div>
                                   )}
