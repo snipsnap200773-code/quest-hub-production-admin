@@ -53,12 +53,13 @@ const FacilityLogin = () => {
           .maybeSingle(); 
         
         if (data) {
+          // 🚀 修正：画面中央のタイトル用に施設名は保持しますが、
+          // ログインID（入力欄）を強制上書きして固定化するのを廃止します！
           setFacilityMetadata(data);
-          setLoginId(data.login_id);
+          // setLoginId(data.login_id); 👈 ここをコメントアウト（または削除）して、入力欄を常に空っぽにして自由に打てるようにします！
         }
       }
       setLoading(false);
-    };
 
     initLoginScreen();
   }, [facilityId, navigate]);
@@ -179,8 +180,14 @@ if (facilityUser && !facilityError) {
     <div style={bgStyle}>
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} style={cardStyle}>
         <div style={iconBoxStyle}><Building2 size={32} /></div>
-        <h1 style={titleStyle}>{facilityMetadata?.facility_name || "QUEST HUB Admin"}</h1>
-        <p style={subtitleStyle}>マルチ管理ポータルログイン</p>
+        
+        {/* 🚀 修正：施設ID経由のときは施設名を、それ以外の通常アクセスは共通タイトルを凛々しく表示します */}
+        <h1 style={titleStyle}>
+          {facilityMetadata?.facility_name ? `${facilityMetadata.facility_name}` : "QUEST HUB Admin"}
+        </h1>
+        <p style={subtitleStyle}>
+          {facilityMetadata?.facility_name ? "施設専用ログインポータル" : "マルチ管理総合ログイン画面"}
+        </p>
 
         <form onSubmit={handleLogin} style={formStyle}>
           <div style={inputGroupStyle}>

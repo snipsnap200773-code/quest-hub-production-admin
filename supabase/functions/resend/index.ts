@@ -487,8 +487,8 @@ if (type === 'facility_booking') {
           </div>
 
           <div style="text-align: center;">
-  <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で詳細を確認する</a>
-</div>
+            <a href="${ADMIN_URL}/admin/${shopId}/reservations" style="display: inline-block; background: #3d2b1f; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で詳細を確認する</a>
+          </div>
         </div>`
     })
   });
