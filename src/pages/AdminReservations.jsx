@@ -509,8 +509,6 @@ const isPC = windowWidth > 1024;
     }
 
     // 🚀 🆕 【超重要：爆速化の仕掛け】
-    // カレンダーで現在見ている週（startDate）を基準に、前後30日間（約2ヶ月分）の開始・終了日時を算出し、
-    // データベースからそれ以外の無駄な過去・未来データを一切引っ張ってこないようにせき止めます！
     const currentViewDate = new Date(startDate);
     
     const pastRange = new Date(currentViewDate.getTime() - (30 * 24 * 60 * 60 * 1000));
@@ -521,7 +519,18 @@ const isPC = windowWidth > 1024;
     const startDayStr = pastRange.toLocaleDateString('sv-SE');
     const endDayStr = futureRange.toLocaleDateString('sv-SE');
 
-    // 🚀 🆕 ① 予約データの取得（重たい options や顧客メモを select(*) から除外！）
+    // 🚀 修正：本当の「今日」の前後30日
+    const realToday = new Date();
+    const alertPastRange = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
+    const alertFutureRange = new Date(realToday.getTime() + (30 * 24 * 60 * 60 * 1000));
+    const alertStartDayStr = alertPastRange.toLocaleDateString('sv-SE');
+    const alertEndDayStr = alertFutureRange.toLocaleDateString('sv-SE');
+
+    /* 🚀 【ここがポイント！】カレンダー表示範囲と本当の今日、どちらの期間も絶対にカバーする「最強の広域範囲」を計算 */
+    const finalStartDayStr = startDayStr < alertStartDayStr ? startDayStr : alertStartDayStr;
+    const finalEndDayStr = endDayStr > alertEndDayStr ? endDayStr : alertEndDayStr;
+
+    // ① 予約データの取得
     const { data: resData } = await supabase
       .from('reservations')
       .select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)')
@@ -529,7 +538,7 @@ const isPC = windowWidth > 1024;
       .gte('start_time', startRangeStr)
       .lte('start_time', endRangeStr);
 
-    // 🚀 🆕 ② プライベート予定の取得（期間で絞り込み）
+    // ② プライベート予定の取得
     const { data: privData } = await supabase
       .from('private_tasks')
       .select('*')
@@ -545,22 +554,22 @@ const isPC = windowWidth > 1024;
       .eq('status', 'active');
     setFacilityConnections(connData || []);
 
-    // 🚀 🆕 ④ 施設訪問依頼の取得（期間で絞り込み）
+    // ④ 施設訪問依頼の取得（★最強広域範囲に書き換え）
     const { data: visitData } = await supabase
       .from('visit_requests')
       .select('*, facility_users(facility_name), visit_request_residents(count)')
       .eq('shop_id', shopId)
       .neq('status', 'canceled')
-      .gte('scheduled_date', startDayStr)
-      .lte('scheduled_date', endDayStr);
+      .gte('scheduled_date', finalStartDayStr) 
+      .lte('scheduled_date', finalEndDayStr);  
 
-    // 🚀 🆕 ⑤ 手動キープの取得（期間で絞り込み）
+    // ⑤ 手動キープの取得（★最強広域範囲に書き換え）
     const { data: mData } = await supabase
       .from('keep_dates')
       .select('*, facility_users(*)')
       .eq('shop_id', shopId)
-      .gte('date', startDayStr)
-      .lte('date', endDayStr);
+      .gte('date', finalStartDayStr) 
+      .lte('date', finalEndDayStr);
 
     // 🆕 定期訪問の除外リストも取得
     const { data: exclData } = await supabase
@@ -574,9 +583,8 @@ const isPC = windowWidth > 1024;
     setManualKeeps(mData || []); 
     setExclusions(exclData?.map(e => e.excluded_date) || []);
     
-    // 🚀 🆕 修正：ここから下の「仕分け＆自動スキャン」をこの無敵バージョンに差し替えます
     const today = new Date();
-    // 💡 タイムゾーンのバグを地球上から消し去るため、年・月・日を数値で指定してローカルの00:00:00を強制作成
+    // 💡 常に本当の「今日」の00:00:00を基準にすることで、カレンダーを進めてもアラートが狂わなくなります
     const baseToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
     const todayStr = getJapanDateStr(baseToday);
     
@@ -602,7 +610,6 @@ const isPC = windowWidth > 1024;
       let isRegularDay = false;
       let originalRuleTime = null; 
 
-      // 💡 データベースの「2026-05-20」を数値にバラして、時差の起きないローカル日付を生成
       const [y, mon, d] = k.date.split('-').map(Number);
       const dObj = new Date(y, mon - 1, d);
 
