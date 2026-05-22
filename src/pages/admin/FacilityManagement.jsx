@@ -123,6 +123,19 @@ const FacilityManagement = () => {
   const [worksheetYear, setWorksheetYear] = useState(new Date().getFullYear());
   const [worksheetMonth, setWorksheetMonth] = useState(new Date().getMonth() + 1);
   const [invoiceTarget, setInvoiceTarget] = useState(null); // { customer_id, name }
+
+  // 🚀 🆕 「ねじ込みキープ」用のStateと判定データ蓄積用のStateを一括追加
+  const [showManualKeepModal, setShowManualKeepModal] = useState(false);
+  const [keepDate, setKeepDate] = useState('');
+  const [keepTime, setKeepTime] = useState('09:00');
+  const [keepTargetFacilityId, setKeepTargetFacilityId] = useState('');
+  const [keepViewMonth, setKeepViewMonth] = useState(new Date());
+
+  const [resList, setResList] = useState([]);
+  const [privList, setPrivList] = useState([]);
+  const [visitList, setVisitList] = useState([]);
+  const [keepList, setKeepList] = useState([]);
+  const [exclList, setExclList] = useState([]);
   const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
   const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
   const [salesRecords, setSalesRecords] = useState([]); // 売上データ保持用
@@ -147,9 +160,10 @@ const FacilityManagement = () => {
   const [selMonthType, setSelMonthType] = useState(0);
   const [selTime, setSelTime] = useState('09:00');
 
+  // 🚀 修正：ねじ込みキープ画面で月を「◀」「▶」で切り替えた時も、連動して判定データが最新にリロードされるようにします
   useEffect(() => {
     fetchFacilities();
-  }, [shopId]);
+  }, [shopId, keepViewMonth]);
 
   const fetchFacilities = async () => {
     setLoading(true);
@@ -188,13 +202,35 @@ const FacilityManagement = () => {
       }));
       setFacilities(formatted);
 
-      // 🚀 🆕 売上台帳と顧客マスタも一緒に取得しておく（請求書計算用）
-      const [sRes, cRes] = await Promise.all([
+      // 🚀 🆕 【超強化】カレンダーの○△✕自動判定に必要なすべてのテーブルを広域で一斉ロード！
+      const currentKMonth = new Date(keepViewMonth);
+      const kPast = new Date(currentKMonth.getFullYear(), currentKMonth.getMonth() - 1, 1);
+      const kFuture = new Date(currentKMonth.getFullYear(), currentKMonth.getMonth() + 2, 0);
+      const kStartStr = kPast.toLocaleDateString('sv-SE');
+      const kEndStr = kFuture.toLocaleDateString('sv-SE');
+      const kStartStrT = kStartStr + "T00:00:00Z";
+      const kEndStrT = kEndStr + "T23:59:59Z";
+
+      const [sRes, cRes, resData, privData, visitData, mData, exclData] = await Promise.all([
         supabase.from('sales').select('*').eq('shop_id', shopId),
-        supabase.from('customers').select('id, name').eq('shop_id', shopId) 
+        supabase.from('customers').select('id, name').eq('shop_id', shopId),
+        supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
+        supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
+        supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
+        supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
+        supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
       ]);
+
       setSalesRecords(sRes.data || []);
       setAllCustomers(cRes.data || []);
+
+      // ○△✕判定用のデータをStateへガッチリ蓄積
+      setResList(resData.data || []);
+      setPrivList(privData.data || []);
+      setVisitList(visitData.data || []);
+      setKeepList(mData.data || []);
+      setExclList(exclData.data?.map(e => e.excluded_date) || []);
+
     } else if (error) {
       console.error("取得エラー:", error);
     }
@@ -418,6 +454,117 @@ const handleSave = async (e) => {
     }
   };
   // 🏢 ここまで ======================================================
+
+  // ★★★★★★★ ここから「ねじ込みキープ保存関数」を追記 ★★★★★★★
+  const handleSaveManualKeep = async () => {
+    if (!keepDate) { alert("日付を選択してください。"); return; }
+    if (!keepTime) { alert("時間を選択してください。"); return; }
+    if (!keepTargetFacilityId) { alert("対象の施設を選択してください。"); return; }
+
+    setLoading(true);
+    try {
+      // keep_dates テーブルに店舗主導のキープ枠を挿入
+      const { error } = await supabase
+        .from('keep_dates')
+        .insert([{
+          shop_id: shopId,
+          facility_user_id: keepTargetFacilityId,
+          date: keepDate,
+          start_time: keepTime,
+          created_at: new Date().toISOString()
+        }]);
+
+      if (error) throw error;
+
+      alert("施設用のねじ込みキープ枠を正常に確保しました！✨");
+      setShowManualKeepModal(false);
+      // 入力のリセット
+      setKeepDate('');
+      setKeepTime('09:00');
+      setKeepTargetFacilityId('');
+    } catch (err) {
+      console.error("Manual Keep Error:", err);
+      alert("キープ枠の確保に失敗しました: " + err.message);
+    } finally {
+      setLoading(false);
+      fetchFacilities(); // 💡 画面全体をリロードせず、リストと設定をスマートに再取得してカレンダーと同期させます
+    }
+  };
+
+  // 🚀 🆕 三土手さん仕様：ねじ込みキープ専用の○△✕ステータス判定ロジック
+  const getKeepSlotStatus = (dateStr) => {
+    const d = new Date(dateStr);
+    const todayStr = new Date().toLocaleDateString('sv-SE');
+    
+    // ⏳ 過去と今日（22日）は無条件で選択不可（ past ）扱い
+    if (dateStr <= todayStr) return 'past';
+
+    // ✕条件①：定休日（カレンダー・タイムラインの判定ロジックを完全移植）
+    if (shopSettings?.business_hours?.regular_holidays) {
+      const holidays = shopSettings.business_hours.regular_holidays;
+      const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d.getDay()];
+      const nthWeek = Math.ceil(d.getDate() / 7);
+      
+      const checkLast = new Date(d); checkLast.setDate(d.getDate() + 7);
+      const isLastWeek = checkLast.getMonth() !== d.getMonth();
+      const checkSecondLast = new Date(d); checkSecondLast.setDate(d.getDate() + 14);
+      const isSecondToLastWeek = (checkSecondLast.getMonth() !== d.getMonth()) && !isLastWeek;
+
+      if (holidays[`${nthWeek}-${dayName}`] || (isLastWeek && holidays[`L1-${dayName}`]) || (isSecondToLastWeek && holidays[`L2-${dayName}`])) {
+        return 'ng'; 
+      }
+    }
+
+    // ✕条件②：長期休み（夏休みなど）
+    if (shopSettings?.special_holidays && Array.isArray(shopSettings.special_holidays)) {
+      const isSpecHoliday = shopSettings.special_holidays.some(h => dateStr >= h.start && dateStr <= h.end);
+      if (isSpecHoliday) return 'ng'; 
+    }
+
+    // ✕条件③：既に他の施設訪問、または手動キープ（確定予約・キープ）がその日に入っている
+    const hasFacilityEvent = visitList.some(v => v.scheduled_date === dateStr) || keepList.some(k => k.date === dateStr);
+    if (hasFacilityEvent) return 'ng'; 
+
+    // ✕条件④：他施設の「自動定期キープ」が入っている日（除外設定されていない場合）
+    if (!exclList.includes(dateStr) && facilities.length > 0) {
+      const day = d.getDay();
+      const dom = d.getDate();
+      const m = d.getMonth() + 1;
+      const nthWeek = Math.ceil(dom / 7);
+      const tempNext = new Date(d); tempNext.setDate(dom + 7);
+      const isLastWeek = tempNext.getMonth() !== d.getMonth();
+      const tempNext2 = new Date(d); tempNext2.setDate(dom + 14);
+      const isSecondToLastWeek = (tempNext2.getMonth() !== d.getMonth()) && !isLastWeek;
+
+      let isRegKeptByOther = false;
+      facilities.forEach(conn => {
+        conn.regular_rules?.forEach(rule => {
+          const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
+          const dayMatch = (rule.day === day);
+          let weekMatch = (rule.week === nthWeek);
+          if (rule.week === -1) weekMatch = isLastWeek;
+          if (rule.week === -2) weekMatch = isSecondToLastWeek;
+
+          if (monthMatch && dayMatch && weekMatch) {
+            isRegKeptByOther = true;
+          }
+        });
+      });
+      if (isRegKeptByOther) return 'ng'; 
+    }
+
+    // ✕条件⑤：個人のお客様の予約が1件でもある（※指示通り、管理者ブロック blocked はスルー！）
+    const hasPersonalReserve = resList.some(r => r.start_time.startsWith(dateStr) && r.res_type === 'normal' && r.status !== 'canceled');
+    if (hasPersonalReserve) return 'ng'; 
+
+    // △条件：空いているが、店主の「プライベート予定」だけが入っている日
+    const hasPrivateTask = privList.some(p => p.start_time.startsWith(dateStr));
+    if (hasPrivateTask) return 'partial'; 
+
+    // 🟢 ○条件：何も入っていない、完全にクリーンな営業日
+    return 'available';
+  };
+  // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
   const handleDelete = async (f) => {
     const confirmName = window.prompt(`施設「${f.facility_name}」との提携を解消しますか？\n実行する場合は、確認のため施設名を正確に入力してください：`);
@@ -674,12 +821,26 @@ const handleSave = async (e) => {
           </div>
         </div>
         {/* 🆕 自力で作るのではなく、プラットフォームから探しに行くボタンに変更 */}
-        <button 
-          onClick={() => navigate(`/admin/${shopId}/facility-search`)} 
-          style={{...addBtnStyle, background: '#4f46e5', gap: '8px'}}
-        >
-          <Search size={18} /> 新しい提携先を探す
-        </button>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <button 
+            onClick={() => {
+              setKeepViewMonth(new Date());
+              setKeepDate('');
+              setKeepTime('09:00');
+              if (activeFacilities.length > 0) setKeepTargetFacilityId(activeFacilities[0].id);
+              setShowManualKeepModal(true);
+            }} 
+            style={{...addBtnStyle, background: '#059669', gap: '8px'}}
+          >
+            📌 店舗側からキープを入れる
+          </button>
+          <button 
+            onClick={() => navigate(`/admin/${shopId}/facility-search`)} 
+            style={{...addBtnStyle, background: '#4f46e5', gap: '8px'}}
+          >
+            <Search size={18} /> 新しい提携先を探す
+          </button>
+        </div>
       </header>
 
       {/* 🆕 店舗側の通知設定パネルを追加 */}
@@ -1317,6 +1478,142 @@ const handleSave = async (e) => {
         </div>
       )}
       {/* 🏢 ここまで差し込み ========================================== */}
+
+      {/* 🚀 🆕 店舗側からの「ねじ込みキープ」モーダル本体 */}
+      {showManualKeepModal && (
+        <div style={modalOverlayStyle} onClick={() => setShowManualKeepModal(false)}>
+          <div style={{ ...modalContentStyle, maxWidth: '450px', background: '#fff' }} onClick={e => e.stopPropagation()}>
+            <div style={{ padding: '10px 0', borderBottom: '2px solid #e2e8f0', display: 'flex', justifyBetween: 'center', alignItems: 'center', marginBottom: '20px' }}>
+              <h3 style={{ margin: 0, color: '#059669' }}>📌 施設枠のねじ込みキープ</h3>
+              <button onClick={() => setShowManualKeepModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24}/></button>
+            </div>
+
+            <div style={scrollAreaStyle}>
+              {/* 📅 月曜始まりミニカレンダー */}
+              <div style={{ textAlign: 'center', marginBottom: '20px', background: '#f8fafc', padding: '15px', borderRadius: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() - 1)))}>◀</button>
+                  <span style={{ fontWeight: '900', color: '#1e293b' }}>{keepViewMonth.getFullYear()}年 {keepViewMonth.getMonth() + 1}月</span>
+                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() + 1)))}>▶</button>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.75rem', textAlign: 'center' }}>
+                  {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '5px' }}>{w}</div>)}
+                  {(() => {
+                    const year = keepViewMonth.getFullYear();
+                    const month = keepViewMonth.getMonth();
+                    const rawFirstDay = new Date(year, month, 1).getDay();
+                    const firstDayCount = rawFirstDay === 0 ? 6 : rawFirstDay - 1; // 月曜始まりに調整
+                    const lastDate = new Date(year, month + 1, 0).getDate();
+                    const daysArray = [...Array(firstDayCount).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
+                    
+                    return daysArray.map((day, i) => {
+                      if (!day) return <div key={i} />;
+                      const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                      
+                      // 🚀 新設した判定ロジックをここで1日ずつ実行
+                      const slotStatus = getKeepSlotStatus(dStr); 
+                      
+                      const isSelected = keepDate === dStr;
+                      const isPastOrToday = slotStatus === 'past';
+                      const isNg = slotStatus === 'ng';
+                      
+                      // 今日・過去、または定休日や予約で埋まっている（ng）日は選択させない
+                      const isSelectable = !isPastOrToday && !isNg; 
+
+                      // 🎨 三土手さん指定の条件に基づいて記号とカラーを決定
+                      let statusText = '○';
+                      let statusColor = '#c5a059'; // ○：いつものゴールド
+                      if (slotStatus === 'partial') { statusText = '△'; statusColor = '#f59e0b'; } // △：プライベート予定（オレンジ）
+                      if (slotStatus === 'ng' || slotStatus === 'past') { statusText = '✕'; statusColor = '#fca5a5'; } // ✕：休み・埋まり（薄赤）
+
+                      return (
+                        <div 
+                          key={i} 
+                          onClick={() => isSelectable && setKeepDate(dStr)} 
+                          style={{ 
+                            padding: '8px 0', 
+                            cursor: isSelectable ? 'pointer' : (isPastOrToday ? 'not-allowed' : 'default'), 
+                            borderRadius: '12px', 
+                            background: isSelected ? '#059669' : 'none', 
+                            color: isSelected ? '#fff' : (isPastOrToday ? '#cbd5e1' : '#1e293b'), 
+                            fontWeight: isSelected || isSelectable ? 'bold' : 'normal',
+                            opacity: isPastOrToday ? 0.4 : 1
+                          }}
+                        >
+                          {/* 日付の数値 */}
+                          <div style={{ fontSize: '0.9rem' }}>{day}</div>
+                          
+                          {/* 🚀 動的マーク：選択時は白文字、それ以外は判定されたシンボルカラー */}
+                          <div style={{ 
+                            fontSize: '0.75rem', 
+                            fontWeight: '900', 
+                            marginTop: '2px',
+                            color: isSelected ? '#fff' : statusColor 
+                          }}>
+                            {statusText}
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+
+              {keepDate && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', animation: 'fadeIn 0.2s' }}>
+                  {/* 🕛 時間枠選択 */}
+                  <label style={labelStyle}>🕛 開始時間を選択
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '5px' }}>
+                      {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => (
+                        <button 
+                          key={t} 
+                          type="button"
+                          onClick={() => setKeepTime(t)} 
+                          style={{ 
+                            padding: '10px', borderRadius: '10px', 
+                            border: keepTime === t ? '2px solid #059669' : '1px solid #e2e8f0', 
+                            background: keepTime === t ? '#059669' : '#fff', 
+                            color: keepTime === t ? '#fff' : '#1e293b', 
+                            fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' 
+                          }}
+                        >
+                          {t}
+                        </button>
+                      ))}
+                    </div>
+                  </label>
+
+                  {/* 🏢 対象施設選択 */}
+                  <label style={labelStyle}>🏢 キープを入れる訪問施設を選択
+                    <select 
+                      value={keepTargetFacilityId} 
+                      onChange={(e) => setKeepTargetFacilityId(e.target.value)} 
+                      style={{ ...inputStyle, marginTop: '5px' }}
+                    >
+                      {activeFacilities.map(f => (
+                        <option key={f.id} value={f.id}>{f.facility_name}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+            </div>
+
+            <div style={modalFooterStyle}>
+              <button type="button" onClick={() => setShowManualKeepModal(false)} style={cancelBtnStyle}>キャンセル</button>
+              <button 
+                type="button" 
+                onClick={handleSaveManualKeep} 
+                disabled={!keepDate || !keepTargetFacilityId}
+                style={{ ...saveBtnStyle, background: '#059669', opacity: (!keepDate || !keepTargetFacilityId) ? 0.5 : 1 }}
+              >
+                キープ枠を確定する
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div> // 👈 コンポーネント全体の最後の閉じタグ
   );

@@ -1472,7 +1472,7 @@ const isPC = windowWidth > 1024;
   const getCarryoverDayStatus = (dateStr) => {
     const d = new Date(dateStr);
     const todayStr = getJapanDateStr(new Date());
-    if (dateStr < todayStr) return 'past';
+    if (dateStr <= todayStr) return 'past';
 
     // 1. 🚀 【Hard Block】基本の休み（定休日・長期休暇） -> ✕
     if (checkIsRegularHoliday(d) || checkIsSpecialHoliday(d)) return 'ng';
@@ -3326,19 +3326,24 @@ else if (
                     </div>
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.7rem', textAlign: 'center' }}>
-                      {['日','月','火','水','木','金','土'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold' }}>{w}</div>)}
+                      {/* 🚀 曜日ラベルを月曜始まりに変更 */}
+                      {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold' }}>{w}</div>)}
                       {(() => {
                         const year = carryoverViewMonth.getFullYear();
                         const month = carryoverViewMonth.getMonth();
-                        const firstDay = new Date(year, month, 1).getDay();
+                        
+                        // 🚀 月初の曜日取得 (0:日, 1:月, 2:火...) を月曜始まり（月=0, 火=1...日=6）の空白数に変換
+                        const rawFirstDay = new Date(year, month, 1).getDay();
+                        const firstDayCount = rawFirstDay === 0 ? 6 : rawFirstDay - 1; 
+
                         const lastDate = new Date(year, month + 1, 0).getDate();
-                        const daysArray = [...Array(firstDay).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
+                        const daysArray = [...Array(firstDayCount).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
                         return daysArray.map((day, i) => {
                           if (!day) return <div key={i} />;
                           const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                           const status = getCarryoverDayStatus(dStr);
                           const isSelected = carryoverDate === dStr;
-                          const isSelectable = status !== 'past';
+                          const isSelectable = status !== 'past'; // 🚀 これにより今日（22日）も自動でfalseになります
                           return (
                             <div key={i} onClick={() => isSelectable && setCarryoverDate(dStr)} style={{ padding: '8px 0', cursor: isSelectable ? 'pointer' : 'default', borderRadius: '8px', background: isSelected ? '#3d2b1f' : 'none', color: isSelected ? '#fff' : (status === 'available' ? '#c5a059' : (status === 'partial' ? '#f59e0b' : (status === 'ng' ? '#fca5a5' : '#e2e8f0'))), opacity: status === 'past' ? 0.3 : 1 }}>
                               <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{day}</div>
