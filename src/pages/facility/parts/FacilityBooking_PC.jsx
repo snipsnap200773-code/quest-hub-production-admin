@@ -112,8 +112,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         .select('*, members(*), visit_requests!inner(id, scheduled_date, status, parent_id)')
         .eq('visit_requests.facility_user_id', facilityId)
         .gte('visit_requests.scheduled_date', startOfMonth)
-        .lte('visit_requests.scheduled_date', endOfMonth)
-        .neq('visit_requests.status', 'canceled');
+        .lte('visit_requests.scheduled_date', endOfMonth);
 
       // --- 各Stateへの反映 ---
       setDrafts(draftData || []);
@@ -440,36 +439,50 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
                 lastLabel = currentLabel;
 
                 return (
-                  <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                    {isNewGroup && (
-                      <div style={bookingGroupHeader}>
-                        {currentLabel}
-                      </div>
-                    )}
-                    
-                    <div style={pRow}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        {/* 🚀 🆕 確定済みの場合はバッジを表示 */}
-                        {d.isFromDB ? (
-  // すでにDBにある人（確定済 or 完了）
-  <span style={{ fontSize: '0.65rem', background: d.status === 'completed' ? '#94a3b8' : '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-    {d.status === 'completed' ? '完了' : '確定済'}
-  </span>
-) : (
-  // 今回の操作で新しく追加された人
-  <span style={{ fontSize: '0.65rem', background: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
-    新規追加
-  </span>
-)}
-                        <span style={pRoomBadge}>
-                          {res.room ? res.room : "---"} 
-                        </span>
-                        <span style={pName}>{res.name} 様</span>
-                      </div>
-                      <span style={{ ...pMenu, color: d.isFromDB ? '#94a3b8' : '#c5a059' }}>{d.menu_name}</span>
-                    </div>
-                  </motion.div>
-                );
+  <motion.div key={d.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+    {isNewGroup && (
+      <div style={bookingGroupHeader}>{currentLabel}</div>
+    )}
+    
+    {/* 🚀 🆕 修正：キャンセル済みなら背景をグレーにし、半透明にするスタイル */}
+    <div style={{
+      ...pRow,
+      opacity: d.status === 'canceled' ? 0.5 : 1, // 半透明
+      background: d.status === 'canceled' ? '#f8fafc' : 'transparent', // 薄いグレー背景
+      padding: '10px 5px',
+      borderRadius: '8px'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        
+        {/* 🚀 🆕 ステータスバッジを「キャンセル」に対応させる */}
+        <span style={{ 
+          fontSize: '0.65rem', 
+          fontWeight: '900', 
+          padding: '2px 6px', 
+          borderRadius: '4px',
+          background: d.status === 'canceled' ? '#ef4444' : (d.status === 'completed' ? '#94a3b8' : (d.isFromDB ? '#10b981' : '#f59e0b')),
+          color: '#fff' 
+        }}>
+          {d.status === 'canceled' ? 'キャンセル' : (d.status === 'completed' ? '完了' : (d.isFromDB ? '確定済' : '新規追加'))}
+        </span>
+
+        <span style={pRoomBadge}>
+          {res.room ? res.room : "---"} 
+        </span>
+        
+        {/* 🚀 🆕 キャンセルなら名前に打消し線を引く */}
+        <span style={{ 
+          ...pName, 
+          textDecoration: d.status === 'canceled' ? 'line-through' : 'none',
+          color: d.status === 'canceled' ? '#94a3b8' : '#334155'
+        }}>
+          {res.name} 様
+        </span>
+      </div>
+      <span style={{ ...pMenu, color: d.isFromDB ? '#94a3b8' : '#c5a059' }}>{d.menu_name}</span>
+    </div>
+  </motion.div>
+);
               });
             })()}
           </div>

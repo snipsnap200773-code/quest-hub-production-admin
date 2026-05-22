@@ -136,7 +136,17 @@ const FacilityPortal = () => {
 
       const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
       // 💡 確実に確定データをすくうため、隠れ本物カラム【facility_user_id】で検索
-      const { data: visitData } = await supabase.from('visit_requests').select('*').eq('facility_user_id', facilityId).neq('status', 'canceled');
+      const { data: visitData } = await supabase
+  .from('visit_requests')
+  .select('*')
+  .eq('facility_user_id', facilityId);
+
+      // 🚀 調査用デバッグログ
+      console.log("--- 調査開始: 現在の予約データ ---");
+      visitData?.forEach(v => {
+        console.log(`日付: ${v.scheduled_date}, ステータス: ${v.status}, ID: ${v.id}`);
+      });
+      console.log("--- 調査終了 ---");
 
       const todayStr = new Date().toLocaleDateString('sv-SE');
       const baseToday = new Date(`${todayStr}T00:00:00`); 
@@ -149,32 +159,34 @@ const FacilityPortal = () => {
 
       // 🚀 A: まずは手動キープをスキャン
       (mData || []).forEach(k => {
-        if (k.date < todayStr) return;
-        processedDates.add(k.date);
+          if (k.date < todayStr) return;
+          processedDates.add(k.date);
 
-        const isBooked = (visitData || []).some(v => 
-          (v.status === 'confirmed' || v.status === 'completed') && 
-          v.scheduled_date === k.date
-        );
+          // 🚀 🆕 判定を強化：statusがcanceledではない「有効な予約」のみを対象にする
+          const isBooked = (visitData || []).some(v => 
+            (v.status === 'confirmed' || v.status === 'completed') && 
+            v.scheduled_date === k.date
+          );
+          
+          // 🚀 🆕 さらに：もしこの日が「キャンセルされた予約日」なら、そもそもアラート対象から外す
+          const isCanceled = (visitData || []).some(v => v.status === 'canceled' && v.scheduled_date === k.date);
 
-        if (!isBooked) {
-          const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules);
-          unconList.push({ ...k, isRegular: isRegularDay });
-          
-          const dObj = new Date(`${k.date}T00:00:00`);
-          const diffTime = dObj.getTime() - baseToday.getTime();
-          const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-          
-          // 🛑 3日前を切っていたら緊急赤アラートへ
-          if (diffDays >= 0 && diffDays <= 3) {
-            urgList.push({ ...k, diffDays, isRegular: isRegularDay });
+          if (!isBooked && !isCanceled) { // ✅ ここに !isCanceled を追加！
+            const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules);
+            unconList.push({ ...k, isRegular: isRegularDay });
+            
+            const dObj = new Date(`${k.date}T00:00:00`);
+            const diffTime = dObj.getTime() - baseToday.getTime();
+            const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+            
+            if (diffDays >= 0 && diffDays <= 3) {
+              urgList.push({ ...k, diffDays, isRegular: isRegularDay });
+            }
+            if (diffDays >= 0 && diffDays <= 7) {
+              warnList.push({ ...k, diffDays, isRegular: isRegularDay });
+            }
           }
-          // ⚠️ 7日前を切っていたらオレンジアラートへ（月をまたいでいても検知します！）
-          if (diffDays >= 0 && diffDays <= 7) {
-            warnList.push({ ...k, diffDays, isRegular: isRegularDay });
-          }
-        }
-      });
+        });
 
       // 🚀 B: 次に手動データがない「純粋な定期キープの日」も未来30日分自動スキャン
       const scanDate = new Date(`${todayStr}T00:00:00`); 
@@ -185,23 +197,27 @@ const FacilityPortal = () => {
           const isRegularDay = checkIsRegularKeep(scanDate, rules);
           
           if (isRegularDay) {
+            // 🚀 🆕 ここで判定を強化：
+            // 1. 確定予約があるか？ (キャンセル以外)
             const isBooked = (visitData || []).some(v => 
               (v.status === 'confirmed' || v.status === 'completed') && 
               v.scheduled_date === dStr
             );
+            
+            // 2. そもそもキャンセルされた日か？
+            const isCanceled = (visitData || []).some(v => v.status === 'canceled' && v.scheduled_date === dStr);
 
-            if (!isBooked) {
+            // 🚀 3. 【重要】「予約が入っておらず」かつ「キャンセルされた日でもない」場合のみアラート対象にする
+            if (!isBooked && !isCanceled) {
               const fakeKeep = { id: `reg-${dStr}`, date: dStr, start_time: '09:00', isRegular: true };
               unconList.push(fakeKeep);
 
               const diffTime = scanDate.getTime() - baseToday.getTime();
               const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
               
-              // 🛑 3日前を切っていたら緊急赤アラートへ
               if (diffDays >= 0 && diffDays <= 3) {
                 urgList.push({ ...fakeKeep, diffDays });
               }
-              // ⚠️ 7日前を切っていたらオレンジアラートへ
               if (diffDays >= 0 && diffDays <= 7) {
                 warnList.push({ ...fakeKeep, diffDays });
               }

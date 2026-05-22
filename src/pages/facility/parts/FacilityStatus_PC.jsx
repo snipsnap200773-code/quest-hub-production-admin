@@ -58,7 +58,10 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
     return sortResidents(Array.from(map.values()), sortMode);
   }, [visits, sortMode]);
 
-  const totalRemaining = allMonthResidents.filter(r => r.status === 'pending').length;
+  // 🚀 🆕 ここで計算します（コンポーネント全体で使える）
+  const totalRemaining = useMemo(() => {
+    return allMonthResidents.filter(r => r.status === 'pending').length;
+  }, [allMonthResidents]);
 
   useEffect(() => { fetchVisits(); }, [facilityId]);
 
@@ -75,8 +78,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
       .from('visit_requests')
       .select(`id, scheduled_date, start_time, status, parent_id, profiles (business_name, theme_color)`)
       .eq('facility_user_id', facilityId)
-      .neq('status', 'canceled')
-      .gte('scheduled_date', startOfMonth) 
+      .gte('scheduled_date', startOfMonth) // ✅ .neqを外しました
       .order('scheduled_date', { ascending: false });
 
     if (!visitsData) { setLoading(false); return; }
@@ -90,7 +92,11 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
     if (allResidents) {
       const combinedData = visitsData.map(visit => {
         const targetId = visit.parent_id || visit.id;
+        // 🚀 1. 「その訪問ID」に紐づくデータだけを取得
         const residents = allResidents.filter(r => r.visit_request_id === targetId);
+        
+        // 🚀 2. 訪問日自体のステータスが「キャンセル」なら、その日のメンバーは全員キャンセルとして扱う
+        // (または、 residents 内の status が canceled な人のみを抽出するように制御)
         return { ...visit, residents };
       });
       setVisits(combinedData);
@@ -182,65 +188,113 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
         {visits.map((visit) => {
           const todayStr = new Date().toLocaleDateString('sv-SE');
           const residents = visit.residents || [];
+          
+          // 🚀 1. フィルター（完了・待機中・キャンセルをすべて通す）
           const filtered = residents.filter(r => {
             const isDoneOnThisDay = r.status === 'completed' && isSameDay(r.completed_at, visit.scheduled_date);
-            
-            // 🚀 修正：テストモード中、または今日以降なら「未完了(pending)」も表示対象にする
+            const isCanceled = r.status === 'canceled';
             const isTimeToShowPending = isTestMode || visit.scheduled_date >= todayStr;
-
-            if (isTimeToShowPending) return isDoneOnThisDay || r.status === 'pending';
-            return isDoneOnThisDay;
+            if (isTimeToShowPending) return isDoneOnThisDay || r.status === 'pending' || isCanceled;
+            return isDoneOnThisDay || isCanceled;
           });
 
-          // 🚀 🆕 日別カードの中身も sortMode に合わせて並び替え
+          // 🚀 2. 並び替え
           const displayResidents = sortResidents(filtered, sortMode);
-
-          const doneThisDay = displayResidents.filter(r => r.status === 'completed');
-          const totalCount = displayResidents.length;
+          
+          // 🚀 3. 計算用の「キャンセルを除外した」リスト
+          const validResidents = displayResidents.filter(r => r.status !== 'canceled');
+          
+          // 🚀 4. 各カウント（すべて「この日のresidents」から計算）
+          const doneThisDay = validResidents.filter(r => r.status === 'completed');
+          const canceledThisDay = displayResidents.filter(r => r.status === 'canceled');
+          const pendingCount = validResidents.filter(r => r.status === 'pending').length;
+          
+          const totalCount = validResidents.length; 
           const progress = totalCount > 0 ? (doneThisDay.length / totalCount) * 100 : 0;
+          
           if (visit.scheduled_date < todayStr && displayResidents.length === 0) return null;
 
+          const isCanceledVisit = visit.status === 'canceled'; 
+
           return (
-            <div key={visit.id} style={visitCard(visit.id === expandedId)}>
+            <div key={visit.id} style={{
+              ...visitCard(visit.id === expandedId),
+              background: isCanceledVisit ? '#fef2f2' : '#fff',
+              border: isCanceledVisit ? '1px solid #fecaca' : (visit.id === expandedId ? '2px solid #3d2b1f' : '1px solid #eee')
+            }}>
               <div style={cardHeader(isMobile)} onClick={() => setExpandedId(visit.id === expandedId ? null : visit.id)}>
                 <div style={dateBox(isMobile)}>
-  <Calendar size={18} />
-  <strong style={dateText(isMobile)}>{visit.scheduled_date.replace(/-/g, '/')}</strong>
-  
-  {/* 🚀 🆕 追加：開始時間のバッジを表示 */}
-  {visit.start_time && (
-    <span style={timeBadgeStyle}>
-      <Clock size={13} strokeWidth={3} />
-      {visit.start_time.substring(0, 5)}
-    </span>
-  )}
+                  <Calendar size={18} color={isCanceledVisit ? '#ef4444' : '#3d2b1f'} />
+                  <strong style={{ 
+                    ...dateText(isMobile), 
+                    textDecoration: isCanceledVisit ? 'line-through' : 'none',
+                    color: isCanceledVisit ? '#ef4444' : '#1e293b'
+                  }}>
+                    {visit.scheduled_date.replace(/-/g, '/')}
+                  </strong>
+                  {isCanceledVisit && <span style={{ color: '#ef4444', fontSize: '0.7rem', fontWeight: '900', marginLeft: '5px' }}>[予約キャンセル]</span>}
+                  
+                  {visit.start_time && !isCanceledVisit && (
+                    <span style={timeBadgeStyle}>
+                      <Clock size={13} strokeWidth={3} />
+                      {visit.start_time.substring(0, 5)}
+                    </span>
+                  )}
+                  <span style={shopBadge(visit.profiles?.theme_color)}>{visit.profiles?.business_name}</span>
+                </div>
 
-  <span style={shopBadge(visit.profiles?.theme_color)}>{visit.profiles?.business_name}</span>
-</div>
                 <div style={progressArea(isMobile)}>
-                  <div style={countBadge(progress === 100)}>
-  本日： {doneThisDay.length}名 / あと {totalRemaining}名
-</div>
+                  {/* 🚀 5. 詳細な内訳を表示 */}
+                  {!isCanceledVisit && (
+                    <div style={{ ...countBadge(progress === 100), fontSize: '0.7rem', display: 'flex', gap: '5px' }}>
+                      <span>完了 {doneThisDay.length}名</span>
+                      {canceledThisDay.length > 0 && <span style={{ color: '#ffadad' }}>/ キャンセル {canceledThisDay.length}名</span>}
+                      <span>/ あと {pendingCount}名</span>
+                    </div>
+                  )}
                   {visit.id === expandedId ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
                 </div>
               </div>
-              <div style={progressBarBg}><motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} style={progressBar(visit.profiles?.theme_color)} /></div>
+
+              {!isCanceledVisit && (
+                <div style={progressBarBg}><motion.div initial={{ width: 0 }} animate={{ width: `${progress}%` }} style={progressBar(visit.profiles?.theme_color)} /></div>
+              )}
+
               <AnimatePresence>
                 {visit.id === expandedId && (
                   <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }} style={{ overflow: 'hidden' }}>
                     <div style={residentGrid(isMobile)}>
                       {displayResidents.map((res) => (
-                        <div key={res.id} style={resRow(res.status)}>
+                        <div key={res.id} style={{
+                          ...resRow(res.status),
+                          opacity: res.status === 'canceled' ? 0.6 : 1,
+                          background: res.status === 'canceled' ? '#f8fafc' : '#fff',
+                          borderColor: res.status === 'canceled' ? '#fee2e2' : (res.status === 'completed' ? '#10b981' : '#eef2ff')
+                        }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            {res.status === 'completed' ? <CheckCircle2 size={18} color="#10b981" /> : <Clock size={18} color="#cbd5e1" />}
+                            {res.status === 'completed' ? <CheckCircle2 size={18} color="#10b981" /> : 
+                             res.status === 'canceled' ? <XCircle size={18} color="#ef4444" /> : 
+                             <Clock size={18} color="#cbd5e1" />}
+                            
                             <div>
-                              <div style={resName}>{res.members?.name} 様</div>
+                              <div style={{ 
+                                ...resName, 
+                                textDecoration: res.status === 'canceled' ? 'line-through' : 'none',
+                                color: res.status === 'canceled' ? '#94a3b8' : '#1e293b'
+                              }}>
+                                {res.members?.name} 様
+                              </div>
                               <div style={resSub}>
-  {res.members?.floor?.toString().replace('F', '')}F {res.members?.room} | {res.menu_name}
-</div>
+                                {res.members?.floor?.toString().replace('F', '')}F {res.members?.room} | {res.menu_name}
+                              </div>
                             </div>
                           </div>
-                          <span style={statusText(res.status)}>{res.status === 'completed' ? '完了' : '待機中'}</span>
+                          <span style={{ 
+                            fontSize: '0.7rem', fontWeight: '900', 
+                            color: res.status === 'completed' ? '#059669' : (res.status === 'canceled' ? '#ef4444' : '#94a3b8')
+                          }}>
+                            {res.status === 'completed' ? '完了' : (res.status === 'canceled' ? 'キャンセル' : '待機中')}
+                          </span>
                         </div>
                       ))}
                     </div>

@@ -712,20 +712,20 @@ const AdminFacilityVisit_PC = () => {
                         </div>
 
                         <div style={statusBadge(res.status)}>
-                          {res.status === 'completed' ? (
-                            <div style={{color:'#10b981', display:'flex', alignItems:'center', gap:'4px'}}>
-                              <CheckCircle2 size={20} /> <span style={{fontSize:'0.85rem'}}>完了</span>
-                            </div>
-                          ) : res.status === 'cancelled' ? (
-                            <div style={{color:'#ef4444', display:'flex', alignItems:'center', gap:'4px'}}>
-                              <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>キャンセル</span>
-                            </div>
-                          ) : (
-                            <div style={{color:'#cbd5e1', display:'flex', alignItems:'center', gap:'4px'}}>
-                              <Clock size={20} /> <span style={{fontSize:'0.85rem'}}>待機</span>
-                            </div>
-                          )}
-                        </div>
+  {res.status === 'completed' ? (
+    <div style={{color:'#10b981', display:'flex', alignItems:'center', gap:'4px'}}>
+      <CheckCircle2 size={20} /> <span style={{fontSize:'0.85rem'}}>完了</span>
+    </div>
+  ) : res.status === 'canceled' ? (
+    <div style={{color:'#ef4444', display:'flex', alignItems:'center', gap:'4px'}}>
+      <XCircle size={20} /> <span style={{fontSize:'0.85rem'}}>キャンセル</span>
+    </div>
+  ) : (
+    <div style={{color:'#cbd5e1', display:'flex', alignItems:'center', gap:'4px'}}>
+      <Clock size={20} /> <span style={{fontSize:'0.85rem'}}>待機</span>
+    </div>
+  )}
+</div>
                       </motion.div>
                     </React.Fragment>
                   );
