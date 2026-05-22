@@ -3527,13 +3527,34 @@ else if (
       <div style={{ textAlign: 'left', marginBottom: '25px', maxWidth: '300px', margin: '0 auto 25px' }}>
         <label style={labelStyle}>解除パスワード（1234）</label>
         <input 
-          type="password" 
-          inputMode="numeric"
-          placeholder="数字4桁を入力"
-          value={facCancelPass}
-          onChange={(e) => setFacCancelPass(e.target.value)}
-          style={{ ...inputStyle, textAlign: 'center', fontSize: '1.4rem', letterSpacing: '0.3em', borderRadius: '15px', border: `2px solid ${themeColor}44` }}
-        />
+  type="text" // ❌ password ではなく text に変更
+  inputMode="numeric"
+  pattern="\d{4}"
+  placeholder="数字4桁を入力"
+  value={facCancelPass}
+  onChange={(e) => {
+    // 🚀 入力は数字4桁だけに制限
+    const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+    setFacCancelPass(val);
+  }}
+  // 🚀 ブラウザの自動入力を徹底的に遮断する属性のフルセット
+  autoComplete="off"
+  autoCorrect="off"
+  autoCapitalize="off"
+  spellCheck="false"
+  name="otp_pin_input" // 🚀 passwordという名前を徹底排除
+  style={{ 
+    ...inputStyle, 
+    textAlign: 'center', 
+    fontSize: '1.4rem', 
+    letterSpacing: '0.3em', 
+    borderRadius: '15px', 
+    border: `2px solid ${themeColor}44`,
+    // 🚀 type="text" なので文字が見えてしまうのを隠すための設定
+    WebkitTextSecurity: 'disc', // iOS/Chrome用：文字を●で隠す
+    textSecurity: 'disc'          // その他ブラウザ用
+  }}
+/>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '400px', margin: '0 auto' }}>
