@@ -865,7 +865,7 @@ const handleSave = async (e) => {
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <Link to={`/admin/${shopId}/dashboard`} style={backBtnStyle}><ArrowLeft size={20} /></Link>
           <div>
-            <h1 style={titleStyle}>全施設名簿マスター</h1>
+            <h1 style={titleStyle}>施設管理</h1>
             <p style={subtitleStyle}>提携施設の管理・定期ルール設定</p>
           </div>
         </div>
