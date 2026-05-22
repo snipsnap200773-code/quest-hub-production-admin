@@ -182,11 +182,16 @@ const AdminFacilityVisit_PC = () => {
   // 🔄 🆕 ステータス切り替え ＆ 枝メニュー判定ロジック
   const handleToggleStatus = async (res) => {
     const currentStatus = res.status;
-    const nextStatus = currentStatus === 'pending' ? 'completed' : 
-                       currentStatus === 'completed' ? 'cancelled' : 'pending';
+    
+    // 🚀 1. 次のステータスを決定（キャンセルステータスに対応）
+    // pending -> completed -> canceled -> pending
+    let nextStatus = 'pending';
+    if (currentStatus === 'pending') nextStatus = 'completed';
+    else if (currentStatus === 'completed') nextStatus = 'canceled';
+    else nextStatus = 'pending';
 
+    // 🚀 2. 【重要】「完了(completed)」にする時だけ、枝メニュー選択を挟む
     if (nextStatus === 'completed') {
-      // 💡 🚀 修正：メニュー名の中に「枝メニュー設定」を持つサービスが含まれているか探す
       const serviceWithAdminOptions = services.find(s => 
         res.menu_name?.includes(s.name) && 
         options.some(opt => opt.service_id === s.id && opt.is_admin_only === true)
@@ -197,7 +202,6 @@ const AdminFacilityVisit_PC = () => {
           opt.service_id === serviceWithAdminOptions.id && opt.is_admin_only === true
         );
 
-        // 💡 🚀 ここが重要： originalMenuName として元の名前（例：カット・カラー）を保存する
         setPendingSelection({ 
           residentId: res.id, 
           service: serviceWithAdminOptions, 
@@ -205,10 +209,11 @@ const AdminFacilityVisit_PC = () => {
           originalMenuName: res.menu_name 
         });
         setShowSubMenuModal(true);
-        return;
+        return; // ここで中断してモーダルを開く
       }
     }
 
+    // 🚀 3. キャンセル時や、枝メニューが不要な場合はそのまま更新を実行
     executeStatusUpdate(res.id, nextStatus);
   };
 

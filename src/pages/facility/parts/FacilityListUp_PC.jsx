@@ -30,9 +30,10 @@ const FacilityListUp_PC = ({
     return combined.sort((a, b) => {
       // 🚀 1. 状態の優先順位をスコア化 (新規=10, 確定済=20, 完了済=30)
       const getStatusScore = (item) => {
-        if (!item.isFromDB) return 10; // 新規追加（まだDBの予約になっていない）
-        if (item.status === 'completed') return 30; // 完了済み
-        return 20; // 確定済（pending）
+        if (!item.isFromDB) return 10;
+        if (item.status === 'completed') return 30;
+        if (item.status === 'canceled') return 40; // 🚀 キャンセルは一番下に
+        return 20; 
       };
 
       const scoreA = getStatusScore(a);
@@ -162,8 +163,7 @@ const FacilityListUp_PC = ({
           .select('*, members(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .gte('visit_requests.scheduled_date', startOfMonth)
-          .lte('visit_requests.scheduled_date', endOfMonth)
-          .neq('visit_requests.status', 'canceled'),
+          .lte('visit_requests.scheduled_date', endOfMonth),
         
         // ② この施設の予約日程
         supabase.from('visit_requests').select('scheduled_date, status, start_time').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth).neq('status', 'canceled'),
@@ -373,21 +373,24 @@ const FacilityListUp_PC = ({
   }; // ✅ addToList はここで終了
 
   const removeFromList = async (item) => {
+    // 💡 削除ボタンではなく、ステータスを更新する処理へ変更
     const table = item.isFromDB ? 'visit_request_residents' : 'visit_list_drafts';
     
-    // 🚀 🆕 確定済みメンバーを外す際のメッセージを分かりやすくカスタム
     if (item.isFromDB) {
       const targetName = item.members?.name || 'この方';
-      if (!window.confirm(`⚠️【予約キャンセル確認】\n${targetName} 様はすでに今月の予約として確定しています。\nこのリストから外すと、今回の訪問予定メンバーからキャンセル（削除）されますが、よろしいですか？`)) return;
-    }
+      if (!window.confirm(`⚠️【予約キャンセル確認】\n${targetName} 様の予約を「キャンセル」扱いにしますか？`)) return;
+      
+      // 🚀 削除(delete) ではなく、status を 'canceled' に更新(update)する
+      const { error } = await supabase
+        .from(table)
+        .update({ status: 'canceled' })
+        .eq('id', item.id);
 
-    const { error } = await supabase.from(table).delete().eq('id', item.id);
-    if (error) { alert("削除に失敗しました"); return; }
-
-    // Stateを更新して画面から消す
-    if (item.isFromDB) {
-      setDbReservedResidents(dbReservedResidents.filter(r => r.id !== item.id));
+      if (error) { alert("キャンセル処理に失敗しました"); return; }
+      fetchData(facilityName); // 💡 最新状態を再取得
     } else {
+      // 下書き(ドラフト)の場合はそのまま削除でOK
+      await supabase.from(table).delete().eq('id', item.id);
       setDraftList(draftList.filter(d => d.id !== item.id));
     }
   };
@@ -664,8 +667,9 @@ const FacilityListUp_PC = ({
           lastLabel = currentLabel;
 
 // 🚀 🆕 トリプル出し分けロジックの定義
-          const isCompleted = item.status === 'completed'; // 完了済み
-          const isConfirmed = item.isFromDB && item.status !== 'completed'; // 確定済み（まだ施術前）
+          const isCompleted = item.status === 'completed'; 
+          const isCanceled = item.status === 'canceled'; // 🚀 🆕 これを追加！
+          const isConfirmed = item.isFromDB && !isCompleted && !isCanceled;
           const isNewDraft = !item.isFromDB; // 新規追加分
 
           // 状態に合わせたカードの「背景色」「枠線」「影」を決定
@@ -686,50 +690,56 @@ const FacilityListUp_PC = ({
           }
 
           return (
-            <motion.div 
-              key={item.id} 
-              layout 
-              initial={{ opacity: 0, y: 10 }} 
-              animate={{ opacity: 1, y: 0 }} 
-              exit={{ opacity: 0, scale: 0.95 }}
-              style={{ marginBottom: '10px' }}
-            >
-              {isNewGroup && (
-                <div style={groupHeaderStyle}>
-                  {currentLabel}
-                </div>
-              )}
-              
-              <div style={{
-                ...selectedCard,
-                background: cardBg,
-                borderColor: cardBorder.split(' ')[2], // スタイルオブジェクトの都合上、カラー部分を抽出
-                border: cardBorder,
-                opacity: cardOpacity,
-                boxShadow: cardShadow,
-                cursor: isCompleted ? 'not-allowed' : 'default',
-              }}>
-                <div style={{ flex: 1 }}>
-                  <div style={resInfo}>
-                    <span style={{
-                      ...roomBadgeSimple,
-                      background: isCompleted ? '#64748b' : (isConfirmed ? '#10b981' : '#3d2b1f')
-                    }}>{item.members?.room || "---"}</span>
-                    
-                    <span style={nameTextMain}>
-                      {res.name} 様
+                    <motion.div 
+                      key={item.id} 
+                      layout 
+                      initial={{ opacity: 0, y: 10 }} 
+                      animate={{ opacity: 1, y: 0 }} 
+                      exit={{ opacity: 0, scale: 0.95 }}
+                      style={{ marginBottom: '10px' }}
+                    >
+                      {isNewGroup && (
+                        <div style={groupHeaderStyle}>
+                          {currentLabel}
+                        </div>
+                      )}
                       
-                      {/* 🚀 🆕 状態に合わせたバッジ表示 */}
-                      {isCompleted && (
-                        <span style={{ fontSize: '0.65rem', color: '#059669', marginLeft: '8px', fontWeight: '900', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px' }}>
-                          ✅ 施術完了
-                        </span>
-                      )}
-                      {isConfirmed && (
-                        <span style={{ fontSize: '0.65rem', color: '#047857', marginLeft: '8px', fontWeight: '900', background: '#e6fbf1', padding: '2px 6px', border: '1px solid #a7f3d0', borderRadius: '4px' }}>
-                          📌 予約確定済
-                        </span>
-                      )}
+                      <div style={{
+                        ...selectedCard,
+                        // 🚀 🆕 修正：キャンセル済みなら背景をグレーにし、半透明にする
+                        background: item.status === 'canceled' ? '#f1f5f9' : cardBg,
+                        opacity: item.status === 'canceled' ? 0.6 : cardOpacity,
+                        borderColor: item.status === 'canceled' ? '#cbd5e1' : cardBorder.split(' ')[2],
+                        border: cardBorder,
+                        boxShadow: item.status === 'canceled' ? 'none' : cardShadow,
+                        cursor: (isCompleted || item.status === 'canceled') ? 'not-allowed' : 'default',
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={resInfo}>
+                            <span style={{
+                              ...roomBadgeSimple,
+                              background: item.status === 'canceled' ? '#94a3b8' : (isCompleted ? '#64748b' : (isConfirmed ? '#10b981' : '#3d2b1f'))
+                            }}>{item.members?.room || "---"}</span>
+                            
+                            <span style={nameTextMain}>
+                              {res.name} 様
+                              
+                              {/* 🚀 🆕 状態に合わせたバッジ表示 */}
+                              {item.status === 'canceled' && (
+                                <span style={{ fontSize: '0.65rem', color: '#ef4444', marginLeft: '8px', fontWeight: '900', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px' }}>
+                                  🚫 キャンセル済
+                                </span>
+                              )}
+                              {isCompleted && (
+                                <span style={{ fontSize: '0.65rem', color: '#059669', marginLeft: '8px', fontWeight: '900', background: '#d1fae5', padding: '2px 6px', borderRadius: '4px' }}>
+                                  ✅ 施術完了
+                                </span>
+                              )}
+                              {isConfirmed && (
+                                <span style={{ fontSize: '0.65rem', color: '#047857', marginLeft: '8px', fontWeight: '900', background: '#e6fbf1', padding: '2px 6px', border: '1px solid #a7f3d0', borderRadius: '4px' }}>
+                                  📌 予約確定済
+                                </span>
+                              )}
                       {isNewDraft && (
                         <span style={{ fontSize: '0.65rem', color: '#b45309', marginLeft: '8px', fontWeight: '900', background: '#fef3c7', padding: '2px 6px', borderRadius: '4px' }}>
                           ✨ 追加分
@@ -739,8 +749,8 @@ const FacilityListUp_PC = ({
                   </div>
                   
                   <div style={menuRow}>
-                    {/* 🚀 完了済みならメニュー選択を完全ロック、それ以外なら変更可能 */}
-                    {isCompleted ? (
+                    {/* 🚀 完了・キャンセル済みならメニュー選択を完全ロック */}
+                    {(isCompleted || item.status === 'canceled') ? (
                       <div style={{ padding: '6px 0', fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>
                         メニュー：{item.menu_name}
                       </div>
@@ -761,12 +771,8 @@ const FacilityListUp_PC = ({
                   </div>
                 </div>
                 
-                {/* 🚀 削除ボタンエリア：完了済みなら非表示に、それ以外なら「×」または「外す」ボタン */}
-                {isCompleted ? (
-                  <div style={{ padding: '10px', color: '#94a3b8' }}>
-                    <CheckCircle2 size={24} />
-                  </div>
-                ) : (
+                {/* 🚀 削除ボタンエリア：完了・キャンセル済みなら非表示に */}
+                {(!isCompleted && !item.status === 'canceled') && (
                   <button 
                     onClick={() => removeFromList(item)} 
                     style={{
