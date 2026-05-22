@@ -141,13 +141,6 @@ const FacilityPortal = () => {
   .select('*')
   .eq('facility_user_id', facilityId);
 
-      // 🚀 調査用デバッグログ
-      console.log("--- 調査開始: 現在の予約データ ---");
-      visitData?.forEach(v => {
-        console.log(`日付: ${v.scheduled_date}, ステータス: ${v.status}, ID: ${v.id}`);
-      });
-      console.log("--- 調査終了 ---");
-
       const todayStr = new Date().toLocaleDateString('sv-SE');
       const baseToday = new Date(`${todayStr}T00:00:00`); 
       const urgList = [];
