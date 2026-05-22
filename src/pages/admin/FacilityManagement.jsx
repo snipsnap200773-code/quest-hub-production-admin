@@ -1,5 +1,6 @@
 import { INDUSTRY_PRESETS } from '../../constants/industryMaster';
-import React, { useState, useEffect } from 'react';
+// 🚀 修正：末尾に , useRef を追加して、使えるように読み込ませます
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
 import { supabase } from '../../supabaseClient'; 
 import { 
@@ -8,7 +9,7 @@ import {
   Search, AlertCircle,
   ArrowRight, CheckCircle2, Send, Filter, Store,
   ReceiptText, ChevronLeft, 
-  Printer, Loader2 // 🚀 🆕 この2つが確実に含まれている必要があります
+  Printer, Loader2 
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -80,7 +81,6 @@ const FacilityManagement = () => {
         setLoading(false); return;
       }
 
-      // 🚀 🆕 ここで「15日(金)」という短い形式に変換します
       const visitDates = allVisits.map(v => {
         const d = new Date(v.scheduled_date);
         const day = d.getDate();
@@ -116,15 +116,14 @@ const FacilityManagement = () => {
     }
   };
 
-  // 🚀 🆕 請求書発行用のStateを追加
+  // 🚀 一本化された綺麗なState定義エリア
   const [showInvoiceModal, setShowInvoiceModal] = useState(false);
   const [showWorksheetModal, setShowWorksheetModal] = useState(false);
   const [worksheetTarget, setWorksheetTarget] = useState(null);
   const [worksheetYear, setWorksheetYear] = useState(new Date().getFullYear());
   const [worksheetMonth, setWorksheetMonth] = useState(new Date().getMonth() + 1);
-  const [invoiceTarget, setInvoiceTarget] = useState(null); // { customer_id, name }
+  const [invoiceTarget, setInvoiceTarget] = useState(null); 
 
-  // 🚀 🆕 「ねじ込みキープ」用のStateと判定データ蓄積用のStateを一括追加
   const [showManualKeepModal, setShowManualKeepModal] = useState(false);
   const [keepDate, setKeepDate] = useState('');
   const [keepTime, setKeepTime] = useState('09:00');
@@ -138,8 +137,11 @@ const FacilityManagement = () => {
   const [exclList, setExclList] = useState([]);
   const [invoiceYear, setInvoiceYear] = useState(new Date().getFullYear());
   const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
-  const [salesRecords, setSalesRecords] = useState([]); // 売上データ保持用
-  const [allCustomers, setAllCustomers] = useState([]); // 施設名から顧客IDを特定するために使用
+  const [salesRecords, setSalesRecords] = useState([]); 
+  const [allCustomers, setAllCustomers] = useState([]); 
+
+  // 🚀 🆕 【Refマーカーを移動】コンポーネント直下に置くことでエラーを100%解決します！
+  const keepTimeRef = useRef(null);
 
   // フォームState（既存システムをベースに tenant_id を追加）
   const [formData, setFormData] = useState({ 
@@ -1529,18 +1531,36 @@ const handleSave = async (e) => {
       {/* 🚀 🆕 店舗側からの「ねじ込みキープ」モーダル本体 */}
       {showManualKeepModal && (
         <div style={modalOverlayStyle} onClick={() => setShowManualKeepModal(false)}>
-          <div style={{ ...modalContentStyle, maxWidth: '450px', background: '#fff' }} onClick={e => e.stopPropagation()}>
-            <div style={{ padding: '10px 0', borderBottom: '2px solid #e2e8f0', display: 'flex', justifyBetween: 'center', alignItems: 'center', marginBottom: '20px' }}>
-              <h3 style={{ margin: 0, color: '#059669' }}>📌 施設枠のねじ込みキープ</h3>
-              <button onClick={() => setShowManualKeepModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={24}/></button>
+          <div 
+            style={{ 
+              ...modalContentStyle, 
+              // 🚀 スマホなら幅・高さを画面いっぱいに強制固定！PCならいつものパステルサイズ
+              maxWidth: window.innerWidth > 1024 ? '460px' : '100vw', 
+              width: window.innerWidth > 1024 ? '95%' : '100vw',
+              maxHeight: window.innerWidth > 1024 ? '85vh' : '100dvh',
+              height: window.innerWidth > 1024 ? 'auto' : '100dvh',
+              borderRadius: window.innerWidth > 1024 ? '28px' : '0px',
+              padding: window.innerWidth > 1024 ? '30px' : '20px 15px',
+              boxSizing: 'border-box',
+              display: 'flex',
+              flexDirection: 'column'
+            }} 
+            onClick={e => e.stopPropagation()}
+          >
+            {/* モーダルヘッダー */}
+            <div style={{ padding: '5px 0 15px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, color: '#059669', fontSize: '1.2rem', fontWeight: '900' }}>📌 施設枠のねじ込みキープ</h3>
+              <button onClick={() => setShowManualKeepModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#64748b' }}><X size={24}/></button>
             </div>
 
-            <div style={scrollAreaStyle}>
+            {/* スクロールコンテンツエリア */}
+            <div style={{ ...scrollAreaStyle, flex: 1, overflowY: 'auto', paddingRight: '4px', marginTop: '10px' }}>
+              
               {/* 📅 月曜始まりミニカレンダー */}
-              <div style={{ textAlign: 'center', marginBottom: '20px', background: '#f8fafc', padding: '15px', borderRadius: '20px' }}>
+              <div style={{ textAlign: 'center', marginBottom: '20px', background: '#f8fafc', padding: '15px 10px', borderRadius: '20px', border: '1px solid #f1f5f9' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                   <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() - 1)))}>◀</button>
-                  <span style={{ fontWeight: '900', color: '#1e293b' }}>{keepViewMonth.getFullYear()}年 {keepViewMonth.getMonth() + 1}月</span>
+                  <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.1rem' }}>{keepViewMonth.getFullYear()}年 {keepViewMonth.getMonth() + 1}月</span>
                   <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() + 1)))}>▶</button>
                 </div>
 
@@ -1555,10 +1575,10 @@ const handleSave = async (e) => {
                     const daysArray = [...Array(firstDayCount).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
                     
                     return daysArray.map((day, i) => {
-                      if (!day) return <div key={i} />;
+                      if (!day) return <div key={`empty-keep-${i}`} />;
                       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                       
-                      // 🚀 究極版のオブジェクト判定ロジックを実行
+                      // 🚀 究客版のオブジェクト判定ロジックを実行
                       const resObj = getKeepSlotStatus(dStr); 
                       
                       const isSelected = keepDate === dStr;
@@ -1566,19 +1586,30 @@ const handleSave = async (e) => {
                       const isNg = resObj.status === 'ng';
                       
                       // 今日・過去、またはすでに施設や定休日で埋まっている(ng)日はタップさせない
-                      // 💡 個人予約やプライベート予定（partial = △）の日は選択可能にします！
                       const isSelectable = !isPastOrToday && !isNg; 
 
                       // 🎨 マークと配色の決定
-                      let statusColor = '#cbd5e1'; // デフォルト灰色
-                      if (resObj.label === '○') statusColor = '#10b981'; // クリーンな空き（緑）
-                      if (resObj.label === '△') statusColor = '#f59e0b'; // 個人・プライベート（オレンジ）
-                      if (resObj.label === '✕' && !isPastOrToday) statusColor = '#ef4444'; // 施設・休日（赤）
+                      let statusColor = '#cbd5e1'; 
+                      if (resObj.label === '○') statusColor = '#10b981'; 
+                      if (resObj.label === '△') statusColor = '#f59e0b'; 
+                      if (resObj.label === '✕' && !isPastOrToday) statusColor = '#ef4444'; 
 
                       return (
                         <div 
                           key={i} 
-                          onClick={() => isSelectable && setKeepDate(dStr)} 
+                          /* 🚀 修正：日付をタップした時の自動スクロールを完璧に動作させる */
+                          onClick={() => {
+                            if (!isSelectable) return;
+                            setKeepDate(dStr);
+                            setTimeout(() => {
+                              if (keepTimeRef.current) {
+                                keepTimeRef.current.scrollIntoView({
+                                  behavior: 'smooth',
+                                  block: 'nearest'
+                                });
+                              }
+                            }, 120);
+                          }}
                           style={{ 
                             padding: '6px 0', 
                             cursor: isSelectable ? 'pointer' : (isPastOrToday ? 'not-allowed' : 'default'), 
@@ -1587,7 +1618,7 @@ const handleSave = async (e) => {
                             color: isSelected ? '#fff' : (isPastOrToday ? '#cbd5e1' : '#1e293b'), 
                             fontWeight: isSelected || isSelectable ? 'bold' : 'normal',
                             opacity: isPastOrToday ? 0.4 : 1,
-                            minHeight: '68px', // 👈 文字列が3行入ってもカレンダーがガタつかないように高さを一定に固定
+                            minHeight: '68px', 
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
@@ -1608,18 +1639,17 @@ const handleSave = async (e) => {
                             {resObj.label}
                           </div>
 
-                          {/* ③ 🚀 三土手さん仕様：名前3文字 ＋ 開始時間の詳細テキスト表示エリア */}
+                          {/* ③ 名前3文字 ＋ 開始時間のテキスト表示 */}
                           {(resObj.status === 'ng' || resObj.status === 'partial') && resObj.name && (
                             <div style={{ 
                               fontSize: '0.55rem', 
                               lineHeight: '1.2', 
                               marginTop: '3px',
-                              transform: 'scale(0.9)', /* 小さくして確実にセル内に収める */
+                              transform: 'scale(0.85)', 
                               color: isSelected ? '#fff' : (resObj.status === 'ng' ? '#be123c' : '#b45309'),
                               textAlign: 'center',
                               whiteSpace: 'nowrap'
                             }}>
-                              {/* 件数に応じたテキストの出し分け（2つ以上なら ※他○件） */}
                               {resObj.status === 'partial' && resObj.count > 1 ? (
                                 <>
                                   <div>{resObj.name} {resObj.time}</div>
@@ -1638,21 +1668,26 @@ const handleSave = async (e) => {
               </div>
 
               {keepDate && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', animation: 'fadeIn 0.2s' }}>
+                /* 🚀 修正：ここにスクロール先のRefマーカーを設置 */
+                <div 
+                  ref={keepTimeRef} 
+                  style={{ display: 'flex', flexDirection: 'column', gap: '15px', animation: 'fadeIn 0.2s', paddingTop: '5px', paddingBottom: '30px' }}
+                >
                   {/* 🕛 時間枠選択 */}
                   <label style={labelStyle}>🕛 開始時間を選択
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '5px' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginTop: '8px' }}>
                       {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => (
                         <button 
                           key={t} 
                           type="button"
                           onClick={() => setKeepTime(t)} 
                           style={{ 
-                            padding: '10px', borderRadius: '10px', 
-                            border: keepTime === t ? '2px solid #059669' : '1px solid #e2e8f0', 
+                            padding: '12px 10px', borderRadius: '12px', 
+                            border: keepTime === t ? '2px solid #059669' : '1px solid #cbd5e1', 
                             background: keepTime === t ? '#059669' : '#fff', 
                             color: keepTime === t ? '#fff' : '#1e293b', 
-                            fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer' 
+                            fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.02)'
                           }}
                         >
                           {t}
@@ -1662,11 +1697,11 @@ const handleSave = async (e) => {
                   </label>
 
                   {/* 🏢 対象施設選択 */}
-                  <label style={labelStyle}>🏢 キープを入れる訪問施設を選択
+                  <label style={{ ...labelStyle, marginTop: '5px' }}>🏢 キープを入れる訪問施設を選択
                     <select 
                       value={keepTargetFacilityId} 
                       onChange={(e) => setKeepTargetFacilityId(e.target.value)} 
-                      style={{ ...inputStyle, marginTop: '5px' }}
+                      style={{ ...inputStyle, marginTop: '8px', background: '#fff' }}
                     >
                       {activeFacilities.map(f => (
                         <option key={f.id} value={f.id}>{f.facility_name}</option>
@@ -1677,7 +1712,8 @@ const handleSave = async (e) => {
               )}
             </div>
 
-            <div style={modalFooterStyle}>
+            {/* モーダルフッター */}
+            <div style={{ ...modalFooterStyle, paddingWeight: '5px', paddingTop: '15px', borderTop: '1px solid #f1f5f9', background: '#fff', flexShrink: 0 }}>
               <button type="button" onClick={() => setShowManualKeepModal(false)} style={cancelBtnStyle}>キャンセル</button>
               <button 
                 type="button" 
@@ -1696,13 +1732,72 @@ const handleSave = async (e) => {
   );
 };
 
-// スタイル定義（QUEST HUBのデザインに最適化）
-const containerStyle = { maxWidth: '1000px', margin: '0 auto', padding: '30px 20px', minHeight: '100vh', background: '#f8fafc' };
-const headerStyle = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' };
-const titleStyle = { margin: 0, fontSize: '1.5rem', fontWeight: 'bold', color: '#1e293b' };
-const subtitleStyle = { margin: '5px 0 0', fontSize: '0.85rem', color: '#64748b' };
-const backBtnStyle = { padding: '10px', borderRadius: '12px', background: '#fff', border: '1px solid #e2e8f0', color: '#64748b' };
-const addBtnStyle = { background: '#4f46e5', color: '#fff', border: 'none', padding: '12px 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' };
+// 🚀 🆕 スマホ・PCを自動判定するフラグをスタイル側にも用意
+const isMobileUI = window.innerWidth <= 1024;
+
+// スタイル定義（スマホ・PC両対応の超リッチレスポンシブ版）
+const containerStyle = { 
+  maxWidth: '1000px', 
+  margin: '0 auto', 
+  padding: isMobileUI ? '15px 12px' : '30px 20px', // スマホ時は余白をタイトに
+  minHeight: '100vh', 
+  background: '#f8fafc' 
+};
+
+const headerStyle = { 
+  display: 'flex', 
+  flexDirection: isMobileUI ? 'column' : 'row', // 🚀 スマホ時は縦並び、PCは横並び
+  alignItems: isMobileUI ? 'stretch' : 'center', 
+  justifyContent: 'space-between', 
+  gap: '15px', 
+  marginBottom: '25px' 
+};
+
+const titleStyle = { 
+  margin: 0, 
+  fontSize: isMobileUI ? '1.3rem' : '1.5rem', // 🚀 スマホ時は文字を少し小さくして改行を防ぐ
+  fontWeight: '900', 
+  color: '#1e293b',
+  letterSpacing: '-0.02em'
+};
+
+const subtitleStyle = { 
+  margin: '4px 0 0', 
+  fontSize: '0.8rem', 
+  color: '#64748b' 
+};
+
+const backBtnStyle = { 
+  padding: '10px', 
+  borderRadius: '12px', 
+  background: '#fff', 
+  border: '1px solid #e2e8f0', 
+  color: '#64748b',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  width: '40px',
+  height: '40px',
+  boxSizing: 'border-box'
+};
+
+const addBtnStyle = { 
+  background: '#4f46e5', 
+  color: '#fff', 
+  border: 'none', 
+  padding: isMobileUI ? '12px 8px' : '12px 20px', 
+  borderRadius: '14px', 
+  fontWeight: '900', 
+  cursor: 'pointer', 
+  display: 'flex', 
+  alignItems: 'center', 
+  justifyContent: 'center', 
+  gap: '6px',
+  fontSize: isMobileUI ? '0.78rem' : '0.9rem', // 🚀 ボタン文字を1画面にスッキリ収める
+  flex: isMobileUI ? 1 : 'none', // 🚀 スマホ時は2つのボタンが50%ずつ均等に並ぶ
+  boxShadow: '0 4px 12px rgba(0,0,0,0.05)',
+  whiteSpace: 'nowrap'
+};
 const gridStyle = { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(100%, 1fr))', gap: '20px' };
 const cardStyle = { background: '#fff', padding: '24px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
 const cardHeaderStyle = { display: 'flex', justifyContent: 'space-between', marginBottom: '15px' };
@@ -1795,7 +1890,17 @@ const sliderStyle = {
   transition: '.3s', 
   borderRadius: '24px' 
 };
-const settingRow = { display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#f8fafc', padding: '15px', borderRadius: '15px', border: '1px solid #eef2ff' };
+// 💡 🚀 🆕 「公開中」の行がスマホで崩れないように調整
+const settingRow = { 
+  display: 'flex', 
+  justifyContent: 'space-between', 
+  alignItems: 'center', 
+  background: '#f8fafc', 
+  padding: '15px', 
+  borderRadius: '15px', 
+  border: '1px solid #eef2ff',
+  gap: '10px' // スマホで文字とボタンがぶつからない安全な隙間
+};
 const toggleBtnStyle = (active) => ({ padding: '8px 20px', borderRadius: '20px', border: 'none', fontWeight: '900', cursor: 'pointer', background: active ? '#10b981' : '#cbd5e1', color: '#fff', fontSize: '0.8rem', transition: '0.3s' });
 const circleBtn = { 
   width: '44px', 
