@@ -487,45 +487,69 @@ const handleSave = async (e) => {
       alert("キープ枠の確保に失敗しました: " + err.message);
     } finally {
       setLoading(false);
-      fetchFacilities(); // 💡 画面全体をリロードせず、リストと設定をスマートに再取得してカレンダーと同期させます
+      fetchFacilities(); 
     }
   };
 
-  // 🚀 🆕 三土手さん仕様：ねじ込みキープ専用の○△✕ステータス判定ロジック
+  // 🚀 🆕 究極版：予定名(3文字)+開始時間、複数件カウントに対応した○△✕判定ロジック
   const getKeepSlotStatus = (dateStr) => {
     const d = new Date(dateStr);
     const todayStr = new Date().toLocaleDateString('sv-SE');
     
-    // ⏳ 過去と今日（22日）は無条件で選択不可（ past ）扱い
-    if (dateStr <= todayStr) return 'past';
+    // ⏳ 過去と今日（22日）は無条件で選択不可（ past ）
+    if (dateStr <= todayStr) return { status: 'past', label: '✕', name: '', time: '' };
 
-    // ✕条件①：定休日（カレンダー・タイムラインの判定ロジックを完全移植）
+    // ─── ✕ (NG) の判定 ───
+    
+    // ✕定休日チェック
     if (shopSettings?.business_hours?.regular_holidays) {
       const holidays = shopSettings.business_hours.regular_holidays;
       const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][d.getDay()];
       const nthWeek = Math.ceil(d.getDate() / 7);
-      
       const checkLast = new Date(d); checkLast.setDate(d.getDate() + 7);
       const isLastWeek = checkLast.getMonth() !== d.getMonth();
       const checkSecondLast = new Date(d); checkSecondLast.setDate(d.getDate() + 14);
       const isSecondToLastWeek = (checkSecondLast.getMonth() !== d.getMonth()) && !isLastWeek;
 
       if (holidays[`${nthWeek}-${dayName}`] || (isLastWeek && holidays[`L1-${dayName}`]) || (isSecondToLastWeek && holidays[`L2-${dayName}`])) {
-        return 'ng'; 
+        return { status: 'ng', label: '✕', name: '定休日', time: '' };
       }
     }
 
-    // ✕条件②：長期休み（夏休みなど）
+    // ✕長期休み ＆ 臨時休業チェック
     if (shopSettings?.special_holidays && Array.isArray(shopSettings.special_holidays)) {
-      const isSpecHoliday = shopSettings.special_holidays.some(h => dateStr >= h.start && dateStr <= h.end);
-      if (isSpecHoliday) return 'ng'; 
+      const matchedHoliday = shopSettings.special_holidays.find(h => {
+        if (h.start && h.end) return dateStr >= h.start && dateStr <= h.end;
+        return (h.date || h.start) === dateStr;
+      });
+      if (matchedHoliday) {
+        return { status: 'ng', label: '✕', name: (matchedHoliday.name || '休業').slice(0, 3), time: '' };
+      }
+    }
+    
+    // ✕予約票上の「臨時休業」または「終日ブロック」をチェック
+    const tempClosure = resList.find(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled' && (r.customer_name === '臨時休業' || r.customer_name === '終日ブロック'));
+    if (tempClosure) {
+      return { status: 'ng', label: '✕', name: '臨時休', time: '' };
     }
 
-    // ✕条件③：既に他の施設訪問、または手動キープ（確定予約・キープ）がその日に入っている
-    const hasFacilityEvent = visitList.some(v => v.scheduled_date === dateStr) || keepList.some(k => k.date === dateStr);
-    if (hasFacilityEvent) return 'ng'; 
+    // ✕予約確定（施設訪問：visit_requests）のチェック
+    const matchedVisit = visitList.find(v => v.scheduled_date === dateStr);
+    if (matchedVisit) {
+      const vTime = (matchedVisit.start_time || '09:00').substring(0, 5);
+      const vName = matchedVisit.facility_users?.facility_name || matchedVisit.customer_name || '施設';
+      return { status: 'ng', label: '✕', name: vName.slice(0, 3), time: vTime };
+    }
 
-    // ✕条件④：他施設の「自動定期キープ」が入っている日（除外設定されていない場合）
+    // ✕単発キープ・変更定期キープ（keep_dates）のチェック
+    const matchedManualKeep = keepList.find(k => k.date === dateStr);
+    if (matchedManualKeep) {
+      const kTime = (matchedManualKeep.start_time || '09:00').substring(0, 5);
+      const kName = matchedManualKeep.facility_users?.facility_name || '施設';
+      return { status: 'ng', label: '✕', name: kName.slice(0, 3), time: kTime };
+    }
+
+    // ✕純粋な自動定期キープ（第n曜日ルール）のチェック
     if (!exclList.includes(dateStr) && facilities.length > 0) {
       const day = d.getDay();
       const dom = d.getDate();
@@ -536,33 +560,56 @@ const handleSave = async (e) => {
       const tempNext2 = new Date(d); tempNext2.setDate(dom + 14);
       const isSecondToLastWeek = (tempNext2.getMonth() !== d.getMonth()) && !isLastWeek;
 
-      let isRegKeptByOther = false;
+      let regKeepData = null;
       facilities.forEach(conn => {
         conn.regular_rules?.forEach(rule => {
           const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
           const dayMatch = (rule.day === day);
-          let weekMatch = (rule.week === nthWeek);
-          if (rule.week === -1) weekMatch = isLastWeek;
-          if (rule.week === -2) weekMatch = isSecondToLastWeek;
+          const weekMatch = (rule.week === nthWeek) || (rule.week === -1 && isLastWeek) || (rule.week === -2 && isSecondToLastWeek);
 
           if (monthMatch && dayMatch && weekMatch) {
-            isRegKeptByOther = true;
+            regKeepData = { name: conn.facility_name || '施設', time: (rule.time || '09:00').substring(0, 5) };
           }
         });
       });
-      if (isRegKeptByOther) return 'ng'; 
+      if (regKeepData) {
+        return { status: 'ng', label: '✕', name: regKeepData.name.slice(0, 3), time: regKeepData.time };
+      }
     }
 
-    // ✕条件⑤：個人のお客様の予約が1件でもある（※指示通り、管理者ブロック blocked はスルー！）
-    const hasPersonalReserve = resList.some(r => r.start_time.startsWith(dateStr) && r.res_type === 'normal' && r.status !== 'canceled');
-    if (hasPersonalReserve) return 'ng'; 
+    // ─── △ (部分埋まり) の判定 ───
+    // その日に入っている個人予約 ＆ プライベート予定をすべて配列にマージして件数を数える
+    const dayPersonalRes = resList.filter(r => r.start_time.startsWith(dateStr) && r.res_type === 'normal' && r.status !== 'canceled');
+    const dayPrivateTasks = privList.filter(p => p.start_time.startsWith(dateStr));
+    
+    // 全てのアクティブな個人系予定を合体
+    const allDeltaEvents = [
+      ...dayPersonalRes.map(r => ({
+        name: (r.customer_name || '客').trim(),
+        time: new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' })
+      })),
+      ...dayPrivateTasks.map(p => ({
+        name: (p.title || '予定').trim(),
+        time: new Date(p.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' })
+      }))
+    ];
 
-    // △条件：空いているが、店主の「プライベート予定」だけが入っている日
-    const hasPrivateTask = privList.some(p => p.start_time.startsWith(dateStr));
-    if (hasPrivateTask) return 'partial'; 
+    if (allDeltaEvents.length > 0) {
+      // 開始時間が一番早いものを基準にするためにソート
+      allDeltaEvents.sort((a, b) => a.time.localeCompare(b.time));
+      const firstEvent = allDeltaEvents[0];
+      
+      return { 
+        status: 'partial', 
+        label: '△', 
+        name: firstEvent.name.slice(0, 3), 
+        time: firstEvent.time,
+        count: allDeltaEvents.length // 何件重なっているかを画面に渡す
+      };
+    }
 
-    // 🟢 ○条件：何も入っていない、完全にクリーンな営業日
-    return 'available';
+    // ─── ○ (完全空き) の判定 ───
+    return { status: 'available', label: '○', name: '', time: '' };
   };
   // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
@@ -1511,48 +1558,78 @@ const handleSave = async (e) => {
                       if (!day) return <div key={i} />;
                       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                       
-                      // 🚀 新設した判定ロジックをここで1日ずつ実行
-                      const slotStatus = getKeepSlotStatus(dStr); 
+                      // 🚀 究極版のオブジェクト判定ロジックを実行
+                      const resObj = getKeepSlotStatus(dStr); 
                       
                       const isSelected = keepDate === dStr;
-                      const isPastOrToday = slotStatus === 'past';
-                      const isNg = slotStatus === 'ng';
+                      const isPastOrToday = resObj.status === 'past';
+                      const isNg = resObj.status === 'ng';
                       
-                      // 今日・過去、または定休日や予約で埋まっている（ng）日は選択させない
+                      // 今日・過去、またはすでに施設や定休日で埋まっている(ng)日はタップさせない
+                      // 💡 個人予約やプライベート予定（partial = △）の日は選択可能にします！
                       const isSelectable = !isPastOrToday && !isNg; 
 
-                      // 🎨 三土手さん指定の条件に基づいて記号とカラーを決定
-                      let statusText = '○';
-                      let statusColor = '#c5a059'; // ○：いつものゴールド
-                      if (slotStatus === 'partial') { statusText = '△'; statusColor = '#f59e0b'; } // △：プライベート予定（オレンジ）
-                      if (slotStatus === 'ng' || slotStatus === 'past') { statusText = '✕'; statusColor = '#fca5a5'; } // ✕：休み・埋まり（薄赤）
+                      // 🎨 マークと配色の決定
+                      let statusColor = '#cbd5e1'; // デフォルト灰色
+                      if (resObj.label === '○') statusColor = '#10b981'; // クリーンな空き（緑）
+                      if (resObj.label === '△') statusColor = '#f59e0b'; // 個人・プライベート（オレンジ）
+                      if (resObj.label === '✕' && !isPastOrToday) statusColor = '#ef4444'; // 施設・休日（赤）
 
                       return (
                         <div 
                           key={i} 
                           onClick={() => isSelectable && setKeepDate(dStr)} 
                           style={{ 
-                            padding: '8px 0', 
+                            padding: '6px 0', 
                             cursor: isSelectable ? 'pointer' : (isPastOrToday ? 'not-allowed' : 'default'), 
-                            borderRadius: '12px', 
+                            borderRadius: '14px', 
                             background: isSelected ? '#059669' : 'none', 
                             color: isSelected ? '#fff' : (isPastOrToday ? '#cbd5e1' : '#1e293b'), 
                             fontWeight: isSelected || isSelectable ? 'bold' : 'normal',
-                            opacity: isPastOrToday ? 0.4 : 1
+                            opacity: isPastOrToday ? 0.4 : 1,
+                            minHeight: '68px', // 👈 文字列が3行入ってもカレンダーがガタつかないように高さを一定に固定
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center',
+                            justifyContent: 'flex-start'
                           }}
                         >
-                          {/* 日付の数値 */}
-                          <div style={{ fontSize: '0.9rem' }}>{day}</div>
+                          {/* ① 日付の数字 */}
+                          <div style={{ fontSize: '0.9rem', lineHeight: '1' }}>{day}</div>
                           
-                          {/* 🚀 動的マーク：選択時は白文字、それ以外は判定されたシンボルカラー */}
+                          {/* ② 記号（○ △ ✕） */}
                           <div style={{ 
-                            fontSize: '0.75rem', 
+                            fontSize: '0.8rem', 
                             fontWeight: '900', 
-                            marginTop: '2px',
+                            marginTop: '1px',
+                            lineHeight: '1',
                             color: isSelected ? '#fff' : statusColor 
                           }}>
-                            {statusText}
+                            {resObj.label}
                           </div>
+
+                          {/* ③ 🚀 三土手さん仕様：名前3文字 ＋ 開始時間の詳細テキスト表示エリア */}
+                          {(resObj.status === 'ng' || resObj.status === 'partial') && resObj.name && (
+                            <div style={{ 
+                              fontSize: '0.55rem', 
+                              lineHeight: '1.2', 
+                              marginTop: '3px',
+                              transform: 'scale(0.9)', /* 小さくして確実にセル内に収める */
+                              color: isSelected ? '#fff' : (resObj.status === 'ng' ? '#be123c' : '#b45309'),
+                              textAlign: 'center',
+                              whiteSpace: 'nowrap'
+                            }}>
+                              {/* 件数に応じたテキストの出し分け（2つ以上なら ※他○件） */}
+                              {resObj.status === 'partial' && resObj.count > 1 ? (
+                                <>
+                                  <div>{resObj.name} {resObj.time}</div>
+                                  <div style={{ fontWeight: 'bold', color: '#d97706' }}>※他{resObj.count - 1}件</div>
+                                </>
+                              ) : (
+                                <div>{resObj.name}<br/>{resObj.time}</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     });
