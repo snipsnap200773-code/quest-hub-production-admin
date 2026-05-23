@@ -509,28 +509,19 @@ const isPC = windowWidth > 1024;
     }
 
     // 🚀 🆕 【超重要：爆速化の仕掛け】
-    const currentViewDate = new Date(startDate);
-    
-    const pastRange = new Date(currentViewDate.getTime() - (30 * 24 * 60 * 60 * 1000));
-    const futureRange = new Date(currentViewDate.getTime() + (30 * 24 * 60 * 60 * 1000));
-    
-    const startRangeStr = pastRange.toLocaleDateString('sv-SE') + "T00:00:00Z";
-    const endRangeStr = futureRange.toLocaleDateString('sv-SE') + "T23:59:59Z";
-    const startDayStr = pastRange.toLocaleDateString('sv-SE');
-    const endDayStr = futureRange.toLocaleDateString('sv-SE');
-
-    // 🚀 修正：本当の「今日」の前後30日
     const realToday = new Date();
-    const alertPastRange = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
-    const alertFutureRange = new Date(realToday.getTime() + (30 * 24 * 60 * 60 * 1000));
-    const alertStartDayStr = alertPastRange.toLocaleDateString('sv-SE');
-    const alertEndDayStr = alertFutureRange.toLocaleDateString('sv-SE');
+    
+    // ①【過去レンジ】履歴を追うための過去の限界点（直近30日前）
+    const historyPastDate = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
+    const finalStartDayStr = historyPastDate.toLocaleDateString('sv-SE'); // YYYY-MM-DD
+    const startRangeStr = finalStartDayStr + "T00:00:00Z";
 
-    /* 🚀 【ここがポイント！】カレンダー表示範囲と本当の今日、どちらの期間も絶対にカバーする「最強の広域範囲」を計算 */
-    const finalStartDayStr = startDayStr < alertStartDayStr ? startDayStr : alertStartDayStr;
-    const finalEndDayStr = endDayStr > alertEndDayStr ? endDayStr : alertEndDayStr;
+    // ②【未来レンジ】施設キープ・年末先取り用の未来の限界点（1年先の末日まで自動拡張）
+    const futureLimitDate = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
+    const finalEndDayStr = futureLimitDate.toLocaleDateString('sv-SE'); // YYYY-MM-DD
+    const endRangeStr = finalEndDayStr + "T23:59:59Z";
 
-    // ① 予約データの取得
+    // ① 個人予約データの取得（過去30日〜未来1年分）
     const { data: resData } = await supabase
       .from('reservations')
       .select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)')
@@ -538,7 +529,7 @@ const isPC = windowWidth > 1024;
       .gte('start_time', startRangeStr)
       .lte('start_time', endRangeStr);
 
-    // ② プライベート予定の取得
+    // ② プライベート予定の取得（過去30日〜未来1年分）
     const { data: privData } = await supabase
       .from('private_tasks')
       .select('*')
@@ -546,15 +537,25 @@ const isPC = windowWidth > 1024;
       .gte('start_time', startRangeStr)
       .lte('start_time', endRangeStr);
 
-    // ③ 提携施設の取得
+    // ③ 提携施設の取得（開いた瞬間から名前を表示するフルロード版を完全死守）
     const { data: connData } = await supabase
       .from('shop_facility_connections')
-      .select('*, facility_users(facility_name)')
+      .select(`
+        *,
+        facility_users (
+          id,
+          facility_name,
+          furigana,
+          address,
+          tel,
+          email
+        )
+      `)
       .eq('shop_id', shopId)
       .eq('status', 'active');
     setFacilityConnections(connData || []);
 
-    // ④ 施設訪問依頼の取得（★最強広域範囲に書き換え）
+    // ④ 施設訪問依頼の取得（★最強の1年広域レンジを適用！）
     const { data: visitData } = await supabase
       .from('visit_requests')
       .select('*, facility_users(facility_name), visit_request_residents(count)')
@@ -563,7 +564,7 @@ const isPC = windowWidth > 1024;
       .gte('scheduled_date', finalStartDayStr) 
       .lte('scheduled_date', finalEndDayStr);  
 
-    // ⑤ 手動キープの取得（★最強広域範囲に書き換え）
+    // ⑤ 手動キープの取得（★年末調整・単発ねじ込みキープを1年先まで完全カバー！）
     const { data: mData } = await supabase
       .from('keep_dates')
       .select('*, facility_users(*)')
@@ -3327,27 +3328,120 @@ else if (
 
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.7rem', textAlign: 'center' }}>
                       {/* 🚀 曜日ラベルを月曜始まりに変更 */}
-                      {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold' }}>{w}</div>)}
+                      {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', fontSize: '0.65rem' }}>{w}</div>)}
                       {(() => {
                         const year = carryoverViewMonth.getFullYear();
                         const month = carryoverViewMonth.getMonth();
                         
-                        // 🚀 月初の曜日取得 (0:日, 1:月, 2:火...) を月曜始まり（月=0, 火=1...日=6）の空白数に変換
                         const rawFirstDay = new Date(year, month, 1).getDay();
                         const firstDayCount = rawFirstDay === 0 ? 6 : rawFirstDay - 1; 
 
                         const lastDate = new Date(year, month + 1, 0).getDate();
                         const daysArray = [...Array(firstDayCount).fill(null), ...[...Array(lastDate).keys()].map(i => i + 1)];
+                        
                         return daysArray.map((day, i) => {
-                          if (!day) return <div key={i} />;
+                          if (!day) return <div key={`empty-carry-${i}`} />;
+                          
+                          // 🚀 タイムゾーンのズレを完全に防ぐ、ローカルセーフな日付文字列の作成
                           const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                          const currentLoopDate = new Date(`${dStr}T00:00:00`); 
+                          
+                          // 🚀 1. 〇△✕のステータスを取得（AdminReservationsに元からある本物）
                           const status = getCarryoverDayStatus(dStr);
+                          
+                          // 🚀 2. その日の予定詳細を取得（AdminReservationsに元からある本物）
+                          const summary = getDayEventSummary(currentLoopDate);
+                          
                           const isSelected = carryoverDate === dStr;
-                          const isSelectable = status !== 'past'; // 🚀 これにより今日（22日）も自動でfalseになります
+                          const isSelectable = status !== 'past';
+                          
+                          // 🎨 状態（○ △ ✕）に合わせた記号ラベルと配色の決定
+                          let symbolLabel = '○';
+                          let statusColor = '#10b981'; // ○（空き）の緑
+                          
+                          if (status === 'partial') {
+                            symbolLabel = '△';
+                            statusColor = '#f59e0b'; // △（一部埋まり）のオレンジ
+                          } else if (status === 'ng') {
+                            symbolLabel = '✕';
+                            statusColor = '#ef4444'; // ✕（不可）の赤
+                          } else if (status === 'past') {
+                            symbolLabel = '';
+                          }
+
+                          // 🚀 🆕 「他○件」の計算用：その日の個人予約とプライベート予定の合計件数を割り出す
+                          const dayPersonalCount = reservations.filter(r => r.start_time.startsWith(dStr) && r.res_type === 'normal' && r.status !== 'canceled').length;
+                          const dayPrivateCount = privateTasks.filter(p => p.start_time.startsWith(dStr)).length;
+                          const totalEventsCount = dayPersonalCount + dayPrivateCount;
+
+                          // 🚀 🆕 先頭の開始時間を綺麗にHH:mm形式にする（例: "2026-05-23T10:00:00" ➔ "10:00"）
+                          let eventTimeStr = '';
+                          if (summary.firstEntry && summary.firstEntry.time) {
+                            const timePart = summary.firstEntry.time.split('T')[1];
+                            if (timePart) {
+                              eventTimeStr = timePart.substring(0, 5);
+                            } else if (summary.firstEntry.time.includes(':')) {
+                              // すでに "09:00" などの形式で入っている場合の安全装置
+                              eventTimeStr = summary.firstEntry.time.substring(0, 5);
+                            }
+                          }
+
                           return (
-                            <div key={i} onClick={() => isSelectable && setCarryoverDate(dStr)} style={{ padding: '8px 0', cursor: isSelectable ? 'pointer' : 'default', borderRadius: '8px', background: isSelected ? '#3d2b1f' : 'none', color: isSelected ? '#fff' : (status === 'available' ? '#c5a059' : (status === 'partial' ? '#f59e0b' : (status === 'ng' ? '#fca5a5' : '#e2e8f0'))), opacity: status === 'past' ? 0.3 : 1 }}>
-                              <div style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>{day}</div>
-                              <div style={{ fontSize: '0.6rem', fontWeight: '900' }}>{status === 'available' ? '◎' : (status === 'partial' ? '△' : (status === 'ng' ? '✕' : ''))}</div>
+                            <div 
+                              key={i} 
+                              onClick={() => isSelectable && setCarryoverDate(dStr)} 
+                              style={{ 
+                                padding: '4px 0', 
+                                cursor: isSelectable ? 'pointer' : (status === 'past' ? 'not-allowed' : 'default'), 
+                                borderRadius: '10px', 
+                                background: isSelected ? '#3d2b1f' : 'none', 
+                                color: isSelected ? '#fff' : '#1e293b', 
+                                opacity: status === 'past' ? 0.25 : 1,
+                                minHeight: '64px', // 🚀 文字拡大に合わせて高さを2pxだけ微調整
+                                display: 'flex',
+                                flexDirection: 'column',
+                                justifyContent: 'flex-start',
+                                alignItems: 'center',
+                                boxSizing: 'border-box'
+                              }}
+                            >
+                              {/* 💡 1行目: 日付の数字（少しクッキリ大きく） */}
+                              <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: isSelected ? '#fff' : (summary.isHoliday ? '#94a3b8' : '#1e293b') }}>
+                                {day}
+                              </div>
+
+                              {/* 💡 2行目: ○ △ ✕ の記号（サイズと太さをキープ） */}
+                              <div style={{ fontSize: '0.75rem', fontWeight: '900', color: isSelected ? '#fff' : statusColor, marginTop: '1px', lineHeight: '1' }}>
+                                {symbolLabel}
+                              </div>
+
+                              {/* 💡 3行目: 🚀 🆕 限界まで文字を大きくした予定名・時間表示エリア */}
+                              {(status === 'ng' || status === 'partial') && (
+                                <div style={{ 
+                                  fontSize: '0.6rem', // 🚀 0.5rem から 0.6rem へ拡大！
+                                  fontWeight: '900', 
+                                  lineHeight: '1.1', 
+                                  marginTop: '2px',
+                                  transform: 'scale(0.9)', // 🚀 縮小率を 0.82 から 0.9 へ緩和して文字を大きく！
+                                  transformOrigin: 'top center',
+                                  color: isSelected ? '#fff' : (status === 'ng' ? '#be123c' : '#b45309'),
+                                  textAlign: 'center',
+                                  whiteSpace: 'nowrap',
+                                  width: '100%'
+                                }}>
+                                  {status === 'partial' && totalEventsCount > 1 ? (
+                                    <>
+                                      {eventTimeStr && <div>{eventTimeStr}</div>}
+                                      <div style={{ color: '#d97706', fontWeight: '900' }}>他{totalEventsCount - 1}件</div>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <div>{summary.firstEntry ? summary.firstEntry.name.slice(0, 3) : (summary.isHoliday ? 'お休み' : '')}</div>
+                                      {eventTimeStr && <div>{eventTimeStr}</div>}
+                                    </>
+                                  )}
+                                </div>
+                              )}
                             </div>
                           );
                         });
