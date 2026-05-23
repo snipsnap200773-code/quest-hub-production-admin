@@ -351,7 +351,10 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       await supabase.from('keep_dates').delete().eq('facility_user_id', facilityId);
 
       alert(`予約の送信が完了しました！✨`);
-      setActiveTab('status'); 
+      
+      // 🚀 🆕 送信完了アラートが閉じられたら、ページ全体を強制リロードして、Portal側のアラートバナーを完全に消去します！
+      window.location.reload();
+      
     } catch (err) {
       console.error(err);
       alert("エラー: " + err.message);

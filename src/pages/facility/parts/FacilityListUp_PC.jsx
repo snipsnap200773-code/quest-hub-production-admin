@@ -774,7 +774,7 @@ const FacilityListUp_PC = ({
                 </div>
                 
                 {/* 🚀 削除ボタンエリア：完了・キャンセル済みなら非表示に */}
-                {(!isCompleted && !item.status === 'canceled') && (
+                {(!isCompleted && item.status !== 'canceled') && (
                   <button 
                     onClick={() => removeFromList(item)} 
                     style={{
