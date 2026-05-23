@@ -78,7 +78,9 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
       .from('visit_requests')
       .select(`id, scheduled_date, start_time, status, parent_id, profiles (business_name, theme_color)`)
       .eq('facility_user_id', facilityId)
-      .gte('scheduled_date', startOfMonth) // ✅ .neqを外しました
+      // 🚀 🆕 【超重要】訪問予定日自体がキャンセル（削除）された日程はここで完全に弾きます！
+      .neq('status', 'canceled') 
+      .gte('scheduled_date', startOfMonth)
       .order('scheduled_date', { ascending: false });
 
     if (!visitsData) { setLoading(false); return; }

@@ -111,6 +111,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         .from('visit_request_residents')
         .select('*, members(*), visit_requests!inner(id, scheduled_date, status, parent_id)')
         .eq('visit_requests.facility_user_id', facilityId)
+        .neq('visit_requests.status', 'canceled') // ✅ 【ここを追加！】キャンセルされた日程のメンバーはカウントから除外します
         .gte('visit_requests.scheduled_date', startOfMonth)
         .lte('visit_requests.scheduled_date', endOfMonth);
 

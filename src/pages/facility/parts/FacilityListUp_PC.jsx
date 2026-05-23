@@ -158,10 +158,12 @@ const FacilityListUp_PC = ({
         supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
         
-        // ① この施設の予約メンバー
+        // ① この施設の予約メンバー（🚀 🆕 他のテスト施設のデータが混ざらないようにインナージョインで厳格化！）
         supabase.from('visit_request_residents')
-          .select('*, members(*), visit_requests!inner(id, scheduled_date, status)')
+          .select('*, members!inner(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
+          .eq('members.facility', targetFacilityName)
+          .neq('visit_requests.status', 'canceled') // ✅ 【超重要】キャンセルされた日程のデータはここで完全にシャットアウトします！
           .gte('visit_requests.scheduled_date', startOfMonth)
           .lte('visit_requests.scheduled_date', endOfMonth),
         
