@@ -3633,7 +3633,7 @@ else if (
 
                     {/* 💡 予定の名前を小さく表示 */}
                     <div style={{ 
-                      fontSize: '0.55rem', 
+                      fontSize: '1rem', 
                       fontWeight: 'bold', 
                       marginTop: '4px', 
                       color: circleColor === 'transparent' ? '#94a3b8' : circleColor,
@@ -3642,7 +3642,7 @@ else if (
                       textOverflow: 'ellipsis',
                       padding: '0 2px'
                     }}>
-                      {summary.firstEntry ? summary.firstEntry.name.slice(0, 4) : ''}
+                      {summary.firstEntry ? summary.firstEntry.name.slice(0, 3) : ''}
                     </div>
                   </div>
                 );
