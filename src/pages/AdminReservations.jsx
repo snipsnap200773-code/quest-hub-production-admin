@@ -3588,7 +3588,7 @@ else if (
               }}
             >
               {['月','火','水','木','金','土','日'].map(d => (
-                <div key={d} style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '10px' }}>{d}</div>
+                <div key={d} style={{ color: '#213146', fontSize: '1rem', fontWeight: 'bold', marginBottom: '10px' }}>{d}</div>
               ))}
               {miniCalendarDays.map((date, i) => {
                 if (!date) return <div key={i} />;
