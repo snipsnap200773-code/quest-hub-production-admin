@@ -1535,12 +1535,12 @@ const handleSave = async (e) => {
             style={{ 
               ...modalContentStyle, 
               // 🚀 スマホなら幅・高さを画面いっぱいに強制固定！PCならいつものパステルサイズ
-              maxWidth: window.innerWidth > 1024 ? '460px' : '100vw', 
+              maxWidth: window.innerWidth > 1024 ? '520px' : '100vw', 
               width: window.innerWidth > 1024 ? '95%' : '100vw',
               maxHeight: window.innerWidth > 1024 ? '85vh' : '100dvh',
               height: window.innerWidth > 1024 ? 'auto' : '100dvh',
               borderRadius: window.innerWidth > 1024 ? '28px' : '0px',
-              padding: window.innerWidth > 1024 ? '30px' : '20px 15px',
+              padding: window.innerWidth > 1024 ? '30px' : '15px 10px', // 🚀 左右のパディングを詰め、横幅をフルに活用
               boxSizing: 'border-box',
               display: 'flex',
               flexDirection: 'column'
@@ -1564,8 +1564,8 @@ const handleSave = async (e) => {
                   <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() + 1)))}>▶</button>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', fontSize: '0.75rem', textAlign: 'center' }}>
-                  {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '5px' }}>{w}</div>)}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', fontSize: '0.9rem', textAlign: 'center' }}>
+                  {['月','火','水','木','金','土','日'].map(w => <div key={w} style={{ color: '#94a3b8', fontWeight: 'bold', marginBottom: '8px' }}>{w}</div>)}
                   {(() => {
                     const year = keepViewMonth.getFullYear();
                     const month = keepViewMonth.getMonth();
@@ -1613,24 +1613,25 @@ const handleSave = async (e) => {
                           style={{ 
                             padding: '6px 0', 
                             cursor: isSelectable ? 'pointer' : (isPastOrToday ? 'not-allowed' : 'default'), 
-                            borderRadius: '14px', 
+                            borderRadius: '12px', 
                             background: isSelected ? '#059669' : 'none', 
                             color: isSelected ? '#fff' : (isPastOrToday ? '#cbd5e1' : '#1e293b'), 
                             fontWeight: isSelected || isSelectable ? 'bold' : 'normal',
                             opacity: isPastOrToday ? 0.4 : 1,
-                            minHeight: '68px', 
+                            minHeight: '74px', // 🚀 高さを広げて大きい文字を安全に収める
                             display: 'flex',
                             flexDirection: 'column',
                             alignItems: 'center',
-                            justifyContent: 'flex-start'
+                            justifyContent: 'flex-start',
+                            boxSizing: 'border-box'
                           }}
                         >
                           {/* ① 日付の数字 */}
-                          <div style={{ fontSize: '0.9rem', lineHeight: '1' }}>{day}</div>
+                          <div style={{ fontSize: '1.05rem', lineHeight: '1' }}>{day}</div>
                           
                           {/* ② 記号（○ △ ✕） */}
                           <div style={{ 
-                            fontSize: '0.8rem', 
+                            fontSize: '0.95rem', 
                             fontWeight: '900', 
                             marginTop: '1px',
                             lineHeight: '1',
@@ -1642,21 +1643,21 @@ const handleSave = async (e) => {
                           {/* ③ 名前3文字 ＋ 開始時間のテキスト表示 */}
                           {(resObj.status === 'ng' || resObj.status === 'partial') && resObj.name && (
                             <div style={{ 
-                              fontSize: '0.55rem', 
+                              fontSize: '0.8rem', 
                               lineHeight: '1.2', 
                               marginTop: '3px',
-                              transform: 'scale(0.85)', 
+                              transform: 'scale(0.9)', 
                               color: isSelected ? '#fff' : (resObj.status === 'ng' ? '#be123c' : '#b45309'),
                               textAlign: 'center',
                               whiteSpace: 'nowrap'
                             }}>
                               {resObj.status === 'partial' && resObj.count > 1 ? (
                                 <>
-                                  <div>{resObj.name} {resObj.time}</div>
-                                  <div style={{ fontWeight: 'bold', color: '#d97706' }}>※他{resObj.count - 1}件</div>
+                                  <div>{resObj.name.slice(0, 3)}</div>
+                                  <div style={{ fontWeight: 'bold', color: '#d97706' }}>他{resObj.count - 1}件</div>
                                 </>
                               ) : (
-                                <div>{resObj.name}<br/>{resObj.time}</div>
+                                <div>{resObj.name.slice(0, 3)}<br/>{resObj.time}</div>
                               )}
                             </div>
                           )}
