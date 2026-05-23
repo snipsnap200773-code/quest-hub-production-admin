@@ -202,6 +202,7 @@ const resIndexStyle = (color) => ({
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMonth, setViewMonth] = useState(new Date(startDate)); 
+  const touchStartX = useRef(0);
 
   const [customers, setCustomers] = useState([]); 
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -3557,7 +3558,35 @@ else if (
       </div>
       {/* 🚩 ここまで差し替え */}
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', textAlign: 'center' }}>
+            {/* 🚀 🆕 左右スワイプを検知してキビキビ切り替えるグリッド枠 */}
+            <div 
+              onTouchStart={(e) => {
+                // タッチした瞬間の横位置（X座標）を記憶
+                touchStartX.current = e.touches[0].clientX;
+              }}
+              onTouchEnd={(e) => {
+                // 指を離した瞬間の位置との差分を計算
+                const diff = touchStartX.current - e.changedTouches[0].clientX;
+                
+                // 50ピクセル以上スワイプされたら月をパッと切り替える
+                if (Math.abs(diff) > 50) {
+                  if (diff > 0) {
+                    // 左へスワイプ ➔ 次の月へ
+                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
+                  } else {
+                    // 右へスワイプ ➔ 前の月へ
+                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
+                  }
+                }
+              }}
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(7, 1fr)', 
+                gap: '2px', 
+                textAlign: 'center',
+                touchAction: 'pan-y' // 💡 縦スクロール（ pan-y ）はブラウザに任せて干渉を防ぐ！
+              }}
+            >
               {['月','火','水','木','金','土','日'].map(d => (
                 <div key={d} style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '10px' }}>{d}</div>
               ))}
