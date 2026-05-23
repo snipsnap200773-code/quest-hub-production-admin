@@ -425,6 +425,12 @@ const [editFields, setEditFields] = useState({
     }
   }, [location.state]);
 
+  useEffect(() => {
+    if (!showMobileCalendar) {
+      setViewMonth(new Date()); 
+    }
+  }, [showMobileCalendar]);
+
 const isPC = windowWidth > 1024;
 
   // 🆕 項目が有効（WebまたはLINEのいずれか）か判定し、ラベルを取得するヘルパー
@@ -464,260 +470,95 @@ const isPC = windowWidth > 1024;
     setShowHistoryDetail(true);
   };
 
-  // ✅ ツイン・カレンダー対応版 fetchData
-  const fetchData = async () => {
+const fetchData = async () => {
     setLoading(true);
     
-    // 1. 自分の店舗プロフィールを取得
+    // 1. 店舗設定・カテゴリ・スタッフ取得
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (!profile) { setLoading(false); return; }
     setShop(profile);
 
-    // 🆕 カテゴリと専用屋号のリストを取得
-    const { data: catData } = await supabase
-      .from('service_categories')
-      .select('name, url_key, custom_shop_name')
-      .eq('shop_id', shopId);
-    
+    const { data: catData } = await supabase.from('service_categories').select('name, url_key, custom_shop_name').eq('shop_id', shopId);
     const shopNameMap = {};
-    catData?.forEach(c => {
-      if (c.url_key) {
-        shopNameMap[c.url_key] = c.custom_shop_name || c.name;
-      }
-    });
+    catData?.forEach(c => { if (c.url_key) shopNameMap[c.url_key] = c.custom_shop_name || c.name; });
     setCategoryMap(shopNameMap);
 
-    // ✅ スタッフ一覧を取得
-    const { data: staffsData } = await supabase
-      .from('staffs')
-      .select('*')
-      .eq('shop_id', shopId)
-      .eq('role_type', 'stylist') 
-      .order('created_at', { ascending: true });
+    const { data: staffsData } = await supabase.from('staffs').select('*').eq('shop_id', shopId).eq('role_type', 'stylist').order('created_at', { ascending: true });
     setStaffs(staffsData || []);
 
-    // 2. スケジュール共有設定（schedule_sync_id）を確認
-    let targetShopIds = [shopId];
-    if (profile.schedule_sync_id) {
-      const { data: siblingShops } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('schedule_sync_id', profile.schedule_sync_id);
-      if (siblingShops) {
-        targetShopIds = siblingShops.map(s => s.id);
-      }
-    }
-
-    // 🚀 🆕 【超重要：爆速化の仕掛け】
+    // 2. 範囲計算 🚀 1年先まで取得
     const realToday = new Date();
-    
-    // ①【過去レンジ】履歴を追うための過去の限界点（直近30日前）
     const historyPastDate = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
-    const finalStartDayStr = historyPastDate.toLocaleDateString('sv-SE'); // YYYY-MM-DD
-    const startRangeStr = finalStartDayStr + "T00:00:00Z";
-
-    // ②【未来レンジ】施設キープ・年末先取り用の未来の限界点（1年先の末日まで自動拡張）
+    const startRangeStr = historyPastDate.toLocaleDateString('sv-SE') + "T00:00:00Z";
+    
     const futureLimitDate = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
-    const finalEndDayStr = futureLimitDate.toLocaleDateString('sv-SE'); // YYYY-MM-DD
+    const finalStartDayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-01`;
+    const finalEndDayStr = futureLimitDate.toLocaleDateString('sv-SE');
     const endRangeStr = finalEndDayStr + "T23:59:59Z";
 
-    // ① 個人予約データの取得（過去30日〜未来1年分）
-    const { data: resData } = await supabase
-      .from('reservations')
-      .select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)')
-      .in('shop_id', targetShopIds)
-      .gte('start_time', startRangeStr)
-      .lte('start_time', endRangeStr);
+    // 3. データ一斉取得
+    const targetShopIds = profile.schedule_sync_id ? 
+      (await supabase.from('profiles').select('id').eq('schedule_sync_id', profile.schedule_sync_id)).data.map(s => s.id) : [shopId];
 
-    // ② プライベート予定の取得（過去30日〜未来1年分）
-    const { data: privData } = await supabase
-      .from('private_tasks')
-      .select('*')
-      .eq('shop_id', shopId)
-      .gte('start_time', startRangeStr)
-      .lte('start_time', endRangeStr);
+    const [resRes, privRes, connRes, visitRes, keepRes, exclRes] = await Promise.all([
+      supabase.from('reservations').select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)').in('shop_id', targetShopIds).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
+      supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
+      supabase.from('shop_facility_connections').select('*, facility_users(id, facility_name, furigana, address, tel, email)').eq('shop_id', shopId).eq('status', 'active'),
+      supabase.from('visit_requests').select('*, facility_users(facility_name), visit_request_residents(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
+      supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', finalStartDayStr).lte('date', finalEndDayStr),
+      supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
+    ]);
 
-    // ③ 提携施設の取得（開いた瞬間から名前を表示するフルロード版を完全死守）
-    const { data: connData } = await supabase
-      .from('shop_facility_connections')
-      .select(`
-        *,
-        facility_users (
-          id,
-          facility_name,
-          furigana,
-          address,
-          tel,
-          email
-        )
-      `)
-      .eq('shop_id', shopId)
-      .eq('status', 'active');
-    setFacilityConnections(connData || []);
-
-    // ④ 施設訪問依頼の取得（★最強の1年広域レンジを適用！）
-    const { data: visitData } = await supabase
-      .from('visit_requests')
-      .select('*, facility_users(facility_name), visit_request_residents(count)')
-      .eq('shop_id', shopId)
-      .neq('status', 'canceled')
-      .gte('scheduled_date', finalStartDayStr) 
-      .lte('scheduled_date', finalEndDayStr);  
-
-    // ⑤ 手動キープの取得（★年末調整・単発ねじ込みキープを1年先まで完全カバー！）
-    const { data: mData } = await supabase
-      .from('keep_dates')
-      .select('*, facility_users(*)')
-      .eq('shop_id', shopId)
-      .gte('date', finalStartDayStr) 
-      .lte('date', finalEndDayStr);
-
-    // 🆕 定期訪問の除外リストも取得
-    const { data: exclData } = await supabase
-      .from('regular_keep_exclusions')
-      .select('excluded_date')
-      .eq('shop_id', shopId);
-
-    setReservations(resData || []);
-    setPrivateTasks(privData || []);
-    setVisitRequests(visitData || []);
-    setManualKeeps(mData || []); 
-    setExclusions(exclData?.map(e => e.excluded_date) || []);
+    setReservations(resRes.data || []);
+    setPrivateTasks(privRes.data || []);
+    setFacilityConnections(connRes.data || []);
+    setVisitRequests(visitRes.data || []);
+    setManualKeeps(keepRes.data || []);
+    setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
     
-    const today = new Date();
-    // 💡 常に本当の「今日」の00:00:00を基準にすることで、カレンダーを進めてもアラートが狂わなくなります
-    const baseToday = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-    const todayStr = getJapanDateStr(baseToday);
-    
+    // 4. アラート用集計 ＆ 定期キープ自動計算ロジック
+    const todayStr = getJapanDateStr(realToday);
     const irregularList = [];
     const urgentList = []; 
     const timeChangedList = []; 
-
-    // 重複を避けるための名寄せ用セット（施設ID_日付）
     const processedKeys = new Set();
 
-    // 🚀 A: まずは手動変更・単発保存されているデータをスキャン
-    (mData || []).forEach(k => {
+    // A: 単発キープのスキャン
+    (keepRes.data || []).forEach(k => {
       if (k.date < todayStr) return;
       processedKeys.add(`${k.facility_user_id}_${k.date}`);
-
-      const isBooked = (visitData || []).some(v => 
-        (v.status === 'confirmed' || v.status === 'completed') && 
-        v.facility_user_id === k.facility_user_id &&
-        (v.scheduled_date === k.date)
-      );
+      const isBooked = (visitRes.data || []).some(v => (v.status === 'confirmed' || v.status === 'completed') && v.facility_user_id === k.facility_user_id && v.scheduled_date === k.date);
       if (isBooked) return;
-
-      let isRegularDay = false;
-      let originalRuleTime = null; 
-
       const [y, mon, d] = k.date.split('-').map(Number);
       const dObj = new Date(y, mon - 1, d);
-
-      const day = dObj.getDay();
-      const dom = dObj.getDate();
-      const m = dObj.getMonth() + 1;
-      const nthWeek = Math.ceil(dom / 7);
-      
-      const tempNext = new Date(dObj); tempNext.setDate(dom + 7);
-      const isLastWeek = tempNext.getMonth() !== dObj.getMonth();
-      const tempNext2 = new Date(dObj); tempNext2.setDate(dom + 14);
-      const isSecondToLastWeek = (tempNext2.getMonth() !== dObj.getMonth()) && !isLastWeek;
-
-      const conn = (connData || []).find(c => c.facility_user_id === k.facility_user_id);
-      if (conn && conn.regular_rules) {
-        conn.regular_rules.forEach(rule => {
-          const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
-          const dayMatch = (rule.day === day);
-          let weekMatch = (rule.week === nthWeek);
-          if (rule.week === -1) weekMatch = isLastWeek;
-          if (rule.week === -2) weekMatch = isSecondToLastWeek;
-
-          if (monthMatch && dayMatch && weekMatch) {
-            isRegularDay = true;
-            originalRuleTime = rule.time; 
-          }
-        });
-      }
-
-      // 💡 00:00:00同士の純粋な引き算なので、いつでも確実に「1日、2日」と完璧に四捨五入できます
-      const diffTime = dObj.getTime() - baseToday.getTime();
-      const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24)); 
-
-      if (isRegularDay) {
-        if (originalRuleTime && k.start_time.substring(0, 5) !== originalRuleTime) {
-          timeChangedList.push({ ...k, originalTime: originalRuleTime });
-        }
-        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: true });
-      } else {
-        if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays, isRegular: false });
-        else irregularList.push({ ...k, isRegular: false });
-      }
+      const diffDays = Math.round((dObj.getTime() - realToday.getTime()) / (1000 * 60 * 60 * 24)); 
+      if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
+      else irregularList.push({ ...k });
     });
 
-    // 🚀 B: 次に、各提携施設の「手動データがない純粋な定期キープの日」も未来30日分自動スキャン
-    (connData || []).forEach(conn => {
+    // B: 定期キープの自動スキャン（ここを忘れずに入れました！）
+    (connRes.data || []).forEach(conn => {
       if (!conn.regular_rules) return;
-      
-      // 💡 スキャン開始日もローカルの00:00:00で安全に初期化
-      const scanDate = new Date(baseToday.getFullYear(), baseToday.getMonth(), baseToday.getDate());
-      
-      for (let i = 0; i < 30; i++) {
+      let scanDate = new Date(realToday);
+      for (let i = 0; i < 90; i++) { // 🚀 90日先まで自動計算
         const dStr = getJapanDateStr(scanDate);
+        if (dStr < todayStr) { scanDate.setDate(scanDate.getDate() + 1); continue; }
         const comboKey = `${conn.facility_user_id}_${dStr}`;
-
-        if (!processedKeys.has(comboKey) && dStr >= todayStr) {
-          const day = scanDate.getDay();
-          const dom = scanDate.getDate();
-          const m = scanDate.getMonth() + 1;
-          const nthWeek = Math.ceil(dom / 7);
-          
-          const tempNext = new Date(scanDate); tempNext.setDate(dom + 7);
-          const isLastWeek = tempNext.getMonth() !== scanDate.getMonth();
-          const tempNext2 = new Date(scanDate); tempNext2.setDate(dom + 14);
-          const isSecondToLastWeek = (tempNext2.getMonth() !== scanDate.getMonth()) && !isLastWeek;
-
-          let isRegularDay = false;
-          let regTime = '09:00';
-
-          conn.regular_rules.forEach(rule => {
-            const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
-            const dayMatch = (rule.day === day);
-            let weekMatch = (rule.week === nthWeek);
-            if (rule.week === -1) weekMatch = isLastWeek;
-            if (rule.week === -2) weekMatch = isSecondToLastWeek;
-
-            if (monthMatch && dayMatch && weekMatch) {
-              isRegularDay = true;
-              regTime = rule.time || '09:00';
-            }
-          });
-
-          const isExcluded = exclusions.includes(dStr);
-
-          if (isRegularDay && !isExcluded) {
-            const isBooked = (visitData || []).some(v => 
-              (v.status === 'confirmed' || v.status === 'completed') && 
-              v.facility_user_id === conn.facility_user_id &&
-              (v.scheduled_date === dStr)
-            );
-
-            if (!isBooked) {
-              const fakeKeep = { 
-                id: `reg-${conn.facility_user_id}-${dStr}`, 
-                date: dStr, 
-                start_time: regTime, 
-                facility_user_id: conn.facility_user_id,
-                facility_users: conn.facility_users,
-                isRegular: true 
-              };
-
-              const diffTime = scanDate.getTime() - baseToday.getTime();
-              const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
-
-              if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
-            }
-          }
+        if (!processedKeys.has(comboKey)) {
+           // 定期ルールの判定ロジック
+           const day = scanDate.getDay(); const dom = scanDate.getDate(); const m = scanDate.getMonth() + 1;
+           const nthWeek = Math.ceil(dom / 7);
+           const isLast = new Date(scanDate).getMonth() !== new Date(new Date(scanDate).setDate(dom + 7)).getMonth();
+           let isRegular = conn.regular_rules.some(r => (r.monthType===0 || (r.monthType===1 && m%2!==0) || (r.monthType===2 && m%2===0)) && r.day===day && (r.week===nthWeek || (r.week===-1 && isLast)));
+           
+           if (isRegular && !exclRes.data?.some(e => e.excluded_date === dStr)) {
+              const isBooked = (visitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
+              if (!isBooked) {
+                 const fakeKeep = { id: `reg-${conn.facility_user_id}-${dStr}`, date: dStr, facility_user_id: conn.facility_user_id, facility_users: conn.facility_users, isRegular: true };
+                 const diffDays = Math.round((scanDate.getTime() - realToday.getTime()) / (1000 * 60 * 60 * 24));
+                 if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
+              }
+           }
         }
         scanDate.setDate(scanDate.getDate() + 1);
       }
@@ -726,10 +567,8 @@ const isPC = windowWidth > 1024;
     setIrregularKeeps(irregularList);
     setUrgentKeeps(urgentList);
     setTimeChangedKeeps(timeChangedList);
-
     setLoading(false);
   };
-
   // 🚀 🆕 追加：全顧客を50音順（フリガナ順）で取得
   const fetchAllCustomersForSearch = async () => {
     const { data } = await supabase
@@ -3782,11 +3621,28 @@ else if (
             </div>
 
             <button 
-              onClick={() => setShowMobileCalendar(false)}
-              style={{ width: '100%', marginTop: '20px', padding: '15px', background: '#f1f5f9', border: 'none', borderRadius: '15px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}
-            >
-              閉じる
-            </button>
+  type="button"
+  onClick={() => {
+    setShowMobileCalendar(false);
+    setViewMonth(new Date());
+  }}
+  style={{ 
+    position: 'fixed', 
+    bottom: '30px', 
+    left: '50%', 
+    transform: 'translateX(-50%)', 
+    background: '#1e293b', 
+    color: '#fff', 
+    border: 'none', 
+    padding: '12px 40px', 
+    borderRadius: '50px', 
+    fontWeight: 'bold', 
+    boxShadow: '0 10px 20px rgba(0,0,0,0.3)', 
+    zIndex: 4000 
+  }}
+>
+  閉じる ✕
+</button>
           </div>
         </div>
       )}
