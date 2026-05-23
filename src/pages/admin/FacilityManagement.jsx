@@ -1590,9 +1590,9 @@ const handleSave = async (e) => {
 
                       // 🎨 マークと配色の決定
                       let statusColor = '#cbd5e1'; 
-                      if (resObj.label === '○') statusColor = '#10b981'; 
-                      if (resObj.label === '△') statusColor = '#f59e0b'; 
-                      if (resObj.label === '✕' && !isPastOrToday) statusColor = '#ef4444'; 
+                      if (resObj.label === '○') statusColor = '#09a32d'; 
+                      if (resObj.label === '△') statusColor = '#092bb4'; 
+                      if (resObj.label === '✕' && !isPastOrToday) statusColor = '#931616'; 
 
                       return (
                         <div 
@@ -1647,7 +1647,7 @@ const handleSave = async (e) => {
                               lineHeight: '1.2', 
                               marginTop: '3px',
                               transform: 'scale(0.9)', 
-                              color: isSelected ? '#fff' : (resObj.status === 'ng' ? '#be123c' : '#b45309'),
+                              color: isSelected ? '#fff' : (resObj.status === 'ng' ? '#931616' : '#092bb4'),
                               textAlign: 'center',
                               whiteSpace: 'nowrap'
                             }}>

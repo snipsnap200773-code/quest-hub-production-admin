@@ -1631,7 +1631,7 @@ const getStatusAt = (dateStr, timeStr) => {
     
     const insertData = {
       shop_id: shopId, 
-      customer_name: '管理者ブロック', 
+      customer_name: 'ブロック', 
       res_type: 'blocked',
       is_block: true, 
       start_time: start.toISOString(), 
