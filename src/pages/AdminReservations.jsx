@@ -1781,20 +1781,6 @@ return (
             </button>
           </div>
 
-          <div style={{ border: '1px solid #eee', borderRadius: '12px', padding: '15px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontWeight: 'bold' }}>
-              {viewMonth.getFullYear()}年 {viewMonth.getMonth() + 1}月
-              <div style={{ display: 'flex', gap: '5px' }}>
-                <button onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() - 1)))} style={miniBtnStyle}>＜</button>
-                <button onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() + 1)))} style={miniBtnStyle}>＞</button>
-              </div>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.8rem' }}>
-              {['月','火','水','木','金','土','日'].map(d => <div key={d} style={{ color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold' }}>{d}</div>)}
-              {miniCalendarDays.map((date, i) => date ? <div key={i} onClick={() => { setStartDate(date); setSelectedDate(getJapanDateStr(date)); }} style={{ padding: '8px 0', cursor: 'pointer', borderRadius: '50%', background: getJapanDateStr(date) === selectedDate ? themeColor : 'none', color: getJapanDateStr(date) === selectedDate ? '#fff' : '#475569' }}>{date.getDate()}</div> : <div key={i} />)}
-            </div>
-          </div>
-
 <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             {/* ✅ 追加：現場での実行用「今日のタスク」ボタン [cite: 2026-03-06] */}
             <button 
@@ -1871,6 +1857,27 @@ return (
                 <Search size={18} />
                 <span>顧客を検索</span>
               </button>
+              <button
+                onClick={() => {
+                  setViewMonth(new Date(startDate)); // 表示月を今開いている週に合わせる安全装置
+                  setShowMobileCalendar(true);       // ポップアップを開く
+                }}
+                style={{
+                  ...headerBtnStylePC,
+                  marginLeft: '8px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  padding: '10px 20px',
+                  background: themeColorLight,
+                  border: `1px solid ${themeColor}44`,
+                  color: themeColor
+                }}
+              >
+                <Calendar size={18} />
+                <span>1か月カレンダー</span>
+              </button>
+
               <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
             </div>
 ) : (
@@ -3511,85 +3518,58 @@ else if (
 
       {/* 🚀 🆕 修正：スマホ用カレンダー（予定名表示 ＆ 横幅拡大版） */}
       {showMobileCalendar && (
-  <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
-    <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '95%', width: '450px', padding: '20px 10px', borderRadius: '30px' }}>
-      
-      {/* 🚩 ここから下の「年月ナビ」を差し替えます！ */}
-      <div style={{ 
-        display: 'flex', 
-        justifyContent: 'space-between', 
-        alignItems: 'center', 
-        marginBottom: '20px', 
-        padding: '10px 5px',
-        background: '#f8fafc', 
-        borderRadius: '15px'
-      }}>
-        {/* 前の月ボタン */}
-        <button 
-          onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() - 1)))} 
-          style={{ 
-            border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            borderRadius: '12px', width: '50px', height: '50px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '1.2rem', color: themeColor, cursor: 'pointer'
-          }}
-        >
-          ◀
-        </button>
+        <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ 
+              ...modalContentStyle, 
+              maxWidth: isPC ? '580px' : '95%', // 🚀 PCなら横幅にゆとりを持たせて文字潰れを完全防止
+              width: '580px', 
+              padding: '25px 20px', 
+              borderRadius: '32px',
+              boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)',
+              position: 'relative'
+            }}
+          >
+            
+            {/* 年月ナビゲーション */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', padding: '10px', background: '#f8fafc', borderRadius: '18px' }}>
+              <button 
+                onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} 
+                style={{ border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderRadius: '12px', width: '46px', height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', color: themeColor, cursor: 'pointer' }}
+              >
+                ◀
+              </button>
 
-        {/* 年月表示 */}
-        <div style={{ textAlign: 'center', flex: 1 }}>
-          <div style={{ fontSize: '0.8rem', color: '#94a3b8', fontWeight: 'bold' }}>{viewMonth.getFullYear()}年</div>
-          <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b' }}>{viewMonth.getMonth() + 1}月</div>
-        </div>
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>{viewMonth.getFullYear()}年</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b', marginTop: '2px' }}>{viewMonth.getMonth() + 1}月</div>
+              </div>
 
-        {/* 次の月ボタン */}
-        <button 
-          onClick={() => setViewMonth(new Date(viewMonth.setMonth(viewMonth.getMonth() + 1)))} 
-          style={{ 
-            border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)',
-            borderRadius: '12px', width: '50px', height: '50px',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: '1.2rem', color: themeColor, cursor: 'pointer'
-          }}
-        >
-          ▶
-        </button>
-      </div>
-      {/* 🚩 ここまで差し替え */}
+              <button 
+                onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))} 
+                style={{ border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderRadius: '12px', width: '46px', height: '46px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.1rem', color: themeColor, cursor: 'pointer' }}
+              >
+                ▶
+              </button>
+            </div>
 
-            {/* 🚀 🆕 左右スワイプを検知してキビキビ切り替えるグリッド枠 */}
+            {/* カレンダーメイングリッド（PCマウスホイール＆スマホスワイプ両対応） */}
             <div 
-              onTouchStart={(e) => {
-                // タッチした瞬間の横位置（X座標）を記憶
-                touchStartX.current = e.touches[0].clientX;
-              }}
+              onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
               onTouchEnd={(e) => {
-                // 指を離した瞬間の位置との差分を計算
                 const diff = touchStartX.current - e.changedTouches[0].clientX;
-                
-                // 50ピクセル以上スワイプされたら月をパッと切り替える
                 if (Math.abs(diff) > 50) {
-                  if (diff > 0) {
-                    // 左へスワイプ ➔ 次の月へ
-                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
-                  } else {
-                    // 右へスワイプ ➔ 前の月へ
-                    setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
-                  }
+                  if (diff > 0) setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
+                  else setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
                 }
               }}
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(7, 1fr)', 
-                gap: '2px', 
-                textAlign: 'center',
-                touchAction: 'pan-y' // 💡 縦スクロール（ pan-y ）はブラウザに任せて干渉を防ぐ！
-              }}
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}
             >
               {['月','火','水','木','金','土','日'].map(d => (
-                <div key={d} style={{ color: '#213146', fontSize: '1rem', fontWeight: 'bold', marginBottom: '10px' }}>{d}</div>
+                <div key={d} style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '12px' }}>{d}</div>
               ))}
+              
               {miniCalendarDays.map((date, i) => {
                 if (!date) return <div key={i} />;
                 const dStr = getJapanDateStr(date);
@@ -3597,11 +3577,10 @@ else if (
                 const isToday = dStr === getJapanDateStr(new Date());
                 const summary = getDayEventSummary(date);
 
-                // 🎨 予定に応じた丸の色を決定
                 let circleColor = 'transparent';
-                if (summary.hasReservation) circleColor = themeColor; // 予約
-                else if (summary.hasFacility) circleColor = '#4f46e5'; // 施設
-                else if (summary.hasPrivate) circleColor = '#64748b'; // プライベート
+                if (summary.hasReservation) circleColor = themeColor;
+                else if (summary.hasFacility) circleColor = '#4f46e5';
+                else if (summary.hasPrivate) circleColor = '#64748b';
 
                 return (
                   <div 
@@ -3610,20 +3589,19 @@ else if (
                       setStartDate(date);
                       setSelectedDate(dStr);
                       setShowMobileCalendar(false);
-                      setViewMonth(new Date(date.getFullYear(), date.getMonth(), 1));
                     }}
                     style={{ 
-                      padding: '5px 0 10px', cursor: 'pointer', borderRadius: '12px',
-                      background: summary.isHoliday ? '#f1f5f9' : 'none', // 休日グレー
+                      padding: '6px 0', cursor: 'pointer', borderRadius: '16px',
+                      background: summary.isHoliday ? '#f1f5f9' : 'none',
                       opacity: summary.isHoliday ? 0.6 : 1,
-                      minHeight: '65px' // 👈 高さを固定して名前が入っても崩れないようにする
+                      minHeight: '72px', // 🚀 文字サイズ拡大に伴い、PCでも絶対につぶれない絶妙な高さをキープ！
+                      display: 'flex', flexDirection: 'column', alignItems: 'center'
                     }}
                   >
-                    {/* 💡 日付の丸囲み部分 */}
+                    {/* 日付サークル */}
                     <div style={{
-                      width: '28px', height: '28px', margin: '0 auto',
-                      borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '1rem', fontWeight: 'bold',
+                      width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.05rem', fontWeight: 'bold',
                       background: isSelected ? themeColor : (isToday ? themeColorLight : 'none'),
                       color: isSelected ? '#fff' : (isToday ? themeColor : (summary.isHoliday ? '#94a3b8' : '#1e293b')),
                       border: !isSelected && circleColor !== 'transparent' ? `2px solid ${circleColor}` : 'none'
@@ -3631,16 +3609,13 @@ else if (
                       {date.getDate()}
                     </div>
 
-                    {/* 💡 予定の名前を小さく表示 */}
+                    {/* 🚀 施設名・予定名テキスト（要望通りの3文字カット版！） */}
                     <div style={{ 
-                      fontSize: '1rem', 
-                      fontWeight: 'bold', 
-                      marginTop: '4px', 
+                      fontSize: '0.8rem', // 🚀 見やすさを極限まで高めるためにPC/大画面ポップアップ用に文字をクッキリ拡大！
+                      fontWeight: '800', 
+                      marginTop: '5px', 
                       color: circleColor === 'transparent' ? '#94a3b8' : circleColor,
-                      whiteSpace: 'nowrap',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      padding: '0 2px'
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', width: '100%', padding: '0 2px', textAlign: 'center'
                     }}>
                       {summary.firstEntry ? summary.firstEntry.name.slice(0, 3) : ''}
                     </div>
@@ -3649,29 +3624,21 @@ else if (
               })}
             </div>
 
+            {/* フッター閉じるボタン：PCとスマホで表示位置をスマートに出し分け */}
             <button 
-  type="button"
-  onClick={() => {
-    setShowMobileCalendar(false);
-    setViewMonth(new Date());
-  }}
-  style={{ 
-    position: 'fixed', 
-    bottom: '30px', 
-    left: '50%', 
-    transform: 'translateX(-50%)', 
-    background: '#1e293b', 
-    color: '#fff', 
-    border: 'none', 
-    padding: '12px 40px', 
-    borderRadius: '50px', 
-    fontWeight: 'bold', 
-    boxShadow: '0 10px 20px rgba(0,0,0,0.3)', 
-    zIndex: 4000 
-  }}
->
-  閉じる ✕
-</button>
+              type="button"
+              onClick={() => {
+                setShowMobileCalendar(false);
+              }}
+              style={isPC ? {
+                width: '100%', marginTop: '20px', padding: '14px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem'
+              } : {
+                position: 'fixed', bottom: '30px', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', color: '#fff', border: 'none', padding: '12px 40px', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)', zIndex: 4000
+              }}
+            >
+              閉じる ✕
+            </button>
+
           </div>
         </div>
       )}

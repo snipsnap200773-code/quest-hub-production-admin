@@ -232,7 +232,7 @@ if (type === 'remind_all') {
 if (res.line_user_id) {
   if (shop.customer_line_remind_enabled !== false && shop.line_channel_access_token) {
     // 🆕 担当者名を追加したメッセージに変更
-    const msg = `【${shop.business_name}】\n明日 ${resTime} よりご予約をお待ちしております。\n\n👤 お名前：${res.customer_name} 様\n👤 担当：${res.staffs?.name || '店舗スタッフ'}\n📋 内容：\n${menuDisplayText}\n\nお気をつけてお越しください！`;
+    const msg = `【${shop.business_name}】\n明日 ${resTime} よりご来店お待ちしております。\n\n👤 お名前：${res.customer_name} 様\n👤 担当：${res.staffs?.name || '店舗スタッフ'}\n📋 内容：\n${menuDisplayText}\n\nお気をつけてお越しください！`;
     lineOk = await safePushToLine(res.line_user_id, msg, shop.line_channel_access_token, "REMIND");
   }
 } else {
