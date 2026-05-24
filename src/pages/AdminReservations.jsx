@@ -1738,106 +1738,84 @@ const getStatusAt = (dateStr, timeStr) => {
   };
 
 return (
-    <div style={{ display: 'flex', width: '100vw', height: '100dvh', background: '#fff', overflow: 'hidden', position: 'fixed', inset: 0 }}>
-      {/* 🆕 追記：通知メッセージを表示するボックス [cite: 2026-03-08] */}
+    // 🚀 🆕 2カラムを廃止し、全体を上から下の1カラム構造（flexDirection: 'column'）に大リフォーム！
+    <div style={{ display: 'flex', flexDirection: 'column', width: '100vw', height: '100dvh', background: '#fff', overflow: 'hidden', position: 'fixed', inset: 0 }}>
+      {/* 🆕 追記：通知メッセージを表示するボックス */}
       {message && (
         <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 10001, textAlign: 'center', fontWeight: 'bold', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
           {message}
         </div>
       )}
-      {isPC && (
-        
-        <div style={{ width: '260px', flexShrink: 0, borderRight: '0.5px solid #cbd5e1', padding: '18px', display: 'flex', flexDirection: 'column', gap: '20px', background: '#fff', zIndex: 100 }}>
 
-{/* --- 1段目：タイトルと設定 --- */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginBottom: '10px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              {/* 💡 左側のアイコン内の文字も、店舗名の1文字目に自動で変わるようにしました */}
-              <div style={{ width: '32px', height: '32px', background: themeColor, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                {(shop?.business_name || 'S')[0]}
-              </div>
-              
-              {/* 🚀 🆕 ここを店舗名に変更 */}
-              <h1 style={{ fontSize: '1.1rem', fontWeight: '900', margin: 0, color: '#1e293b' }}>
-                {shop?.business_name || 'SnipSnap Admin'}
-              </h1>
-            </div>
-            <button 
-              onClick={() => navigate(`/admin/${shopId}/dashboard`)}
-              style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', cursor: 'pointer', fontSize: '1.1rem', padding: '6px', display: 'flex', alignItems: 'center', color: '#64748b' }}
-            >
-              ⚙️
-            </button>
-          </div>
-
-          {/* --- 2段目：切り替えスイッチ（カレンダーも維持！） --- */}
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px', width: '100%', boxSizing: 'border-box' }}>
-            <button style={{ ...switchBtnStyle(true), flex: 1 }}>カレンダー</button>
-            <button 
-              onClick={() => navigate(`/admin/${shopId}/timeline?date=${selectedDate}`)} 
-              style={{ ...switchBtnStyle(false), flex: 1 }}
-            >
-              タイムライン
-            </button>
-          </div>
-
-<div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* ✅ 追加：現場での実行用「今日のタスク」ボタン [cite: 2026-03-06] */}
-            <button 
-              onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
-              style={{ 
-                padding: '15px', 
-                background: '#1e293b', // カレンダーと差別化するために深い色に
-                color: '#fff', 
-                border: 'none', 
-                borderRadius: '12px', 
-                cursor: 'pointer', 
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px',
-                boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-              }}
-            >
-              ⚡ 本日のタスク (実行)
-            </button>
-
-            <button 
-              onClick={() => isManagementEnabled && navigate(`/admin/${shopId}/management`)} 
-              style={{ 
-                padding: '15px',
-                background: isManagementEnabled ? themeColor : '#e2e8f0', 
-                color: isManagementEnabled ? '#fff' : '#94a3b8', 
-                border: 'none', 
-                borderRadius: '12px', 
-                cursor: isManagementEnabled ? 'pointer' : 'not-allowed', 
-                fontWeight: 'bold',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '8px'
-              }}
-              disabled={!isManagementEnabled}
-            >               
-              {isManagementEnabled ? '📊 顧客・売上管理へ' : '🔒 顧客・売上管理 (未解放)'}
-            </button>
-          </div>
-                  </div>
-      )}
-
+      {/* 🚀 🆕 メインコンテンツを包むコンテナ（ここからヘッダーとテーブルが縦に並びます） */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', position: 'relative' }}>
-        <div style={{ padding: isPC ? '15px 25px' : '15px 10px', borderBottom: '0.5px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff' }}>
+        <div style={{ padding: isPC ? '15px 25px' : '15px 10px', borderBottom: '0.5px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', flexShrink: 0 }}>
           {isPC ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '15px', flex: 1 }}>
-              <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
+              
+              {/* 🏢 店舗ロゴ ＆ タイトル */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '15px' }}>
+                <div style={{ width: '32px', height: '32px', background: themeColor, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                  {(shop?.business_name || 'S')[0]}
+                </div>
+                <h1 style={{ fontSize: '1.1rem', fontWeight: '900', margin: 0, color: '#1e293b', whiteSpace: 'nowrap' }}>
+                  {shop?.business_name || 'SnipSnap Admin'}
+                </h1>
+              </div>
+
+              {/* 📅 ナビゲーション（今日・前週・次週） */}
+              <div style={{ display: 'flex', gap: '6px' }}>
                 <button onClick={goToday} style={headerBtnStylePC}>今日</button>
                 <button onClick={goPrev} style={headerBtnStylePC}>前週</button>
                 <button onClick={goNext} style={headerBtnStylePC}>次週</button>
               </div>
 
+              {/* 🚀 🆕 左サイドバーから引っ越してきたPC用横並びナビゲーションメニュー一式 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '12px', marginLeft: '10px' }}>
+                <button style={{ ...switchBtnStyle(true), padding: '6px 14px' }}>カ</button>
+                <button 
+                  onClick={() => navigate(`/admin/${shopId}/timeline?date=${selectedDate}`)} 
+                  style={{ ...switchBtnStyle(false), padding: '6px 14px' }}
+                >
+                  タ
+                </button>
+              </div>
 
-              {/* 🚀 🆕 修正：入力欄を消して、ポップアップを呼ぶボタンを設置 */}
+              {/* ⚡ 本日のタスク（実行）ボタン */}
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
+                style={{ ...headerBtnStylePC, background: '#1e293b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
+              >
+                <Clipboard size={16} />
+              </button>
+
+              {/* 📊 顧客・売上管理ボタン */}
+              <button 
+                onClick={() => isManagementEnabled && navigate(`/admin/${shopId}/management`)} 
+                disabled={!isManagementEnabled}
+                style={{ 
+                  ...headerBtnStylePC, 
+                  background: isManagementEnabled ? '#f8fafc' : '#f1f5f9', 
+                  color: isManagementEnabled ? '#1e293b' : '#94a3b8',
+                  cursor: isManagementEnabled ? 'pointer' : 'not-allowed',
+                  border: isManagementEnabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
+                }}
+              >
+                📊
+              </button>
+
+              {/* ⚙️ 設定（歯車）ボタン */}
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/dashboard`)}
+                style={{ ...headerBtnStylePC, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="基本設定"
+              >
+                <Settings size={16} color="#64748b" />
+              </button>
+
+              <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 5px' }} />
+
+              {/* 🔍 顧客検索ポップアップボタン */}
               <button 
                 onClick={() => {
                   fetchAllCustomersForSearch(); // 50音順リストをDBから取得
@@ -1845,42 +1823,39 @@ return (
                 }} 
                 style={{ 
                   ...headerBtnStylePC, 
-                  marginLeft: '10px', 
                   display: 'flex', 
                   alignItems: 'center', 
                   gap: '8px', 
-                  padding: '10px 20px',
                   background: '#f8fafc',
                   color: themeColor
                 }}
               >
                 <Search size={18} />
-                <span>顧客を検索</span>
               </button>
+
+              {/* 📅 1か月カレンダー起動ボタン */}
               <button
                 onClick={() => {
-                  setViewMonth(new Date(startDate)); // 表示月を今開いている週に合わせる安全装置
-                  setShowMobileCalendar(true);       // ポップアップを開く
+                  setViewMonth(new Date(startDate)); 
+                  setShowMobileCalendar(true);       
                 }}
                 style={{
                   ...headerBtnStylePC,
-                  marginLeft: '8px',
                   display: 'flex',
                   alignItems: 'center',
                   gap: '8px',
-                  padding: '10px 20px',
                   background: themeColorLight,
                   border: `1px solid ${themeColor}44`,
                   color: themeColor
                 }}
               >
                 <Calendar size={18} />
-                <span>1か月カレンダー</span>
               </button>
 
-              <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
+              {/* 現在表示中の年月（右端へ綺麗に自動プッシュ） */}
+              <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b', whiteSpace: 'nowrap' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
             </div>
-) : (
+          ) : (
   <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '12px' }}>
     {/* 上段：カレンダーボタン ＆ 年月ナビ ＆ 検索ボタン */}
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', gap: '10px', position: 'relative' }}>
