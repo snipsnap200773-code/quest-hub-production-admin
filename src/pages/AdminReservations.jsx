@@ -462,8 +462,12 @@ const isPC = windowWidth > 1024;
     return defaults[key] || key;
   };
 
-// 🆕 location.search を追加することで、予約完了後にURLが変わった瞬間に再取得が走るようにします
-  useEffect(() => { fetchData(); }, [shopId, startDate, location.search]);
+// 🚀 🆕 【追っかけトリガー】メイン画面の週移動、またはポップアップカレンダーの月変更を検知して通信を小分け実行
+  useEffect(() => { 
+    // ポップアップカレンダーが開いている時はカレンダーの表示月、閉じている時はメインの選択週をターゲットにする
+    const activeTargetDate = showMobileCalendar ? viewMonth : startDate;
+    fetchData(activeTargetDate); 
+  }, [shopId, startDate, viewMonth, showMobileCalendar, location.search]);
 
   // 🚀 🆕 ここから追加：履歴のカードをタップした時に詳細ポップアップを開く命令
   const openHistoryDetail = (visit) => {
@@ -471,10 +475,11 @@ const isPC = windowWidth > 1024;
     setShowHistoryDetail(true);
   };
 
-const fetchData = async () => {
+// 🚀 🆕 【小分け通信の仕掛け】表示されている日付に応じて賢く追加ロードするツインエンジン版
+  const fetchData = async (customTargetDate = null) => {
     setLoading(true);
     
-    // 1. 店舗設定・カテゴリ・スタッフ取得
+    // 1. 店舗設定・カテゴリ・スタッフ取得 (既存どおり)
     const { data: profile } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (!profile) { setLoading(false); return; }
     setShop(profile);
@@ -487,15 +492,31 @@ const fetchData = async () => {
     const { data: staffsData } = await supabase.from('staffs').select('*').eq('shop_id', shopId).eq('role_type', 'stylist').order('created_at', { ascending: true });
     setStaffs(staffsData || []);
 
-    // 2. 範囲計算 🚀 1年先まで取得
+    // 2. 基本の爆速レンジ（過去30日〜未来13か月）を計算
     const realToday = new Date();
-    const historyPastDate = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
-    const startRangeStr = historyPastDate.toLocaleDateString('sv-SE') + "T00:00:00Z";
-    
-    const futureLimitDate = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
-    const finalStartDayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-01`;
-    const finalEndDayStr = futureLimitDate.toLocaleDateString('sv-SE');
-    const endRangeStr = finalEndDayStr + "T23:59:59Z";
+    const historyPast = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
+    const futureLimit = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
+
+    let startRangeStr = historyPast.toLocaleDateString('sv-SE') + "T00:00:00Z";
+    let endRangeStr = futureLimit.toLocaleDateString('sv-SE') + "T23:59:59Z";
+    let finalStartDayStr = `${realToday.getFullYear()}-${String(realToday.getMonth() + 1).padStart(2, '0')}-01`;
+    let finalEndDayStr = futureLimit.toLocaleDateString('sv-SE');
+
+    // 💡 🚀 【ここが最大のキモ！】もしめくった先の日付（ customTargetDate ）が指定され、それが基本範囲外なら、その月だけを「小分け通信」で狙い撃ち
+    if (customTargetDate) {
+      const activeDate = new Date(customTargetDate);
+      // 基本範囲外かチェック
+      if (activeDate < historyPast || activeDate > futureLimit) {
+        const firstDayOfMonth = new Date(activeDate.getFullYear(), activeDate.getMonth(), 1);
+        const lastDayOfMonth = new Date(activeDate.getFullYear(), activeDate.getMonth() + 1, 0);
+        
+        startRangeStr = firstDayOfMonth.toLocaleDateString('sv-SE') + "T00:00:00Z";
+        endRangeStr = lastDayOfMonth.toLocaleDateString('sv-SE') + "T23:59:59Z";
+        finalStartDayStr = firstDayOfMonth.toLocaleDateString('sv-SE');
+        finalEndDayStr = lastDayOfMonth.toLocaleDateString('sv-SE');
+        console.log(`⏱ 範囲外データを検知: ${activeDate.getFullYear()}年${activeDate.getMonth()+1}月分を追っかけロードします。`);
+      }
+    }
 
     // 3. データ一斉取得
     const targetShopIds = profile.schedule_sync_id ? 
@@ -510,21 +531,39 @@ const fetchData = async () => {
       supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
     ]);
 
-    setReservations(resRes.data || []);
-    setPrivateTasks(privRes.data || []);
+    // 💡 🚀 もし追っかけロード（追加通信）だったら、既存のデータと合体（マージ）させて蓄積する
+    if (customTargetDate && (new Date(customTargetDate) < historyPast || new Date(customTargetDate) > futureLimit)) {
+      setReservations(prev => {
+        const unique = new Map([...prev, ...(resRes.data || [])].map(item => [item.id, item]));
+        return Array.from(unique.values());
+      });
+      setPrivateTasks(prev => {
+        const unique = new Map([...prev, ...(privRes.data || [])].map(item => [item.id, item]));
+        return Array.from(unique.values());
+      });
+      setVisitRequests(prev => {
+        const unique = new Map([...prev, ...(visitRes.data || [])].map(item => [item.id, item]));
+        return Array.from(unique.values());
+      });
+      setManualKeeps(prev => {
+        const unique = new Map([...prev, ...(keepRes.data || [])].map(item => [item.id, item]));
+        return Array.from(unique.values());
+      });
+    } else {
+      // 通常（初期ロード範囲内）ならそのままセット
+      setReservations(resRes.data || []);
+      setPrivateTasks(privRes.data || []);
+      setVisitRequests(visitRes.data || []);
+      setManualKeeps(keepRes.data || []);
+    }
+
     setFacilityConnections(connRes.data || []);
-    setVisitRequests(visitRes.data || []);
-    setManualKeeps(keepRes.data || []);
     setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
     
-    // 4. アラート用集計 ＆ 定期キープ自動計算ロジック
+    // 4. アラート用集計ロジック
     const todayStr = getJapanDateStr(realToday);
-    const irregularList = [];
-    const urgentList = []; 
-    const timeChangedList = []; 
-    const processedKeys = new Set();
+    const irregularList = []; const urgentList = []; const timeChangedList = []; const processedKeys = new Set();
 
-    // A: 単発キープのスキャン
     (keepRes.data || []).forEach(k => {
       if (k.date < todayStr) return;
       processedKeys.add(`${k.facility_user_id}_${k.date}`);
@@ -537,21 +576,19 @@ const fetchData = async () => {
       else irregularList.push({ ...k });
     });
 
-    // B: 定期キープの自動スキャン（ここを忘れずに入れました！）
+    // B: 定期キープの自動スキャン
     (connRes.data || []).forEach(conn => {
       if (!conn.regular_rules) return;
       let scanDate = new Date(realToday);
-      for (let i = 0; i < 90; i++) { // 🚀 90日先まで自動計算
+      for (let i = 0; i < 90; i++) {
         const dStr = getJapanDateStr(scanDate);
         if (dStr < todayStr) { scanDate.setDate(scanDate.getDate() + 1); continue; }
         const comboKey = `${conn.facility_user_id}_${dStr}`;
         if (!processedKeys.has(comboKey)) {
-           // 定期ルールの判定ロジック
            const day = scanDate.getDay(); const dom = scanDate.getDate(); const m = scanDate.getMonth() + 1;
            const nthWeek = Math.ceil(dom / 7);
            const isLast = new Date(scanDate).getMonth() !== new Date(new Date(scanDate).setDate(dom + 7)).getMonth();
            let isRegular = conn.regular_rules.some(r => (r.monthType===0 || (r.monthType===1 && m%2!==0) || (r.monthType===2 && m%2===0)) && r.day===day && (r.week===nthWeek || (r.week===-1 && isLast)));
-           
            if (isRegular && !exclRes.data?.some(e => e.excluded_date === dStr)) {
               const isBooked = (visitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
               if (!isBooked) {
@@ -1753,6 +1790,15 @@ return (
           {isPC ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
               
+              {/* 🚀 🆕 【引っ越しその1】設定（歯車）ボタンを一番左端に配置！ */}
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/dashboard`)}
+                style={{ ...headerBtnStylePC, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                title="基本設定"
+              >
+                <Settings size={16} color="#64748b" />
+              </button>
+
               {/* 🏢 店舗ロゴ ＆ タイトル */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '15px' }}>
                 <div style={{ width: '32px', height: '32px', background: themeColor, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>
@@ -1763,21 +1809,21 @@ return (
                 </h1>
               </div>
 
-              {/* 📅 ナビゲーション（今日・前週・次週） */}
+              {/* 📅 ナビゲーション 🚀 🆕 【引っ越しその2】「前週」➔「今日」➔「次週」の並び順に変更！ */}
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={goToday} style={headerBtnStylePC}>今日</button>
                 <button onClick={goPrev} style={headerBtnStylePC}>前週</button>
+                <button onClick={goToday} style={headerBtnStylePC}>今日</button>
                 <button onClick={goNext} style={headerBtnStylePC}>次週</button>
               </div>
 
-              {/* 🚀 🆕 左サイドバーから引っ越してきたPC用横並びナビゲーションメニュー一式 */}
+              {/* 左サイドバーから引っ越してきたPC用横並びナビゲーションメニュー一式 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '12px', marginLeft: '10px' }}>
-                <button style={{ ...switchBtnStyle(true), padding: '6px 14px' }}>カ</button>
+                <button style={{ ...switchBtnStyle(true), padding: '6px 14px' }}>カレンダー</button>
                 <button 
                   onClick={() => navigate(`/admin/${shopId}/timeline?date=${selectedDate}`)} 
                   style={{ ...switchBtnStyle(false), padding: '6px 14px' }}
                 >
-                  タ
+                  タイムライン
                 </button>
               </div>
 
@@ -1787,6 +1833,7 @@ return (
                 style={{ ...headerBtnStylePC, background: '#1e293b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
               >
                 <Clipboard size={16} />
+                <span>タスク</span>
               </button>
 
               {/* 📊 顧客・売上管理ボタン */}
@@ -1801,16 +1848,7 @@ return (
                   border: isManagementEnabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
                 }}
               >
-                📊
-              </button>
-
-              {/* ⚙️ 設定（歯車）ボタン */}
-              <button 
-                onClick={() => navigate(`/admin/${shopId}/dashboard`)}
-                style={{ ...headerBtnStylePC, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                title="基本設定"
-              >
-                <Settings size={16} color="#64748b" />
+                📊 顧客・売上管理
               </button>
 
               <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 5px' }} />
@@ -1818,8 +1856,8 @@ return (
               {/* 🔍 顧客検索ポップアップボタン */}
               <button 
                 onClick={() => {
-                  fetchAllCustomersForSearch(); // 50音順リストをDBから取得
-                  setShowMobileSearchModal(true); // ポップアップを開く
+                  fetchAllCustomersForSearch(); 
+                  setShowMobileSearchModal(true); 
                 }} 
                 style={{ 
                   ...headerBtnStylePC, 
@@ -1831,6 +1869,7 @@ return (
                 }}
               >
                 <Search size={18} />
+                <span>顧客検索</span>
               </button>
 
               {/* 📅 1か月カレンダー起動ボタン */}
@@ -1850,9 +1889,10 @@ return (
                 }}
               >
                 <Calendar size={18} />
+                <span>1か月カレンダー</span>
               </button>
 
-              {/* 現在表示中の年月（右端へ綺麗に自動プッシュ） */}
+              {/* 現在表示中の年月 */}
               <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b', whiteSpace: 'nowrap' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
             </div>
           ) : (
