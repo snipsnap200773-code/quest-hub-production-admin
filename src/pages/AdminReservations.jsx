@@ -1848,7 +1848,7 @@ return (
                   border: isManagementEnabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
                 }}
               >
-                📊 顧客・売上管理
+                📊 売上管理
               </button>
 
               <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 5px' }} />
@@ -1869,7 +1869,6 @@ return (
                 }}
               >
                 <Search size={18} />
-                <span>顧客検索</span>
               </button>
 
               {/* 📅 1か月カレンダー起動ボタン */}
@@ -1889,7 +1888,6 @@ return (
                 }}
               >
                 <Calendar size={18} />
-                <span>1か月カレンダー</span>
               </button>
 
               {/* 現在表示中の年月 */}

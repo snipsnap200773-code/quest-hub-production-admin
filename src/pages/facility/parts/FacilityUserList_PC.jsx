@@ -255,6 +255,18 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
             <button onClick={() => startEdit(detailMember)} style={detailEditBtn}>
               <Edit2 size={16}/> この情報を編集する
             </button>
+
+            {/* 🚀 🆕 追加：スマホ詳細ポップアップ内のゴミ箱ボタン */}
+            <button 
+              onClick={() => {
+                const target = detailMember;
+                setDetailMember(null); // モーダルを閉じる
+                handleDeleteMember(target.id, target.name); // 削除処理へ
+              }} 
+              style={{ ...detailEditBtn, marginTop: '10px', background: '#fef2f2', color: '#ef4444', border: 'none' }}
+            >
+              <Trash2 size={16}/> この入居者を名簿から削除する
+            </button>
           </div>
         </motion.div>
       </div>
@@ -306,6 +318,35 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
           )}
         </div>
 
+         {/* 🚀 🆕 追加：スマホ版の並べ替え（ソート）選択スイッチボタン */}
+         <div style={{ display: 'flex', justifycontent: 'space-between', alignitems: 'center', background: '#fff', padding: '10px 15px', borderRadius: '15px', border: '1px solid #eee', marginBottom: '5px' }}>
+           <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#64748b' }}>並べ替え</span>
+           <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px' }}>
+             <button 
+               onClick={() => setSortBy('room')} 
+               style={{
+                 padding: '6px 14px', border: 'none', borderRadius: '8px', fontWeight: '900', fontSize: '0.75rem', cursor: 'pointer',
+                 background: sortBy === 'room' ? '#3d2b1f' : 'transparent',
+                 color: sortBy === 'room' ? '#fff' : '#94a3b8',
+                 transition: 'all 0.2s'
+               }}
+             >
+               部屋順
+             </button>
+             <button 
+               onClick={() => setSortBy('name')} 
+               style={{
+                 padding: '6px 14px', border: 'none', borderRadius: '8px', fontWeight: '900', fontSize: '0.75rem', cursor: 'pointer',
+                 background: sortBy === 'name' ? '#3d2b1f' : 'transparent',
+                 color: sortBy === 'name' ? '#fff' : '#94a3b8',
+                 transition: 'all 0.2s'
+               }}
+             >
+               名前順
+             </button>
+           </div>
+         </div>
+
         {/* 🚀 🆕 2. スマホ用検索バーを追加 */}
         <div style={mSearchContainer}>
           <Search size={18} color="#94a3b8" />
@@ -355,6 +396,18 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
                       {u.isBedCut && <div style={{...bedCutBadge, display:'inline-flex', marginTop:'4px'}}><AlertCircle size={10}/> ベッドカット</div>}
                     </div>
+
+                    {/* 🚀 🆕 追加：スマホ一覧カード内のゴミ箱ボタン（カードタップと干渉しない防壁付き） */}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation(); // カードの詳細ポップアップが開くのを防ぐ！
+                        handleDeleteMember(u.id, u.name);
+                      }}
+                      style={{ background: '#fef2f2', border: 'none', padding: '10px', borderRadius: '12px', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', marginRight: '4px', cursor: 'pointer' }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+
                     <Info size={18} color="#cbd5e1" />
                   </div>
                 </div>
