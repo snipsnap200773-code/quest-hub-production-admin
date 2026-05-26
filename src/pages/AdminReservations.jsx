@@ -1668,7 +1668,7 @@ const getStatusAt = (dateStr, timeStr) => {
     
     const insertData = {
       shop_id: shopId, 
-      customer_name: 'ブロック', 
+      customer_name: '✕', 
       res_type: 'blocked',
       is_block: true, 
       start_time: start.toISOString(), 
@@ -2033,7 +2033,7 @@ return (
             <tr key={time} id={`time-row-${time}`} style={{ height: '60px' }}>
               {/* 左端の時間軸 */}
               <td style={{ borderRight: '1px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', textAlign: 'center', background: '#f8fafc' }}>
-                <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold' }}>{time}</span>
+                <span style={{ fontSize: isPC ? '140%' : '100%', color: '#64748b', fontWeight: 'bold' }}>{time}</span>
               </td>
 
               {weekDays.map(date => {
@@ -2185,76 +2185,86 @@ else if (
   if (startingHere.length === 1) {
     const res = startingHere[0];
     
-    // --- 🏢 施設訪問の場合 ---
-    if (res.res_type === 'facility_visit') {
-      return (
-        <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', alignItems: 'center', gap: '4px', color: '#4f46e5' }}>
-          <Building2 size={isPC ? 16 : 12} strokeWidth={2.5} />
-          {/* ✅ 施設名のみ表示（金額を削除しました） */}
-          <span style={{ fontSize: isPC ? '0.8rem' : '0.65rem', fontWeight: 'bold' }}>
-            {isPC ? res.customer_name : res.customer_name.slice(0, 4)}
-          </span>
-        </div>
-      );
+    // 🚀 1. 【苗字切り出し ＆ 様付け制御ロジック】
+    const rawName = res.res_type === 'private_task' ? res.customer_name : (res.customer_name || '名前無');
+    
+    let processedName = '';
+    const trimmedName = rawName.trim();
+    const spaceIndex = trimmedName.search(/[\s ]/);
+    
+    if (res.res_type === 'private_task') {
+      // 🌟 プライベート予定は様を付けない
+      processedName = trimmedName.replace(/[\s ]+/g, '').slice(0, 3);
+    } else {
+      // 施設や個人予約はスペースで苗字切り出し
+      const baseName = spaceIndex !== -1 ? trimmedName.substring(0, spaceIndex) : trimmedName.replace(/様$/g, '');
+      
+      if (isPC) {
+        processedName = baseName + '様'; // PC版は様付け
+      } else {
+        processedName = baseName.slice(0, 3); // スマホ版は様なし
+      }
     }
-
-    // --- 🏢 施設キープの場合 ---
-    if (res.res_type === 'facility_keep_regular' || res.res_type === 'facility_keep_single') {
-      const isSingle = res.res_type === 'facility_keep_single';
-      return (
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px' }}>
-          {isSingle && (
-            <span style={{ fontSize: '0.6rem', background: '#f97316', color: '#fff', padding: '1px 4px', borderRadius: '4px', fontWeight: '900' }}>
-              イレギュラー!
-            </span>
-          )}
-          <span style={{ fontSize: isPC ? '0.8rem' : '0.65rem', fontWeight: 'bold' }}>
-            {isSingle ? '⚠️ ' : ''}{isPC ? (isSingle ? '単発:' : '定期:') : ''}
-            {isPC ? res.customer_name : res.customer_name.slice(0, 4)}
-          </span>
-        </div>
-      );
-    }
-
-    // --- 👤 個人・プライベート予定の場合 (既存の続き) ---
-    const masterName = res.res_type === 'private_task' ? res.customer_name : (res.customers?.name || res.customer_name);
-    const name = masterName?.split(/[\s　]+/)[0] || "名前なし";
-    const countSuffix = reservationCount > 1 ? ` (${reservationCount}名)` : (res.res_type === 'private_task' ? "" : " 様");
-
-    // 🚀 🆕 追加：biz_type（識別キー）を使って、専用屋号を取得する
-    const brandLabel = categoryMap[res.biz_type];
 
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1.1 }}>
+      <div style={{ 
+        display: 'flex', 
+        flexDirection: 'column', 
+        alignItems: 'center', 
+        justifyContent: 'center', 
+        width: '100%', 
+        height: '100%',
+        boxSizing: 'border-box',
+        padding: '1px 2px',
+        overflow: 'hidden'
+      }}>
         
-        {/* 🚀 🆕 追加：屋号バッジの表示（識別キーがセットされている場合のみ） */}
-        {brandLabel && (
+        {/* アイコン・バッジ類 */}
+        {res.res_type === 'facility_visit' && (
+          <div style={{ color: '#4f46e5', marginBottom: '1px', flexShrink: 0 }}>
+          </div>
+        )}
+        
+        {categoryMap[res.biz_type] && (
           <div style={{ 
-            fontSize: '0.6rem', 
-            padding: '1px 5px', 
-            borderRadius: '4px', 
-            marginBottom: '3px',
-            // キーによって色を分けるとさらに見やすいです
-            background: res.biz_type === 'foot' ? '#4285f4' : '#d34817', 
-            color: '#fff', 
-            fontWeight: '900', 
-            transform: 'scale(0.85)',
-            whiteSpace: 'nowrap'
+            fontSize: '9px', padding: '1px 3px', borderRadius: '4px', marginBottom: '1px',
+            background: res.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: 'bold', 
+            transform: 'scale(0.8)', whiteSpace: 'nowrap', flexShrink: 0
           }}>
-            {brandLabel.slice(0, 5)} {/* 長い場合は5文字でカット */}
+            {categoryMap[res.biz_type].slice(0, 3)}
           </div>
         )}
 
-        {isPC ? (
-          <span style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'inline-flex', alignItems: 'center', gap: '2px' }}>
-  {name}{countSuffix}
-  {/* 🚀 🆕 カレンダー上にも 🚫 を出す */}
-  {res.customers?.is_blocked && <span style={{ color: '#ef4444' }}>🚫</span>}
-  {res.customers?.cancel_count >= 3 && <span style={{ color: '#ef4444' }}>‼️</span>}
-</span>
-        ) : (
-          <span style={{ writingMode: 'vertical-rl', textOrientation: 'upright', fontSize: '0.75rem', fontWeight: 'bold' }}>{name}</span>
-        )}
+        {/* 🚀 【細身・枠いっぱい自動フィット】 */}
+        <div style={{
+          fontSize: isPC ? '150%' : '140%', 
+          fontWeight: '400', 
+          color: colors.text,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'clip',
+          width: '100%',
+          textAlign: 'center',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          writingMode: isPC ? 'horizontal-tb' : 'vertical-rl',
+          textOrientation: 'upright',
+          letterSpacing: isPC ? '0.02em' : '-0.02em',
+          lineHeight: 1,
+          flexShrink: 0,
+          WebkitTextSizeAdjust: 'none',
+          textSizeAdjust: 'none'
+        }}>
+          {processedName}
+          
+          {isPC && (
+            <span style={{ fontSize: '85%', marginLeft: '2px', fontWeight: 'normal' }}>
+              {res.customers?.is_blocked && '🚫'}
+              {res.customers?.cancel_count >= 3 && '‼️'}
+            </span>
+          )}
+        </div>
       </div>
     );
   }
