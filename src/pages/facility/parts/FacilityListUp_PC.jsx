@@ -22,27 +22,40 @@ const FacilityListUp_PC = ({
 
   // 🚀 追加：施術希望者（右側）のソート済みリストを計算
   const sortedDraftList = useMemo(() => {
+    // 🌟【超重要お掃除】もしすでに確定済み（dbReservedResidents）にいるメンバーなら、
+    // 未確定の下書き（draftList）側からは除外して、絶対に重複させないようにします。
+    const uniqueDrafts = draftList.filter(d => 
+      !dbReservedResidents.some(db => db.member_id === d.member_id)
+    );
+
+    // 確定済み（DB）と、重複を除いた下書きを合体させます
     const combined = [
-      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), // 確定済み（pending または completed）
-      ...draftList.map(d => ({ ...d, isFromDB: false }))           // 新規追加
+      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })), 
+      ...uniqueDrafts.map(d => ({ ...d, isFromDB: false }))           
     ];
 
-    return combined.sort((a, b) => {
-      // 🚀 1. 状態の優先順位をスコア化 (新規=10, 確定済=20, 完了済=30)
+    // 名簿（residents）に今現在存在している人だけに絞り込む（名簿削除連動）
+    const filteredCombined = combined.filter(item => {
+      const memberId = item.member_id;
+      return residents.some(r => r.id === memberId);
+    });
+
+    // 存在しているメンバーだけで安全にソートを実行
+    return filteredCombined.sort((a, b) => {
+      // 1. 状態の優先順位をスコア化 (新規=10, 確定済=20, 完了済=30, キャンセル=40)
       const getStatusScore = (item) => {
         if (!item.isFromDB) return 10;
         if (item.status === 'completed') return 30;
-        if (item.status === 'canceled') return 40; // 🚀 キャンセルは一番下に
+        if (item.status === 'canceled') return 40; 
         return 20; 
       };
 
       const scoreA = getStatusScore(a);
       const scoreB = getStatusScore(b);
 
-      // スコアが違う場合は、スコアが低い（＝新規や確定済）を上に並べる
       if (scoreA !== scoreB) return scoreA - scoreB;
 
-      // 🚀 2. 同じステータス同士の中での並び替え（既存の階数 or 名前順）
+      // 2. 同じステータス同士の中での並び替え（階数 or 名前順）
       const m1 = a.members || {};
       const m2 = b.members || {};
             
@@ -57,7 +70,7 @@ const FacilityListUp_PC = ({
         return k1.localeCompare(k2, 'ja');
       }
     });
-  }, [draftList, dbReservedResidents, draftSortMode]);
+  }, [draftList, dbReservedResidents, draftSortMode, residents]);
   const [confirmedDates, setConfirmedDates] = useState([]);
   const [lastVisitMap, setLastVisitMap] = useState({});
   const [manualKeeps, setManualKeeps] = useState([]);
@@ -155,7 +168,12 @@ const FacilityListUp_PC = ({
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
       const [resData, connData, visitResidentsRes, visitDatesRes, otherVisits, personalRes, privateTasksRes] = await Promise.all([
-        supabase.from('members').select('*').eq('facility', targetFacilityName).order('room'),
+        supabase
+    .from('members')
+    .select('*')
+    .eq('facility', targetFacilityName)
+    .eq('is_active', true) // 👈 これを追加！
+    .order('room'),
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
         
         // ① この施設の予約メンバー（🚀 🆕 他のテスト施設のデータが混ざらないようにインナージョインで厳格化！）
@@ -163,7 +181,8 @@ const FacilityListUp_PC = ({
           .select('*, members!inner(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .eq('members.facility', targetFacilityName)
-          .neq('visit_requests.status', 'canceled') // ✅ 【超重要】キャンセルされた日程のデータはここで完全にシャットアウトします！
+          .eq('members.is_active', true) // 🌟【超重要】これがFALSEの幽霊データを完全に成仏させるお札です！
+          .neq('visit_requests.status', 'canceled') 
           .gte('visit_requests.scheduled_date', startOfMonth)
           .lte('visit_requests.scheduled_date', endOfMonth),
         
@@ -436,16 +455,16 @@ const FacilityListUp_PC = ({
 
   // 💡 以降、既存のフィルタリング処理へ続く
   const unselectedResidents = residents
-    .filter(r => 
-      // 🚀 🆕 ドラフト（今選んだ人）にも、DB（確定済みの人）にもいない人だけを表示
-      !draftList.some(d => d.member_id === r.id) && 
-      !dbReservedResidents.some(db => db.member_id === r.id) && 
-      (
-        r.name.includes(searchTerm) || 
-        (r.room || '').includes(searchTerm) || 
-        (r.kana || '').includes(searchTerm)
-      )
+  .filter(r => 
+    r.is_active === true && // 👈 万が一のためここでもチェック
+    !draftList.some(d => d.member_id === r.id) && 
+    !dbReservedResidents.some(db => db.member_id === r.id) && 
+    (
+      r.name.includes(searchTerm) || 
+      (r.room || '').includes(searchTerm) || 
+      (r.kana || '').includes(searchTerm)
     )
+  )
     .sort((a, b) => {
       if (sortMode === 'floor') {
         // --- 階数順 ---

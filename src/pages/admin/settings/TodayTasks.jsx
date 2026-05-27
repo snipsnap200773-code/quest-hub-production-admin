@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
@@ -65,10 +65,25 @@ const getKanaGroup = (kana) => {
 const TodayTasks = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const [showCalendar, setShowCalendar] = useState(false);
+  const [viewMonth, setViewMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState('');
   const [categoryMap, setCategoryMap] = useState({});
   const [staffCount, setStaffCount] = useState(0);
+
+  // --- 2. カレンダー用の計算式 (今追加したブロック) ---
+  const miniCalendarDays = useMemo(() => {
+    const year = viewMonth.getFullYear(); 
+    const month = viewMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const days = [];
+    const offset = firstDay === 0 ? 6 : firstDay - 1;
+    for (let i = 0; i < offset; i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+    return days;
+  }, [viewMonth]);
 
   // 🆕 お客様情報ポップアップ用の状態 [cite: 2026-03-08]
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -292,6 +307,7 @@ const { data: resData, error: resError } = await supabase
     setLoading(false);
   }
 };
+
     
 const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
 
@@ -877,100 +893,71 @@ const handleSaveMemo = async () => {
   
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: '100px', fontFamily: 'sans-serif' }}>
-      
       {message && (
-        <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', fontWeight: 'bold', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}>
+        <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', fontWeight: 'bold', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}>
           {message}
         </div>
       )}
 
-      {/* --- 🆕 ここからヘッダー修正 --- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '30px', flexWrap: 'wrap', gap: '15px' }}>
+      {/* --- 🚀 修正後のヘッダー ＆ カレンダー差し込みエリア --- */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
         <div>
           <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e293b', fontWeight: '900' }}>⚡ タスク実行</h2>
           
-          {/* 📅 日付切り替えコントローラー */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginTop: '12px', background: '#f1f5f9', padding: '4px 8px', borderRadius: '12px', width: 'fit-content' }}>
-            <button 
-              onClick={() => {
-                const d = new Date(targetDate);
-                d.setDate(d.getDate() - 1);
-                setTargetDate(d.toLocaleDateString('sv-SE'));
-              }}
-              style={arrowBtnStyle}
-            >◀</button>
-            
-            <div 
-              onClick={() => setTargetDate(new Date().toLocaleDateString('sv-SE'))}
-              style={{ padding: '4px 12px', fontWeight: 'bold', fontSize: '0.9rem', color: '#334155', cursor: 'pointer', textAlign: 'center', minWidth: '100px' }}
-            >
-              {targetDate === new Date().toLocaleDateString('sv-SE') ? (
-                <span style={{ color: themeColor }}>今日</span>
-              ) : (
-                targetDate.replace(/-/g, '/')
-              )}
-            </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+            <button onClick={() => {
+              const d = new Date(targetDate);
+              d.setDate(d.getDate() - 1);
+              setTargetDate(d.toLocaleDateString('sv-SE'));
+              setViewMonth(d);
+            }} style={arrowBtnStyle}>◀</button>
 
-            <button 
-              onClick={() => {
-                const d = new Date(targetDate);
-                d.setDate(d.getDate() + 1);
-                setTargetDate(d.toLocaleDateString('sv-SE'));
-              }}
-              style={arrowBtnStyle}
-            >▶</button>
+            <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
+              padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+              background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' 
+            }}>
+              <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
+            </button>
+
+            <button onClick={() => {
+              const d = new Date(targetDate);
+              d.setDate(d.getDate() + 1);
+              setTargetDate(d.toLocaleDateString('sv-SE'));
+              setViewMonth(d);
+            }} style={arrowBtnStyle}>▶</button>
           </div>
-
-          {/* 🚀 自動売上確定モードに応じたアラート表示の切り替え */}
-  {oldestIncompleteDate && (
-    <motion.button
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      disabled={isAutoProcessing}
-      onClick={() => {
-        // ✅ 「一括ボタンを表示」がONなら一括処理、OFFなら日付ジャンプ
-        if (shopData?.allow_batch_matching) {
-          handleAutoBatchProcess();
-        } else {
-          setTargetDate(oldestIncompleteDate);
-        }
-      }}
-      style={{
-        ...alertBadgeStyle,
-        // ✅ すべて「一括ボタン」用のフラグに書き換えます
-        background: shopData?.allow_batch_matching ? '#dcfce7' : '#ffeb3b',
-        color: shopData?.allow_batch_matching ? '#166534' : '#d34817',
-        border: shopData?.allow_batch_matching ? '1px solid #16653444' : 'none'
-      }}
-    >
-      {isAutoProcessing ? (
-        '処理中...'
-      // ✅ ここも一括ボタン用のフラグに書き換えます
-      ) : shopData?.allow_batch_matching ? ( 
-        <><CheckCircle size={14} /> 過去の未処理を一括確定する</>
-      ) : (
-        <><AlertCircle size={14} /> 未処理あり！ ({oldestIncompleteDate.replace(/-/g, '/')})</>
-      )}
-    </motion.button>
-  )}
         </div>
 
-        {/* ✅ 帰り道スイッチ（既存のまま） */}
         <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
-          <button 
-            onClick={() => navigate(`/admin/${shopId}/reservations`)}
-            style={navSwitchBtnStyle}
-          >
-            <Calendar size={14} /> 📅 カレンダーへ
-          </button>
-          <button 
-            onClick={() => navigate(`/admin/${shopId}/timeline`)}
-            style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}
-          >
-            <Clock size={14} /> 🕒 タイムラインへ
-          </button>
+          <button onClick={() => navigate(`/admin/${shopId}/reservations`)} style={navSwitchBtnStyle}><Calendar size={14} /> カレンダーへ</button>
+          <button onClick={() => navigate(`/admin/${shopId}/timeline`)} style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}><Clock size={14} /> タイムラインへ</button>
         </div>
-      </div>      
+      </div>
+
+      {/* 🚀 🆕 1ヶ月カレンダー表示部 */}
+      {showCalendar && (
+        <div style={{ background: '#fff', padding: '20px', borderRadius: '20px', marginBottom: '25px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px rgba(0,0,0,0.1)' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+            <button onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))}>◀</button>
+            <span style={{ fontWeight: '900' }}>{viewMonth.getFullYear()}年 {viewMonth.getMonth() + 1}月</span>
+            <button onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))}>▶</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '5px' }}>
+            {['月','火','水','木','金','土','日'].map(d => <div key={d} style={{ fontSize: '0.7rem', textAlign: 'center', color: '#94a3b8' }}>{d}</div>)}
+            {miniCalendarDays.map((date, i) => (
+              <button key={i} onClick={() => { if(date) { setTargetDate(date.toLocaleDateString('sv-SE')); setShowCalendar(false); }}}
+                style={{ 
+                  padding: '10px 0', borderRadius: '8px', border: 'none', cursor: date ? 'pointer' : 'default',
+                  background: date && date.toLocaleDateString('sv-SE') === targetDate ? themeColor : '#f8fafc',
+                  color: date && date.toLocaleDateString('sv-SE') === targetDate ? '#fff' : '#1e293b',
+                  fontWeight: 'bold'
+                }}>
+                {date ? date.getDate() : ''}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}      
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
         {/* 🆕 修正：売上対象外（見積りなど）をリストから除外して判定 */}
         {tasks.filter(t => !isSalesExcludedTask(t)).length === 0 ? (

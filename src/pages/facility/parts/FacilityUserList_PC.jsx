@@ -93,23 +93,54 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
   // --- 3. 操作ロジック ---
   const handleSubmit = async () => {
-    // 🚀 部屋番号(newRoom)のチェックを削除し、お名前だけを必須にします
     if (!newName) { 
       alert("お名前は必須です"); 
       return; 
     }
-    const userData = { 
-      facility_user_id: facilityId, facility: facilityName, floor: newFloor, 
-      room: newRoom, name: newName, kana: newKana, notes: newNotes, isBedCut: isBedCut 
-    };
-    if (editingId) {
-      await supabase.from('members').update(userData).eq('id', editingId);
-      setEditingId(null);
-    } else {
-      await supabase.from('members').insert([userData]);
+
+    // 🚀 🆕 【重複登録防止・同姓同名チェック】
+    // スペース（全角・半角）を取り除いて、純粋な文字だけで比較します
+    const normalizedInputName = newName.replace(/[\s　]/g, '').trim(); 
+    
+    const isDuplicate = residents.some(r => 
+      r.id !== editingId && // 編集中の自分自身はチェックから除外する
+      (r.name || '').replace(/[\s　]/g, '').trim() === normalizedInputName
+    );
+
+    if (isDuplicate) {
+      // ⚠️ 重複を発見した場合、アラートを出して確認する
+      const proceed = window.confirm(
+        `⚠️【確認】\n「${newName}」様は既に名簿に登録されています。\n\n同姓同名の「別人」として新しく追加登録しますか？\n（※間違えて2重登録してしまう場合は「キャンセル」を押してください）`
+      );
+      
+      if (!proceed) {
+        return; // 「キャンセル」を押した場合はここで処理をストップし、保存させない
+      }
     }
-    await fetchResidents(); resetForm();
-    if (isMobile) setIsFormOpen(false);
+
+    // 問題なければ保存処理へ進む
+    setLoading(true);
+    try {
+      const userData = { 
+        facility_user_id: facilityId, facility: facilityName, floor: newFloor, 
+        room: newRoom, name: newName, kana: newKana, notes: newNotes, isBedCut: isBedCut 
+      };
+      
+      if (editingId) {
+        await supabase.from('members').update(userData).eq('id', editingId);
+        setEditingId(null);
+      } else {
+        await supabase.from('members').insert([userData]);
+      }
+      
+      await fetchResidents(); 
+      resetForm();
+      if (isMobile) setIsFormOpen(false);
+    } catch (err) {
+      alert("保存中にエラーが発生しました: " + err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const resetForm = () => {
@@ -131,41 +162,25 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
 
   // 🚀 🆕 スマート削除ロジック（ここに追加！）
   const handleDeleteMember = async (memberId, memberName) => {
-    if (!window.confirm(`「${memberName}」様を名簿から削除しますか？`)) return;
+    if (!window.confirm(`「${memberName}」様を名簿から除外しますか？\n（過去の売上や訪問履歴はすべて守られますのでご安心ください）`)) return;
 
+    setLoading(true);
     try {
-      // 1. 全店舗を通じた利用実績があるかチェック
-      const { count, error: countErr } = await supabase
-        .from('visit_request_residents')
-        .select('*', { count: 'exact', head: true })
-        .eq('member_id', memberId);
+      // 🌟 物理削除（.delete()）は一切行わず、is_active: false に更新するだけにする
+      const { error } = await supabase
+        .from('members')
+        .update({ is_active: false }) 
+        .eq('id', memberId);
 
-      if (countErr) throw countErr;
+      if (error) throw error;
 
-      if (count > 0) {
-        // 🏥 パターンA：実績あり ➔ 論理削除（非表示にするだけ）
-        const { error: upErr } = await supabase
-          .from('members')
-          .update({ is_active: false })
-          .eq('id', memberId);
-
-        if (upErr) throw upErr;
-        alert("過去の利用実績があるため、データを保護した状態で名簿から外しました。");
-      } else {
-        // 🧹 パターンB：実績なし ➔ 物理削除（DBから完全に消す）
-        const { error: delErr } = await supabase
-          .from('members')
-          .delete()
-          .eq('id', memberId);
-
-        if (delErr) throw delErr;
-        alert("名簿から完全に削除しました。");
-      }
-
-      fetchResidents(); // リストを更新
+      alert("名簿から非表示にしました。過去の売上・履歴データはすべて保護されています。");
+      fetchResidents(); // リストを更新（is_active: true の人だけが再表示されます）
     } catch (err) {
       console.error(err);
       alert("削除処理中にエラーが発生しました: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
 
