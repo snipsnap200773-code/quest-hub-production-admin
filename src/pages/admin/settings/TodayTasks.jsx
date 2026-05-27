@@ -889,13 +889,31 @@ const handleSaveMemo = async () => {
   };
   const themeColor = shopData?.theme_color || '#2563eb';
 
+  const handleJumpToIncomplete = () => {
+    if (oldestIncompleteDate) {
+      setTargetDate(oldestIncompleteDate); // 日付をセット
+      setViewMonth(new Date(oldestIncompleteDate)); // カレンダーの表示月もその日付に合わせる
+      showMsg(`${oldestIncompleteDate.replace(/-/g, '/')} の未処理データへ移動しました`);
+    }
+  };
+
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
-  
+
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: '100px', fontFamily: 'sans-serif' }}>
       {message && (
         <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', fontWeight: 'bold', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}>
           {message}
+        </div>
+      )}
+
+      {/* 🚀 2. 【ここが復活させるべきアラートバナー】 */}
+      {oldestIncompleteDate && (
+        <div style={{ marginBottom: '20px', padding: '20px', background: '#fff1f2', borderRadius: '15px', border: '1px solid #fecdd3', color: '#be123c', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>⚠️ {oldestIncompleteDate.replace(/-/g, '/')} に未処理があります</span>
+          <button onClick={handleJumpToIncomplete} style={{ background: '#be123c', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>
+            ワープ
+          </button>
         </div>
       )}
 

@@ -2202,7 +2202,7 @@ else if (
       const baseName = spaceIndex !== -1 ? trimmedName.substring(0, spaceIndex) : trimmedName.replace(/様$/g, '');
       
       if (isPC) {
-        processedName = baseName + '様'; // PC版は様付け
+        processedName = baseName + ' 様'; // PC版は様付け
       } else {
         processedName = baseName.slice(0, 3); // スマホ版は様なし
       }
