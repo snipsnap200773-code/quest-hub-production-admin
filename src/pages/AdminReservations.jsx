@@ -1803,9 +1803,6 @@ return (
 
               {/* 🏢 店舗ロゴ ＆ タイトル */}
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '15px' }}>
-                <div style={{ width: '32px', height: '32px', background: themeColor, borderRadius: '8px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontWeight: 'bold', fontSize: '0.9rem' }}>
-                  {(shop?.business_name || 'S')[0]}
-                </div>
                 <h1 style={{ fontSize: '1.1rem', fontWeight: '900', margin: 0, color: '#1e293b', whiteSpace: 'nowrap' }}>
                   {shop?.business_name || 'SnipSnap Admin'}
                 </h1>
@@ -1813,9 +1810,9 @@ return (
 
               {/* 📅 ナビゲーション 🚀 🆕 【引っ越しその2】「前週」➔「今日」➔「次週」の並び順に変更！ */}
               <div style={{ display: 'flex', gap: '6px' }}>
-                <button onClick={goPrev} style={headerBtnStylePC}>前週</button>
+                <button onClick={goPrev} style={headerBtnStylePC}>◀</button>
                 <button onClick={goToday} style={headerBtnStylePC}>今日</button>
-                <button onClick={goNext} style={headerBtnStylePC}>次週</button>
+                <button onClick={goNext} style={headerBtnStylePC}>▶</button>
               </div>
 
               {/* 左サイドバーから引っ越してきたPC用横並びナビゲーションメニュー一式 */}
@@ -1834,7 +1831,6 @@ return (
                 onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
                 style={{ ...headerBtnStylePC, background: '#1e293b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
               >
-                <Clipboard size={16} />
                 <span>タスク</span>
               </button>
 
@@ -1850,7 +1846,7 @@ return (
                   border: isManagementEnabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
                 }}
               >
-                📊 売上管理
+                売上管理
               </button>
 
               <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 5px' }} />
