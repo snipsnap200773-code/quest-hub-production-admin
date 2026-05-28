@@ -1829,7 +1829,7 @@ return (
               {/* ⚡ 本日のタスク（実行）ボタン */}
               <button 
                 onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
-                style={{ ...headerBtnStylePC, background: '#1e293b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
+                style={{ ...headerBtnStylePC, background: '#13a11a', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
               >
                 <span>タスク</span>
               </button>
@@ -1840,8 +1840,8 @@ return (
                 disabled={!isManagementEnabled}
                 style={{ 
                   ...headerBtnStylePC, 
-                  background: isManagementEnabled ? '#f8fafc' : '#f1f5f9', 
-                  color: isManagementEnabled ? '#1e293b' : '#94a3b8',
+                  background: isManagementEnabled ? '#0b63d7' : '#f1f9f6', 
+                  color: isManagementEnabled ? '#ffffff' : '#94a3b8',
                   cursor: isManagementEnabled ? 'pointer' : 'not-allowed',
                   border: isManagementEnabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
                 }}
