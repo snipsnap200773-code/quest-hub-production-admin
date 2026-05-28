@@ -2236,7 +2236,7 @@ else if (
         {/* 🚀 【細身・枠いっぱい自動フィット】 */}
         <div style={{
           fontSize: isPC ? '150%' : '140%', 
-          fontWeight: '400', 
+          fontWeight: '500', 
           color: colors.text,
           whiteSpace: 'nowrap',
           overflow: 'hidden',
