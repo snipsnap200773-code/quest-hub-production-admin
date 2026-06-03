@@ -230,6 +230,44 @@ function SuperAdmin() {
     setIsProcessing(false);
   };
 
+  // 🚀 【ここから追記】お知らせの追加処理 (addNews)
+  const addNews = async (e) => {
+    e.preventDefault();
+    if (!newNewsDate || !newNewsTitle) {
+      return alert('日付とタイトルを入力してください');
+    }
+    
+    setIsProcessing(true);
+    const { error } = await supabase.from('portal_news').insert([{
+      publish_date: newNewsDate,
+      category: newNewsCat || 'お知らせ',
+      title: newNewsTitle
+    }]);
+
+    if (!error) {
+      alert('お知らせを追加しました！');
+      setNewNewsDate('');
+      setNewNewsTitle('');
+      fetchPortalContent(); // リストを再読み込み
+    } else {
+      alert('追加失敗: ' + error.message);
+    }
+    setIsProcessing(false);
+  };
+
+  // 🚀 【ここから追記】お知らせの削除処理 (deleteNews)
+  const deleteNews = async (id) => {
+    if (!window.confirm('このお知らせを削除しますか？')) return;
+
+    const { error } = await supabase.from('portal_news').delete().eq('id', id);
+    if (!error) {
+      alert('お知らせを削除しました');
+      fetchPortalContent(); // リストを再読み込み
+    } else {
+      alert('削除失敗: ' + error.message);
+    }
+  };
+
   // 🚀 🆕 既存店舗の認証アカウントを「今のIDのまま」強制作成する関数
   const repairShopAuth = async (shop) => {
     if (!shop.email_contact || !shop.admin_password) {
