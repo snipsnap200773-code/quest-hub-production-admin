@@ -468,8 +468,26 @@ const isPC = windowWidth > 1024;
   useEffect(() => { 
     // ポップアップカレンダーが開いている時はカレンダーの表示月、閉じている時はメインの選択週をターゲットにする
     const activeTargetDate = showMobileCalendar ? viewMonth : startDate;
+    
+    // ① 画面移動やカレンダー変更があった時に強制再読込
     fetchData(activeTargetDate); 
-  }, [shopId, startDate, viewMonth, showMobileCalendar, location.search]);
+
+    // ② 【レベル2対応】iPhone等でアプリを閉じたりスリープから復帰した瞬間に自動リフレッシュする仕掛け
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('📱 アプリへの復帰を検知：キャッシュを破棄して最新データを1発取得します。');
+        fetchData(activeTargetDate);
+      }
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleVisibilityChange); // 画面フォーカス時も念のため連動
+
+    return () => {
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleVisibilityChange);
+    };
+  }, [shopId, startDate, viewMonth, showMobileCalendar, location.search, location.key]); // 🚀 location.key を追加して画面遷移での確実な発火を保証
 
   // 🚀 🆕 ここから追加：履歴のカードをタップした時に詳細ポップアップを開く命令
   const openHistoryDetail = (visit) => {

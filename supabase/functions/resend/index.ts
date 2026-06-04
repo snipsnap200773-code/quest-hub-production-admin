@@ -1215,7 +1215,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
                     
                     <p style="margin: 0; padding-top: 8px; border-top: 1px dashed #cbd5e1;">
                       画面での操作が難しい場合や、急なご連絡、その他ご不明な点がございましたら、恐れ入りますが<b>店舗へ直接お電話またはメール</b>にてご連絡をお願いいたします。<br><br>
-                      ${payload.phone || profile?.phone ? `👉 <b>お電話：</b> <a href="tel:${payload.phone || profile?.phone}" style="color: #10b981; font-weight: bold; text-decoration: underline;">${payload.phone || profile?.phone}</a>（タップで発信）<br>` : ''}
+                      ${profile?.phone ? `👉 <b>お電話：</b> <a href="tel:${profile.phone}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">${profile.phone}</a>（タップで発信）<br>` : ''}
                       👉 <b>メール：</b> <a href="mailto:${shopEmail}" style="color: #2563eb; font-weight: bold; text-decoration: underline;">${shopEmail}</a>
                     </p>
                   </div>
