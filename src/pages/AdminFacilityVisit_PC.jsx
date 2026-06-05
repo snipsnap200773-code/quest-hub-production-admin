@@ -411,8 +411,20 @@ const AdminFacilityVisit_PC = () => {
       let customerId = null;
       const facilityName = visit?.facility_users?.facility_name;
       const { data: existingCust } = await supabase.from('customers').select('id').eq('shop_id', shopId).eq('name', facilityName).maybeSingle();
-      if (existingCust) { customerId = existingCust.id; } else {
-        const { data: newCust, error: cErr } = await supabase.from('customers').insert([{ shop_id: shopId, name: facilityName, memo: '施設訪問（自動登録）' }]).select().single();
+      if (existingCust) { 
+        customerId = existingCust.id; 
+      } else {
+        // 🌟 施設タスクからの売上確定時は、100%確実にis_facility = true（施設）として新規名簿を作ります
+        const { data: newCust, error: cErr } = await supabase
+          .from('customers')
+          .insert([{ 
+            shop_id: shopId, 
+            name: facilityName, 
+            is_facility: true, // 👈 🚀 ここを追加！
+            memo: '施設訪問（自動登録）' 
+          }])
+          .select()
+          .single();
         if (cErr) throw cErr;
         customerId = newCust.id;
       }
