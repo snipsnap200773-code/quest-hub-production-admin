@@ -130,6 +130,9 @@ const [salesRecords, setSalesRecords] = useState([]);
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertModalMode, setAlertModalMode] = useState(null);
 
+  const [showFacilityMembersModal, setShowFacilityMembersModal] = useState(false);
+  const [selectedFacilitySale, setSelectedFacilitySale] = useState(null);
+
   const [startDate, setStartDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const dateParam = params.get('date');
@@ -749,28 +752,30 @@ setSalesRecords(salesRes.data || []);
       if (isFac) {
         // 🏢 施設訪問の場合：全期間の履歴を取得
         const { data: facHistory } = await supabase
-  .from('visit_requests')
-  .select('*, facility_users(facility_name)')
-  .eq('shop_id', shopId)
-  .neq('status', 'canceled')
-  .or(`customer_name.eq.${searchName},facility_user_id.eq.${cust?.id || fullResData.facility_user_id}`);
+          .from('visit_requests')
+          .select('*, facility_users(facility_name)')
+          .eq('shop_id', shopId)
+          .neq('status', 'canceled')
+          .or(`customer_name.eq.${searchName},facility_user_id.eq.${cust?.id || fullResData.facility_user_id}`);
 
-// 🌟 ここで売上データを一括取得して、履歴に合流させる
-const visitIds = (facHistory || []).map(v => v.id);
-const { data: facSales } = await supabase
-  .from('sales')
-  .select('visit_request_id, total_amount, details')
-  .in('visit_request_id', visitIds);
+        // 🌟 ここで売上データを一括取得して、履歴に合流させる
+        const searchIds = [...new Set((facHistory || []).map(v => v.parent_id || v.id))];
+        const { data: facSales } = await supabase
+          .from('sales')
+          .select('visit_request_id, total_amount, details')
+          .in('visit_request_id', searchIds);
 
-allHistory = (facHistory || []).map(v => {
-  const sale = facSales?.find(s => s.visit_request_id === v.id);
-  return { 
-    ...v, 
-    start_time: v.scheduled_date, 
-    total_price: sale ? sale.total_amount : 0, // 👈 これで金額が表示されます！
-    sale_record: sale || null // 👈 これで内訳詳細が出ます！
-  };
-}).sort((a, b) => b.start_time.localeCompare(a.start_time));
+        allHistory = (facHistory || []).map(v => {
+          // 🚀 修正：売上は親IDに紐付いているので、v.parent_id か v.id で探す
+          const masterId = v.parent_id || v.id;
+          const sale = facSales?.find(s => s.visit_request_id === masterId);
+          return { 
+            ...v, 
+            start_time: v.scheduled_date, 
+            total_price: sale ? sale.total_amount : 0, 
+            sale_record: sale || null // 👈 これで複数日でも内訳が確実に出ます！
+          };
+        }).sort((a, b) => b.start_time.localeCompare(a.start_time));
       } else {
         // 👤 個人の場合：期間のフィルター（gte, lte）を一切かけず、この人名またはIDに紐づく全データを狙い撃ち取得！
         let resQuery = supabase
@@ -1843,6 +1848,7 @@ const getStatusAt = (dateStr, timeStr) => {
   const miniBtnStyle = { border: 'none', background: 'none', cursor: 'pointer', color: themeColor };
   const floatNavBtnStyle = { border: 'none', background: 'none', width: '60px', height: '50px', fontSize: '1.2rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
   const overlayStyle = { position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' };
+  const visitDetailOverlayStyle = { ...overlayStyle, zIndex: 4000 };
   const modalContentStyle = { background: '#fff', width: '95%', borderRadius: '25px', padding: '30px', maxHeight: '85vh', overflowY: 'auto' };
   const headerBtnStylePC = { padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' };
   const mobileArrowBtnStyle = { background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1rem', cursor: 'pointer' };
@@ -2382,7 +2388,42 @@ else if (
     </motion.div>
   </AnimatePresence>
 </div>
-        
+        {showFacilityMembersModal && selectedFacilitySale && (
+  <div style={visitDetailOverlayStyle} onClick={() => setShowFacilityMembersModal(false)}>
+            <div style={{ ...modalContentStyle, maxWidth: '400px' }} onClick={e => e.stopPropagation()}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '2px solid #4f46e5', paddingBottom: '10px' }}>
+                <h3 style={{ margin: 0, fontSize: '1.1rem' }}>🏢 施術完了メンバー内訳</h3>
+                <button onClick={() => setShowFacilityMembersModal(false)} style={{ border: 'none', background: 'none', cursor: 'pointer' }}><X size={20}/></button>
+              </div>
+              
+              <div style={{ maxHeight: '40vh', overflowY: 'auto', marginBottom: '20px' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                  <thead style={{ background: '#f8fafc', fontSize: '0.75rem' }}>
+                    <tr>
+                      <th style={{ ...tdStyle, textAlign: 'left' }}>氏名</th>
+                      <th style={tdStyle}>メニュー</th>
+                      <th style={{ ...tdStyle, textAlign: 'right' }}>単価</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedFacilitySale.details?.members_list?.map((m, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid #eee' }}>
+                        <td style={{ ...tdStyle, textAlign: 'left', fontSize: '0.85rem', fontWeight: 'bold' }}>{m.name} 様</td>
+                        <td style={{ ...tdStyle, fontSize: '0.8rem' }}>{m.menu}</td>
+                        <td style={{ ...tdStyle, textAlign: 'right', fontSize: '0.85rem' }}>¥{Number(m.price || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ background: '#f5f3ff', padding: '15px', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontWeight: 'bold', color: '#4f46e5' }}>合計 {selectedFacilitySale.details?.members_list?.length || 0}名</span>
+                <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b' }}>¥{Number(selectedFacilitySale.total_amount || 0).toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        )}
         {!isPC && (
         <div style={{ 
           position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px', 
@@ -2864,84 +2905,150 @@ else if (
                   gap: '10px'
                 }}>
                     {(() => {
-                      // 🚀 1. 年ごとにグループ化するロジック
-                      const groups = customerHistory.reduce((acc, h) => {
-                        const date = new Date(h.start_time);
-                        const year = date.getFullYear();
-                        if (!acc[year]) acc[year] = [];
-                        acc[year].push(h);
-                        return acc;
-                      }, {});
+                    // 1. そもそも履歴がない時
+                    if (customerHistory.length === 0) {
+                      return <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.8rem' }}>履歴はありません</div>;
+                    }
 
-                      // 🚀 2. 年を新しい順にソートして表示
-                      const sortedYears = Object.keys(groups).sort((a, b) => b - a);
+                    // 🏢【パターンA】施設の場合：月ごとにカードを分けて「実施日」をバッジ表示
+                    if (editFields.is_facility) {
+    const monthlyGroups = {};
+    customerHistory.forEach(v => {
+      if (v.status === 'canceled') return; 
+      const d = new Date(v.start_time);
+      const monthKey = `${d.getFullYear()}年${d.getMonth() + 1}月`;
+      if (!monthlyGroups[monthKey]) monthlyGroups[monthKey] = { month: monthKey, visits: [] };
+      monthlyGroups[monthKey].visits.push(v);
+    });
 
-                      return sortedYears.map((year) => (
-                        <div key={year} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff', overflow: 'hidden' }}>
-                          {/* 年アコーディオン・ヘッダー */}
-                          <div 
-                            onClick={() => setExpandedYears(prev => ({ ...prev, [year]: !prev[year] }))}
-                            style={{ 
-                              padding: '12px 15px', background: '#f8fafc', cursor: 'pointer', 
-                              display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                              borderBottom: expandedYears[year] ? '1px solid #e2e8f0' : 'none'
-                            }}
-                          >
-                            <span style={{ fontWeight: '900', color: themeColor }}>{year}年</span>
-                            <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
-                              {expandedYears[year] ? '▼' : '▶'} {groups[year].length}件
-                            </span>
-                          </div>
+    const sortedMonths = Object.keys(monthlyGroups).sort((a, b) => b.localeCompare(a));
 
-                          {/* 展開時の中身 */}
-                          {expandedYears[year] && (
-                            <div style={{ padding: '5px' }}>
-                              {groups[year].sort((a,b) => new Date(b.start_time) - new Date(a.start_time)).map((h) => {
-  const hDate = new Date(h.start_time);
-  const isCanceled = h.status === 'canceled';
-  
-  // 🌟 ここで判定：施設訪問フラグ
-  const isFacilityVisit = h.res_type === 'facility_visit' || h.sale_record;
-
-  return (
-    <div 
-      key={h.id} 
-      onClick={() => !isCanceled && openHistoryDetail(h)}
-      style={{ 
-        padding: '12px', 
-        borderBottom: '1px solid #f1f5f9', 
-        background: isCanceled ? '#fcfcfc' : '#fff', 
-        opacity: isCanceled ? 0.6 : 1, 
-        cursor: isCanceled ? 'default' : 'pointer'
-      }}
-    >
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-        <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
-          {hDate.toLocaleDateString('ja-JP')}
-        </span>
-        <span style={{ color: isCanceled ? '#cbd5e1' : '#e11d48', fontWeight: 'bold', fontSize: '0.85rem' }}>
-          {/* 🌟 施設なら確定済みの sale_record.total_amount、個人なら d.totalPrice */}
-          ¥{(h.sale_record?.total_amount || h.total_price || 0).toLocaleString()}
-        </span>
+    return sortedMonths.map((mKey) => (
+      <div key={mKey} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '18px', padding: '15px', marginBottom: '10px' }}>
+        <div style={{ fontWeight: '900', color: '#4f46e5', marginBottom: '10px' }}>{mKey} 訪問実績</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px', marginBottom: '10px' }}>
+          {monthlyGroups[mKey].visits.sort((a,b) => a.start_time.localeCompare(b.start_time)).map(v => (
+            <div key={v.id} onClick={() => {
+    const sale = salesRecords.find(s => s.visit_request_id === v.id);
+    if (sale) { 
+        setSelectedFacilitySale(sale);       // 👈 存在する関数を使います
+        setShowFacilityMembersModal(true);   // 👈 存在する関数を使います
+    }
+    else alert("売上データがありません");
+            }} style={{ background: '#f8fafc', padding: '5px 10px', borderRadius: '8px', cursor: 'pointer', border: '1px solid #cbd5e1' }}>
+              {new Date(v.start_time).getDate()}日
+            </div>
+          ))}
+        </div>
+        <div style={{ textAlign: 'right', fontWeight: 'bold', color: '#d34817' }}>
+          ¥{monthlyGroups[mKey].visits.reduce((sum, v) => {
+             const sale = salesRecords.find(s => s.visit_request_id === v.id);
+             return sum + (sale ? Number(sale.total_amount) : 0);
+          }, 0).toLocaleString()}
+        </div>
       </div>
+    ));
+  }
 
-      {/* 🌟 メニュー名判定：施設なら「施設訪問 施術一式」を強制表示 */}
-      <div style={{ fontSize: '0.85rem', color: '#1e293b', marginBottom: '6px' }}>
-        {isFacilityVisit ? "施設訪問 施術一式" : parseReservationDetails(h).menuName}
-      </div>
+                    // 👤【パターンB】個人の場合：今まで通りの「年ごとアコーディオン」
+                    const yearlyGroups = customerHistory.reduce((acc, h) => {
+                      const date = new Date(h.start_time);
+                      const year = date.getFullYear();
+                      if (!acc[year]) acc[year] = [];
+                      acc[year].push(h);
+                      return acc;
+                    }, {});
 
-      {/* スタッフ表示 */}
-      {h.staffs && (
-         <div style={{ marginTop: '2px', fontWeight: 'bold', fontSize: '0.75rem', color: '#64748b' }}>👤 {h.staffs.name}</div>
-      )}
-    </div>
-  );
-})}
-                            </div>
-                          )}
+                    const sortedYears = Object.keys(yearlyGroups).sort((a, b) => b - a);
+
+                    return sortedYears.map((year) => (
+                      <div key={year} style={{ border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff', overflow: 'hidden' }}>
+                        {/* 年アコーディオン・ヘッダー */}
+                        <div 
+                          onClick={() => setExpandedYears(prev => ({ ...prev, [year]: !prev[year] }))}
+                          style={{ 
+                            padding: '12px 15px', background: '#f8fafc', cursor: 'pointer', 
+                            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                            borderBottom: expandedYears[year] ? '1px solid #e2e8f0' : 'none'
+                          }}
+                        >
+                          <span style={{ fontWeight: '900', color: themeColor }}>{year}年</span>
+                          <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>
+                            {expandedYears[year] ? '▼' : '▶'} {yearlyGroups[year].length}件
+                          </span>
                         </div>
-                      ));
-                    })()}
+
+                        {/* 展開時の中身 */}
+                        {expandedYears[year] && (
+                          <div style={{ padding: '5px' }}>
+                            {yearlyGroups[year].sort((a, b) => new Date(b.start_time) - new Date(a.start_time)).map((h) => {
+                              const hDate = new Date(h.start_time);
+                              const isCanceled = h.status === 'canceled';
+                              
+                              // 🚀 個人用の詳細情報解析
+                              const d = parseReservationDetails(h); 
+
+                              return (
+                                <div 
+                                  key={h.id} 
+                                  onClick={() => !isCanceled && openHistoryDetail(h)}
+                                  style={{ 
+                                    padding: '12px', 
+                                    borderBottom: '1px solid #f1f5f9', 
+                                    background: isCanceled ? '#fcfcfc' : '#fff', 
+                                    opacity: isCanceled ? 0.7 : 1, 
+                                    position: 'relative',
+                                    cursor: isCanceled ? 'default' : 'pointer',
+                                    transition: 'all 0.1s',
+                                    boxShadow: isCanceled ? 'none' : '0 2px 4px rgba(0,0,0,0.02)'
+                                  }}
+                                  onMouseDown={e => !isCanceled && (e.currentTarget.style.transform = 'scale(0.98)')}
+                                  onMouseUp={e => !isCanceled && (e.currentTarget.style.transform = 'scale(1)')}
+                                >
+                                  {/* 1行目：日付と金額 */}
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                                        {hDate.toLocaleDateString('ja-JP')}
+                                      </b>
+                                      {categoryMap[h.biz_type] && (
+                                        <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
+                                          {categoryMap[h.biz_type].slice(0, 4)}
+                                        </span>
+                                      )}
+                                      {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>キャンセル</span>}
+                                    </div>
+                                    <span style={{ color: isCanceled ? '#94a3b8' : '#d34817', fontWeight: 'bold', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                      ¥{(h.sale_record?.total_amount || h.total_price || d.totalPrice).toLocaleString()}
+                                    </span>
+                                  </div>
+                                  <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                    <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {h.staffs?.name || 'フリー'}</span>
+                                    {d.menuName}
+                                  </p>
+
+                                  {/* 🛍 商品リスト */}
+                                  {d.products.length > 0 && (
+                                    <div style={{ marginTop: '5px', fontSize: '0.75rem', color: isCanceled ? '#cbd5e1' : '#008000', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <ShoppingBag size={12} />
+                                      <span>商品: {d.products.map(p => `${p.name}${p.quantity > 1 ? `(x${p.quantity})` : ''}`).join(', ')}</span>
+                                    </div>
+                                  )}
+
+                                  {/* ⚙️ 調整リスト */}
+                                  {d.adjustments.length > 0 && (
+                                    <div style={{ marginTop: '3px', fontSize: '0.7rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                      <span>⚙️ 調整: {d.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    ));
+                  })()}
                   </div>
                 </div>
               </div>
@@ -4081,5 +4188,8 @@ const badgeStyle = (color) => ({
   boxShadow: `0 2px 4px ${color}33`,
   marginLeft: '10px' // お名前の横に少し隙間を作る
 });
-
+const tdStyle = { 
+  padding: '10px', 
+  borderBottom: '1px solid #eee' 
+};
 export default AdminReservations;
