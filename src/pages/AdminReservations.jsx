@@ -819,6 +819,23 @@ setSalesRecords(salesRes.data || []);
     const { data: latestCust } = await supabase.from('customers').select('*').eq('id', customer.id).maybeSingle();
     if (!latestCust) return;
 
+    // 🚀 🆕 ❸-1. スタッフID決定ロジックを追加
+    // 直近の予約履歴からスタッフIDを取得
+    const { data: recentRes } = await supabase
+      .from('reservations')
+      .select('staff_id')
+      .eq('customer_id', customer.id)
+      .order('start_time', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const lastStaffId = recentRes?.staff_id;
+    const defaultStaff = staffs.find(s => s.is_default_for_admin);
+    const defaultStaffId = defaultStaff?.id;
+    
+    // 優先順位: 直近履歴のスタッフ > デフォルトスタッフ
+    const determinedStaffId = lastStaffId || defaultStaffId || null;
+
     let facData = null;
     if (latestCust.is_facility) {
       const { data } = await supabase.from('facility_users').select('*').eq('facility_name', latestCust.name).maybeSingle();
@@ -826,7 +843,7 @@ setSalesRecords(salesRes.data || []);
     }
 
     const isFac = latestCust.is_facility === true;
-    const searchName = (latestCust.name || "").trim(); // 💡 空白を除去して確実にヒットさせる
+    const searchName = (latestCust.name || "").trim();
 
     setEditFields({ 
       is_facility: isFac,
@@ -843,7 +860,8 @@ setSalesRecords(salesRes.data || []);
     });
 
     setSelectedCustomer(latestCust);
-    setSelectedRes(null);
+    // 🚀 ここで、スタッフIDをセットしたオブジェクトを setSelectedRes に入れる
+    setSelectedRes({ staff_id: determinedStaffId });
 
     let historyData = [];
     if (isFac) {
@@ -877,6 +895,8 @@ setSalesRecords(salesRes.data || []);
       });
       setCustomerHistory([]); setShowDetailModal(true); return;
     }
+
+    
 
     // 💡 2. 予約データ(res)から情報を取得
     const isFac = cust?.is_facility || 
@@ -2877,15 +2897,43 @@ else if (
                     <button onClick={handleUpdateCustomer} style={{ width: '100%', padding: '14px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', marginTop: '15px' }}>情報を保存</button>
 
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '10px' }}>
-                      <button 
-                        onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
-                        disabled={selectedRes?.status === 'canceled'}
-                        style={{ padding: '12px', background: selectedRes?.status === 'canceled' ? '#f1f5f9' : '#fff', color: selectedRes?.status === 'canceled' ? '#94a3b8' : '#8d5c08', border: `1px solid ${selectedRes?.status === 'canceled' ? '#e2e8f0' : '#8d5c08'}`, borderRadius: '10px', fontWeight: 'bold', cursor: selectedRes?.status === 'canceled' ? 'default' : 'pointer', fontSize: '0.8rem' }}
-                      >
-                        {selectedRes?.status === 'canceled' ? 'キャンセル済み' : '当日キャンセル'}
-                      </button>
-                      <button onClick={() => deleteRes(selectedRes.id)} style={{ padding: '12px', background: '#e0dddd8d', color: '#780606', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>消去 & 掃除</button>
-                    </div>
+  <button 
+    onClick={() => selectedRes?.status !== 'canceled' && cancelRes(selectedRes.id)} 
+    // 💡 顧客マスター編集時は disabled にする
+    disabled={showCustomerModal || selectedRes?.status === 'canceled'}
+    style={{ 
+      padding: '12px', 
+      background: (showCustomerModal || selectedRes?.status === 'canceled') ? '#f1f5f9' : '#fff', 
+      color: (showCustomerModal || selectedRes?.status === 'canceled') ? '#94a3b8' : '#8d5c08', 
+      border: `1px solid ${(showCustomerModal || selectedRes?.status === 'canceled') ? '#e2e8f0' : '#8d5c08'}`, 
+      borderRadius: '10px', 
+      fontWeight: 'bold', 
+      cursor: (showCustomerModal || selectedRes?.status === 'canceled') ? 'default' : 'pointer', 
+      fontSize: '0.8rem',
+      transition: 'all 0.2s'
+    }}
+  >
+    {selectedRes?.status === 'canceled' ? 'キャンセル済み' : '当日キャンセル'}
+  </button>
+  
+  <button 
+    onClick={() => !showCustomerModal && deleteRes(selectedRes.id)} 
+    disabled={showCustomerModal} // 💡 顧客マスター編集時は押せないように
+    style={{ 
+      padding: '12px', 
+      background: showCustomerModal ? '#f1f5f9' : '#e0dddd8d', 
+      color: showCustomerModal ? '#94a3b8' : '#780606', 
+      border: 'none', 
+      borderRadius: '10px', 
+      fontWeight: 'bold', 
+      cursor: showCustomerModal ? 'default' : 'pointer', 
+      fontSize: '0.75rem',
+      transition: 'all 0.2s'
+    }}
+  >
+    消去 & 掃除
+  </button>
+</div>
                   </div>
                 </div>
 
