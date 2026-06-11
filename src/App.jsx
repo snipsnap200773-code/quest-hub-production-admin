@@ -31,6 +31,9 @@ import FacilityManagement from './pages/admin/FacilityManagement';
 import FacilityLogin from './pages/facility/FacilityLogin';
 import FacilityPortal from './pages/facility/FacilityPortal';
 
+// --- 🔮 ゲームマスター管理 ---
+import GameMasterDashboard from './pages/admin/GameMaster/GameMasterDashboard';
+
 // --- 🛠️ 共通コンポーネント ---
 import FacilitySearch from './components/FacilitySearch';
 import ShopSearch from './components/ShopSearch';
@@ -73,6 +76,9 @@ function App() {
         
         {/* 🕵️ 三土手さん専用 */}
         <Route path="/super-admin-216-midote-snipsnap-dmaaaahkmm" element={<SuperAdmin />} />
+
+        {/* 🔮 ゲームマスター専用シークレットルート */}
+        <Route path="/game-master-secret-dashboard" element={<GameMasterDashboard />} />
 
         {/* --- 📊 管理エリア --- */}
         <Route path="/admin/:shopId/dashboard" element={<AdminDashboard />} />
