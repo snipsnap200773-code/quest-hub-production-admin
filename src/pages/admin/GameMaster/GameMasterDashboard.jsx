@@ -355,7 +355,7 @@ const GameMasterDashboard = () => {
                 </div>
               </div>
 
-              <div><label style={labelStyle}>図鑑解説・モンスター紹介文</label><textarea rows="2" placeholder="RO風のフレイバーテキストを自由に記述..." value={unitForm.description} onChange={(e) => setUnitForm({...unitForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
+              <div><label style={labelStyle}>図鑑解説・モンスター紹介文</label><textarea rows="2" placeholder="RO風のフレイバーテキストを自由に記述..." value={unitForm.description || ''} onChange={(e) => setUnitForm({...unitForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
               <button type="submit" style={saveBtnStyle}>神の権能：RO式ユニットを創造（ID自動）</button>
             </form>
           )}
@@ -417,7 +417,7 @@ const GameMasterDashboard = () => {
                 <div><label style={labelStyle}>レアリティ</label><select value={itemForm.rarity} onChange={(e) => setItemForm({...itemForm, rarity: e.target.value})} style={inputStyle}><option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option></select></div>
                 <div><label style={labelStyle}>売却価格 (Zeny/G)</label><input type="number" value={itemForm.sell_price} onChange={(e) => setItemForm({...itemForm, sell_price: e.target.value})} style={inputStyle} /></div>
               </div>
-              <div><label style={labelStyle}>アイテム効果説明文テキスト</label><textarea rows="2" placeholder="例：武器に挿すと動物系モンスターへの物理ダメージ+20%" value={itemForm.description} onChange={(e) => setItemForm({...itemForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
+              <div><label style={labelStyle}>アイテム効果説明文テキスト</label><textarea rows="2" placeholder="例：武器に挿すと動物系モンスターへの物理ダメージ+20%" value={itemForm.description || ''} onChange={(e) => setItemForm({...itemForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
               <button type="submit" style={saveBtnStyle}>新アイテムを世界に創造（ID自動）</button>
             </form>
           )}
@@ -431,7 +431,7 @@ const GameMasterDashboard = () => {
                 <div><label style={{...labelStyle, color: '#38bdf8'}}>消費SP</label><input type="number" value={skillForm.sp_cost} onChange={(e) => setSkillForm({...skillForm, sp_cost: e.target.value})} style={inputStyle} /></div>
                 <div><label style={labelStyle}>基礎攻撃倍率/回復量</label><input type="number" value={skillForm.effect_value} onChange={(e) => setSkillForm({...skillForm, effect_value: e.target.value})} style={inputStyle} /></div>
               </div>
-              <div><label style={labelStyle}>スキル詳細説明文</label><textarea rows="2" placeholder="消費SPや追加効果の仕様など..." value={skillForm.description} onChange={(e) => setSkillForm({...skillForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
+              <div><label style={labelStyle}>スキル詳細説明文</label><textarea rows="2" placeholder="消費SPや追加効果の仕様など..." value={skillForm.description || ''} onChange={(e) => setSkillForm({...skillForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
               <button type="submit" style={saveBtnStyle}>新スキル知識を創造（ID自動）</button>
             </form>
           )}
