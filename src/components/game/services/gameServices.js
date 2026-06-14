@@ -9,12 +9,76 @@ export const calculateRoStatus = (charData, equips = {}) => {
   const baseLv = charData.level || 1;
   const job = charData.meta?.job || 'ノービス';
 
-  const str = (charData.meta?.stat_str || 1) + (charData.bonus?.str || 0);
-  const agi = (charData.meta?.stat_agi || 1) + (charData.bonus?.agi || 0);
-  const vit = (charData.meta?.stat_vit || 1) + (charData.bonus?.vit || 0);
-  const int = (charData.meta?.stat_int || 1) + (charData.bonus?.int || 0);
-  const dex = (charData.meta?.stat_dex || 1) + (charData.bonus?.dex || 0);
-  const luk = (charData.meta?.stat_luk || 1) + (charData.bonus?.luk || 0);
+  // 🔮 全9部位の装備から、刺さっているすべてのカードオブジェクトをフラットな配列として1つに集約
+  const allAttachedCards = Object.values(equips)
+    .filter(eq => eq && Array.isArray(eq.cards))
+    .flatMap(eq => eq.cards);
+
+  // 🔮 カードによるステータス上昇値を格納するバッファを初期化
+  const cardStats = { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0, hp: 0, sp: 0, critical: 0, flee: 0, hit: 0, mdef: 0 };
+
+  // カードの効果をプランAの規格に従ってポチポチ集計
+  allAttachedCards.forEach(card => {
+    // 効果枠 ① の判定
+    if (card.card_effect_type === 'add_stat' && card.card_effect_target) {
+      const target = card.card_effect_target.trim().toLowerCase();
+      const val = Number(card.card_effect_value) || 0;
+      if (target === 'str') cardStats.str += val;
+      else if (target === 'agi') cardStats.agi += val;
+      else if (target === 'vit') cardStats.vit += val;
+      else if (target === 'int') cardStats.int += val;
+      else if (target === 'dex') cardStats.dex += val;
+      else if (target === 'luk') cardStats.luk += val;
+      else if (target === 'hp' || target === 'max_hp') cardStats.hp += val;
+      else if (target === 'sp' || target === 'max_sp') cardStats.sp += val;
+      else if (target === 'critical' || target === '致命打率') cardStats.critical += val;
+      else if (target === 'flee' || target === '回避') cardStats.flee += val;
+      else if (target === 'hit' || target === '命中') cardStats.hit += val;
+      else if (target === 'mdef') cardStats.mdef += val;
+    }
+    // 効果枠 ② の判定
+    if (card.card_effect_type_2 === 'add_stat' && card.card_effect_target_2) {
+      const target = card.card_effect_target_2.trim().toLowerCase();
+      const val = Number(card.card_effect_value_2) || 0;
+      if (target === 'str') cardStats.str += val;
+      else if (target === 'agi') cardStats.agi += val;
+      else if (target === 'vit') cardStats.vit += val;
+      else if (target === 'int') cardStats.int += val;
+      else if (target === 'dex') cardStats.dex += val;
+      else if (target === 'luk') cardStats.luk += val;
+      else if (target === 'hp' || target === 'max_hp') cardStats.hp += val;
+      else if (target === 'sp' || target === 'max_sp') cardStats.sp += val;
+      else if (target === 'critical' || target === '致命打率') cardStats.critical += val;
+      else if (target === 'flee' || target === '回避') cardStats.flee += val;
+      else if (target === 'hit' || target === '命中') cardStats.hit += val;
+      else if (target === 'mdef') cardStats.mdef += val;
+    }
+    // 効果枠 ③ の判定
+    if (card.card_effect_type_3 === 'add_stat' && card.card_effect_target_3) {
+      const target = card.card_effect_target_3.trim().toLowerCase();
+      const val = Number(card.card_effect_value_3) || 0;
+      if (target === 'str') cardStats.str += val;
+      else if (target === 'agi') cardStats.agi += val;
+      else if (target === 'vit') cardStats.vit += val;
+      else if (target === 'int') cardStats.int += val;
+      else if (target === 'dex') cardStats.dex += val;
+      else if (target === 'luk') cardStats.luk += val;
+      else if (target === 'hp' || target === 'max_hp') cardStats.hp += val;
+      else if (target === 'sp' || target === 'max_sp') cardStats.sp += val;
+      else if (target === 'critical' || target === '致命打率') cardStats.critical += val;
+      else if (target === 'flee' || target === '回避') cardStats.flee += val;
+      else if (target === 'hit' || target === '命中') cardStats.hit += val;
+      else if (target === 'mdef') cardStats.mdef += val;
+    }
+  });
+
+  // 🔮 計算エンジンの基本ステータスに対して、集計したカード数値をダイレクトにマージ！
+  const str = (charData.meta?.stat_str || 1) + (charData.bonus?.str || 0) + cardStats.str;
+  const agi = (charData.meta?.stat_agi || 1) + (charData.bonus?.agi || 0) + cardStats.agi;
+  const vit = (charData.meta?.stat_vit || 1) + (charData.bonus?.vit || 0) + cardStats.vit;
+  const int = (charData.meta?.stat_int || 1) + (charData.bonus?.int || 0) + cardStats.int;
+  const dex = (charData.meta?.stat_dex || 1) + (charData.bonus?.dex || 0) + cardStats.dex;
+  const luk = (charData.meta?.stat_luk || 1) + (charData.bonus?.luk || 0) + cardStats.luk;
 
   // 🆕 9部位のスペックを集計
   const weaponAtk = equips.right_hand?.atk || 0;
@@ -28,13 +92,14 @@ export const calculateRoStatus = (charData, equips = {}) => {
   const accessoryAtk = equips.accessory?.atk || 0;
   
   const totalEquipDef = shieldDef + headDef + faceDef + bodyDef + gloveDef + garmentDef + shoesDef;
-  const totalEquipMdef = (equips.body?.mdef || 0) + (equips.head?.mdef || 0) + (equips.face?.mdef || 0);
+  const totalEquipMdef = (equips.body?.mdef || 0) + (equips.head?.mdef || 0) + (equips.face?.mdef || 0) + cardStats.mdef;
 
+  // 🔮 最終Derived計算式に対しても、カードのダイレクトパラメータ修正（Critical, Flee, Hit等）を美しくドッキング
   const atk = str + weaponAtk + Math.pow(Math.floor(str / 10), 2) + accessoryAtk;
   const def = Math.floor(vit * 0.5) + totalEquipDef;
-  const hit = baseLv + dex;
-  const flee = baseLv + agi;
-  const critical = Math.floor(luk * 0.3) + 1;
+  const hit = baseLv + dex + cardStats.hit;
+  const flee = baseLv + agi + cardStats.flee;
+  const critical = Math.floor(luk * 0.3) + 1 + cardStats.critical;
   const matk = int + Math.pow(Math.floor(int / 7), 2);
   const mdef = Math.floor(int * 0.5) + totalEquipMdef;
 
@@ -43,7 +108,13 @@ export const calculateRoStatus = (charData, equips = {}) => {
   if (job === 'ソードマン') baseAspd = 152;
   const aspd = Math.min(190, baseAspd + agi * 0.5);
 
-  return { atk, def, hit, flee, critical, matk, mdef, aspd, guild_name: charData.guild_name || '無所属' };
+  // 🔮 🆕 最大HP・最大SPの「固定値加算効果（HP+100など）」もエンジン出力に乗せて完璧に外へ解放！
+  return { 
+    atk, def, hit, flee, critical, matk, mdef, aspd, 
+    guild_name: charData.guild_name || '無所属',
+    card_hp: cardStats.hp,
+    card_sp: cardStats.sp
+  };
 };
 
 
@@ -68,24 +139,33 @@ export const gameServices = {
 
       if (error) throw error;
 
-      // 🎒 アイテムマスターデータを全取得して、装備のテキストIDとメモリ上でカチッとガッちゃんこ結合します
+      // 🎒 アイテムマスターデータを全取得して、装備のテキストIDとメモリ上で結合します
       const { data: allItems } = await supabase.from('game_master_items').select('*');
       const itemMap = allItems ? Object.fromEntries(allItems.map(i => [i.id, i])) : {};
+
+      // 🎴 【神最適化・一撃修正】.select('*') を確実に滑り込ませてエラーを完全撃破！
+      const { data: allUserCards } = await supabase
+        .from('game_character_cards')
+        .select('*')
+        .eq('user_id', userId);
 
       return data.map(ch => {
         const master = ch.game_master_units;
         
-        // 各部位の装備オブジェクトを特定
+        // 🔮 このキャラクターに刺さっているカードだけをメモリ上で安全にフィルタリング（awaitを不要に！）
+        const charCards = (allUserCards || []).filter(c => c.character_id === ch.id);
+        
+        // 各部位の装備オブジェクトを特定し、その装備に刺さっているカードリストも内部に自動集計してドッキング！
         const equips = {
-          right_hand: itemMap[ch.equip_right_hand] || null,
-          left_hand: itemMap[ch.equip_left_hand] || null,
-          head: itemMap[ch.equip_head] || null,
-          face: itemMap[ch.equip_face] || null,
-          body: itemMap[ch.equip_body] || null,
-          glove: itemMap[ch.equip_glove] || null,
-          garment: itemMap[ch.equip_garment] || null,
-          shoes: itemMap[ch.equip_shoes] || null,
-          accessory: itemMap[ch.equip_accessory] || null,
+          right_hand: itemMap[ch.equip_right_hand] ? { ...itemMap[ch.equip_right_hand], cards: charCards.filter(c => c.slot_key === 'right_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          left_hand: itemMap[ch.equip_left_hand] ? { ...itemMap[ch.equip_left_hand], cards: charCards.filter(c => c.slot_key === 'left_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          head: itemMap[ch.equip_head] ? { ...itemMap[ch.equip_head], cards: charCards.filter(c => c.slot_key === 'head').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          face: itemMap[ch.equip_face] ? { ...itemMap[ch.equip_face], cards: charCards.filter(c => c.slot_key === 'face').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          body: itemMap[ch.equip_body] ? { ...itemMap[ch.equip_body], cards: charCards.filter(c => c.slot_key === 'body').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          glove: itemMap[ch.equip_glove] ? { ...itemMap[ch.equip_glove], cards: charCards.filter(c => c.slot_key === 'glove').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          garment: itemMap[ch.equip_garment] ? { ...itemMap[ch.equip_garment], cards: charCards.filter(c => c.slot_key === 'garment').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          shoes: itemMap[ch.equip_shoes] ? { ...itemMap[ch.equip_shoes], cards: charCards.filter(c => c.slot_key === 'shoes').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          accessory: itemMap[ch.equip_accessory] ? { ...itemMap[ch.equip_accessory], cards: charCards.filter(c => c.slot_key === 'accessory').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
         };
 
         // 基準キャラクター状態の組み立て
@@ -117,7 +197,7 @@ export const gameServices = {
             dex: ch.bonus_dex,
             luk: ch.bonus_luk
           },
-          equips: equips, // 7部位の装備生データ
+          equips: equips, // 9部位のカード内蔵型装備データ
           meta: master
         };
 
@@ -194,14 +274,14 @@ export const gameServices = {
       }
 
       // 2. 新しい装備を「着ける」場合 ➔ 共有倉庫の在庫を1個減らす（💡エラーで止まらないよう安全に配強化）
-      if (newItemIdOrNull) {
-        console.log(`🎒 共有倉庫からアイテム [${newItemIdOrNull}] の在庫を 1 減らします...`);
+      if (normalizedNewItemId) {
+        console.log(`🎒 共有倉庫からアイテム [${normalizedNewItemId}] の在庫を 1 減らします...`);
         
         // ユーザーIDの不一致に備え、item_id の一致を最優先で検索
         const { data: inv } = await supabase
           .from('game_inventory')
           .select('*')
-          .eq('item_id', newItemIdOrNull)
+          .eq('item_id', normalizedNewItemId)
           .maybeSingle();
 
         if (inv && inv.count > 0) {
@@ -235,7 +315,7 @@ export const gameServices = {
       console.log(`⚡ Supabaseの game_characters に対して直撃更新を実行中...`);
       
       const updateData = {};
-      updateData[finalColumnName] = newItemIdOrNull;
+      updateData[finalColumnName] = normalizedNewItemId;
 
       const { data, error: updateErr } = await supabase
         .from('game_characters')
@@ -260,13 +340,17 @@ export const gameServices = {
    */
   async getPlayerInventory(userId) {
     try {
+      // 🔮 JavaScript側のコメントとして外側に記述すれば絶対に安全です
       const { data, error } = await supabase
         .from('game_inventory')
         .select(`
           *,
           game_master_items!game_inventory_item_id_fkey (
             name, item_type, item_subtype, weapon_range, slot_count, rarity, description,
-            atk, def, mdef, weapon_level, equip_level_req, job_restriction, weight, penalty_str
+            atk, def, mdef, weapon_level, equip_level_req, job_restriction, weight, penalty_str,
+            card_effect_type, card_effect_target, card_effect_value,
+            card_effect_type_2, card_effect_target_2, card_effect_value_2,
+            card_effect_type_3, card_effect_target_3, card_effect_value_3
           )
         `)
         .eq('user_id', userId);
@@ -368,8 +452,6 @@ export const gameServices = {
             user_id: userId, 
             item_id: itemMasterId, 
             count: amount 
-            // 💡 もしテーブルの id が自動生成になっていない環境の場合は、以下を有効にします
-            // id: `inv_${Date.now()}_${Math.random().toString(36).substr(2, 5)}`
           });
         if (insertErr) throw insertErr;
       }
@@ -419,6 +501,120 @@ export const gameServices = {
     } catch (err) {
       console.error('⌛ 出撃状態更新失敗:', err);
       return { success: false, error: err.message };
+    }
+  },
+
+  // ─── 🎴 プランA仕様：ここからモンスターカード用の挿脱物流システムを完全統合！ ───
+
+  /**
+   * 🎴 カードを武具のスロット（穴）にパチッと挿し込む永続保存コミット
+   */
+  async insertCardToSlot(userId, characterId, slotKey, slotIndex, cardMasterId) {
+    try {
+      console.log("=== 🎴 カードスロット装着テスト開始 ===");
+      console.log("【入力データ】:", { userId, characterId, slotKey, slotIndex, cardMasterId });
+
+      if (!cardMasterId) throw new Error("挿入するカードのマスターIDが指定されていません。");
+
+      // 1. 共有倉庫（ギルド在庫）から、そのカードのストックを 1 減らす
+      const { data: inv, error: invErr } = await supabase
+        .from('game_inventory')
+        .select('*')
+        .eq('item_id', cardMasterId)
+        .maybeSingle();
+
+      if (!inv || inv.count <= 0) {
+        throw new Error("指定されたカードの在庫がギルド共有倉庫にありません。");
+      }
+
+      // 在庫をデクリメント
+      await supabase.from('game_inventory').update({ count: inv.count - 1 }).eq('id', inv.id);
+      console.log(`➔ 倉庫のカード在庫を1つ減らしました (残り: ${inv.count - 1}個)`);
+
+      // 2. スロット分離テーブル（game_character_cards）に対してUpsert（直撃挿入）を実行
+      const { data, error: cardInsertErr } = await supabase
+        .from('game_character_cards')
+        .upsert({
+          user_id: userId,
+          character_id: characterId,
+          slot_key: slotKey,
+          slot_index: Number(slotIndex),
+          card_master_id: cardMasterId
+        }, { onConflict: 'character_id,slot_key,slot_index' })
+        .select();
+
+      if (cardInsertErr) throw cardInsertErr;
+
+      console.log("🎯 【大成功】武具へのカード装着＆倉庫ストック連動が完了しました！", data);
+      console.log("=== 🎴 カードスロット装着テスト終了 ===");
+      return { success: true, data };
+
+    } catch (err) {
+      console.error('🚨 【カード装着エラー】:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * 🎴 武具のスロットからカードを「抜いて」共有倉庫へ現物を戻すロジック
+   */
+  async removeCardFromSlot(userId, characterId, slotKey, slotIndex, cardMasterId) {
+    try {
+      console.log("=== 🎴 カードスロット取り外しテスト開始 ===");
+      console.log("【入力データ】:", { userId, characterId, slotKey, slotIndex, cardMasterId });
+
+      // 1. スロットテーブルから該当のカードレコードを完全削除
+      const { error: deleteErr } = await supabase
+        .from('game_character_cards')
+        .delete()
+        .eq('character_id', characterId)
+        .eq('slot_key', slotKey)
+        .eq('slot_index', slotIndex);
+
+      if (deleteErr) throw deleteErr;
+      console.log("➔ スロットからカードデータを消去しました。");
+
+      // 2. 共有倉庫へカードの現物ストックを1つ戻す
+      const { data: inv, error: invSelectErr } = await supabase
+        .from('game_inventory')
+        .select('*')
+        .eq('item_id', cardMasterId)
+        .maybeSingle();
+
+      if (inv) {
+        await supabase.from('game_inventory').update({ count: inv.count + 1 }).eq('id', inv.id);
+        console.log(`➔ 倉庫のカードストックを1つ戻しました (現在: ${inv.count + 1}個)`);
+      } else {
+        // 万が一倉庫からレコード自体が消えていた場合は新規復元
+        await supabase.from('game_inventory').insert({ user_id: userId, item_id: cardMasterId, count: 1 });
+        console.log(`➔ 倉庫にカードスロットを新規復元しました (1個)`);
+      }
+
+      console.log("🎯 【大成功】カードの取り外し＆倉庫への返却が完了しました！");
+      console.log("=== 🎴 カードスロット取り外しテスト終了 ===");
+      return { success: true };
+
+    } catch (err) {
+      console.error('🚨 【カード取り外しエラー】:', err);
+      return { success: false, error: err.message };
+    }
+  },
+
+  /**
+   * 🎴 キャラクターが現在身にまとっている全カード装着データを一括ロードする関数
+   */
+  async getCharacterEquippedCards(characterId) {
+    try {
+      const { data, error } = await supabase
+        .from('game_character_cards')
+        .select('*')
+        .eq('character_id', characterId);
+
+      if (error) throw error;
+      return data;
+    } catch (err) {
+      console.error('📋 カード装着データ取得失敗:', err);
+      return [];
     }
   }
 };

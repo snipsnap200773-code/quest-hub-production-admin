@@ -23,12 +23,11 @@ const GameMasterDashboard = () => {
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState('');
 
-  // フォーム初期状態（★三土手さん指定の9部位スロット名へ完全刷新！）
+  // フォーム初期状態
   const [unitForm, setUnitForm] = useState({
     name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '',
     base_level: 1, reward_exp: 10, reward_gold: 10, base_hp: 100, base_sp: 10,
     stat_str: 1, stat_agi: 1, stat_vit: 1, stat_int: 1, stat_dex: 1, stat_luk: 1,
-    // 🆕 9部位初期装備
     equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
     equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '',
     extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
@@ -40,6 +39,19 @@ const GameMasterDashboard = () => {
     atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0
   });
 
+  // 🔮 1枚のカードに3つの独立した効果（神のマルチスペック）を付与するState
+  const [cardEffectType1, setCardEffectType1] = useState('add_stat');
+  const [cardEffectTarget1, setCardEffectTarget1] = useState('hp');
+  const [cardEffectValue1, setCardEffectValue1] = useState(0);
+
+  const [cardEffectType2, setCardEffectType2] = useState('none');
+  const [cardEffectTarget2, setCardEffectTarget2] = useState('');
+  const [cardEffectValue2, setCardEffectValue2] = useState(0);
+
+  const [cardEffectType3, setCardEffectType3] = useState('none');
+  const [cardEffectTarget3, setCardEffectTarget3] = useState('');
+  const [cardEffectValue3, setCardEffectValue3] = useState(0);
+
   const [skillForm, setSkillForm] = useState({
     name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true
   });
@@ -47,12 +59,11 @@ const GameMasterDashboard = () => {
   const [existingRaces, setExistingRaces] = useState(['人間', '植物', '動物', '昆虫', '悪魔', '不死']);
   const [existingJobs, setExistingJobs] = useState(['全職業', 'ノービス', 'ソードマン', 'マジシャン', 'アコライト', 'シーフ', 'アーチャー', 'マーチャント']);
 
-  // 大分類が変わったら、連動して小分類の初期値を自動で切り替える
   const handleItemTypeChange = (type) => {
     setItemForm({
       ...itemForm,
       item_type: type,
-      item_subtype: SUBTYPE_OPTIONS[type][0] // 各リストの先頭を初期セット
+      item_subtype: SUBTYPE_OPTIONS[type][0]
     });
   };
 
@@ -95,7 +106,6 @@ const GameMasterDashboard = () => {
         stat_int: Number(unitForm.stat_int), stat_dex: Number(unitForm.stat_dex), stat_luk: Number(unitForm.stat_luk),
         extra_drop_chance: Number(unitForm.extra_drop_chance),
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
-        // 空文字を安全にNullエスケープ
         equip_right_hand: unitForm.equip_right_hand || null, equip_left_hand: unitForm.equip_left_hand || null,
         equip_head: unitForm.equip_head || null, equip_face: unitForm.equip_face || null,
         equip_body: unitForm.equip_body || null, equip_glove: unitForm.equip_glove || null,
@@ -114,15 +124,38 @@ const GameMasterDashboard = () => {
     e.preventDefault();
     const finalId = isEditing ? editId : `item_${Date.now()}`;
     try {
+      const isCard = itemForm.item_type === 'card';
+
       const { error } = await supabase.from('game_master_items').upsert({ 
         id: finalId, ...itemForm, 
         slot_count: Number(itemForm.slot_count), sell_price: Number(itemForm.sell_price),
-        atk: Number(itemForm.atk), def: Number(itemForm.def), mdef: Number(itemForm.mdef),
+        atk: isCard ? 0 : Number(itemForm.atk), 
+        def: isCard ? 0 : Number(itemForm.def), 
+        mdef: isCard ? 0 : Number(itemForm.mdef),
         weapon_level: Number(itemForm.weapon_level), equip_level_req: Number(itemForm.equip_level_req),
-        weight: Number(itemForm.weight), penalty_str: Number(itemForm.penalty_str)
+        weight: Number(itemForm.weight), penalty_str: Number(itemForm.penalty_str),
+        
+        // 🔮 トリプル効果スペックを一斉格納コミット
+        card_effect_type: isCard ? cardEffectType1 : null,
+        card_effect_target: isCard ? cardEffectTarget1 : null,
+        card_effect_value: isCard ? Number(cardEffectValue1) : 0,
+
+        card_effect_type_2: isCard && cardEffectType2 !== 'none' ? cardEffectType2 : null,
+        card_effect_target_2: isCard && cardEffectType2 !== 'none' ? cardEffectTarget2 : null,
+        card_effect_value_2: isCard && cardEffectType2 !== 'none' ? Number(cardEffectValue2) : 0,
+
+        card_effect_type_3: isCard && cardEffectType3 !== 'none' ? cardEffectType3 : null,
+        card_effect_target_3: isCard && cardEffectType3 !== 'none' ? cardEffectTarget3 : null,
+        card_effect_value_3: isCard && cardEffectType3 !== 'none' ? Number(cardEffectValue3) : 0
       });
       if (error) throw error;
       alert('アイテムデータを創造しました！');
+      
+      // 効果State群の初期化リセット
+      setCardEffectType1('add_stat'); setCardEffectTarget1('hp'); setCardEffectValue1(0);
+      setCardEffectType2('none'); setCardEffectTarget2(''); setCardEffectValue2(0);
+      setCardEffectType3('none'); setCardEffectTarget3(''); setCardEffectValue3(0);
+
       resetItemForm(); fetchData();
     } catch (err) { alert(err.message); }
   };
@@ -163,7 +196,14 @@ const GameMasterDashboard = () => {
     }); 
   };
   
-  const startEditItem = (item) => { setIsEditing(true); setEditId(item.id); setItemForm({ ...item }); };
+  const startEditItem = (item) => { 
+    setIsEditing(true); setEditId(item.id); setItemForm({ ...item }); 
+    if(item.item_type === 'card') {
+      setCardEffectType1(item.card_effect_type || 'add_stat'); setCardEffectTarget1(item.card_effect_target || 'hp'); setCardEffectValue1(item.card_effect_value || 0);
+      setCardEffectType2(item.card_effect_type_2 || 'none'); setCardEffectTarget2(item.card_effect_target_2 || ''); setCardEffectValue2(item.card_effect_value_2 || 0);
+      setCardEffectType3(item.card_effect_type_3 || 'none'); setCardEffectTarget3(item.card_effect_target_3 || ''); setCardEffectValue3(item.card_effect_value_3 || 0);
+    }
+  };
   const startEditSkill = (skill) => { setIsEditing(true); setEditId(skill.id); setSkillForm({ ...skill }); };
 
   const resetUnitForm = () => { 
@@ -182,6 +222,60 @@ const GameMasterDashboard = () => {
   const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0 }); };
   const resetSkillForm = () => { setIsEditing(false); setEditId(''); setSkillForm({ name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true }); };
 
+  // 🔮 ログリストにカードの効果を文字列表現にコンバートして一発で浮き出させる神ヘルパー関数
+  const renderCardEffectsLabel = (item) => {
+    if (item.item_type !== 'card') return `(ATK:${item.atk}/DEF:${item.def})`;
+    
+    const parse = (type, target, value) => {
+      if (!type || type === 'none') return null;
+      const targetLabel = target.toUpperCase();
+      if (type === 'add_stat') return `${targetLabel}+${value}`;
+      if (type === 'pct_hp_sp') return `${targetLabel.replace('_PCT','')}+${value}%`;
+      if (type === 'damage_size') return `${target}特効+${value}%`;
+      if (type === 'damage_race') return `${target}種族+${value}%`;
+      if (type === 'damage_element') return `${target}属性+${value}%`;
+      if (type === 'resist_status') return `${target}耐性+${value}%`;
+      if (type === 'inflict_status') return `${target}付与+${value}%`;
+      if (type === 'hp_drain') return `HP吸収+${value}%`;
+      return `${target}:${value}`;
+    };
+
+    const eff1 = parse(item.card_effect_type, item.card_effect_target, item.card_effect_value);
+    const eff2 = parse(item.card_effect_type_2, item.card_effect_target_2, item.card_effect_value_2);
+    const eff3 = parse(item.card_effect_type_3, item.card_effect_target_3, item.card_effect_value_3);
+
+    const activeEffects = [eff1, eff2, eff3].filter(Boolean);
+    return activeEffects.length > 0 ? `🔮[${activeEffects.join(' | ')}]` : '(効果未設定)';
+  };
+
+  // 共通の対象セレクトオプションの描画コンポーネント（DRY原則で綺麗に共通化）
+  const RenderTargetOptions = ({ type }) => (
+    <>
+      <option value="">-- 対象を選択 --</option>
+      {type === 'add_stat' && (
+        <>
+          <option value="hp">最大HP</option><option value="sp">最大SP</option>
+          <option value="str">STR（腕力）</option><option value="agi">AGI（敏捷）</option>
+          <option value="vit">VIT（体力）</option><option value="int">INT（知力）</option>
+          <option value="dex">DEX（技量）</option><option value="luk">LUK（幸運）</option>
+          <option value="critical">クリティカル率</option><option value="flee">Flee（回避）</option>
+          <option value="mdef">MDEF（魔法防御）</option><option value="hit">Hit（命中）</option>
+        </>
+      )}
+      {type === 'pct_hp_sp' && (
+        <>
+          <option value="hp_pct">最大HP +○○%</option>
+          <option value="sp_pct">最大SP +○○%</option>
+        </>
+      )}
+      {type === 'damage_size' && (<><option value="小型">小型</option><option value="中型">中型</option><option value="大型">大型</option></>)}
+      {type === 'damage_race' && (<><option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option><option value="植物">植物</option><option value="昆虫">昆虫</option><option value="魚貝">魚貝</option><option value="悪魔">悪魔</option><option value="人間">人間</option><option value="天使">天使</option><option value="竜族">竜族</option></>)}
+      {type === 'damage_element' && (<><option value="無">無</option><option value="水">水</option><option value="地">地</option><option value="火">火</option><option value="風">風</option><option value="毒">毒</option><option value="聖">聖</option><option value="闇">闇</option><option value="念">念</option><option value="不死">不死</option></>)}
+      {(type === 'resist_status' || type === 'inflict_status') && (<><option value="スタン">スタン</option><option value="凍結">凍結</option><option value="毒">毒</option><option value="暗闇">暗闇</option><option value="睡眠">睡眠</option><option value="沈滅">沈黙</option><option value="呪い">呪い</option><option value="石化">石化</option></>)}
+      {type === 'hp_drain' && (<option value="physical_attack">物理攻撃時（発動確率：○○%）</option>)}
+    </>
+  );
+
   return (
     <div style={{ backgroundColor: '#0b0f19', minHeight: '100vh', color: '#f1f5f9', padding: '3vw', boxSizing: 'border-box' }}>
       <style>{`
@@ -189,15 +283,13 @@ const GameMasterDashboard = () => {
         .gm-flex-head { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 25px; border-bottom: 2px solid #1e293b; padding-bottom: 15px; }
         .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #0b0f19; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
         .equip-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; background: #0b0f19; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
-        .suggest-tag { background: #1e293b; color: #ccc; font-size: 0.68rem; padding: 2px 6px; border-radius: 4px; cursor: pointer; border: 1px solid #334155; }
-        .suggest-tag:hover { border-color: #f59e0b; color: #f59e0b; }
         @media (max-width: 1024px) { .gm-grid { grid-template-columns: 1fr; } .gm-flex-head { flex-direction: column; align-items: flex-start; gap: 15px; } .equip-grid { grid-template-columns: 1fr; } }
       `}</style>
 
       <div className="gm-flex-head">
         <div>
           <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#f59e0b', margin: 0 }}>🔮 QUEST HUB - RO EDITION GM CONTROL</h1>
-          <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 0 0' }}>三土手創世神仕様：9大装備スロット固定＆武具小分類インテリジェントプルダウン</p>
+          <p style={{ fontSize: '0.8rem', color: '#64748b', margin: '4px 0 0 0' }}>三土手創世神仕様：トリプル特殊効果内蔵カード創造＆ログ一発エンライトメント</p>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
           <button onClick={handleBackToLogin} style={{ background: '#ef4444', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 14px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}><LogOut size={14} /> 終了</button>
@@ -219,7 +311,10 @@ const GameMasterDashboard = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={labelStyle}>所属側</label>
-                  <select value={unitForm.unit_type} onChange={(e) => setUnitForm({...unitForm, unit_type: e.target.value})} style={inputStyle}>
+                  <select value={unitForm.unit_type} onChange={(e) => {
+                    const nextType = e.target.value;
+                    setUnitForm({ ...unitForm, unit_type: nextType, race: nextType === 'enemy' ? '無形' : '人間' });
+                  }} style={inputStyle}>
                     <option value="playable">プレイヤー側（仲間キャラクター）</option>
                     <option value="enemy">エネミー側（敵モンスター）</option>
                   </select>
@@ -233,7 +328,13 @@ const GameMasterDashboard = () => {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div>
                   <label style={labelStyle}>種族属性</label>
-                  <input type="text" required value={unitForm.race} onChange={(e) => setUnitForm({...unitForm, race: e.target.value})} style={inputStyle} />
+                  {unitForm.unit_type === 'enemy' ? (
+                    <select value={unitForm.race} onChange={(e) => setUnitForm({...unitForm, race: e.target.value})} style={inputStyle}>
+                      <option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option><option value="植物">植物</option><option value="昆虫">昆虫</option><option value="魚貝">魚貝</option><option value="悪魔">悪魔</option><option value="人間">人間</option><option value="天使">天使</option><option value="竜族">竜族</option>
+                    </select>
+                  ) : (
+                    <input type="text" required placeholder="例: 人間" value={unitForm.race} onChange={(e) => setUnitForm({...unitForm, race: e.target.value})} style={inputStyle} />
+                  )}
                 </div>
                 <div>
                   <label style={labelStyle}>職業・クラス</label>
@@ -273,7 +374,6 @@ const GameMasterDashboard = () => {
                 </div>
               )}
 
-              {/* 🆕 三土手さん指定：完全新生9部位初期装備枠 */}
               <div>
                 <label style={{ ...labelStyle, color: '#a78bfa', marginBottom: '4px' }}>🛡️ 9部位装備品スロット初期設定</label>
                 <div className="equip-grid">
@@ -358,7 +458,6 @@ const GameMasterDashboard = () => {
             </form>
           )}
 
-          {/* タブ2: アイテム創造フォーム（★三土手さん指定：小分類完全プルダウン化！） */}
           {activeTab === 'items' && (
             <form onSubmit={handleItemSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -380,7 +479,6 @@ const GameMasterDashboard = () => {
 
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px' }}>
                 <div>
-                  {/* 🆕 手入力を廃止し、大分類に完全同期するクリーンな選択リスト(Select)へ変貌！ */}
                   <label style={labelStyle}>武具小分類（選択式）</label>
                   <select value={itemForm.item_subtype} onChange={(e) => setItemForm({...itemForm, item_subtype: e.target.value})} style={inputStyle}>
                     {SUBTYPE_OPTIONS[itemForm.item_type].map(sub => (
@@ -396,28 +494,119 @@ const GameMasterDashboard = () => {
                 </div>
               </div>
 
-              <div style={{ background: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold' }}>⚔️ 武具・カードのRO式スペック詳細設定</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                  <div><label style={labelStyle}>ATK</label><input type="number" value={itemForm.atk} onChange={(e) => setItemForm({...itemForm, atk: e.target.value})} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>DEF</label><input type="number" value={itemForm.def} onChange={(e) => setItemForm({...itemForm, def: e.target.value})} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>MDEF</label><input type="number" value={itemForm.mdef} onChange={(e) => setItemForm({...itemForm, mdef: e.target.value})} style={inputStyle} /></div>
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
-                  <div>
-                    <label style={labelStyle}>武器レベル (1〜4)</label>
-                    <select value={itemForm.weapon_level} onChange={(e) => setItemForm({...itemForm, weapon_level: Number(e.target.value)})} style={inputStyle}>
-                      <option value="1">Lv.1</option><option value="2">Lv.2</option><option value="3">Lv.3</option><option value="4">Lv.4</option>
-                    </select>
+              {/* 🔮 【神改修】アイテム大分類がカードの場合、最大3連の特殊マルチスロット設定UIを展開 */}
+              {itemForm.item_type === 'card' ? (
+                <div style={{ background: '#0f172a', border: '1px dashed #f59e0b', padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold' }}>🔮 モンスターカード専用・トリプル特殊効果設定</span>
+                  <span style={{ fontSize: '0.6rem', color: '#64748b' }}>※1枚のカードに最大3つまで独立したロマン効果を同時付与できます。</span>
+
+                  {/* ─── 効果スロット1 ─── */}
+                  <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#ffd700', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>【効果枠 ①】</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <select value={cardEffectType1} onChange={(e) => setCardEffectType1(e.target.value)} style={inputStyle}>
+                          <option value="add_stat">ステータス固定加算（+○○）</option>
+                          <option value="pct_hp_sp">HP・SP割合上昇（+○○%）</option>
+                          <option value="damage_size">モンスターサイズ特効（+○○%）</option>
+                          <option value="damage_race">モンスター種族特効（+○○%）</option>
+                          <option value="damage_element">モンスター属性特効（+○○%）</option>
+                          <option value="resist_status">状態異常耐性（+○○%）</option>
+                          <option value="inflict_status">状態異常付与確率（+○○%）</option>
+                          <option value="hp_drain">HP吸収（確率○○%）</option>
+                        </select>
+                      </div>
+                      <div>
+                        <select value={cardEffectTarget1} onChange={(e) => setCardEffectTarget1(e.target.value)} style={inputStyle}>
+                          <RenderTargetOptions type={cardEffectType1} />
+                        </select>
+                      </div>
+                      <div>
+                        <input type="number" value={cardEffectValue1} onChange={(e) => setCardEffectValue1(e.target.value)} placeholder="数値" style={inputStyle} />
+                      </div>
+                    </div>
                   </div>
-                  <div><label style={labelStyle}>重量</label><input type="number" value={itemForm.weight} onChange={(e) => setItemForm({...itemForm, weight: e.target.value})} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>ペナ解消必要STR</label><input type="number" value={itemForm.penalty_str} onChange={(e) => setItemForm({...itemForm, penalty_str: e.target.value})} style={inputStyle} /></div>
+
+                  {/* ─── 効果スロット2 ─── */}
+                  <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+                    <span style={{ fontSize: '0.65rem', color: '#ba9a6f', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>【効果枠 ②】</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <select value={cardEffectType2} onChange={(e) => setCardEffectType2(e.target.value)} style={inputStyle}>
+                          <option value="none">なし (不活性)</option>
+                          <option value="add_stat">ステータス固定加算（+○○）</option>
+                          <option value="pct_hp_sp">HP・SP割合上昇（+○○%）</option>
+                          <option value="damage_size">モンスターサイズ特効（+○○%）</option>
+                          <option value="damage_race">モンスター種族特効（+○○%）</option>
+                          <option value="damage_element">モンスター属性特効（+○○%）</option>
+                          <option value="resist_status">状態異常耐性（+○○%）</option>
+                          <option value="inflict_status">状態異常付与確率（+○○%）</option>
+                          <option value="hp_drain">HP吸収（確率○○%）</option>
+                        </select>
+                      </div>
+                      <div>
+                        <select value={cardEffectTarget2} onChange={(e) => setCardEffectTarget2(e.target.value)} style={inputStyle} disabled={cardEffectType2 === 'none'}>
+                          <RenderTargetOptions type={cardEffectType2} />
+                        </select>
+                      </div>
+                      <div>
+                        <input type="number" value={cardEffectValue2} onChange={(e) => setCardEffectValue2(e.target.value)} placeholder="数値" style={inputStyle} disabled={cardEffectType2 === 'none'} />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ─── 効果スロット3 ─── */}
+                  <div>
+                    <span style={{ fontSize: '0.65rem', color: '#ba9a6f', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>【効果枠 ③】</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <select value={cardEffectType3} onChange={(e) => setCardEffectType3(e.target.value)} style={inputStyle}>
+                          <option value="none">なし (不活性)</option>
+                          <option value="add_stat">ステータス固定加算（+○○）</option>
+                          <option value="pct_hp_sp">HP・SP割合上昇（+○○%）</option>
+                          <option value="damage_size">モンスターサイズ特効（+○○%）</option>
+                          <option value="damage_race">モンスター種族特効（+○○%）</option>
+                          <option value="damage_element">モンスター属性特効（+○○%）</option>
+                          <option value="resist_status">状態異常耐性（+○○%）</option>
+                          <option value="inflict_status">状態異常付与確率（+○○%）</option>
+                          <option value="hp_drain">HP吸収（確率○○%）</option>
+                        </select>
+                      </div>
+                      <div>
+                        <select value={cardEffectTarget3} onChange={(e) => setCardEffectTarget3(e.target.value)} style={inputStyle} disabled={cardEffectType3 === 'none'}>
+                          <RenderTargetOptions type={cardEffectType3} />
+                        </select>
+                      </div>
+                      <div>
+                        <input type="number" value={cardEffectValue3} onChange={(e) => setCardEffectValue3(e.target.value)} placeholder="数値" style={inputStyle} disabled={cardEffectType3 === 'none'} />
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
-                  <div><label style={labelStyle}>装備制限ベースLv</label><input type="number" min="1" value={itemForm.equip_level_req} onChange={(e) => setItemForm({...itemForm, equip_level_req: e.target.value})} style={inputStyle} /></div>
-                  <div><label style={labelStyle}>装備可能職業</label><input type="text" value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle} /></div>
+              ) : (
+                <div style={{ background: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold' }}>⚔️ 武具・カードのRO式スペック詳細設定</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                    <div><label style={labelStyle}>ATK</label><input type="number" value={itemForm.atk} onChange={(e) => setItemForm({...itemForm, atk: e.target.value})} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>DEF</label><input type="number" value={itemForm.def} onChange={(e) => setItemForm({...itemForm, def: e.target.value})} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>MDEF</label><input type="number" value={itemForm.mdef} onChange={(e) => setItemForm({...itemForm, mdef: e.target.value})} style={inputStyle} /></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                    <div>
+                      <label style={labelStyle}>武器レベル (1〜4)</label>
+                      <select value={itemForm.weapon_level} onChange={(e) => setItemForm({...itemForm, weapon_level: Number(e.target.value)})} style={inputStyle}>
+                        <option value="1">Lv.1</option><option value="2">Lv.2</option><option value="3">Lv.3</option><option value="4">Lv.4</option>
+                      </select>
+                    </div>
+                    <div><label style={labelStyle}>重量</label><input type="number" value={itemForm.weight} onChange={(e) => setItemForm({...itemForm, weight: e.target.value})} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>ペナ解消必要STR</label><input type="number" value={itemForm.penalty_str} onChange={(e) => setItemForm({...itemForm, penalty_str: e.target.value})} style={inputStyle} /></div>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
+                    <div><label style={labelStyle}>装備制限ベースLv</label><input type="number" min="1" value={itemForm.equip_level_req} onChange={(e) => setItemForm({...itemForm, equip_level_req: e.target.value})} style={inputStyle} /></div>
+                    <div><label style={labelStyle}>装備可能職業</label><input type="text" value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle} /></div>
+                  </div>
                 </div>
-              </div>
+              )}
 
               {itemForm.item_type === 'weapon' && (
                 <div style={{ background: '#0b0f19', padding: '10px', borderRadius: '8px', border: '1px solid #f59e0b' }}>
@@ -483,14 +672,17 @@ const GameMasterDashboard = () => {
             </div>
           </div>
 
-          <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px', maxHeight: '240px', overflowY: 'auto' }}>
+          <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px', maxHeight: '350px', overflowY: 'auto' }}>
             <h3 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '4px' }}><Shield size={14}/> 登録武具・アイテムリスト ({items.length}件)</h3>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
               {items.map(i => (
                 <div key={i.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '8px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div>
                     <strong style={{ fontSize: '0.85rem', color: i.rarity === 'legendary' ? '#f59e0b' : '#fff' }}>{i.name} {i.slot_count > 0 ? `[${i.slot_count}]` : ''}</strong>
-                    <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '6px' }}>{i.item_subtype} (ATK:{i.atk}/DEF:{i.def})</span>
+                    {/* 🔮 【神ビジュアライズ】作った瞬間・ロードした瞬間にカードの特殊能力がバシッと横並びで見える高級表示仕様 */}
+                    <span style={{ fontSize: '0.65rem', color: i.item_type === 'card' ? '#ffd700' : '#64748b', marginLeft: '6px', display: 'block', marginTop: '2px' }}>
+                      {i.item_type === 'card' ? '🃏 ' : ''}{i.item_subtype} {renderCardEffectsLabel(i)}
+                    </span>
                   </div>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button onClick={() => startEditItem(i)} style={iconBtnStyle}><Edit2 size={12}/></button>
