@@ -53,11 +53,40 @@ const GameMasterDashboard = () => {
   const [cardEffectValue3, setCardEffectValue3] = useState(0);
 
   const [skillForm, setSkillForm] = useState({
-    name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true
+    name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true,
+    job_requirement: '全職業', level_requirement: 1,
+    target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
+    effect_type: 'なし', effect_chance: 0, duration_turns: 0,
+    // 🔮 🆕 計算ルールの初期Stateを安全にドッキング（デフォルトはパーセンテージ）
+    value_type: 'percent'
   });
 
   const [existingRaces, setExistingRaces] = useState(['人間', '植物', '動物', '昆虫', '悪魔', '不死']);
-  const [existingJobs, setExistingJobs] = useState(['全職業', 'ノービス', 'ソードマン', 'マジシャン', 'アコライト', 'シーフ', 'アーチャー', 'マーチャント']);
+  
+  // 🔮 🆕 クエストハブ完全オリジナル：本家マネを完全脱却した、1次職＋新職テイマーの神配列にリフォーム！
+  const [existingJobs, setExistingJobs] = useState([
+    '全職業', 'ノービス', 'ファイター', 'メイジ', 'クレリック', 'スカウト', 'ハンター', 'トレーダー', 'テイマー'
+  ]);
+
+  // 🔍 🆕 三土手神専用：インテリジェント多次元検索・フィルタ・ソート制御用State群
+  const [unitSearch, setUnitSearch] = useState('');
+  const [unitFilterType, setUnitFilterType] = useState('all'); // all, playable, enemy
+  const [unitFilterJob, setUnitFilterJob] = useState('all');
+  const [unitFilterRace, setUnitFilterRace] = useState('all');
+  const [unitFilterElement, setUnitFilterElement] = useState('all');
+  const [unitFilterSize, setUnitFilterSize] = useState('all');
+  const [unitSortOrder, setUnitSortOrder] = useState('level_desc'); // level_desc, level_asc, name_asc
+
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemFilterType, setItemFilterType] = useState('all');
+  const [itemFilterRarity, setItemFilterRarity] = useState('all');
+
+  const [skillSearch, setSkillSearch] = useState('');
+  const [skillFilterJob, setSkillFilterJob] = useState('all');
+  const [skillFilterType, setSkillFilterType] = useState('all'); // all, magic, art
+  const [skillFilterEffect, setSkillFilterEffect] = useState('all');
+  const [skillFilterElement, setSkillFilterElement] = useState('all');
+  const [skillSortOrder, setSkillSortOrder] = useState('name_asc'); // name_asc, sp_desc, lv_asc
 
   const handleItemTypeChange = (type) => {
     setItemForm({
@@ -165,7 +194,21 @@ const GameMasterDashboard = () => {
     const finalId = isEditing ? editId : `skill_${Date.now()}`;
     try {
       const { error } = await supabase.from('game_master_skills').upsert({ 
-        id: finalId, ...skillForm, sp_cost: Number(skillForm.sp_cost), effect_value: Number(skillForm.effect_value), cast_time: Number(skillForm.cast_time)
+        id: finalId, ...skillForm, 
+        sp_cost: Number(skillForm.sp_cost), 
+        effect_value: Number(skillForm.effect_value), 
+        cast_time: Number(skillForm.cast_time),
+        job_requirement: skillForm.job_requirement || '全職業',
+        level_requirement: Number(skillForm.level_requirement || 1),
+        // 🔮 🆕 拡張パラメータ群を確実にパースしてSupabaseへ完全コミット！
+        target_type: skillForm.target_type || '単体エネミー',
+        use_condition: skillForm.use_condition || '戦闘中のみ',
+        element: skillForm.element || '無',
+        effect_type: skillForm.effect_type || 'なし',
+        effect_chance: Number(skillForm.effect_chance || 0),
+        duration_turns: Number(skillForm.duration_turns || 0),
+        // 🔮 🆕 選択された計算ルールを確実にSupabaseへガキィンとコミット！
+        value_type: skillForm.value_type || 'percent'
       });
       if (error) throw error;
       alert('スキル技能を創造しました！');
@@ -220,7 +263,19 @@ const GameMasterDashboard = () => {
   };
   
   const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0 }); };
-  const resetSkillForm = () => { setIsEditing(false); setEditId(''); setSkillForm({ name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true }); };
+  
+  // 🔮 🆕 新設：リセット時（保存完了後など）に職業を全職業、必要Lvを1に綺麗に初期化クリーンする仕様
+  const resetSkillForm = () => { 
+    setIsEditing(false); 
+    setEditId(''); 
+    setSkillForm({ 
+      name: '', skill_type: 'magic', sp_cost: 0, effect_value: 0, description: '', cast_time: 0, is_absolute_hit: true,
+      job_requirement: '全職業', level_requirement: 1,
+      target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
+      effect_type: 'なし', effect_chance: 0, duration_turns: 0,
+      value_type: 'percent' // 🔮 🆕 リセット時もお掃除
+    }); 
+  };
 
   // 🔮 ログリストにカードの効果を文字列表現にコンバートして一発で浮き出させる神ヘルパー関数
   const renderCardEffectsLabel = (item) => {
@@ -276,14 +331,56 @@ const GameMasterDashboard = () => {
     </>
   );
 
+  // 🔍 🆕 各種リストのリアルタイム検索・フィルタ・ソート連結エンジン
+  const filteredUnits = units.filter(u => {
+    const matchSearch = u.name.toLowerCase().includes(unitSearch.toLowerCase());
+    const matchType = unitFilterType === 'all' || u.unit_type === unitFilterType;
+    const matchJob = unitFilterJob === 'all' || u.job === unitFilterJob;
+    const matchRace = unitFilterRace === 'all' || u.race === unitFilterRace;
+    const matchElem = unitFilterElement === 'all' || u.element === unitFilterElement;
+    const matchSize = unitFilterSize === 'all' || u.size === unitFilterSize;
+    return matchSearch && matchType && matchJob && matchRace && matchElem && matchSize;
+  }).sort((a, b) => {
+    if (unitSortOrder === 'level_desc') return b.base_level - a.base_level;
+    if (unitSortOrder === 'level_asc') return a.base_level - b.base_level;
+    return a.name.localeCompare(b.name, 'ja');
+  });
+
+  const filteredItems = items.filter(i => {
+    const matchSearch = i.name.toLowerCase().includes(itemSearch.toLowerCase());
+    const matchType = itemFilterType === 'all' || i.item_type === itemFilterType;
+    const matchRarity = itemFilterRarity === 'all' || i.rarity === itemFilterRarity;
+    return matchSearch && matchType && matchRarity;
+  });
+
+  const filteredSkills = skills.filter(s => {
+    const matchSearch = s.name.toLowerCase().includes(skillSearch.toLowerCase());
+    const matchJob = skillFilterJob === 'all' || s.job_requirement === skillFilterJob;
+    const matchType = skillFilterType === 'all' || s.skill_type === skillFilterType;
+    const matchEff = skillFilterEffect === 'all' || s.effect_type === skillFilterEffect;
+    const matchElem = skillFilterElement === 'all' || s.element === skillFilterElement;
+    return matchSearch && matchJob && matchType && matchEff && matchElem;
+  }).sort((a, b) => {
+    if (skillSortOrder === 'sp_desc') return (b.sp_cost || 0) - (a.sp_cost || 0);
+    if (skillSortOrder === 'lv_asc') return (a.level_requirement || 1) - (b.level_requirement || 1);
+    return a.name.localeCompare(b.name, 'ja');
+  });
+
   return (
     <div style={{ backgroundColor: '#0b0f19', minHeight: '100vh', color: '#f1f5f9', padding: '3vw', boxSizing: 'border-box' }}>
       <style>{`
-        .gm-grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 25px; max-width: 1400px; margin: 0 auto; }
+        .gm-grid { display: grid; grid-template-columns: 1fr 1.1fr; gap: 20px; max-width: 1600px; margin: 0 auto; }
         .gm-flex-head { display: flex; justify-content: space-between; align-items: center; max-width: 1400px; margin: 0 auto 25px; border-bottom: 2px solid #1e293b; padding-bottom: 15px; }
         .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; background: #0b0f19; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
         .equip-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; background: #0b0f19; padding: 10px; border-radius: 8px; border: 1px solid #1e293b; }
-        @media (max-width: 1024px) { .gm-grid { grid-template-columns: 1fr; } .gm-flex-head { flex-direction: column; align-items: flex-start; gap: 15px; } .equip-grid { grid-template-columns: 1fr; } }
+        
+        /* 🔮 🆕 高級検索用インテリジェントCSSスタイル群 */
+        .filter-box { display: flex; flex-wrap: wrap; gap: 5px; background: #0b0f19; padding: 6px; border-radius: 8px; border: 1px solid #1e293b; margin-bottom: 6px; }
+        .filter-select { background: #111827; border: 1px solid #334155; color: #fff; padding: 3px 6px; font-size: 0.65rem; border-radius: 4px; outline: none; cursor: pointer; }
+        .search-input { flex: 1; min-width: 140px; background: #111827; border: 1px solid #334155; color: #fff; padding: 3px 6px; font-size: 0.68rem; border-radius: 4px; outline: none; }
+        .scroll-list { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; padding-right: 2px; }
+        
+        @media (max-width: 1200px) { .gm-grid { grid-template-columns: 1fr; } .gm-flex-head { flex-direction: column; align-items: flex-start; gap: 15px; } .equip-grid { grid-template-columns: 1fr; } }
       `}</style>
 
       <div className="gm-flex-head">
@@ -337,8 +434,18 @@ const GameMasterDashboard = () => {
                   )}
                 </div>
                 <div>
-                  <label style={labelStyle}>職業・クラス</label>
-                  <input type="text" required value={unitForm.job} onChange={(e) => setUnitForm({...unitForm, job: e.target.value})} style={inputStyle} />
+                  {/* 🔮 🆕 ユニット（初期キャラ素体）創造の職業枠を手入力から「オリジナル8職セレクトボックス」へ完全一本化！ */}
+                  <label style={labelStyle}>👤 初期職業・クラス制限</label>
+                  <select value={unitForm.job} onChange={(e) => setUnitForm({...unitForm, job: e.target.value})} style={inputStyle}>
+                    <option value="ノービス">ノービス</option>
+                    <option value="ファイター">ファイター（戦士）</option>
+                    <option value="メイジ">メイジ（魔術士）</option>
+                    <option value="クレリック">クレリック（聖職者）</option>
+                    <option value="スカウト">スカウト（隠密）</option>
+                    <option value="ハンター">ハンター（狩人）</option>
+                    <option value="トレーダー">トレーダー（商人）</option>
+                    <option value="テイマー">テイマー（魔物使い）</option>
+                  </select>
                 </div>
               </div>
 
@@ -603,7 +710,21 @@ const GameMasterDashboard = () => {
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
                     <div><label style={labelStyle}>装備制限ベースLv</label><input type="number" min="1" value={itemForm.equip_level_req} onChange={(e) => setItemForm({...itemForm, equip_level_req: e.target.value})} style={inputStyle} /></div>
-                    <div><label style={labelStyle}>装備可能職業</label><input type="text" value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle} /></div>
+                    <div>
+                      {/* 🔮 🆕 武具アイテムの装備可能職業もオリジナル8職セレクトボックスへアップデート！ */}
+                      <label style={labelStyle}>👤 装備可能な職業制限</label>
+                      <select value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle}>
+                        <option value="全職業">全職業共通</option>
+                        <option value="ノービス">ノービス専用</option>
+                        <option value="ファイター">ファイター専用</option>
+                        <option value="メイジ">メイジ専用</option>
+                        <option value="クレリック">クレリック専用</option>
+                        <option value="スカウト">スカウト専用</option>
+                        <option value="ハンター">ハンター専用</option>
+                        <option value="トレーダー">トレーダー専用</option>
+                        <option value="テイマー">テイマー専用</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
               )}
@@ -631,11 +752,106 @@ const GameMasterDashboard = () => {
           {activeTab === 'skills' && (
             <form onSubmit={handleSkillSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div><label style={labelStyle}>特技・魔法の名称</label><input type="text" required placeholder="例: バッシュ" value={skillForm.name} onChange={(e) => setSkillForm({...skillForm, name: e.target.value})} style={inputStyle} /></div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+              
+              {/* 🔮 🆕 スキル解放条件セクション：職業と必要Lvの縛りUIを直撃追加！ */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0f172a', border: '1px dashed #38bdf8', padding: '10px', borderRadius: '8px' }}>
+                <div>
+                  <label style={labelStyle}>🔑 習得可能な職業制限</label>
+                  <select value={skillForm.job_requirement || '全職業'} onChange={(e) => setSkillForm({...skillForm, job_requirement: e.target.value})} style={inputStyle}>
+                    {/* 💡 プルダウンの中身も三土手世界のオリジナル職名へ完全移行！ */}
+                    <option value="全職業">全職業共通</option>
+                    <option value="ノービス">ノービス</option>
+                    <option value="ファイター">ファイター（戦士）</option>
+                    <option value="メイジ">メイジ（魔術士）</option>
+                    <option value="クレリック">クレリック（聖職者）</option>
+                    <option value="スカウト">スカウト（隠密）</option>
+                    <option value="ハンター">ハンター（狩人）</option>
+                    <option value="トレーダー">トレーダー（商人）</option>
+                    <option value="テイマー">テイマー（魔物使い）</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>📈 必要ベースLv</label>
+                  <input type="number" min="1" value={skillForm.level_requirement || 1} onChange={(e) => setSkillForm({...skillForm, level_requirement: Number(e.target.value)})} style={inputStyle} />
+                </div>
+              </div>
+
+              {/* 🔮 🛠️ 創造神リフォーム：数値の単位（％か固定値か）を綺麗に独立選択させる全4列のワイドグリッド！ */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1.2fr', gap: '10px' }}>
                 <div><label style={labelStyle}>技能分類</label><select value={skillForm.skill_type} onChange={(e) => setSkillForm({...skillForm, skill_type: e.target.value})} style={inputStyle}><option value="magic">魔法</option><option value="art">物理特技</option></select></div>
                 <div><label style={{...labelStyle, color: '#38bdf8'}}>消費SP</label><input type="number" value={skillForm.sp_cost} onChange={(e) => setSkillForm({...skillForm, sp_cost: e.target.value})} style={inputStyle} /></div>
-                <div><label style={labelStyle}>基礎倍率/回復量</label><input type="number" value={skillForm.effect_value} onChange={(e) => setSkillForm({...skillForm, effect_value: e.target.value})} style={inputStyle} /></div>
+                <div><label style={labelStyle}>基礎効果数値（威力 / 回復量）</label><input type="number" value={skillForm.effect_value} onChange={(e) => setSkillForm({...skillForm, effect_value: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <label style={{...labelStyle, color: '#ffd700'}}>📐 計算単位（仕様）</label>
+                  <select value={skillForm.value_type || 'percent'} onChange={(e) => setSkillForm({...skillForm, value_type: e.target.value})} style={{ ...inputStyle, border: '1px solid #ffd70044', color: '#ffd700' }}>
+                    <option value="percent">％表記 (倍率計算)</option>
+                    <option value="fixed">固定値 (そのままの数)</option>
+                  </select>
+                </div>
               </div>
+
+              {/* 🎯 🆕 ターゲット ＆ 発動環境 ＆ 属性セクション */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#0f172a', border: '1px dashed #475569', padding: '10px', borderRadius: '8px' }}>
+                <div>
+                  <label style={labelStyle}>🎯 効果の対象（ターゲット）</label>
+                  <select value={skillForm.target_type || '単体エネミー'} onChange={(e) => setSkillForm({...skillForm, target_type: e.target.value})} style={inputStyle}>
+                    <option value="単体エネミー">単体エネミー（単体攻撃）</option>
+                    <option value="範囲エネミー">範囲エネミー（敵全体攻撃）</option>
+                    <option value="味方単体">味方単体（回復・バフ）</option>
+                    {/* 🔮 🆕 クエストハブEdition：パーティー全員を一斉救済・強化する「味方全体」枠を完全解放！ */}
+                    <option value="味方全体">味方全体（全体回復・全体バフ）</option>
+                    <option value="自分自身">自分自身（自己強化）</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>🗺️ 使用可能シチュエーション</label>
+                  <select value={skillForm.use_condition || '戦闘中のみ'} onChange={(e) => setSkillForm({...skillForm, use_condition: e.target.value})} style={inputStyle}>
+                    <option value="戦闘中のみ">戦闘中のみ可能</option>
+                    <option value="フィールドのみ">非戦闘時（フィールド等）のみ</option>
+                    <option value="常時可能">常時どこでも使用可能</option>
+                    <option value="魔物調教">テイマー専用：敵のHP20%以下で可能</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={labelStyle}>🔥 技・魔法の固有属性</label>
+                  <select value={skillForm.element || '無'} onChange={(e) => setSkillForm({...skillForm, element: e.target.value})} style={inputStyle}>
+                    <option value="無">無属性</option>
+                    <option value="火">火属性（地に強い）</option>
+                    <option value="水">水属性（火に強い）</option>
+                    <option value="風">風属性（水に強い）</option>
+                    <option value="地">地属性（風に強い）</option>
+                    <option value="聖">聖属性（不死・闇に特効）</option>
+                    <option value="闇">闇属性</option>
+                    <option value="不死">不死属性</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* 🧪 🆕 追加効果（状態異常・バフ） ＆ 確率 ＆ 持続時間セクション */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#1e1b4b', border: '1px solid #4338ca', padding: '10px', borderRadius: '8px' }}>
+                <div>
+                  <label style={{...labelStyle, color: '#a78bfa'}}>✨ 追加付与効果（バフ・デバフ・異常）</label>
+                  <select value={skillForm.effect_type || 'なし'} onChange={(e) => setSkillForm({...skillForm, effect_type: e.target.value})} style={inputStyle}>
+                    <option value="なし">追加効果なし（純粋ダメージ）</option>
+                    <option value="スタン">スタン付与（行動不能）</option>
+                    <option value="凍結">凍結付与（水属性化＋行動不能）</option>
+                    <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
+                    <option value="暗闇">暗闇付与（敵の命中率Hitを大幅低下）</option>
+                    <option value="攻撃バフ">物理ATK増幅（味方・自分）</option>
+                    <option value="防御バフ">物理DEF増幅（味方・自分）</option>
+                    <option value="速度バフ">行動速度Aspd増幅</option>
+                  </select>
+                </div>
+                <div>
+                  <label style={{...labelStyle, color: '#a78bfa'}}>🎲 追加効果の発動確率 (%)</label>
+                  <input type="number" min="0" max="100" placeholder="例: 30" value={skillForm.effect_chance || 0} onChange={(e) => setSkillForm({...skillForm, effect_chance: Number(e.target.value)})} style={inputStyle} />
+                </div>
+                <div>
+                  <label style={{...labelStyle, color: '#a78bfa'}}>⏱️ 効果の持続ターン数</label>
+                  <input type="number" min="0" placeholder="例: 3" value={skillForm.duration_turns || 0} onChange={(e) => setSkillForm({...skillForm, duration_turns: Number(e.target.value)})} style={inputStyle} />
+                </div>
+              </div>
+
               <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '10px', borderRadius: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div><label style={{...labelStyle, color: '#a78bfa'}}>⏱️ 基礎詠唱時間（秒）</label><input type="number" step="0.1" value={skillForm.cast_time} onChange={(e) => setSkillForm({...skillForm, cast_time: e.target.value})} style={inputStyle} /></div>
                 <div>
@@ -651,47 +867,169 @@ const GameMasterDashboard = () => {
           )}
         </div>
 
-        {/* 右側閲覧領域 */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px', maxHeight: '280px', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '4px' }}><Swords size={14}/> 創造ユニットリスト ({units.length}件)</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {units.map(u => (
-                <div key={u.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '8px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <span style={{ fontSize: '0.55rem', color: '#4b5563', display: 'block' }}>ID: {u.id} (Lv.{u.base_level})</span>
-                    <strong style={{ fontSize: '0.85rem', color: u.unit_type === 'playable' ? '#fff' : '#ef4444' }}>{u.name}</strong>
-                    <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '6px' }}>{u.race} / {u.job}</span>
-                  </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => startEditUnit(u)} style={iconBtnStyle}><Edit2 size={12}/></button>
-                    <button onClick={() => handleDelete('game_master_units', u.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={12}/></button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+        {/* 右側閲覧領域：左側のタブ選択（activeTab）と完全連動して、不要なリストを全自動で閉じる神配線 */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+          
+          {/* 👥 1. 創造ユニットブラウザ（①ユニット創造タブの時だけ点灯） */}
+          {activeTab === 'units' && (
+            <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px' }}>
+              <div style={{ display: 'flex', justifycontent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.85rem', color: '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}><Swords size={14}/> 👥 創造ユニットブラウザ ({filteredUnits.length} / {units.length}件)</h3>
+                <select value={unitSortOrder} onChange={(e) => setUnitSortOrder(e.target.value)} className="filter-select" style={{ borderColor: '#f59e0b44', color: '#f59e0b' }}>
+                  <option value="level_desc">📊 レベル高い順</option>
+                  <option value="level_asc">📊 レベル低い順</option>
+                  <option value="name_asc">🔤 名前順 (50音順)</option>
+                </select>
+              </div>
+              
+              <div className="filter-box">
+                <input type="text" placeholder="🔍 ユニット名でリアルタイム検索..." value={unitSearch} onChange={(e) => setUnitSearch(e.target.value)} className="search-input" />
+                <select value={unitFilterType} onChange={(e) => setUnitFilterType(e.target.value)} className="filter-select">
+                  <option value="all">🌐 全所属</option>
+                  <option value="playable">仲間キャラ</option>
+                  <option value="enemy">敵モンスター</option>
+                </select>
+                <select value={unitFilterJob} onChange={(e) => setUnitFilterJob(e.target.value)} className="filter-select">
+                  <option value="all">👤 全職業</option>
+                  {existingJobs.filter(x => x !== '全職業').map(j => <option key={j} value={j}>{j}</option>)}
+                </select>
+                {unitFilterType === 'enemy' && (
+                  <>
+                    <select value={unitFilterRace} onChange={(e) => setUnitFilterRace(e.target.value)} className="filter-select">
+                      <option value="all">🧬 全種族</option>
+                      <option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option><option value="植物">植物</option><option value="昆虫">昆虫</option><option value="悪魔">悪魔</option><option value="人間">人間</option>
+                    </select>
+                    <select value={unitFilterElement} onChange={(e) => setUnitFilterElement(e.target.value)} className="filter-select">
+                      <option value="all">🔥 全属性</option>
+                      <option value="無">無</option><option value="火">火</option><option value="水">水</option><option value="風">風</option><option value="地">地</option>
+                    </select>
+                    <select value={unitFilterSize} onChange={(e) => setUnitFilterSize(e.target.value)} className="filter-select">
+                      <option value="all">📏 全サイズ</option>
+                      <option value="小型">小型</option><option value="中型">中型</option><option value="大型">大型</option>
+                    </select>
+                  </>
+                )}
+              </div>
 
-          <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px', maxHeight: '350px', overflowY: 'auto' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '4px' }}><Shield size={14}/> 登録武具・アイテムリスト ({items.length}件)</h3>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-              {items.map(i => (
-                <div key={i.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '8px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <strong style={{ fontSize: '0.85rem', color: i.rarity === 'legendary' ? '#f59e0b' : '#fff' }}>{i.name} {i.slot_count > 0 ? `[${i.slot_count}]` : ''}</strong>
-                    {/* 🔮 【神ビジュアライズ】作った瞬間・ロードした瞬間にカードの特殊能力がバシッと横並びで見える高級表示仕様 */}
-                    <span style={{ fontSize: '0.65rem', color: i.item_type === 'card' ? '#ffd700' : '#64748b', marginLeft: '6px', display: 'block', marginTop: '2px' }}>
-                      {i.item_type === 'card' ? '🃏 ' : ''}{i.item_subtype} {renderCardEffectsLabel(i)}
-                    </span>
+              {/* 💡 縦に広く見渡せるよう高さを520pxへ拡張 */}
+              <div className="scroll-list" style={{ maxHeight: '520px' }}>
+                {filteredUnits.map(u => (
+                  <div key={u.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '0.55rem', color: '#4b5563', display: 'block' }}>ID: {u.id} <span style={{ color: '#ffd700' }}>[Lv.{u.base_level}]</span></span>
+                      <strong style={{ fontSize: '0.82rem', color: u.unit_type === 'playable' ? '#fff' : '#ef4444' }}>{u.name}</strong>
+                      <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '6px' }}>{u.unit_type === 'playable' ? `職業: ${u.job}` : `☠️ ${u.size} | ${u.race} | ${u.element}属性`}</span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => startEditUnit(u)} style={iconBtnStyle}><Edit2 size={11}/></button>
+                      <button onClick={() => handleDelete('game_master_units', u.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={11}/></button>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: '6px' }}>
-                    <button onClick={() => startEditItem(i)} style={iconBtnStyle}><Edit2 size={12}/></button>
-                    <button onClick={() => handleDelete('game_master_items', i.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={12}/></button>
-                  </div>
-                </div>
-              ))}
+                ))}
+              </div>
             </div>
-          </div>
+          )}
+
+          {/* 🛡️ 2. 登録武具・アイテムブラウザ（②武具アイテム創造タブの時だけ点灯） */}
+          {activeTab === 'items' && (
+            <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px' }}>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '0.85rem', color: '#38bdf8', display: 'flex', alignItems: 'center', gap: '4px' }}><Shield size={14}/> 🛡️ 登録武具・アイテムリスト ({filteredItems.length} / {items.length}件)</h3>
+              <div className="filter-box">
+                <input type="text" placeholder="🔍 アイテム名で高速検索..." value={itemSearch} onChange={(e) => setItemSearch(e.target.value)} className="search-input" />
+                <select value={itemFilterType} onChange={(e) => setItemFilterType(e.target.value)} className="filter-select">
+                  <option value="all">📦 全大分類</option>
+                  <option value="weapon">武器</option><option value="armor">防具</option><option value="card">カード</option><option value="consumable">消耗品</option>
+                </select>
+                <select value={itemFilterRarity} onChange={(e) => setItemFilterRarity(e.target.value)} className="filter-select">
+                  <option value="all">💎 全レアリティ</option>
+                  <option value="common">Common</option><option value="rare">Rare</option><option value="epic">Epic</option><option value="legendary">Legendary</option>
+                </select>
+              </div>
+
+              <div className="scroll-list" style={{ maxHeight: '520px' }}>
+                {filteredItems.map(i => (
+                  <div key={i.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong style={{ fontSize: '0.82rem', color: i.rarity === 'legendary' ? '#f59e0b' : i.rarity === 'epic' ? '#a78bfa' : '#fff' }}>{i.name} {i.slot_count > 0 ? `[${i.slot_count}]` : ''}</strong>
+                      <span style={{ fontSize: '0.65rem', color: i.item_type === 'card' ? '#ffd700' : '#64748b', marginLeft: '6px', display: 'block', marginTop: '1px' }}>
+                        {i.item_type === 'card' ? '🃏 ' : ''}{i.item_subtype} {renderCardEffectsLabel(i)}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => startEditItem(i)} style={iconBtnStyle}><Edit2 size={11}/></button>
+                      <button onClick={() => handleDelete('game_master_items', i.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={11}/></button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 🔮 3. 登録スキル・特技ブラウザ（③スキル特技創造タブの時だけ点灯） */}
+          {activeTab === 'skills' && (
+            <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                <h3 style={{ margin: 0, fontSize: '0.85rem', color: '#a78bfa', display: 'flex', alignItems: 'center', gap: '4px' }}><BookOpen size={14}/> 🔮 登録スキル・特技リスト ({filteredSkills.length} / {skills.length}件)</h3>
+                <select value={skillSortOrder} onChange={(e) => setSkillSortOrder(e.target.value)} className="filter-select" style={{ borderColor: '#a78bfa44', color: '#a78bfa' }}>
+                  <option value="name_asc">🔤 名前順 (50音)</option>
+                  <option value="sp_desc">💙 消費SP高い順</option>
+                  <option value="lv_asc">📈 必要Lv低い順</option>
+                </select>
+              </div>
+
+              <div className="filter-box" style={{ borderColor: '#a78bfa33' }}>
+                <input type="text" placeholder="🔍 スキル・魔法名で検索..." value={skillSearch} onChange={(e) => setSkillSearch(e.target.value)} className="search-input" />
+                <select value={skillFilterJob} onChange={(e) => setSkillFilterJob(e.target.value)} className="filter-select">
+                  <option value="all">👑 全職業制限</option>
+                  {existingJobs.map(j => <option key={j} value={j}>{j}</option>)}
+                </select>
+                <select value={skillFilterType} onChange={(e) => setSkillFilterType(e.target.value)} className="filter-select">
+                  <option value="all">⚔️ 全技能分類</option>
+                  <option value="magic">魔法別</option>
+                  <option value="art">物理攻撃別</option>
+                </select>
+                <select value={skillFilterEffect} onChange={(e) => setSkillFilterEffect(e.target.value)} className="filter-select">
+                  <option value="all">✨ 全追加効果</option>
+                  <option value="なし">追加効果なし</option>
+                  <option value="スタン">スタン</option><option value="凍結">凍結</option><option value="毒">毒</option>
+                  <option value="攻撃バフ">攻撃バフ</option><option value="防御バフ">防御バフ</option>
+                </select>
+                <select value={skillFilterElement} onChange={(e) => setSkillFilterElement(e.target.value)} className="filter-select">
+                  <option value="all">🔥 全属性</option>
+                  <option value="無">無属性</option><option value="火">火属性</option><option value="水">水属性</option><option value="風">風属性</option><option value="地">地属性</option><option value="聖">聖属性</option>
+                </select>
+              </div>
+
+              <div className="scroll-list" style={{ maxHeight: '520px' }}>
+                {filteredSkills.map(s => (
+                  <div key={s.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '6px 10px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span style={{ fontSize: '0.55rem', color: '#64748b', display: 'block' }}>
+                        🔑 {s.job_requirement} (必要Lv.{s.level_requirement}) | 🎯 {s.target_type}
+                      </span>
+                      <strong style={{ fontSize: '0.82rem', color: '#ffd700' }}>{s.name}</strong>
+                      <span style={{ fontSize: '0.65rem', color: s.skill_type === 'magic' ? '#38bdf8' : '#f43f5e', marginLeft: '8px' }}>
+                        [{s.skill_type === 'magic' ? '魔法' : '物理特技'}] 消費SP:{s.sp_cost} | 効力:{s.effect_value}{s.value_type === 'percent' ? '%' : '固定'}
+                      </span>
+                      {s.effect_type !== 'なし' && (
+                        <span style={{ fontSize: '0.6rem', color: '#a78bfa', display: 'block', marginTop: '1px' }}>
+                          ✨ 追加: {s.effect_type} ({s.effect_chance}% / {s.duration_turns}T) | 属性: {s.element}
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button onClick={() => startEditSkill(s)} style={iconBtnStyle}><Edit2 size={11}/></button>
+                      <button onClick={() => handleDelete('game_master_skills', s.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={11}/></button>
+                    </div>
+                  </div>
+                ))}
+                {filteredSkills.length === 0 && (
+                  <div style={{ fontSize: '0.65rem', color: '#475569', textAlign: 'center', padding: '10px', fontStyle: 'italic' }}>該当するスキル・特技が見つかりません。</div>
+                )}
+              </div>
+            </div>
+          )}
+
         </div>
       </div>
     </div>

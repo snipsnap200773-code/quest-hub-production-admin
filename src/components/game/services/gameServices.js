@@ -7,7 +7,44 @@ import { supabase } from '../supabaseClient';
  */
 export const calculateRoStatus = (charData, equips = {}) => {
   const baseLv = charData.level || 1;
-  const job = charData.meta?.job || 'ノービス';
+  
+  // 🔮 🆕 旧名や英語名がデータベースに入っていても、今回のオリジナル8職に100%完全一致させるための自動翻訳マッピング！
+  let rawJob = charData.meta?.job || 'ノービス';
+
+// 【1】ファイター系（前衛・重装戦士）
+if (['ファイター', 'クラッシャー', 'ジェネラルナイト', 'テンプラー', 'インクイジター', 'ソードマン'].includes(rawJob)) {
+  rawJob = 'ファイター';
+}
+// 【2】メイジ系（魔法・学術）
+else if (['メイジ', 'ハイウィザード', 'エレメンタルマスター', 'エレミット', 'アルカナロード', 'マジシャン'].includes(rawJob)) {
+  rawJob = 'メイジ';
+}
+// 【3】クレリック系（信仰・拳法）
+else if (['クレリック', 'ビショップ', 'ホーリーサヴァント', 'グラップラー', 'ヴァジュラ', 'アコライト', 'プリースト'].includes(rawJob)) {
+  rawJob = 'クレリック';
+}
+// 【4】スカウト系（隠密・強襲）
+else if (['スカウト', 'アサシンクロス', 'シャドウレイダー', 'チェイサー', 'ファントムシーフ', 'シーフ', 'thief'].includes(rawJob) || rawJob.toLowerCase().includes('thief')) {
+  rawJob = 'スカウト';
+}
+// 【5】ハンター系（遠隔・芸術）
+else if (['ハンター', 'レンジャー', 'シャープシューター', 'パフォーマー', 'マエストロ', 'ミューズ'].includes(rawJob)) {
+  rawJob = 'ハンター';
+}
+// 【6】トレーダー系（鍛冶・錬金）
+else if (['トレーダー', 'ブラックスミス', 'マイスター', 'ケミスト', 'ホムンクルスクリエイター', '商人'].includes(rawJob)) {
+  rawJob = 'トレーダー';
+}
+// 【7】テイマー系（魔物調教・三土手神新規）
+else if (['テイマー', 'ビーストマスター', 'アニマロード', '魔物使い'].includes(rawJob)) {
+  rawJob = 'テイマー';
+}
+// 【8】ノービス（またはエクスパート、グランドマスターなど万能ルート）
+else if (['ノービス', 'エクスパート', 'グランドマスター'].includes(rawJob)) {
+  rawJob = 'ノービス';
+}
+
+const job = rawJob;
 
   // 🔮 全9部位の装備から、刺さっているすべてのカードオブジェクトをフラットな配列として1つに集約
   const allAttachedCards = Object.values(equips)
@@ -111,6 +148,7 @@ export const calculateRoStatus = (charData, equips = {}) => {
   // 🔮 🆕 最大HP・最大SPの「固定値加算効果（HP+100など）」もエンジン出力に乗せて完璧に外へ解放！
   return { 
     atk, def, hit, flee, critical, matk, mdef, aspd, 
+    str, agi, vit, int, dex, luk, 
     guild_name: charData.guild_name || '無所属',
     card_hp: cardStats.hp,
     card_sp: cardStats.sp

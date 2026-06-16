@@ -457,7 +457,7 @@ if (type === 'facility_booking') {
   // 日付リストを読みやすく整形
   const dateListHtml = scheduledDates.map((d: string) => {
     // 🚀 秒数（:00）を削除し、ハイフンをスラッシュに変換
-    const cleanedDate = d.replace(':00)', ')').replace(/-/g, '/');
+    const cleanedDate = d.replace(/-/g, '/');
     return `<span style="display:inline-block; background:#3d2b1f; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
   }).join(' ');
 
@@ -546,7 +546,7 @@ if (type === 'facility_booking_update') {
 
   // 日付リストを整形（既存のロジックと同じ）
   const dateListHtml = scheduledDates.map((d: string) => {
-    const cleanedDate = d.replace(':00)', ')').replace(/-/g, '/');
+    const cleanedDate = d.replace(/-/g, '/');
     return `<span style="display:inline-block; background:#0ea5e9; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
   }).join(' ');
 
