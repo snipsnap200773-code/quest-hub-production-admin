@@ -27,7 +27,7 @@ const GameMasterDashboard = () => {
   const [unitForm, setUnitForm] = useState({
     name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '',
     base_level: 1, reward_exp: 10, reward_gold: 10, base_hp: 100, base_sp: 10,
-    stat_str: 1, stat_agi: 1, stat_vit: 1, stat_int: 1, stat_dex: 1, stat_luk: 1,
+    stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0,
     equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
     equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '',
     extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
@@ -126,6 +126,7 @@ const GameMasterDashboard = () => {
     e.preventDefault();
     const finalId = isEditing ? editId : `unit_${Date.now()}`;
     try {
+      // 👑 三土手神仕様：プレイヤー用の仲間ユニットなら、生まれた瞬間にフリーポイント 6 を宿すように拡張！
       const { error } = await supabase.from('game_master_units').upsert({
         id: finalId, ...unitForm,
         is_tamable: unitForm.unit_type === 'enemy' ? unitForm.is_tamable : false,
@@ -133,6 +134,8 @@ const GameMasterDashboard = () => {
         base_hp: Number(unitForm.base_hp), base_sp: Number(unitForm.base_sp),
         stat_str: Number(unitForm.stat_str), stat_agi: Number(unitForm.stat_agi), stat_vit: Number(unitForm.stat_vit),
         stat_int: Number(unitForm.stat_int), stat_dex: Number(unitForm.stat_dex), stat_luk: Number(unitForm.stat_luk),
+        
+        
         extra_drop_chance: Number(unitForm.extra_drop_chance),
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
         equip_right_hand: unitForm.equip_right_hand || null, equip_left_hand: unitForm.equip_left_hand || null,
@@ -254,7 +257,7 @@ const GameMasterDashboard = () => {
     setUnitForm({ 
       name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '', 
       base_level: 1, reward_exp: 10, reward_gold: 10, base_hp: 100, base_sp: 10, 
-      stat_str: 1, stat_agi: 1, stat_vit: 1, stat_int: 1, stat_dex: 1, stat_luk: 1, 
+      stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0, 
       equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
       equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '', 
       extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',

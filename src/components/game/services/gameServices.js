@@ -1,4 +1,6 @@
 import { supabase } from '../supabaseClient';
+// 🔮 🆕 独立数理室からジョブボーナス算出ロジックを電線結合！
+import { calculateJobBonus } from '../gameRules';
 
 /**
  * 👑 ラグナロクオンライン式・戦闘ステータス完全計算エンジン
@@ -8,43 +10,46 @@ import { supabase } from '../supabaseClient';
 export const calculateRoStatus = (charData, equips = {}) => {
   const baseLv = charData.level || 1;
   
-  // 🔮 🆕 旧名や英語名がデータベースに入っていても、今回のオリジナル8職に100%完全一致させるための自動翻訳マッピング！
-  let rawJob = charData.meta?.job || 'ノービス';
+  // 🔮 🆕 meta.job、直下の job、または custom_name から大文字小文字を無視して執念の抽出！
+  let rawJob = charData.meta?.job || charData.job || charData.custom_name || 'ノービス';
+  const checkJob = String(rawJob).trim().toLowerCase();
 
-// 【1】ファイター系（前衛・重装戦士）
-if (['ファイター', 'クラッシャー', 'ジェネラルナイト', 'テンプラー', 'インクイジター', 'ソードマン'].includes(rawJob)) {
-  rawJob = 'ファイター';
-}
-// 【2】メイジ系（魔法・学術）
-else if (['メイジ', 'ハイウィザード', 'エレメンタルマスター', 'エレミット', 'アルカナロード', 'マジシャン'].includes(rawJob)) {
-  rawJob = 'メイジ';
-}
-// 【3】クレリック系（信仰・拳法）
-else if (['クレリック', 'ビショップ', 'ホーリーサヴァント', 'グラップラー', 'ヴァジュラ', 'アコライト', 'プリースト'].includes(rawJob)) {
-  rawJob = 'クレリック';
-}
-// 【4】スカウト系（隠密・強襲）
-else if (['スカウト', 'アサシンクロス', 'シャドウレイダー', 'チェイサー', 'ファントムシーフ', 'シーフ', 'thief'].includes(rawJob) || rawJob.toLowerCase().includes('thief')) {
-  rawJob = 'スカウト';
-}
-// 【5】ハンター系（遠隔・芸術）
-else if (['ハンター', 'レンジャー', 'シャープシューター', 'パフォーマー', 'マエストロ', 'ミューズ'].includes(rawJob)) {
-  rawJob = 'ハンター';
-}
-// 【6】トレーダー系（鍛冶・錬金）
-else if (['トレーダー', 'ブラックスミス', 'マイスター', 'ケミスト', 'ホムンクルスクリエイター', '商人'].includes(rawJob)) {
-  rawJob = 'トレーダー';
-}
-// 【7】テイマー系（魔物調教・三土手神新規）
-else if (['テイマー', 'ビーストマスター', 'アニマロード', '魔物使い'].includes(rawJob)) {
-  rawJob = 'テイマー';
-}
-// 【8】ノービス（またはエクスパート、グランドマスターなど万能ルート）
-else if (['ノービス', 'エクスパート', 'グランドマスター'].includes(rawJob)) {
-  rawJob = 'ノービス';
-}
+  // 【1】ファイター系（前衛・重装戦士）
+  if (['ファイター', 'クラッシャー', 'ジェネラルナイト', 'テンプラー', 'インクイジター', 'ソードマン', 'fighter', 'swordsman'].includes(checkJob) || checkJob.includes('fighter') || checkJob.includes('swordsman')) {
+    rawJob = 'ファイター';
+  }
+  // 【2】メイジ系（魔法・学術）
+  else if (['メイジ', 'ハイウィザード', 'エレメンタルマスター', 'エレミット', 'アルカナロード', 'マジシャン', 'mage', 'magician', 'wizard'].includes(checkJob) || checkJob.includes('mage') || checkJob.includes('wizard')) {
+    rawJob = 'メイジ';
+  }
+  // 【3】クレリック系（信仰・拳法）
+  else if (['クレリック', 'ビショップ', 'ホーリーサヴァント', 'グラップラー', 'ヴァジュラ', 'アコライト', 'プリースト', 'cleric', 'priest', 'acolyte'].includes(checkJob) || checkJob.includes('cleric') || checkJob.includes('priest')) {
+    rawJob = 'クレリック';
+  }
+  // 【4】スカウト系（隠密・強襲）
+  else if (['スカウト', 'アサシンクロス', 'シャドウレイダー', 'チェイサー', 'ファントムシーフ', 'シーフ', 'thief', 'scout'].includes(checkJob) || checkJob.includes('thief') || checkJob.includes('scout')) {
+    rawJob = 'スカウト';
+  }
+  // 【5】ハンター系（遠隔・芸術）
+  else if (['ハンター', 'レンジャー', 'シャープシューター', 'パフォーマー', 'マエストロ', 'ミューズ', 'hunter', 'ranger'].includes(checkJob) || checkJob.includes('hunter') || checkJob.includes('ranger')) {
+    rawJob = 'ハンター';
+  }
+  // 【6】トレーダー系（鍛冶・錬金）
+  else if (['トレーダー', 'ブラックスミス', 'マイスター', 'ケミスト', 'ホムンクルスクリエイター', '商人', 'trader', 'blacksmith'].includes(checkJob) || checkJob.includes('trader') || checkJob.includes('blacksmith')) {
+    rawJob = 'トレーダー';
+  }
+  // 【7】テイマー系（魔物調教・三土手神新規）
+  else if (['テイマー', 'ビーストマスター', 'アニマロード', '魔物使い', 'tamer'].includes(checkJob) || checkJob.includes('tamer')) {
+    rawJob = 'テイマー';
+  }
+  // 【8】ノービス（またはエクスパート、グランドマスターなど万能ルート）
+  else if (['ノービス', 'エクスパート', 'グランドマスター', 'novice'].includes(checkJob) || checkJob.includes('novice')) {
+    rawJob = 'ノービス';
+  } else {
+    rawJob = 'ノービス';
+  }
 
-const job = rawJob;
+  const job = rawJob;
 
   // 🔮 全9部位の装備から、刺さっているすべてのカードオブジェクトをフラットな配列として1つに集約
   const allAttachedCards = Object.values(equips)
@@ -109,13 +114,29 @@ const job = rawJob;
     }
   });
 
-  // 🔮 計算エンジンの基本ステータスに対して、集計したカード数値をダイレクトにマージ！
-  const str = (charData.meta?.stat_str || 1) + (charData.bonus?.str || 0) + cardStats.str;
-  const agi = (charData.meta?.stat_agi || 1) + (charData.bonus?.agi || 0) + cardStats.agi;
-  const vit = (charData.meta?.stat_vit || 1) + (charData.bonus?.vit || 0) + cardStats.vit;
-  const int = (charData.meta?.stat_int || 1) + (charData.bonus?.int || 0) + cardStats.int;
-  const dex = (charData.meta?.stat_dex || 1) + (charData.bonus?.dex || 0) + cardStats.dex;
-  const luk = (charData.meta?.stat_luk || 1) + (charData.bonus?.luk || 0) + cardStats.luk;
+  // 🔮 🆕 ジョブレベルを取得（なければ1）し、独立数理室から配列ベースのジョブボーナスを強制召喚
+  const jobLv = charData.level || charData.job_level || 1; 
+const jobBonus = calculateJobBonus(job, jobLv);
+
+  // 🔮 🆕 【大革命・引き算UI対応】
+  // 「純粋な自動補正分 (+X)」を格納するオブジェクトを生成（ジョブボーナス + 手振りボーナス + カード効果）
+  const bonus = {
+    str: (charData.bonus?.str || 0) + cardStats.str + (jobBonus.str || 0),
+    agi: (charData.bonus?.agi || 0) + cardStats.agi + (jobBonus.agi || 0),
+    vit: (charData.bonus?.vit || 0) + cardStats.vit + (jobBonus.vit || 0),
+    int: (charData.bonus?.int || 0) + cardStats.int + (jobBonus.int || 0),
+    dex: (charData.bonus?.dex || 0) + cardStats.dex + (jobBonus.dex || 0),
+    luk: (charData.bonus?.luk || 0) + cardStats.luk + (jobBonus.luk || 0),
+  };
+
+  // 🔮 🆕 【フロント引き算UI大文字用】
+  // 計算エンジンのベース値（マスターの初期値）に、すべての補正（bonus）をガッチャンコした最終総数！
+  const str = (Number(charData.meta?.stat_str) || Number(charData.meta?.str) || Number(charData.str) || 1) + bonus.str;
+  const agi = (Number(charData.meta?.stat_agi) || Number(charData.meta?.agi) || Number(charData.agi) || 1) + bonus.agi;
+  const vit = (Number(charData.meta?.stat_vit) || Number(charData.meta?.vit) || Number(charData.vit) || 1) + bonus.vit;
+  const int = (Number(charData.meta?.stat_int) || Number(charData.meta?.int) || Number(charData.int) || 1) + bonus.int;
+  const dex = (Number(charData.meta?.stat_dex) || Number(charData.meta?.dex) || Number(charData.dex) || 1) + bonus.dex;
+  const luk = (Number(charData.meta?.stat_luk) || Number(charData.meta?.luk) || Number(charData.luk) || 1) + bonus.luk;
 
   // 🆕 9部位のスペックを集計
   const weaponAtk = equips.right_hand?.atk || 0;
@@ -140,18 +161,39 @@ const job = rawJob;
   const matk = int + Math.pow(Math.floor(int / 7), 2);
   const mdef = Math.floor(int * 0.5) + totalEquipMdef;
 
+  // 🔮 🆕 旧レガシー職名条件を、三土手オリジナル職名（スカウト・ファイター）へと安全リフォーム！
   let baseAspd = 150;
-  if (job === 'シーフ') baseAspd = 160;
-  if (job === 'ソードマン') baseAspd = 152;
+  if (job === 'スカウト') baseAspd = 160;
+  if (job === 'ファイター') baseAspd = 152;
   const aspd = Math.min(190, baseAspd + agi * 0.5);
 
-  // 🔮 🆕 最大HP・最大SPの「固定値加算効果（HP+100など）」もエンジン出力に乗せて完璧に外へ解放！
+  // 🔮 🆕 最大HP・最大SPの「VIT・INT掛け算連動ロジック」をここに集約
+  // ※フェーズ4後半で職業別の掛け算上昇係数を組み込むためのベース配線を開通
+  const derivedMaxHp = 100 + (baseLv * 15) + (vit * 8) + cardStats.hp;
+  const derivedMaxSp = 20 + (baseLv * 2) + (int * 4) + cardStats.sp;
+
+  // 🔮 🆕 フロントUIへ完璧なオブジェクト構造で返却！
+  const displayStatus = {
+  str: { base: (Number(charData.meta?.stat_str) || 0) + (charData.bonus?.str || 0), bonus: (jobBonus.str || 0) + cardStats.str },
+  agi: { base: (Number(charData.meta?.stat_agi) || 0) + (charData.bonus?.agi || 0), bonus: (jobBonus.agi || 0) + cardStats.agi },
+  vit: { base: (Number(charData.meta?.stat_vit) || 0) + (charData.bonus?.vit || 0), bonus: (jobBonus.vit || 0) + cardStats.vit },
+  int: { base: (Number(charData.meta?.stat_int) || 0) + (charData.bonus?.int || 0), bonus: (jobBonus.int || 0) + cardStats.int },
+  disabled: { base: (Number(charData.meta?.stat_dex) || 0) + (charData.bonus?.dex || 0), bonus: (jobBonus.dex || 0) + cardStats.dex },
+  luk: { base: (Number(charData.meta?.stat_luk) || 0) + (charData.bonus?.luk || 0), bonus: (jobBonus.luk || 0) + cardStats.luk },
+};
+
+  // 🔮 🆕 フロントUIへ完璧なオブジェクト構造で返却！
   return { 
     atk, def, hit, flee, critical, matk, mdef, aspd, 
     str, agi, vit, int, dex, luk, 
     guild_name: charData.guild_name || '無所属',
     card_hp: cardStats.hp,
-    card_sp: cardStats.sp
+    card_sp: cardStats.sp,
+    cardStats, // 👈 👑 三土手神特注：集計済みの純粋なカードバッファをそのままフロントへ直送！
+    bonus,
+    displayStatus,
+    maxHp: derivedMaxHp,
+    maxSp: derivedMaxSp
   };
 };
 
@@ -208,39 +250,51 @@ export const gameServices = {
 
         // 基準キャラクター状態の組み立て
         const charObject = {
-          id: ch.id,
-          master_id: ch.master_id,
-          custom_name: ch.custom_name || master.name,
-          level: ch.level,
-          exp: ch.exp,
-          status_points: ch.status_points,
-          current_hp: ch.current_hp,
-          max_hp: ch.max_hp,
-          current_sp: ch.current_sp,
-          max_sp: ch.max_sp,
-          guild_name: ch.guild_name,
-          
-          str: master.stat_str + ch.bonus_str,
-          agi: master.stat_agi + ch.bonus_agi,
-          vit: master.stat_vit + ch.bonus_vit,
-          int: master.stat_int + ch.bonus_int,
-          dex: master.stat_dex + ch.bonus_dex,
-          luk: master.stat_luk + ch.bonus_luk,
+  id: ch.id,
+  master_id: ch.master_id,
+  custom_name: ch.custom_name || master.name,
+  level: ch.level,
+  exp: ch.exp,
+  
+  // 💡 もし新規キャラでステータスポイントが0だったら、初期配布分（例：200ポイント）を自動支給！
+  status_points: ch.status_points === 0 && ch.level === 1 ? 6 : ch.status_points,
+  
+  current_hp: ch.current_hp,
+  max_hp: ch.max_hp,
+  current_sp: ch.current_sp,
+  max_sp: ch.max_sp,
+  guild_name: ch.guild_name,
+  
+  // セーフティを 1 から 0 に引き下げ
+  str: (master.stat_str || 0) + ch.bonus_str,
+  agi: (master.stat_agi || 0) + ch.bonus_agi,
+  vit: (master.stat_vit || 0) + ch.bonus_vit,
+  int: (master.stat_int || 0) + ch.bonus_int,
+  dex: (master.stat_dex || 0) + ch.bonus_dex,
+  luk: (master.stat_luk || 0) + ch.bonus_luk,
 
-          bonus: {
-            str: ch.bonus_str,
-            agi: ch.bonus_agi,
-            vit: ch.bonus_vit,
-            int: ch.bonus_int,
-            dex: ch.bonus_dex,
-            luk: ch.bonus_luk
-          },
-          equips: equips, // 9部位のカード内蔵型装備データ
-          meta: master
-        };
+  bonus: {
+    str: ch.bonus_str,
+    agi: ch.bonus_agi,
+    vit: ch.bonus_vit,
+    int: ch.bonus_int,
+    dex: ch.bonus_dex,
+    luk: ch.bonus_luk
+  },
+  job_level: ch.job_level || 1, 
+  equips: equips, 
+  meta: master
+};
 
         // 🧠 心臓部の計算エンジンを通し、戦闘ステータス（roStatus）を自動ドッキング！
         charObject.roStatus = calculateRoStatus(charObject, equips);
+        
+        // ⚡【鉄壁のダブル配線】フロントUIが「ro」という変数名で探しても100%ヒットするように直撃ミラー結合！
+        charObject.ro = charObject.roStatus; 
+
+        // 🔮 🆕 エンジンが算出したリアルタイム連動の最大HP/SPでキャラクターオブジェクトの器を上書き同期！
+        charObject.max_hp = charObject.roStatus.maxHp;
+        charObject.max_sp = charObject.roStatus.maxSp;
 
         return charObject;
       });

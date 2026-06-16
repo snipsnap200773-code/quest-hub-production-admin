@@ -93,7 +93,10 @@ export const calculateJobBonus = (jobName, currentLevel) => {
   if (!jobRules) return bonuses;
 
   // インデックス用に調整（Lv1なら配列の0番目、Lv50なら49番目のデータを取得）
-  const idx = Math.min(49, Math.max(0, currentLevel - 1));
+  if (currentLevel === 1) {
+  return { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0, mdef: 0 };
+}
+const idx = Math.min(49, Math.max(0, currentLevel - 1));
 
   Object.keys(jobRules).forEach(stat => {
     bonuses[stat] = jobRules[stat][idx] || 0;
