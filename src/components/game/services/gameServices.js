@@ -1,6 +1,11 @@
 import { supabase } from '../supabaseClient';
 // 🔮 🆕 独立数理室からジョブボーナス算出ロジックを電線結合！
-import { calculateJobBonus } from '../gameRules';
+import { 
+  calculateJobBonus, 
+  calculateDamageModifier, 
+  calculateStatusInflictChance, 
+  applyStatusConditionDebuffs 
+} from '../gameRules';
 
 /**
  * 👑 ラグナロクオンライン式・戦闘ステータス完全計算エンジン

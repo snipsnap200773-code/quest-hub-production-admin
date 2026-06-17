@@ -31,7 +31,9 @@ const GameMasterDashboard = () => {
     equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
     equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '',
     extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
-    element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false
+    element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
+    // 👑 三土手神特注：4大状態異常耐性の初期State配線を開通！
+    resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0
   });
 
   const [itemForm, setItemForm] = useState({
@@ -134,7 +136,11 @@ const GameMasterDashboard = () => {
         base_hp: Number(unitForm.base_hp), base_sp: Number(unitForm.base_sp),
         stat_str: Number(unitForm.stat_str), stat_agi: Number(unitForm.stat_agi), stat_vit: Number(unitForm.stat_vit),
         stat_int: Number(unitForm.stat_int), stat_dex: Number(unitForm.stat_dex), stat_luk: Number(unitForm.stat_luk),
-        
+        // 👑 三土手神特注：入力された耐性%を確実にパースしてSupabaseへ完全コミット！
+        resist_stun: Number(unitForm.resist_stun || 0),
+        resist_freeze: Number(unitForm.resist_freeze || 0),
+        resist_poison: Number(unitForm.resist_poison || 0),
+        resist_blind: Number(unitForm.resist_blind || 0),
         
         extra_drop_chance: Number(unitForm.extra_drop_chance),
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
@@ -261,7 +267,9 @@ const GameMasterDashboard = () => {
       equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
       equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '', 
       extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
-      element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false
+      element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
+      // 💡 リセット時もお掃除
+      resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0
     }); 
   };
   
@@ -562,6 +570,17 @@ const GameMasterDashboard = () => {
                 <div><label style={labelStyle}>INT</label><input type="number" value={unitForm.stat_int} onChange={(e) => setUnitForm({...unitForm, stat_int: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>DEX</label><input type="number" value={unitForm.stat_dex} onChange={(e) => setUnitForm({...unitForm, stat_dex: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>LUK</label><input type="number" value={unitForm.stat_luk} onChange={(e) => setUnitForm({...unitForm, stat_luk: e.target.value})} style={inputStyle} /></div>
+              </div>
+
+              {/* 👑 三土手神専用：4大状態異常・固有防御耐性％セッティングパネルの増築！ */}
+              <div style={{ background: '#0f172a', border: '1px dashed #a78bfa', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                <span style={{ fontSize: '0.7rem', color: '#a78bfa', fontWeight: 'bold' }}>✨ 固有状態異常耐性セッティング (%)</span>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
+                  <div><label style={labelStyle}>スタン耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_stun || 0} onChange={(e) => setUnitForm({...unitForm, resist_stun: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>凍結耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_freeze || 0} onChange={(e) => setUnitForm({...unitForm, resist_freeze: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>毒耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_poison || 0} onChange={(e) => setUnitForm({...unitForm, resist_poison: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>暗闇耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_blind || 0} onChange={(e) => setUnitForm({...unitForm, resist_blind: e.target.value})} style={inputStyle} /></div>
+                </div>
               </div>
 
               <button type="submit" style={saveBtnStyle}>神の権能：RO式ユニットを創造</button>
