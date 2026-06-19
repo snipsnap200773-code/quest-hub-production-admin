@@ -74,7 +74,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       // ③ 提携ルール
       supabase.from('shop_facility_connections').select('facility_user_id, regular_rules').eq('shop_id', shopId),
       // ④ 定期除外
-      supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId).eq('shop_id', shopId),
+      supabase.from('regular_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId),
       // ⑤ 他施設の予約（他施設名義の visit_requests）
       supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled'),
       // ⑥ 個人予約（開始・終了時間を取得）
@@ -86,12 +86,12 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     setConfirmedVisits(thisFacRes.data || []);
     setKeepDates(keeps.data || []);
     setRegularRules(conns.data || []);
-    setExclusions(exclData.data?.map(e => e.excluded_date) || []);
+    setExclusions(exclData.data || []);
 
     // 🚀 「自分たち以外」の全予定を「詳細な時間付きリスト」にまとめる
     // ※ 他施設訪問（visit_requests）は丸1日潰れる前提なので時間なし（日付だけ）で扱う
     const busyEvents = [
-      ...(otherFacRes.data || []).map(v => ({ date: v.scheduled_date, isAllDay: true })),
+  ...(otherFacRes.data || []).map(v => ({ date: v.scheduled_date, isAllDay: true })),
       ...(personalRes.data || []).filter(r => r.start_time).map(r => ({
         date: r.start_time.split('T')[0].split(' ')[0],
         start: new Date(r.start_time).getTime(),
@@ -255,11 +255,13 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     }
 
     // 🚀 4. 定期キープ（ルール）を最後に判定
-    if (regKeep && !exclusions.includes(dateStr)) {
-      return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
-    }
+    const isExcludedForThisShop = exclusions.some(e => e.excluded_date === dateStr && e.facility_user_id === regKeep?.keeperId);
+
+if (regKeep && !isExcludedForThisShop) {
+  return { type: regKeep.keeperId === facilityId ? 'keeping' : 'other-keep', time: regKeep.time };
+}
     
-    if (keepDates.some(k => k.date === dateStr)) return 'other-keep';
+    if (keepDates.some(k => k.date === dateStr && k.facility_user_id !== facilityId)) return 'other-keep';
 
     return 'available';
   };
