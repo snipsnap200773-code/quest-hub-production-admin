@@ -544,7 +544,7 @@ const handleSave = async (e) => {
     }
 
     // ✕単発キープ・変更定期キープ（keep_dates）のチェック
-    const matchedManualKeep = keepList.find(k => k.date === dateStr);
+    const matchedManualKeep = keepList.find(k => k.date === dateStr && k.facility_user_id === keepTargetFacilityId);
     if (matchedManualKeep) {
       const kTime = (matchedManualKeep.start_time || '09:00').substring(0, 5);
       const kName = matchedManualKeep.facility_users?.facility_name || '施設';
@@ -563,17 +563,20 @@ const handleSave = async (e) => {
       const isSecondToLastWeek = (tempNext2.getMonth() !== d.getMonth()) && !isLastWeek;
 
       let regKeepData = null;
-      facilities.forEach(conn => {
-        conn.regular_rules?.forEach(rule => {
-          const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
-          const dayMatch = (rule.day === day);
-          const weekMatch = (rule.week === nthWeek) || (rule.week === -1 && isLastWeek) || (rule.week === -2 && isSecondToLastWeek);
+facilities.forEach(conn => {
+  // 🚀 いまキープを入れようとしている施設以外の定期ルールは無視する（他施設のせいで✕になるのを防ぐ）
+  if (conn.id !== keepTargetFacilityId) return; 
 
-          if (monthMatch && dayMatch && weekMatch) {
-            regKeepData = { name: conn.facility_name || '施設', time: (rule.time || '09:00').substring(0, 5) };
-          }
-        });
-      });
+  conn.regular_rules?.forEach(rule => {
+    const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);
+    const dayMatch = (rule.day === day);
+    const weekMatch = (rule.week === nthWeek) || (rule.week === -1 && isLastWeek) || (rule.week === -2 && isSecondToLastWeek);
+
+    if (monthMatch && dayMatch && weekMatch) {
+      regKeepData = { name: conn.facility_name || '施設', time: (rule.time || '09:00').substring(0, 5) };
+    }
+  });
+});
       if (regKeepData) {
         return { status: 'ng', label: '✕', name: regKeepData.name.slice(0, 3), time: regKeepData.time };
       }
