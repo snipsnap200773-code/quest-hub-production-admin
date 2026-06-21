@@ -368,28 +368,47 @@ const FacilityListUp_PC = ({
     // 💡 すでにリストにいるかチェック
     if (draftList.some(d => d.member_id === resident.id)) return;
     
-    // 🚀 現在表示している「年-月」のキーを作成
-    const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
-    
+    // ✨ 🆕 【超重要】すでに今月「キャンセル」扱いでDBに眠っている同じ人がいるか探す
+    const existingCanceledResident = dbReservedResidents.find(
+      db => db.member_id === resident.id && db.status === 'canceled'
+    );
+
     // 初期メニューの決定
     const defaultMenu = shopServices[0]?.name === '（施設用メニュー未設定）' ? 'カット' : (shopServices[0]?.name || 'カット');
 
     try {
-      const { data, error } = await supabase.from('visit_list_drafts').insert([{ 
-        facility_user_id: facilityId, 
-        shop_id: shopId, 
-        member_id: resident.id,
-        menu_name: defaultMenu,
-        scheduled_month: currentMonthKey // 💡 月情報を追加して保存
-      }]).select('*, members(*)').single();
+      if (existingCanceledResident) {
+        // 🚀 パターンA：過去のキャンセル枠を「新規追加分」としてステータスを上書き復活(update)させる！
+        // これにより、同一月に同じメンバーのレコードが2本に増殖するのを根本から防ぎます。
+        const { error } = await supabase
+          .from('visit_request_residents')
+          .update({ status: 'pending', menu_name: defaultMenu })
+          .eq('id', existingCanceledResident.id);
 
-      if (error) throw error;
-      if (data) setDraftList([...draftList, data]);
+        if (error) throw error;
+        
+        // フロントの最新状態を完全に再リロードして右側に復活させる
+        const { data: fac } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
+        if (fac) await fetchData(fac.facility_name);
+      } else {
+        // 🚀 パターンB：通常通り、まったく新しい新規下書きとしてインサート
+        const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;
+        
+        const { data, error } = await supabase.from('visit_list_drafts').insert([{ 
+          facility_user_id: facilityId, 
+          shop_id: shopId, 
+          member_id: resident.id,
+          menu_name: defaultMenu,
+          scheduled_month: currentMonthKey
+        }]).select('*, members(*)').single();
+
+        if (error) throw error;
+        if (data) setDraftList([...draftList, data]);
+      }
 
     } catch (err) {
       console.error("追加エラー:", err);
-      // 💡 もしここで409エラーが出る場合は、以前お伝えしたSQLでの「制約（Constraint）の削除と再作成」が必要です。
-      alert("この月には既に追加されているか、登録に失敗しました。");
+      alert("リストの追加に失敗しました。");
     }
   }; // ✅ addToList はここで終了
 
@@ -624,6 +643,13 @@ const FacilityListUp_PC = ({
                           {lastVisitMap[res.id] && (
                             <span style={{ fontSize: '0.65rem', color: '#94a3b8', fontWeight: 'bold' }}>
                               前回：{lastVisitMap[res.id].replace(/-/g, '/')}
+                            </span>
+                          )}
+
+                          {/* ✨ 🆕 追加：もし今月すでに一度確定して「キャンセル」になっている人なら警告ラベルを出す */}
+                          {dbReservedResidents.some(db => db.member_id === res.id && db.status === 'canceled') && (
+                            <span style={{ fontSize: '0.65rem', color: '#ef4444', fontWeight: '900', background: '#fee2e2', padding: '2px 6px', borderRadius: '4px', marginTop: '2px', display: 'inline-block', width: 'fit-content' }}>
+                              ⚠️ 前回キャンセル
                             </span>
                           )}
                         </div>

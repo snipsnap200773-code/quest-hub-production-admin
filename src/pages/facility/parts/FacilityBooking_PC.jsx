@@ -22,7 +22,8 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   // 🚀 2. 全ての箱が準備できた後に、useMemo（計算）を書きます
   const sortedDrafts = useMemo(() => {
     const combined = [
-      ...dbReservedResidents.map(r => ({ ...r, isFromDB: true })),
+      // ✨ 🆕 修正：status が 'pending'（復活分）のものは、DBデータであっても「新規追加（オレンジ色の札）」として扱うようにフラグを出し分ける
+      ...dbReservedResidents.map(r => ({ ...r, isFromDB: r.status !== 'pending' })),
       ...drafts.map(d => ({ ...d, isFromDB: false }))
     ];
 

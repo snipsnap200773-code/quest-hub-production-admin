@@ -184,11 +184,11 @@ const AdminFacilityVisit_PC = () => {
     const currentStatus = res.status;
     
     // 🚀 1. 次のステータスを決定（キャンセルステータスに対応）
-    // pending -> completed -> canceled -> pending
+    // pending -> completed -> canceled -> pending の順に綺麗にループさせます
     let nextStatus = 'pending';
     if (currentStatus === 'pending') nextStatus = 'completed';
     else if (currentStatus === 'completed') nextStatus = 'canceled';
-    else nextStatus = 'pending';
+    else nextStatus = 'pending'; // 🚀 キャンセル状態から「待機」へ戻す安全ルート
 
     // 🚀 2. 【重要】「完了(completed)」にする時だけ、枝メニュー選択を挟む
     if (nextStatus === 'completed') {
