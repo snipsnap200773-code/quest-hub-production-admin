@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../supabaseClient';
-import { Swords, Shield, Plus, Trash2, Edit2, X, LogOut, BookOpen, Layers } from 'lucide-react';
-
+import { Swords, Shield, Plus, Trash2, Edit2, X, LogOut, BookOpen, Layers, MapPinned } from 'lucide-react';
 // 🆕 三土手創世神専用：大分類に連動する固定武具小分類リスト
 const SUBTYPE_OPTIONS = {
   weapon: ['短剣', '剣', '杖', '鈍器', '斧', '弓', '槍', 'カタール', '本', '爪（ナックル）'],
@@ -59,8 +58,19 @@ const GameMasterDashboard = () => {
     job_requirement: '全職業', level_requirement: 1,
     target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
     effect_type: 'なし', effect_chance: 0, duration_turns: 0,
-    // 🔮 🆕 計算ルールの初期Stateを安全にドッキング（デフォルトはパーセンテージ）
     value_type: 'percent'
+  });
+
+  // 🔮 🆕 三土手創世神専用：フォームが呼び出すための State「questForm」をここに完全配備！
+  const [questForm, setQuestForm] = useState({
+    name: '',
+    level: 1,
+    floors: 1,
+    difficulty: 'E',
+    description: '',
+    enemy_master_id: '', // プルダウン連動用
+    exp_reward: 50,
+    zeny_reward: 1000
   });
 
   const [existingRaces, setExistingRaces] = useState(['人間', '植物', '動物', '昆虫', '悪魔', '不死']);
@@ -223,6 +233,41 @@ const GameMasterDashboard = () => {
       alert('スキル技能を創造しました！');
       resetSkillForm(); fetchData();
     } catch (err) { alert(err.message); }
+  };
+
+  // 🔮 🆕 三土手創世神専用：クラッシュを破壊する handleQuestSubmit の完全配備！
+  const handleQuestSubmit = async (e) => {
+    e.preventDefault();
+    const finalId = isEditing ? editId : `quest_${Date.now()}`; // 🔮 quest_ に修正して器の形を統一
+    try {
+      // 💡 テーブルを作成する前でも、関数さえ空で定義しておけばエラーは100%消滅します
+      // 今後 game_master_quests テーブルを作ったら、以下の upsert コミットがそのまま火を噴きます！
+      const { error } = await supabase.from('game_master_quests').upsert({
+        id: finalId,
+        name: questForm.name,
+        level: Number(questForm.level),
+        floors: Number(questForm.floors),
+        difficulty: questForm.difficulty,
+        description: questForm.description,
+        enemy_master_id: questForm.enemy_master_id || null,
+        exp_reward: Number(questForm.exp_reward),
+        zeny_reward: Number(questForm.zeny_reward)
+      });
+      if (error) throw error;
+      alert('新クエストの創世に成功しました！');
+      resetQuestForm(); fetchData();
+    } catch (err) { alert(err.message); }
+  };
+
+  // 🔮 🆕 状態リセットフォームもお掃除用として同調マウント
+  const resetQuestForm = () => {
+    setIsEditing(false); 
+    setEditId('');
+    const firstEnemy = units.find(unit => unit.unit_type === 'enemy' || unit.unit_type === 'monster');
+    setQuestForm({
+      name: '', level: 1, floors: 1, difficulty: 'E', description: '',
+      enemy_master_id: firstEnemy ? firstEnemy.id : '', exp_reward: 50, zeny_reward: 1000
+    });
   };
 
   const handleDelete = async (table, id) => {
@@ -411,6 +456,8 @@ const GameMasterDashboard = () => {
               <button type="button" onClick={() => setActiveTab('units')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'units' ? '#1e293b' : 'none', color: activeTab === 'units' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>① ユニット創造</button>
               <button type="button" onClick={() => setActiveTab('items')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'items' ? '#1e293b' : 'none', color: activeTab === 'items' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>② 武具アイテム創造</button>
               <button type="button" onClick={() => setActiveTab('skills')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'skills' ? '#1e293b' : 'none', color: activeTab === 'skills' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>③ スキル特技創造</button>
+              {/* 🔮 🆕 クエスト創造タブを綺麗に4番目へ拡張！ */}
+              <button type="button" onClick={() => setActiveTab('quests')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'quests' ? '#1e293b' : 'none', color: activeTab === 'quests' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>④ クエスト創造</button>
             </div>
           )}
 
@@ -885,6 +932,54 @@ const GameMasterDashboard = () => {
               </div>
               <div><label style={labelStyle}>スキル説明文</label><textarea rows="2" value={skillForm.description || ''} onChange={(e) => setSkillForm({...skillForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea></div>
               <button type="submit" style={saveBtnStyle}>新スキル知識を創造</button>
+            </form>
+          )}
+
+          {/* 🔮 🆕 クエストファクトリー：エネミー連動型入力フォームの展開 */}
+          {activeTab === 'quests' && (
+            <form onSubmit={handleQuestSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <div>
+                <label style={labelStyle}>クエストの世界名称</label>
+                <input type="text" required placeholder="例: 🦇 始まりの洞窟：迷い出たバフォメットJr" value={questForm.name} onChange={(e) => setQuestForm({...questForm, name: e.target.value})} style={inputStyle} />
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                <div><label style={labelStyle}>📈 推奨レベル</label><input type="number" min="1" value={questForm.level} onChange={(e) => setQuestForm({...questForm, level: e.target.value})} style={inputStyle} /></div>
+                <div><label style={labelStyle}>⏳ 総階層数</label><input type="number" min="1" value={questForm.floors} onChange={(e) => setQuestForm({...questForm, floors: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <label style={labelStyle}>💎 危険度・難易度</label>
+                  <select value={questForm.difficulty} onChange={(e) => setQuestForm({...questForm, difficulty: e.target.value})} style={inputStyle}>
+                    <option value="E">Rank E</option><option value="D">Rank D</option><option value="C">Rank C</option><option value="B">Rank B</option><option value="A">Rank A</option><option value="S">Rank S</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ background: '#1e1b4b', padding: '12px', border: '1px solid #4338ca', borderRadius: '10px' }}>
+                {/* 👹 ここでgame_master_unitsテーブルに登録された、unit_type === 'enemy' の敵データを自動抽出マウント！ */}
+                <label style={{ ...labelStyle, color: '#a78bfa' }}>👹 ボス・出現マスターエネミー連動</label>
+                <select value={questForm.enemy_master_id} onChange={(e) => setQuestForm({...questForm, enemy_master_id: e.target.value})} style={{ ...inputStyle, borderColor: '#4338ca' }}>
+                  <option value="">-- エネミーを選択 --</option>
+                  {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                    <option key={u.id} value={u.id}>
+                      {u.name} (Lv.{u.base_level} / {u.race} / {u.element}属性)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
+                <div><label style={{ ...labelStyle, color: '#34d399' }}>🎁 獲得 Base EXP</label><input type="number" value={questForm.exp_reward} onChange={(e) => setQuestForm({...questForm, exp_reward: e.target.value})} style={inputStyle} /></div>
+                <div><label style={{ ...labelStyle, color: '#ffd700' }}>💰 獲得 Zeny報酬</label><input type="number" value={questForm.zeny_reward} onChange={(e) => setQuestForm({...questForm, zeny_reward: e.target.value})} style={inputStyle} /></div>
+              </div>
+
+              <div>
+                <label style={labelStyle}>クエストの詳細・ストーリー設定</label>
+                <textarea rows="3" placeholder="ダンジョンの最奥に潜む魔獣バフォメットJrを討伐するクエスト。..." value={questForm.description || ''} onChange={(e) => setQuestForm({...questForm, description: e.target.value})} style={{ ...inputStyle, resize: 'none' }}></textarea>
+              </div>
+
+              <button type="submit" style={{ ...saveBtnStyle, background: 'linear-gradient(135deg, #a855f7 0%, #6366f1 100%)' }}>
+                <MapPinned size={14} /> 新たなエリア世界を創世
+              </button>
             </form>
           )}
         </div>
