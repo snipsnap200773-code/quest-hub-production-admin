@@ -383,7 +383,16 @@ const GameMasterDashboard = () => {
       {type === 'damage_race' && (<><option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option><option value="植物">植物</option><option value="昆虫">昆虫</option><option value="魚貝">魚貝</option><option value="悪魔">悪魔</option><option value="人間">人間</option><option value="天使">天使</option><option value="竜族">竜族</option></>)}
       {type === 'damage_element' && (<><option value="無">無</option><option value="水">水</option><option value="地">地</option><option value="火">火</option><option value="風">風</option><option value="毒">毒</option><option value="聖">聖</option><option value="闇">闇</option><option value="念">念</option><option value="不死">不死</option></>)}
       {(type === 'resist_status' || type === 'inflict_status') && (<><option value="スタン">スタン</option><option value="凍結">凍結</option><option value="毒">毒</option><option value="暗闇">暗闇</option><option value="睡眠">睡眠</option><option value="沈滅">沈黙</option><option value="呪い">呪い</option><option value="石化">石化</option></>)}
-      {type === 'hp_drain' && (<option value="physical_attack">物理攻撃時（発動確率：○○%）</option>)}
+      {type === 'hp_drain' && (
+        <>
+          <option value="">-- 吸収量（割合）を選択 --</option>
+          <option value="drain_5">物理攻撃時：与ダメージの 5% を吸収</option>
+          <option value="drain_10">物理攻撃時：与ダメージの 10% を吸収</option>
+          <option value="drain_15">物理攻撃時：与ダメージの 15% を吸収</option>
+          <option value="drain_20">物理攻撃時：与ダメージの 20% を吸収</option>
+          <option value="drain_30">物理攻撃時：与ダメージの 30% を吸収</option>
+        </>
+      )}
     </>
   );
 
