@@ -209,29 +209,9 @@ export const calculateDamageModifier = (attackSpecs, defenderSpecs) => {
 /**
  * 🎲 1. 状態異常の最終付与確率 ガチャカウンター
  */
-export const calculateStatusInflictChance = (skillChance, attackerCardEff, defenderCardEff, defenderRo, statusType) => {
-  const cardInflictPlus = attackerCardEff?.inflict?.[statusType] || 0;
-  let finalChance = skillChance + cardInflictPlus;
-
-  const cardResistMinus = defenderCardEff?.resist?.[statusType] || 0;
-  finalChance -= cardResistMinus;
-
-  // 🧪 本家ROリスペクト：VIT（肉体スタミナ）とINT（精神集中）による確率カット
-  if (statusType === 'スタン' || statusType === '凍結' || statusType === '毒') {
-    finalChance -= (defenderRo.vit || 0); 
-  } else if (statusType === '暗闇') {
-    finalChance -= (defenderRo.int || 0); 
-  }
-
-  return Math.max(0, Math.min(100, finalChance));
-};
-
-/**
- * ☠️ 2. 状態異常デバフ・戦闘力ダイレクト干渉エンジン
- */
 export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
   const ro = { ...baseRoStatus };
-  if (!activeStatusType || activeStatusType === 'なし') return ro;
+  if (!activeStatusType || activeStatusType === 'なし' || activeStatusType === 'none') return ro;
 
   switch (activeStatusType) {
     case 'スタン':
@@ -241,8 +221,8 @@ export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
       break;
 
     case '凍結':
-      ro.def = 0;   
-      ro.flee = 0;
+      ro.def = 0;   // 🛡️ 防御力完全喪失
+      ro.flee = 0;  // 💨 回避不可
       ro.element = '水'; // 🌍 強制水属性化！
       ro.is_unable_to_move = true;
       break;
@@ -253,8 +233,29 @@ export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
       break;
 
     case '暗闇':
-      ro.hit = Math.floor(ro.hit * 0.5);   // 🎯 命中率半減
-      ro.flee = Math.floor(ro.flee * 0.5); // 💨 回避率半減
+      ro.hit = Math.floor(ro.hit * 0.5);   // 🎯 敵の命中率半減
+      ro.flee = Math.floor(ro.flee * 0.5); // 💨 敵の回避率半減
+      break;
+
+    case '睡眠':
+      ro.flee = 0;  // 💨 無防備のため回避不可
+      ro.is_unable_to_move = true; // 💤 完全行動不能
+      // ※被ダメージ1.5倍などの処理は、戦闘計算のダメージ最終値に掛け算する形でAdventureActive側で直撃させられます！
+      break;
+
+    case '沈黙':
+      ro.is_silenced = true; // 🤐 魔法・スキル完全詠唱封印
+      break;
+
+    case '呪い':
+      ro.str = Math.floor(ro.str * 0.5);  // 💀 攻撃力（STR）を強制的に半分へ弱体化！
+      ro.luk = 0;                         // 🍀 運がゼロになりクリティカル不発化
+      break;
+
+    case '石化':
+      ro.def = 0;   // 🗿 時間が経ち完全に固まると防御ゼロ（カカシ化）
+      ro.flee = 0;  // 💨 当然回避不可
+      ro.is_unable_to_move = true;
       break;
 
     default:

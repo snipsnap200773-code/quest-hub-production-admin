@@ -151,6 +151,12 @@ const GameMasterDashboard = () => {
         resist_freeze: Number(unitForm.resist_freeze || 0),
         resist_poison: Number(unitForm.resist_poison || 0),
         resist_blind: Number(unitForm.resist_blind || 0),
+
+        // 🆕 新しく追加した4大状態異常耐性もここで確実にパースしてSupabaseへコミット！
+        resist_sleep: Number(unitForm.resist_sleep || 0),
+        resist_silence: Number(unitForm.resist_silence || 0),
+        resist_curse: Number(unitForm.resist_curse || 0),
+        resist_petrify: Number(unitForm.resist_petrify || 0),
         
         extra_drop_chance: Number(unitForm.extra_drop_chance),
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
@@ -183,21 +189,21 @@ const GameMasterDashboard = () => {
         weapon_level: Number(itemForm.weapon_level), equip_level_req: Number(itemForm.equip_level_req),
         weight: Number(itemForm.weight), penalty_str: Number(itemForm.penalty_str),
         
-        // 🔮 トリプル効果スペックを一斉格納コミット
-        card_effect_type: isCard ? cardEffectType1 : null,
-        card_effect_target: isCard ? cardEffectTarget1 : null,
-        card_effect_value: isCard ? Number(cardEffectValue1) : 0,
+        // 🔮 👑 創世神リフォーム：カード限定の縛りを完全撤廃！武器・防具でも特殊効果がそのまま宿る神配線
+        card_effect_type: cardEffectType1 !== 'none' ? cardEffectType1 : null,
+        card_effect_target: cardEffectType1 !== 'none' ? cardEffectTarget1 : null,
+        card_effect_value: cardEffectType1 !== 'none' ? Number(cardEffectValue1) : 0,
 
-        card_effect_type_2: isCard && cardEffectType2 !== 'none' ? cardEffectType2 : null,
-        card_effect_target_2: isCard && cardEffectType2 !== 'none' ? cardEffectTarget2 : null,
-        card_effect_value_2: isCard && cardEffectType2 !== 'none' ? Number(cardEffectValue2) : 0,
+        card_effect_type_2: cardEffectType2 !== 'none' ? cardEffectType2 : null,
+        card_effect_target_2: cardEffectType2 !== 'none' ? cardEffectTarget2 : null,
+        card_effect_value_2: cardEffectType2 !== 'none' ? Number(cardEffectValue2) : 0,
 
-        card_effect_type_3: isCard && cardEffectType3 !== 'none' ? cardEffectType3 : null,
-        card_effect_target_3: isCard && cardEffectType3 !== 'none' ? cardEffectTarget3 : null,
-        card_effect_value_3: isCard && cardEffectType3 !== 'none' ? Number(cardEffectValue3) : 0
+        card_effect_type_3: cardEffectType3 !== 'none' ? cardEffectType3 : null,
+        card_effect_target_3: cardEffectType3 !== 'none' ? cardEffectTarget3 : null,
+        card_effect_value_3: cardEffectType3 !== 'none' ? Number(cardEffectValue3) : 0
       });
       if (error) throw error;
-      alert('アイテムデータを創造しました！');
+      alert('アイテムデータを創造しました！(武器・防具への特殊効果付与対応版)');
       
       // 効果State群の初期化リセット
       setCardEffectType1('add_stat'); setCardEffectTarget1('hp'); setCardEffectValue1(0);
@@ -314,7 +320,13 @@ const GameMasterDashboard = () => {
       extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
       element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
       // 💡 リセット時もお掃除
-      resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0
+      resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0,
+
+      // 🆕 新しい4つの耐性も、保存完了時やリセット時にきれいに 0 へ初期化クリーンアップ！
+      resist_sleep: 0,
+      resist_silence: 0,
+      resist_curse: 0,
+      resist_petrify: 0
     }); 
   };
   
@@ -630,12 +642,18 @@ const GameMasterDashboard = () => {
 
               {/* 👑 三土手神専用：4大状態異常・固有防御耐性％セッティングパネルの増築！ */}
               <div style={{ background: '#0f172a', border: '1px dashed #a78bfa', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                <span style={{ fontSize: '0.7rem', color: '#a78bfa', fontWeight: 'bold' }}>✨ 固有状態異常耐性セッティング (%)</span>
+                <span style={{ fontSize: '0.7rem', color: '#a78bfa', fontWeight: 'bold' }}>✨ 全8大状態異常・固有防御耐性セッティング (%)</span>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '6px' }}>
                   <div><label style={labelStyle}>スタン耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_stun || 0} onChange={(e) => setUnitForm({...unitForm, resist_stun: e.target.value})} style={inputStyle} /></div>
                   <div><label style={labelStyle}>凍結耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_freeze || 0} onChange={(e) => setUnitForm({...unitForm, resist_freeze: e.target.value})} style={inputStyle} /></div>
                   <div><label style={labelStyle}>毒耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_poison || 0} onChange={(e) => setUnitForm({...unitForm, resist_poison: e.target.value})} style={inputStyle} /></div>
                   <div><label style={labelStyle}>暗闇耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_blind || 0} onChange={(e) => setUnitForm({...unitForm, resist_blind: e.target.value})} style={inputStyle} /></div>
+                  
+                  {/* 🆕 ここから下の段に新状態異常4つを完全同期マウント！ */}
+                  <div><label style={labelStyle}>睡眠耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_sleep || 0} onChange={(e) => setUnitForm({...unitForm, resist_sleep: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>沈黙耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_silence || 0} onChange={(e) => setUnitForm({...unitForm, resist_silence: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>呪い耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_curse || 0} onChange={(e) => setUnitForm({...unitForm, resist_curse: e.target.value})} style={inputStyle} /></div>
+                  <div><label style={labelStyle}>石化耐性</label><input type="number" min="0" max="100" placeholder="%" value={unitForm.resist_petrify || 0} onChange={(e) => setUnitForm({...unitForm, resist_petrify: e.target.value})} style={inputStyle} /></div>
                 </div>
               </div>
 
@@ -680,10 +698,10 @@ const GameMasterDashboard = () => {
               </div>
 
               {/* 🔮 【神改修】アイテム大分類がカードの場合、最大3連の特殊マルチスロット設定UIを展開 */}
-              {itemForm.item_type === 'card' ? (
+              {['card', 'weapon', 'armor'].includes(itemForm.item_type) && (
                 <div style={{ background: '#0f172a', border: '1px dashed #f59e0b', padding: '14px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold' }}>🔮 モンスターカード専用・トリプル特殊効果設定</span>
-                  <span style={{ fontSize: '0.6rem', color: '#64748b' }}>※1枚のカードに最大3つまで独立したロマン効果を同時付与できます。</span>
+                  <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold' }}>🔮 武具・カード共通：トリプル特殊効果バインド設定</span>
+                  <span style={{ fontSize: '0.6rem', color: '#64748b' }}>※アイテム自体に最大3つまで独立したロマン効果（固有付与や固有耐性）を直接宿せます。</span>
 
                   {/* ─── 効果スロット1 ─── */}
                   <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
@@ -703,6 +721,7 @@ const GameMasterDashboard = () => {
                       </div>
                       <div>
                         <select value={cardEffectTarget1} onChange={(e) => setCardEffectTarget1(e.target.value)} style={inputStyle}>
+                          <option value="">-- 対象を選択 --</option>
                           <RenderTargetOptions type={cardEffectType1} />
                         </select>
                       </div>
@@ -731,6 +750,7 @@ const GameMasterDashboard = () => {
                       </div>
                       <div>
                         <select value={cardEffectTarget2} onChange={(e) => setCardEffectTarget2(e.target.value)} style={inputStyle} disabled={cardEffectType2 === 'none'}>
+                          <option value="">-- 対象を選択 --</option>
                           <RenderTargetOptions type={cardEffectType2} />
                         </select>
                       </div>
@@ -747,7 +767,7 @@ const GameMasterDashboard = () => {
                       <div>
                         <select value={cardEffectType3} onChange={(e) => setCardEffectType3(e.target.value)} style={inputStyle}>
                           <option value="none">なし (不活性)</option>
-                          <option value="add_stat">ステータス固定加算（+○○）</option>
+                          <option value="add_stat">ステータs固定加算（+○○）</option>
                           <option value="pct_hp_sp">HP・SP割合上昇（+○○%）</option>
                           <option value="damage_size">モンスターサイズ特効（+○○%）</option>
                           <option value="damage_race">モンスター種族特効（+○○%）</option>
@@ -759,6 +779,7 @@ const GameMasterDashboard = () => {
                       </div>
                       <div>
                         <select value={cardEffectTarget3} onChange={(e) => setCardEffectTarget3(e.target.value)} style={inputStyle} disabled={cardEffectType3 === 'none'}>
+                          <option value="">-- 対象を選択 --</option>
                           <RenderTargetOptions type={cardEffectType3} />
                         </select>
                       </div>
@@ -768,9 +789,12 @@ const GameMasterDashboard = () => {
                     </div>
                   </div>
                 </div>
-              ) : (
+              )}
+
+              {/* 🛡️ ⚔️ 【完全復活】武器または防具の時は、RO式スペック詳細設定（ATK/DEF/レベル制限等）を下に並列して同時表示！ */}
+              {['weapon', 'armor'].includes(itemForm.item_type) && (
                 <div style={{ background: '#1e293b', border: '1px solid #334155', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold' }}>⚔️ 武具・カードのRO式スペック詳細設定</span>
+                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 'bold' }}>⚔️ 武具アイテム固有・基本RO式ステータス設定</span>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
                     <div><label style={labelStyle}>ATK</label><input type="number" value={itemForm.atk} onChange={(e) => setItemForm({...itemForm, atk: e.target.value})} style={inputStyle} /></div>
                     <div><label style={labelStyle}>DEF</label><input type="number" value={itemForm.def} onChange={(e) => setItemForm({...itemForm, def: e.target.value})} style={inputStyle} /></div>
@@ -789,7 +813,6 @@ const GameMasterDashboard = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
                     <div><label style={labelStyle}>装備制限ベースLv</label><input type="number" min="1" value={itemForm.equip_level_req} onChange={(e) => setItemForm({...itemForm, equip_level_req: e.target.value})} style={inputStyle} /></div>
                     <div>
-                      {/* 🔮 🆕 武具アイテムの装備可能職業もオリジナル8職セレクトボックスへアップデート！ */}
                       <label style={labelStyle}>👤 装備可能な職業制限</label>
                       <select value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle}>
                         <option value="全職業">全職業共通</option>
@@ -915,6 +938,13 @@ const GameMasterDashboard = () => {
                     <option value="凍結">凍結付与（水属性化＋行動不能）</option>
                     <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
                     <option value="暗闇">暗闇付与（敵の命中率Hitを大幅低下）</option>
+                    
+                    {/* 🆕 新状態異常の4大セレクトオプションをここに完全開通！ */}
+                    <option value="睡眠">睡眠付与（完全行動不能＋被ダメ増）</option>
+                    <option value="沈黙">沈黙付与（敵の魔法・スキルを完全封印）</option>
+                    <option value="呪い">呪い付与（敵のSTR半減＋CRIゼロ化）</option>
+                    <option value="石化">石化付与（完全行動不能＋防御ゼロ化）</option>
+
                     <option value="攻撃バフ">物理ATK増幅（味方・自分）</option>
                     <option value="防御バフ">物理DEF増幅（味方・自分）</option>
                     <option value="速度バフ">行動速度Aspd増幅</option>
