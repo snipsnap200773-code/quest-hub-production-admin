@@ -18,6 +18,8 @@ const GameMasterDashboard = () => {
   const [units, setUnits] = useState([]);
   const [items, setItems] = useState([]);
   const [skills, setSkills] = useState([]);
+  // 🔮 🆕 創世のクエスト一覧データを格納・管理するStateを新設
+  const [quests, setQuests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState(false);
   const [editId, setEditId] = useState('');
@@ -68,7 +70,9 @@ const GameMasterDashboard = () => {
     floors: 1,
     difficulty: 'E',
     description: '',
-    enemy_master_id: '', // プルダウン連動用
+    enemy_master_id_1: '', // 敵枠①（必須）
+    enemy_master_id_2: '', // 敵枠②（任意）
+    enemy_master_id_3: '', // 敵枠③（任意）
     exp_reward: 50,
     zeny_reward: 1000
   });
@@ -118,6 +122,8 @@ const GameMasterDashboard = () => {
       const { data: u } = await supabase.from('game_master_units').select('*').order('created_at', { ascending: false });
       const { data: i } = await supabase.from('game_master_items').select('*').order('created_at', { ascending: false });
       const { data: s } = await supabase.from('game_master_skills').select('*').order('created_at', { ascending: false });
+      // 🔮 🆕 データベースから既存のクエストリストを全件ロード！
+      const { data: q } = await supabase.from('game_master_quests').select('*').order('level', { ascending: true });
       
       if (u) {
         setUnits(u);
@@ -244,10 +250,13 @@ const GameMasterDashboard = () => {
   // 🔮 🆕 三土手創世神専用：クラッシュを破壊する handleQuestSubmit の完全配備！
   const handleQuestSubmit = async (e) => {
     e.preventDefault();
-    const finalId = isEditing ? editId : `quest_${Date.now()}`; // 🔮 quest_ に修正して器の形を統一
+    const finalId = isEditing ? editId : `quest_${Date.now()}`;
     try {
-      // 💡 テーブルを作成する前でも、関数さえ空で定義しておけばエラーは100%消滅します
-      // 今後 game_master_quests テーブルを作ったら、以下の upsert コミットがそのまま火を噴きます！
+      if (!questForm.enemy_master_id_1) {
+        alert("🚨 出現モンスター枠①は必須設定です！");
+        return;
+      }
+
       const { error } = await supabase.from('game_master_quests').upsert({
         id: finalId,
         name: questForm.name,
@@ -255,24 +264,30 @@ const GameMasterDashboard = () => {
         floors: Number(questForm.floors),
         difficulty: questForm.difficulty,
         description: questForm.description,
-        enemy_master_id: questForm.enemy_master_id || null,
+        // 🔮 3つのカラムへ個別にそのまま格納！外部キー制約と100%美しく同調します
+        enemy_master_id: questForm.enemy_master_id_1, 
+        enemy_master_id_2: questForm.enemy_master_id_2 || null, 
+        enemy_master_id_3: questForm.enemy_master_id_3 || null, 
         exp_reward: Number(questForm.exp_reward),
         zeny_reward: Number(questForm.zeny_reward)
       });
       if (error) throw error;
-      alert('新クエストの創世に成功しました！');
+      alert(isEditing ? 'クエストデータを修正アップデートしました！' : '複数モンスター出現型の新クエストを創世しました！');
       resetQuestForm(); fetchData();
     } catch (err) { alert(err.message); }
   };
 
-  // 🔮 🆕 状態リセットフォームもお掃除用として同調マウント
+  // 🔮 🆕 状態リセットフォームもお掃除用として同調マウント（敵3枠分クリア）
   const resetQuestForm = () => {
     setIsEditing(false); 
     setEditId('');
     const firstEnemy = units.find(unit => unit.unit_type === 'enemy' || unit.unit_type === 'monster');
     setQuestForm({
       name: '', level: 1, floors: 1, difficulty: 'E', description: '',
-      enemy_master_id: firstEnemy ? firstEnemy.id : '', exp_reward: 50, zeny_reward: 1000
+      enemy_master_id_1: firstEnemy ? firstEnemy.id : '', 
+      enemy_master_id_2: '', 
+      enemy_master_id_3: '', 
+      exp_reward: 50, zeny_reward: 1000
     });
   };
 
@@ -283,6 +298,25 @@ const GameMasterDashboard = () => {
       if (error) throw error;
       fetchData();
     } catch (err) { alert('削除失敗: 使用中のデータです。'); }
+  };
+
+  // 🔮 🆕 クエスト編集開始時に、カンマ結合されているIDを再び3つの器にバラして復元マウントする処理
+  const startEditQuest = (q) => {
+    setIsEditing(true);
+    setEditId(q.id);
+    setQuestForm({
+      name: q.name || '',
+      level: q.level || 1,
+      floors: q.floors || 1,
+      difficulty: q.difficulty || 'E',
+      description: q.description || '',
+      // 🔮 分割処理を廃止し、拡張した各カラムからストレートにハイドレーション！
+      enemy_master_id_1: q.enemy_master_id || '',
+      enemy_master_id_2: q.enemy_master_id_2 || '',
+      enemy_master_id_3: q.enemy_master_id_3 || '',
+      exp_reward: q.exp_reward || 50,
+      zeny_reward: q.zeny_reward || 1000
+    });
   };
 
   const startEditUnit = (unit) => { 
@@ -441,6 +475,15 @@ const GameMasterDashboard = () => {
     if (skillSortOrder === 'sp_desc') return (b.sp_cost || 0) - (a.sp_cost || 0);
     if (skillSortOrder === 'lv_asc') return (a.level_requirement || 1) - (b.level_requirement || 1);
     return a.name.localeCompare(b.name, 'ja');
+  });
+
+  // 🔮 🆕 クエストのリスト表示用リアルタイム検索・フィルタリングエンジン
+  const [questSearch, setQuestSearch] = useState('');
+  const [questFilterDifficulty, setQuestFilterDifficulty] = useState('all');
+  const filteredQuests = quests.filter(q => {
+    const matchSearch = q.name.toLowerCase().includes(questSearch.toLowerCase());
+    const matchDiff = questFilterDifficulty === 'all' || q.difficulty === questFilterDifficulty;
+    return matchSearch && matchDiff;
   });
 
   return (
@@ -993,17 +1036,38 @@ const GameMasterDashboard = () => {
                 </div>
               </div>
 
-              <div style={{ background: '#1e1b4b', padding: '12px', border: '1px solid #4338ca', borderRadius: '10px' }}>
-                {/* 👹 ここでgame_master_unitsテーブルに登録された、unit_type === 'enemy' の敵データを自動抽出マウント！ */}
-                <label style={{ ...labelStyle, color: '#a78bfa' }}>👹 ボス・出現マスターエネミー連動</label>
-                <select value={questForm.enemy_master_id} onChange={(e) => setQuestForm({...questForm, enemy_master_id: e.target.value})} style={{ ...inputStyle, borderColor: '#4338ca' }}>
-                  <option value="">-- エネミーを選択 --</option>
-                  {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
-                    <option key={u.id} value={u.id}>
-                      {u.name} (Lv.{u.base_level} / {u.race} / {u.element}属性)
-                    </option>
-                  ))}
-                </select>
+              <div style={{ background: '#1e1b4b', padding: '12px', border: '1px solid #4338ca', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ ...labelStyle, color: '#a78bfa', fontSize: '0.72rem' }}>👹 出現エネミーマルチプルセッティング（最大3体同時ポップ対応）</span>
+                
+                <div>
+                  <label style={labelStyle}>【出現枠 ①】 ※必須配置</label>
+                  <select required value={questForm.enemy_master_id_1} onChange={(e) => setQuestForm({...questForm, enemy_master_id_1: e.target.value})} style={inputStyle}>
+                    <option value="">-- モンスター①を選択 --</option>
+                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                      <option key={'q-en1-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>【出現枠 ②】 ※任意（空欄なら出現なし）</label>
+                  <select value={questForm.enemy_master_id_2} onChange={(e) => setQuestForm({...questForm, enemy_master_id_2: e.target.value})} style={inputStyle}>
+                    <option value="">-- 出現なし --</option>
+                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                      <option key={'q-en2-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={labelStyle}>【出現枠 ③】 ※任意（空欄なら出現なし）</label>
+                  <select value={questForm.enemy_master_id_3} onChange={(e) => setQuestForm({...questForm, enemy_master_id_3: e.target.value})} style={inputStyle}>
+                    <option value="">-- 出現なし --</option>
+                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                      <option key={'q-en3-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
@@ -1182,6 +1246,46 @@ const GameMasterDashboard = () => {
                 {filteredSkills.length === 0 && (
                   <div style={{ fontSize: '0.65rem', color: '#475569', textAlign: 'center', padding: '10px', fontStyle: 'italic' }}>該当するスキル・特技が見つかりません。</div>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* 🔮 🆕 ④ クエスト創造時・および常時：全登録クエストブラウザ（編集・物理削除機能完備）の直撃実装！ */}
+          {activeTab === 'quests' && (
+            <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '15px' }}>
+              <h3 style={{ margin: '0 0 6px 0', fontSize: '0.85rem', color: '#a855f7', display: 'flex', alignItems: 'center', gap: '4px' }}><MapPinned size={14}/> 🗺️ 登録クエスト・ダンジョンブラウザ ({filteredQuests.length} / {quests.length}件)</h3>
+              
+              <div className="filter-box" style={{ borderColor: '#a855f733' }}>
+                <input type="text" placeholder="🔍 クエスト・エリア名で高速検索..." value={questSearch} onChange={(e) => setQuestSearch(e.target.value)} className="search-input" />
+                <select value={questFilterDifficulty} onChange={(e) => setQuestFilterDifficulty(e.target.value)} className="filter-select">
+                  <option value="all">💎 全難易度</option>
+                  <option value="E">Rank E</option><option value="D">Rank D</option><option value="C">Rank C</option><option value="B">Rank B</option><option value="A">Rank A</option><option value="S">Rank S</option>
+                </select>
+              </div>
+
+              <div className="scroll-list">
+                {filteredQuests.map(q => {
+                  const enemyIds = q.enemy_master_id ? String(q.enemy_master_id).split(',') : [];
+                  const enemyNames = enemyIds.map(id => {
+                    const found = units.find(u => u.id === id);
+                    return found ? found.name : id;
+                  }).join(' + ');
+
+                  return (
+                    <div key={q.id} style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '8px 12px', borderRadius: '8px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div style={{ flex: 1, paddingRight: '8px' }}>
+                        <span style={{ fontSize: '0.55rem', color: '#64748b', display: 'block' }}>推奨Lv.{q.level} | ⏳ 全{q.floors}階層</span>
+                        <strong style={{ fontSize: '0.85rem', color: '#a855f7' }}>{q.name} <span style={{ fontSize: '0.65rem', background: '#3b0764', color: '#d8b4fe', padding: '1px 5px', borderRadius: '3px', marginLeft: '4px' }}>Rank {q.difficulty}</span></strong>
+                        <span style={{ fontSize: '0.68rem', color: '#ffb834', display: 'block', marginTop: '2px', fontWeight: 'bold' }}>👾 出現群: {enemyNames || '未配置'}</span>
+                        <span style={{ fontSize: '0.62rem', color: '#34d399', display: 'block' }}>🎁 報酬: {q.exp_reward} EXP / {q.zeny_reward} Zeny</span>
+                      </div>
+                      <div style={{ display: 'flex', gap: '4px' }}>
+                        <button onClick={() => startEditQuest(q)} style={iconBtnStyle}><Edit2 size={11}/></button>
+                        <button onClick={() => handleDelete('game_master_quests', q.id)} style={{ ...iconBtnStyle, color: '#ef4444' }}><Trash2 size={11}/></button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
