@@ -140,9 +140,9 @@ export const calculateTotalStatusPoints = (currentLevel) => {
 export const ELEMENT_MATRIX = {
   '無': { '無': 1.0, '火': 1.0, '水': 1.0, '地': 1.0, '風': 1.0, '聖': 1.0, '闇': 1.0, '不死': 1.0 },
   '火': { '無': 1.0, '火': 0.5, '水': 0.5, '地': 2.0, '風': 1.0, '聖': 1.0, '闇': 1.0, '不死': 1.5 },
-  '水': { '無': 1.0, '火': 2.0, '水': 0.5, '地': 0.5, '風': 1.0, '聖': 1.0, '闇': 1.0, '不死': 1.0 },
-  '地': { '無': 1.0, '火': 1.0, '水': 2.0, '地': 0.5, '風': 0.5, '聖': 1.0, '闇': 1.0, '不死': 1.0 },
-  '風': { '無': 1.0, '火': 1.0, '水': 0.5, '地': 1.0, '風': 0.5, '聖': 1.0, '闇': 1.0, '不死': 1.0 },
+  '水': { '無': 1.0, '火': 2.0, '水': 0.5, '地': 0.5, '風': 0.5, '聖': 1.0, '闇': 1.0, '不死': 1.0 }, // 💡 風への攻撃を0.5に
+  '地': { '無': 1.0, '火': 0.5, '水': 1.0, '地': 0.5, '風': 2.0, '聖': 1.0, '闇': 1.0, '不死': 1.0 }, // 💡 水➔風(2.0)へ弱点変更
+  '風': { '無': 1.0, '火': 1.0, '水': 2.0, '地': 0.5, '風': 0.5, '聖': 1.0, '闇': 1.0, '不死': 1.0 }, // 💡 水へ2.0倍の特効を開通！
   '聖': { '無': 1.0, '火': 1.0, '水': 1.0, '地': 1.0, '風': 1.0, '聖': 0.0, '闇': 2.0, '不死': 2.0 },
   '闇': { '無': 1.0, '火': 1.0, '水': 1.0, '地': 1.0, '風': 1.0, '聖': 0.5, '闇': 0.0, '不死': 0.0 },
   '不死': { '無': 1.0, '火': 1.0, '水': 1.0, '地': 1.0, '風': 1.0, '聖': 1.5, '闇': 0.0, '不死': 0.0 }
@@ -209,6 +209,26 @@ export const calculateDamageModifier = (attackSpecs, defenderSpecs) => {
 /**
  * 🎲 1. 状態異常の最終付与確率 ガチャカウンター
  */
+export const calculateStatusInflictChance = (skillChance, attackerCardEff, defenderCardEff, defenderRo, statusType) => {
+  const cardInflictPlus = attackerCardEff?.inflict?.[statusType] || 0;
+  let finalChance = skillChance + cardInflictPlus;
+
+  const cardResistMinus = defenderCardEff?.resist?.[statusType] || 0;
+  finalChance -= cardResistMinus;
+
+  // 🧪 本家ROリスペクト：VIT（肉体スタミナ）とINT（精神集中）による確率カット
+  if (statusType === 'スタン' || statusType === '凍結' || statusType === '毒') {
+    finalChance -= (defenderRo.vit || 0); 
+  } else if (statusType === '暗闇') {
+    finalChance -= (defenderRo.int || 0); 
+  }
+
+  return Math.max(0, Math.min(100, finalChance));
+};
+
+/**
+ * ☠️ 2. 状態異常デバフ・戦闘力ダイレクト干渉エンジン
+ */
 export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
   const ro = { ...baseRoStatus };
   if (!activeStatusType || activeStatusType === 'なし' || activeStatusType === 'none') return ro;
@@ -263,4 +283,21 @@ export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
   }
 
   return ro;
+};
+
+// ==========================================================
+// 👑 三土手創世神特注：魔法攻撃力 (Matk) 算出エンジン
+// ==========================================================
+/**
+ * 🔮 最小魔力・最大魔力 算出ロジック
+ * キャラクターの純粋な「INT」と「DEX」を基に、TRPGライクな魔力のダイス幅を弾き出します。
+ */
+export const calculateMatk = (intVal, dexValue) => {
+  const myInt = Number(int) || Number(intVal) || 0;
+  const myDex = Number(dex) || Number(dexValue) || 0;
+
+  const minMatk = Math.floor(myInt + (myDex * 0.2));
+  const maxMatk = Math.floor(myInt * 2.0 + myDex);
+
+  return { minMatk, maxMatk };
 };

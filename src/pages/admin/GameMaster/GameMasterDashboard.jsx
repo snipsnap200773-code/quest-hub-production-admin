@@ -134,6 +134,10 @@ const GameMasterDashboard = () => {
       }
       if (i) setItems(i);
       if (s) setSkills(s);
+      
+      // 💡 【修正点】取得したクエストデータを画面の管理Stateへガキィンと直撃バインド！
+      if (q) setQuests(q);
+
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -960,11 +964,11 @@ const GameMasterDashboard = () => {
                   <label style={labelStyle}>🔥 技・魔法の固有属性</label>
                   <select value={skillForm.element || '無'} onChange={(e) => setSkillForm({...skillForm, element: e.target.value})} style={inputStyle}>
                     <option value="無">無属性</option>
-                    <option value="火">火属性（地に強い）</option>
-                    <option value="水">水属性（火に強い）</option>
-                    <option value="風">風属性（水に強い）</option>
-                    <option value="地">地属性（風に強い）</option>
-                    <option value="聖">聖属性（不死・闇に特効）</option>
+<option value="火">火属性（地属性に強い・2.0倍）</option>
+<option value="水">水属性（火属性に強い・2.0倍）</option>
+<option value="風">风属性（水属性に強い・2.0倍）</option> {/* 💡 風は水に強い！ */}
+<option value="地">地属性（風属性に強い・2.0倍）</option> {/* 💡 地は風に強い！ */}
+<option value="聖">聖属性（不死・闇に特効・2.0倍）</option>
                     <option value="闇">闇属性</option>
                     <option value="不死">不死属性</option>
                   </select>
