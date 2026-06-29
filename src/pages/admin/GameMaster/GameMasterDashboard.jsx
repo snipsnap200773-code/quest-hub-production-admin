@@ -63,19 +63,38 @@ const GameMasterDashboard = () => {
     value_type: 'percent'
   });
 
-  // 🔮 🆕 三土手創世神専用：フォームが呼び出すための State「questForm」をここに完全配備！
+  // 🔮 🆕 【三土手創世神特注：多層ダンジョン階層コンフィグState】
+  const [activeFloorTab, setActiveFloorTab] = useState(1); // 現在編集中の階層（1〜5）
+  const [floorConfigs, setFloorConfigs] = useState([
+    // 🛠️ 最小出現数（min_spawn: 1）と 最大出現数（max_spawn: 2）の初期値をバインディング！
+    { floor: 1, enemy_ids: ['', '', ''], battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }
+  ]);
+
   const [questForm, setQuestForm] = useState({
     name: '',
     level: 1,
-    floors: 1,
+    floors: 1, // 総階層数
     difficulty: 'E',
     description: '',
-    enemy_master_id_1: '', // 敵枠①（必須）
-    enemy_master_id_2: '', // 敵枠②（任意）
-    enemy_master_id_3: '', // 敵枠③（任意）
     exp_reward: 50,
     zeny_reward: 1000
   });
+
+  // 階層を動的に追加・変更するヘルパー関数
+  const handleFloorConfigChange = (floorNum, field, value) => {
+    setFloorConfigs(prev => prev.map(f => f.floor === floorNum ? { ...f, [field]: value } : f));
+  };
+
+  const handleFloorEnemyChange = (floorNum, index, enemyId) => {
+    setFloorConfigs(prev => prev.map(f => {
+      if (f.floor === floorNum) {
+        const nextEnemies = [...f.enemy_ids];
+        nextEnemies[index] = enemyId;
+        return { ...f, enemy_ids: nextEnemies };
+      }
+      return f;
+    }));
+  };
 
   const [existingRaces, setExistingRaces] = useState(['人間', '植物', '動物', '昆虫', '悪魔', '不死']);
   
@@ -144,6 +163,19 @@ const GameMasterDashboard = () => {
 
   useEffect(() => { fetchData(); }, []);
 
+  // 🛠️ 🆕 ここに綺麗にスッと差し込みます！
+  const handleDelete = async (table, id) => {
+    if (!window.confirm(`本当に削除しますか？`)) return;
+    try {
+      const { error } = await supabase.from(table).delete().eq('id', id);
+      if (error) throw error;
+      fetchData(); // 削除が成功したらリストを最新に更新
+    } catch (err) { 
+      alert('削除失敗: 使用中のデータです。'); 
+    }
+  }; // 🟢 ここでしっかり閉じカッコが完結します
+
+  // ─── ここから下は三土手さんが見せてくれた元のコードへ綺麗に繋がります ───
   const handleUnitSubmit = async (e) => {
     e.preventDefault();
     const finalId = isEditing ? editId : `unit_${Date.now()}`;
@@ -167,6 +199,14 @@ const GameMasterDashboard = () => {
         resist_silence: Number(unitForm.resist_silence || 0),
         resist_curse: Number(unitForm.resist_curse || 0),
         resist_petrify: Number(unitForm.resist_petrify || 0),
+
+        // 💡 【追記：ドロップ確率 ＆ テイマー調教仲間化パラメータの同期コミット】
+        drop_chance_weapon: Number(unitForm.drop_chance_weapon || 0),
+        tame_success_chance: Number(unitForm.tame_success_chance || 0),
+        tame_level_req: Number(unitForm.tame_level_req || 1),
+
+        // 🔮 【三土手神リフォーム】手入力があれば数値化、空文字なら未指定(null)として安全にDBへ送信！
+        enemy_aspd: unitForm.enemy_aspd ? Number(unitForm.enemy_aspd) : null,
         
         extra_drop_chance: Number(unitForm.extra_drop_chance),
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
@@ -251,13 +291,14 @@ const GameMasterDashboard = () => {
     } catch (err) { alert(err.message); }
   };
 
-  // 🔮 🆕 三土手創世神専用：クラッシュを破壊する handleQuestSubmit の完全配備！
+  // 🔮 🆕 階層コンフィグ対応型クエスト創世処理
   const handleQuestSubmit = async (e) => {
     e.preventDefault();
     const finalId = isEditing ? editId : `quest_${Date.now()}`;
     try {
-      if (!questForm.enemy_master_id_1) {
-        alert("🚨 出現モンスター枠①は必須設定です！");
+      // 最低限、B1の最初のモンスターが選ばれているかチェック
+      if (!floorConfigs[0]?.enemy_ids[0]) {
+        alert("🚨 B1の出現モンスター枠①は必須設定です！");
         return;
       }
 
@@ -268,63 +309,42 @@ const GameMasterDashboard = () => {
         floors: Number(questForm.floors),
         difficulty: questForm.difficulty,
         description: questForm.description,
-        // 🔮 3つのカラムへ個別にそのまま格納！外部キー制約と100%美しく同調します
-        enemy_master_id: questForm.enemy_master_id_1, 
-        enemy_master_id_2: questForm.enemy_master_id_2 || null, 
-        enemy_master_id_3: questForm.enemy_master_id_3 || null, 
         exp_reward: Number(questForm.exp_reward),
-        zeny_reward: Number(questForm.zeny_reward)
+        zeny_reward: Number(questForm.zeny_reward),
+        // 🔮 JSONオブジェクトとして階層設定を配列のまま丸ごとデータベースへ直撃格納！
+        floor_configs: floorConfigs 
       });
       if (error) throw error;
-      alert(isEditing ? 'クエストデータを修正アップデートしました！' : '複数モンスター出現型の新クエストを創世しました！');
+      alert(isEditing ? '多層ダンジョンを修正アップデートしました！' : 'B1〜B5階層対応の新ダンジョンを創世しました！');
       resetQuestForm(); fetchData();
     } catch (err) { alert(err.message); }
   };
 
-  // 🔮 🆕 状態リセットフォームもお掃除用として同調マウント（敵3枠分クリア）
   const resetQuestForm = () => {
     setIsEditing(false); 
     setEditId('');
-    const firstEnemy = units.find(unit => unit.unit_type === 'enemy' || unit.unit_type === 'monster');
-    setQuestForm({
-      name: '', level: 1, floors: 1, difficulty: 'E', description: '',
-      enemy_master_id_1: firstEnemy ? firstEnemy.id : '', 
-      enemy_master_id_2: '', 
-      enemy_master_id_3: '', 
-      exp_reward: 50, zeny_reward: 1000
-    });
+    setActiveFloorTab(1);
+    setQuestForm({ name: '', level: 1, floors: 1, difficulty: 'E', description: '', exp_reward: 50, zeny_reward: 1000 });
+    // 🛠️ リセット時も初期値を1〜2体に
+    setFloorConfigs([{ floor: 1, enemy_ids: ['', '', ''], battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }]);
   };
 
-  const handleDelete = async (table, id) => {
-    if (!window.confirm(`本当に削除しますか？`)) return;
-    try {
-      const { error } = await supabase.from(table).delete().eq('id', id);
-      if (error) throw error;
-      fetchData();
-    } catch (err) { alert('削除失敗: 使用中のデータです。'); }
-  };
-
-  // 🔮 🆕 クエスト編集開始時に、カンマ結合されているIDを再び3つの器にバラして復元マウントする処理
   const startEditQuest = (q) => {
     setIsEditing(true);
     setEditId(q.id);
     setQuestForm({
-      name: q.name || '',
-      level: q.level || 1,
-      floors: q.floors || 1,
-      difficulty: q.difficulty || 'E',
-      description: q.description || '',
-      // 🔮 分割処理を廃止し、拡張した各カラムからストレートにハイドレーション！
-      enemy_master_id_1: q.enemy_master_id || '',
-      enemy_master_id_2: q.enemy_master_id_2 || '',
-      enemy_master_id_3: q.enemy_master_id_3 || '',
-      exp_reward: q.exp_reward || 50,
-      zeny_reward: q.zeny_reward || 1000
+      name: q.name || '', level: q.level || 1, floors: q.floors || 1, difficulty: q.difficulty || 'E', description: q.description || '', exp_reward: q.exp_reward || 50, zeny_reward: q.zeny_reward || 1000
     });
-  };
+    if (q.floor_configs && Array.isArray(q.floor_configs)) {
+      setFloorConfigs(q.floor_configs);
+    } else {
+      setFloorConfigs([{ floor: 1, enemy_ids: [q.enemy_master_id || '', q.enemy_master_id_2 || '', q.enemy_master_id_3 || ''], battle_count: 3, chest_count: 1, has_fountain: false }]);
+    }
+    setActiveFloorTab(1);
+  }; // ✨ ⚙️ 巻き込んで消えていたこのカッコを1行書き足して復活させる！
 
-  const startEditUnit = (unit) => { 
-    setIsEditing(true); setEditId(unit.id); 
+  const startEditUnit = (unit) => { // 🟢 これで構文が繋がり、画面が正常に復活します！
+    setIsEditing(true); setEditId(unit.id);
     setUnitForm({ 
       ...unit, 
       element: unit.element || '無', size: unit.size || '中型',
@@ -364,8 +384,16 @@ const GameMasterDashboard = () => {
       resist_sleep: 0,
       resist_silence: 0,
       resist_curse: 0,
-      resist_petrify: 0
-    }); 
+      resist_petrify: 0,
+
+      // 💡 【追記】ドロップ確率や調教用パラメータも保存後にきれいにリセット
+      drop_chance_weapon: 0,
+      tame_success_chance: 0,
+      tame_level_req: 1,
+
+      // 💨 保存後にAspdの入力欄もきれいに空文字へリセットクリーンアップ！
+      enemy_aspd: ""
+    });  
   };
   
   const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0 }); };
@@ -676,6 +704,100 @@ const GameMasterDashboard = () => {
                 </div>
               </div>
 
+              {/* 🔮 🆕 【三土手創世神特注：モンスター専用 スキル・ドロップ・調教仲間化 統合コントロールセンター】 */}
+              {unitForm.unit_type === 'enemy' && (
+                <div style={{ background: '#0f172a', border: '1px dashed #6366f1', padding: '14px', borderRadius: '12px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#a855f7', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>⚙️ 敵モンスター専用：スキル・ドロップ・調教仲間化設定</span>
+
+                  {/* ─── 枠①：モンスターAI使用スキル習得（最大3枠） ─── */}
+                  <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#38bdf8', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>🔮 行動AI：使用習得スキル・大魔法（最大3枠）</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={labelStyle}>スキル枠①</label>
+                        <select value={unitForm.skill_01 || ''} onChange={(e) => setUnitForm({...unitForm, skill_01: e.target.value})} style={inputStyle}>
+                          <option value="">使用なし</option>
+                          {skills.map(s => <option key={'es1-'+s.id} value={s.id}>{s.name} ({s.skill_type === 'magic' ? '魔法' : '物理'})</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>スキル枠②</label>
+                        <select value={unitForm.skill_02 || ''} onChange={(e) => setUnitForm({...unitForm, skill_02: e.target.value})} style={inputStyle}>
+                          <option value="">使用なし</option>
+                          {skills.map(s => <option key={'es2-'+s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>スキル枠③</label>
+                        <select value={unitForm.skill_03 || ''} onChange={(e) => setUnitForm({...unitForm, skill_03: e.target.value})} style={inputStyle}>
+                          <option value="">使用なし</option>
+                          {skills.map(s => <option key={'es3-'+s.id} value={s.id}>{s.name}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* ─── 枠②：装備＆所持品完全連動・ドロップ確率セッティング ─── */}
+                  <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+                    <span style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>📦 戦利品ドロップ：装備武具 ＆ 固有レアアイテムドロップ確率 (%)</span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      
+                      {/* 装備連動枠 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px' }}>
+                        <div>
+                          <span style={{ fontSize: '0.6rem', color: '#94a3b8', display: 'block' }}>🛡️ 右手武器ドロップ（上の選択に全自動連動）</span>
+                          <strong style={{ fontSize: '0.72rem', color: unitForm.equip_right_hand ? '#ffd700' : '#475569' }}>
+                            {items.find(i => i.id === unitForm.equip_right_hand)?.name || '未装備（ドロップなし）'}
+                          </strong>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>武器ドロップ確率 (%)</label>
+                          <input type="number" min="0" max="100" placeholder="0〜100%" value={unitForm.drop_chance_weapon || 0} onChange={(e) => setUnitForm({...unitForm, drop_chance_weapon: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.equip_right_hand} />
+                        </div>
+                      </div>
+
+                      {/* 固有レア・カードドロップ枠 */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px' }}>
+                        <div>
+                          <label style={labelStyle}>🃏 固有レアドロップ枠（カードや素材を選択）</label>
+                          <select value={unitForm.extra_drop_item || ''} onChange={(e) => setUnitForm({...unitForm, extra_drop_item: e.target.value})} style={inputStyle}>
+                            <option value="">ドロップなし</option>
+                            {items.map(i => <option key={'ed-'+i.id} value={i.id}>[{i.item_subtype}] {i.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>レアドロップ確率 (%)</label>
+                          <input type="number" min="0" max="100" placeholder="例: 0.01% 〜 10%" value={unitForm.extra_drop_chance || 0} onChange={(e) => setUnitForm({...unitForm, extra_drop_chance: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.extra_drop_item} />
+                        </div>
+                      </div>
+
+                    </div>
+                  </div>
+
+                  {/* ─── 枠③：テイマー専用・魔物調教仲間化ガンビット ─── */}
+                  <div>
+                    <span style={{ fontSize: '0.68rem', color: '#f59e0b', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>🐾 テイマー専用：魔物調教・仲間化確率 ＆ 条件設定</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.2fr 1.2fr', gap: '6px', alignItems: 'center' }}>
+                      <div>
+                        <label style={labelStyle}>仲間化の可否</label>
+                        <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', marginTop: '6px' }}>
+                          <input type="checkbox" checked={unitForm.is_tamable} onChange={(e) => setUnitForm({...unitForm, is_tamable: e.target.checked})} /> 調教可能にする
+                        </label>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>基礎調教成功確率 (%)</label>
+                        <input type="number" min="0" max="100" placeholder="例: 20%" value={unitForm.tame_success_chance || 0} onChange={(e) => setUnitForm({...unitForm, tame_success_chance: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.is_tamable} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>👤 テイマー必須習得レベル</label>
+                        <input type="number" min="1" max="50" placeholder="例: Lv.15以上" value={unitForm.tame_level_req || 1} onChange={(e) => setUnitForm({...unitForm, tame_level_req: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.is_tamable} />
+                      </div>
+                    </div>
+                  </div>
+
+                </div>
+              )}
+
               <div className="stat-grid">
                 <div style={{ gridColumn: 'span 2' }}><label style={{...labelStyle, color: '#f43f5e'}}>MHP (最大HP)</label><input type="number" value={unitForm.base_hp} onChange={(e) => setUnitForm({...unitForm, base_hp: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: 'span 2' }}><label style={{...labelStyle, color: '#38bdf8'}}>MSP (最大SP)</label><input type="number" value={unitForm.base_sp} onChange={(e) => setUnitForm({...unitForm, base_sp: e.target.value})} style={inputStyle} /></div>
@@ -686,6 +808,60 @@ const GameMasterDashboard = () => {
                 <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>DEX</label><input type="number" value={unitForm.stat_dex} onChange={(e) => setUnitForm({...unitForm, stat_dex: e.target.value})} style={inputStyle} /></div>
                 <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>LUK</label><input type="number" value={unitForm.stat_luk} onChange={(e) => setUnitForm({...unitForm, stat_luk: e.target.value})} style={inputStyle} /></div>
               </div>
+
+              {/* 🔮 🆕 【三土手創世神専用：敵Aspd個別上書き入力欄の設置】 */}
+              {unitForm.unit_type === 'enemy' && (
+                <div style={{ marginTop: '6px', marginBottom: '8px', background: '#0b0f19', padding: '10px', borderRadius: '8px', border: '1px dashed #334155' }}>
+                  <label style={{ ...labelStyle, color: '#ffd700', display: 'flex', alignItems: 'center', gap: '4px' }}>💨 敵専用：攻撃速度 (Aspd) 個別上書き設定</label>
+                  <input 
+                    type="number" 
+                    min="0" 
+                    max="193" 
+                    placeholder="未入力時は本家基本値【150.0】が適用されます (最速193)" 
+                    value={unitForm.enemy_aspd || ''} 
+                    onChange={(e) => setUnitForm({...unitForm, enemy_aspd: e.target.value})} 
+                    style={inputStyle} 
+                  />
+                </div>
+              )}
+
+              {/* 🔮 🆕 【三土手創世神専用：モンスター戦闘力予測シミュレーターボード】 */}
+              {(() => {
+                const sStr = Number(unitForm.stat_str || 0);
+                const sAgi = Number(unitForm.stat_agi || 0);
+                const sVit = Number(unitForm.stat_vit || 0);
+                const sInt = Number(unitForm.stat_int || 0);
+                const sDex = Number(unitForm.stat_dex || 0);
+                const sLuk = Number(unitForm.stat_luk || 0);
+                const sLv  = Number(unitForm.base_level || 1);
+
+                // 世界の数理法則と100%シンクロさせた自動Derived計算
+                const pAtk = Math.floor(sStr + (sDex * 0.5) + (sLv * 0.2)); 
+                const pMinMatk = Math.floor(sInt + (sDex * 0.2));
+                const pMaxMatk = Math.floor(sInt * 2.0 + sDex);
+                const pDef = Math.floor(sVit * 0.5 + (sLv * 0.1));
+                const pMdef = Math.floor(sInt * 0.5 + (sVit * 0.2));
+                const pHit = Math.floor(sLv + sDex + sLuk * 0.2 + 20);
+                const pFlee = Math.floor(sLv + sAgi + sLuk * 0.2 + 10);
+
+                // 💡 【上書き対応数理】もし入力欄に数値があればそれを採用、なければ基本の150.0を自動マウント！
+                const displayAspd = unitForm.enemy_aspd ? Number(unitForm.enemy_aspd).toFixed(1) : "150.0";
+
+                return (
+                  <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
+                    <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>📊 創世ユニット戦闘力予測プレビュー (ステ振り連動)</span>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 12px', fontSize: '0.72rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#94a3b8' }}>攻撃力 (Atk)</span><strong style={{ color: '#fff', fontFamily: 'monospace' }}>{pAtk}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#38bdf8' }}>魔力 (Matk)</span><strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{pMinMatk} 〜 {pMaxMatk}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#34d399' }}>防御力 (Def)</span><strong style={{ color: '#34d399', fontFamily: 'monospace' }}>+{pDef}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#f472b6' }}>魔法防御 (Mdef)</span><strong style={{ color: '#f472b6', fontFamily: 'monospace' }}>+{pMdef}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#fbbf24' }}>命中 (Hit)</span><strong style={{ color: '#fbbf24', fontFamily: 'monospace' }}>{pHit}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#eee' }}>回避 (Flee)</span><strong style={{ color: '#eee', fontFamily: 'monospace' }}>{pFlee}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px', gridColumn: 'span 2' }}><span style={{ color: '#ffd700' }}>💨 確定行動速度 (Aspd)</span><strong style={{ color: '#ffd700', fontFamily: 'monospace' }}>{displayAspd}</strong></div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* 👑 三土手神専用：4大状態異常・固有防御耐性％セッティングパネルの増築！ */}
               <div style={{ background: '#0f172a', border: '1px dashed #a78bfa', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
@@ -1021,17 +1197,32 @@ const GameMasterDashboard = () => {
             </form>
           )}
 
-          {/* 🔮 🆕 クエストファクトリー：エネミー連動型入力フォームの展開 */}
+          {/* 🔮 🆕 クエストファクトリー：B1〜B5個別コンフィグ連動型マルチ階層フォーム */}
           {activeTab === 'quests' && (
             <form onSubmit={handleQuestSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
               <div>
                 <label style={labelStyle}>クエストの世界名称</label>
-                <input type="text" required placeholder="例: 🦇 始まりの洞窟：迷い出たバフォメットJr" value={questForm.name} onChange={(e) => setQuestForm({...questForm, name: e.target.value})} style={inputStyle} />
+                <input type="text" required placeholder="例: 🦇 幻影の古城ダンジョン" value={questForm.name} onChange={(e) => setQuestForm({...questForm, name: e.target.value})} style={inputStyle} />
               </div>
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
                 <div><label style={labelStyle}>📈 推奨レベル</label><input type="number" min="1" value={questForm.level} onChange={(e) => setQuestForm({...questForm, level: e.target.value})} style={inputStyle} /></div>
-                <div><label style={labelStyle}>⏳ 総階層数</label><input type="number" min="1" value={questForm.floors} onChange={(e) => setQuestForm({...questForm, floors: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <label style={labelStyle}>⏳ 総階層数 (最大5)</label>
+                  <input type="number" min="1" max="5" value={questForm.floors} onChange={(e) => {
+                    const fCount = Math.min(5, Math.max(1, Number(e.target.value)));
+                    setQuestForm({...questForm, floors: fCount});
+                    // 総階層数に合わせてfloorConfigsの配列長を自動拡張
+                    setFloorConfigs(prev => {
+                      const next = [...prev];
+                      while(next.length < fCount) {
+                        // 🛠️ B2以降が自動増殖する時も、安全に出現数の初期枠（1〜2体）を持たせる
+                        next.push({ floor: next.length + 1, enemy_ids: ['', '', ''], battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 });
+                      }
+                      return next.slice(0, fCount);
+                    });
+                  }} style={inputStyle} />
+                </div>
                 <div>
                   <label style={labelStyle}>💎 危険度・難易度</label>
                   <select value={questForm.difficulty} onChange={(e) => setQuestForm({...questForm, difficulty: e.target.value})} style={inputStyle}>
@@ -1040,39 +1231,71 @@ const GameMasterDashboard = () => {
                 </div>
               </div>
 
-              <div style={{ background: '#1e1b4b', padding: '12px', border: '1px solid #4338ca', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <span style={{ ...labelStyle, color: '#a78bfa', fontSize: '0.72rem' }}>👹 出現エネミーマルチプルセッティング（最大3体同時ポップ対応）</span>
-                
-                <div>
-                  <label style={labelStyle}>【出現枠 ①】 ※必須配置</label>
-                  <select required value={questForm.enemy_master_id_1} onChange={(e) => setQuestForm({...questForm, enemy_master_id_1: e.target.value})} style={inputStyle}>
-                    <option value="">-- モンスター①を選択 --</option>
-                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
-                      <option key={'q-en1-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>【出現枠 ②】 ※任意（空欄なら出現なし）</label>
-                  <select value={questForm.enemy_master_id_2} onChange={(e) => setQuestForm({...questForm, enemy_master_id_2: e.target.value})} style={inputStyle}>
-                    <option value="">-- 出現なし --</option>
-                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
-                      <option key={'q-en2-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label style={labelStyle}>【出現枠 ③】 ※任意（空欄なら出現なし）</label>
-                  <select value={questForm.enemy_master_id_3} onChange={(e) => setQuestForm({...questForm, enemy_master_id_3: e.target.value})} style={inputStyle}>
-                    <option value="">-- 出現なし --</option>
-                    {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
-                      <option key={'q-en3-'+u.id} value={u.id}>{u.name} (Lv.{u.base_level} / {u.element}属性)</option>
-                    ))}
-                  </select>
-                </div>
+              {/* 🧭 🆕 階層切り替えサブインフラタブ */}
+              <div style={{ display: 'flex', gap: '4px', background: '#0b0f19', padding: '3px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+                {Array.from({ length: questForm.floors }).map((_, i) => {
+                  const fNum = i + 1;
+                  return (
+                    <button key={'f-tab-'+fNum} type="button" onClick={() => setActiveFloorTab(fNum)} style={{ flex: 1, padding: '5px', background: activeFloorTab === fNum ? '#4338ca' : 'none', color: activeFloorTab === fNum ? '#ffd700' : '#64748b', border: 'none', borderRadius: '4px', fontSize: '0.72rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                      {fNum === questForm.floors ? `B${fNum} (最深部)` : `B${fNum}階`}
+                    </button>
+                  );
+                })}
               </div>
+
+              {/* 🎰 現在選択されている階層の個別パラメータ編集ボード */}
+              {floorConfigs.map(fConfig => {
+                if (fConfig.floor !== activeFloorTab) return null;
+                return (
+                  <div key={'f-panel-'+fConfig.floor} style={{ background: '#1e1b4b', padding: '12px', border: '1px solid #4338ca', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <span style={{ ...labelStyle, color: '#ffd700', fontSize: '0.72rem' }}>⚙️ 【B{fConfig.floor}階】 のイベント＆出現モンスター設計</span>
+                    
+                    {/* 🛠️ 1列増やして「1fr 1fr 1fr 1fr 1fr」の5列ワイドグリッドに変更し、出現数ノブをインジェクション！ */}
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1.2fr 1.2fr 1fr 1fr', gap: '6px' }}>
+                      <div>
+                        <label style={labelStyle}>⚔️ 必要戦闘回数</label>
+                        <input type="number" min="0" value={fConfig.battle_count} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'battle_count', Number(e.target.value))} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>🎁 配置宝箱の数</label>
+                        <input type="number" min="0" value={fConfig.chest_count} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'chest_count', Number(e.target.value))} style={inputStyle} />
+                      </div>
+                      <div>
+                        <label style={labelStyle}>⛲ 回復の泉</label>
+                        <select value={fConfig.has_fountain ? 'true' : 'false'} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'has_fountain', e.target.value === 'true')} style={inputStyle}>
+                          <option value="false">なし</option>
+                          <option value="true">設置</option>
+                        </select>
+                      </div>
+                      {/* 🆕 最小出現数入力欄 */}
+                      <div>
+                        <label style={{ ...labelStyle, color: '#f43f5e' }}>👹 最小出現</label>
+                        <input type="number" min="1" max="3" value={fConfig.min_spawn || 1} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'min_spawn', Math.min(3, Math.max(1, Number(e.target.value))))} style={inputStyle} />
+                      </div>
+                      {/* 🆕 最大出現数入力欄 */}
+                      <div>
+                        <label style={{ ...labelStyle, color: '#f43f5e' }}>👹 最大出現</label>
+                        <input type="number" min="1" max="3" value={fConfig.max_spawn || 2} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'max_spawn', Math.min(3, Math.max(1, Number(e.target.value))))} style={inputStyle} />
+                      </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', background: '#0b0f19', padding: '8px', borderRadius: '6px' }}>
+                      <span style={{ fontSize: '0.62rem', color: '#a78bfa', fontWeight: 'bold' }}>👾 この階層でポップする敵の抽選プール（最大3種類）</span>
+                      {[0, 1, 2].map(idx => (
+                        <div key={'f-enemy-'+idx}>
+                          <label style={labelStyle}>モンスター出現枠 {idx + 1} {idx === 0 && ' (※必須)'}</label>
+                          <select required={idx === 0} value={fConfig.enemy_ids[idx] || ''} onChange={(e) => handleFloorEnemyChange(fConfig.floor, idx, e.target.value)} style={inputStyle}>
+                            <option value="">{idx === 0 ? '-- モンスターを選択 --' : '-- 配置なし --'}</option>
+                            {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                              <option key={`f-opt-${fConfig.floor}-${idx}-${u.id}`} value={u.id}>{u.name} (Lv.{u.base_level})</option>
+                            ))}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div><label style={{ ...labelStyle, color: '#34d399' }}>🎁 獲得 Base EXP</label><input type="number" value={questForm.exp_reward} onChange={(e) => setQuestForm({...questForm, exp_reward: e.target.value})} style={inputStyle} /></div>
