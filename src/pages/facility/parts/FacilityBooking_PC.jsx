@@ -348,8 +348,14 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       const targetDate = (sharedDate && !isNaN(new Date(sharedDate).getTime())) ? new Date(sharedDate) : new Date();
       const targetMonthKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
+      // ① 今月の名簿下書きをお掃除
       await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId).eq('scheduled_month', targetMonthKey);
-      await supabase.from('keep_dates').delete().eq('facility_user_id', facilityId);
+      
+      // ✨ 🛠️ 修正後：未来の単発キープを巻き添えにしないよう、今確定させた「その月」のキープ日だけを前方一致で狙い撃ちしてお掃除する
+      await supabase.from('keep_dates')
+        .delete()
+        .eq('facility_user_id', facilityId)
+        .like('date', `${targetMonthKey}%`); // 例: "2026-07%" で始まるキープ枠だけを安全に消す
 
       alert(`予約の送信が完了しました！✨`);
       
