@@ -805,8 +805,11 @@ const GameMasterDashboard = () => {
                 <div><label style={labelStyle}>AGI</label><input type="number" value={unitForm.stat_agi} onChange={(e) => setUnitForm({...unitForm, stat_agi: e.target.value})} style={inputStyle} /></div>
                 <div><label style={labelStyle}>VIT</label><input type="number" value={unitForm.stat_vit} onChange={(e) => setUnitForm({...unitForm, stat_vit: e.target.value})} style={inputStyle} /></div>
                 <div><label style={labelStyle}>INT</label><input type="number" value={unitForm.stat_int} onChange={(e) => setUnitForm({...unitForm, stat_int: e.target.value})} style={inputStyle} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>DEX</label><input type="number" value={unitForm.stat_dex} onChange={(e) => setUnitForm({...unitForm, stat_dex: e.target.value})} style={inputStyle} /></div>
-                <div style={{ gridColumn: 'span 2' }}><label style={labelStyle}>LUK</label><input type="number" value={unitForm.stat_luk} onChange={(e) => setUnitForm({...unitForm, stat_luk: e.target.value})} style={inputStyle} /></div>
+                
+                {/* 🛠️ 🆕 ここにベースレベル入力欄を増築し、DEXとLUKの幅を調整してピッタリはめ込みます */}
+                <div style={{ gridColumn: 'span 2' }}><label style={{...labelStyle, color: '#fbbf24'}}>📈 ベースLv</label><input type="number" min="1" value={unitForm.base_level} onChange={(e) => setUnitForm({...unitForm, base_level: e.target.value})} style={inputStyle} /></div>
+                <div><label style={labelStyle}>DEX</label><input type="number" value={unitForm.stat_dex} onChange={(e) => setUnitForm({...unitForm, stat_dex: e.target.value})} style={inputStyle} /></div>
+                <div><label style={labelStyle}>LUK</label><input type="number" value={unitForm.stat_luk} onChange={(e) => setUnitForm({...unitForm, stat_luk: e.target.value})} style={inputStyle} /></div>
               </div>
 
               {/* 🔮 🆕 【三土手創世神専用：敵Aspd個別上書き入力欄の設置】 */}
@@ -1157,6 +1160,7 @@ const GameMasterDashboard = () => {
                   <label style={{...labelStyle, color: '#a78bfa'}}>✨ 追加付与効果（バフ・デバフ・異常）</label>
                   <select value={skillForm.effect_type || 'なし'} onChange={(e) => setSkillForm({...skillForm, effect_type: e.target.value})} style={inputStyle}>
                     <option value="なし">追加効果なし（純粋ダメージ）</option>
+                    <option value="状態異常回復">状態異常回復（キュア・万能薬）</option>
                     <option value="スタン">スタン付与（行動不能）</option>
                     <option value="凍結">凍結付与（水属性化＋行動不能）</option>
                     <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
