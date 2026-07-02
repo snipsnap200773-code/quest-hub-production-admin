@@ -242,8 +242,17 @@ export const gameServices = {
         
         // 各部位の装備オブジェクトを特定し、その装備に刺さっているカードリストも内部に自動集計してドッキング！
         const equips = {
-          right_hand: itemMap[ch.equip_right_hand] ? { ...itemMap[ch.equip_right_hand], cards: charCards.filter(c => c.slot_key === 'right_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          left_hand: itemMap[ch.equip_left_hand] ? { ...itemMap[ch.equip_left_hand], cards: charCards.filter(c => c.slot_key === 'left_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          right_hand: itemMap[ch.equip_right_hand] ? { 
+            ...itemMap[ch.equip_right_hand], 
+            // 🛡️ 🆕 射程情報（range）を装備オブジェクトの中に引き渡す！
+            range: itemMap[ch.equip_right_hand].weapon_range || 'S', 
+            cards: charCards.filter(c => c.slot_key === 'right_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
+          } : null,
+          left_hand: itemMap[ch.equip_left_hand] ? { 
+            ...itemMap[ch.equip_left_hand], 
+            range: itemMap[ch.equip_left_hand].weapon_range || 'S',
+            cards: charCards.filter(c => c.slot_key === 'left_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
+          } : null,
           head: itemMap[ch.equip_head] ? { ...itemMap[ch.equip_head], cards: charCards.filter(c => c.slot_key === 'head').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
           face: itemMap[ch.equip_face] ? { ...itemMap[ch.equip_face], cards: charCards.filter(c => c.slot_key === 'face').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
           body: itemMap[ch.equip_body] ? { ...itemMap[ch.equip_body], cards: charCards.filter(c => c.slot_key === 'body').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
@@ -255,14 +264,26 @@ export const gameServices = {
 
         // 基準キャラクター状態の組み立て
         const charObject = {
-  id: ch.id,
-  master_id: ch.master_id,
-  custom_name: ch.custom_name || master.name,
-  level: ch.level,
-  exp: ch.exp,
-  
-  // 💡 もし新規キャラでステータスポイントが0だったら、初期配布分（例：200ポイント）を自動支給！
-  status_points: ch.status_points === 0 && ch.level === 1 ? 6 : ch.status_points,
+          id: ch.id,
+          master_id: ch.master_id,
+          custom_name: ch.custom_name || master.name,
+
+          // 🚨 ⬇️ 【ココを追加！】DBから取ってきた装備IDを、ちゃんとフロントへ送る箱に乗せる！
+          equip_right_hand: ch.equip_right_hand,
+          equip_left_hand: ch.equip_left_hand,
+          equip_head: ch.equip_head,
+          equip_face: ch.equip_face,
+          equip_body: ch.equip_body,
+          equip_glove: ch.equip_glove,
+          equip_garment: ch.equip_garment,
+          equip_shoes: ch.equip_shoes,
+          equip_accessory: ch.equip_accessory,
+
+          level: ch.level,
+          exp: ch.exp,
+          
+          // 💡 もし新規キャラでステータスポイントが0だったら、初期配布分（例：200ポイント）を自動支給！
+          status_points: ch.status_points === 0 && ch.level === 1 ? 6 : ch.status_points,
   
   current_hp: ch.current_hp,
   max_hp: ch.max_hp,

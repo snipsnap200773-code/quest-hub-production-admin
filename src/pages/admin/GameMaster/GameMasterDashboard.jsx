@@ -1060,9 +1060,8 @@ const GameMasterDashboard = () => {
                 <div style={{ background: '#0b0f19', padding: '10px', borderRadius: '8px', border: '1px solid #f59e0b' }}>
                   <label style={{ ...labelStyle, color: '#f59e0b' }}>🏹 武器射程レンジ</label>
                   <select value={itemForm.weapon_range} onChange={(e) => setItemForm({...itemForm, weapon_range: e.target.value})} style={inputStyle}>
-                    <option value="S">Sレンジ（近接短剣・片手剣）</option>
-                    <option value="M">Mレンジ（中距離槍）</option>
-                    <option value="L">Lレンジ（遠距離長弓）</option>
+                    <option value="S">Sレンジ（近距離攻撃：前衛からのみ通常攻撃可能）</option>
+                    <option value="L">Lレンジ（遠距離攻撃：前衛・後衛どこからでも通常攻撃可能）</option>
                   </select>
                 </div>
               )}
