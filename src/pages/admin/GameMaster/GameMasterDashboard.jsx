@@ -60,7 +60,8 @@ const GameMasterDashboard = () => {
     job_requirement: '全職業', level_requirement: 1,
     target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
     effect_type: 'なし', effect_chance: 0, duration_turns: 0,
-    value_type: 'percent'
+    value_type: 'percent',
+    skill_range: 'L' // 🔮 🆕 スキル射程（デフォルトはLレンジ）
   });
 
   // 🔮 🆕 【三土手創世神特注：多層ダンジョン階層コンフィグState】
@@ -283,7 +284,8 @@ const GameMasterDashboard = () => {
         effect_chance: Number(skillForm.effect_chance || 0),
         duration_turns: Number(skillForm.duration_turns || 0),
         // 🔮 🆕 選択された計算ルールを確実にSupabaseへガキィンとコミット！
-        value_type: skillForm.value_type || 'percent'
+        value_type: skillForm.value_type || 'percent',
+        skill_range: skillForm.skill_range || 'L' // 🔮 🆕 スキル射程をSupabaseへ完全コミット！
       });
       if (error) throw error;
       alert('スキル技能を創造しました！');
@@ -407,7 +409,8 @@ const GameMasterDashboard = () => {
       job_requirement: '全職業', level_requirement: 1,
       target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
       effect_type: 'なし', effect_chance: 0, duration_turns: 0,
-      value_type: 'percent' // 🔮 🆕 リセット時もお掃除
+      value_type: 'percent', // 🔮 🆕 リセット時もお掃除
+      skill_range: 'L' // 🔮 🆕 スキル射程もお掃除
     }); 
   };
 
@@ -1117,7 +1120,7 @@ const GameMasterDashboard = () => {
               </div>
 
               {/* 🎯 🆕 ターゲット ＆ 発動環境 ＆ 属性セクション */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#0f172a', border: '1px dashed #475569', padding: '10px', borderRadius: '8px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '10px', background: '#0f172a', border: '1px dashed #475569', padding: '10px', borderRadius: '8px' }}>
                 <div>
                   <label style={labelStyle}>🎯 効果の対象（ターゲット）</label>
                   <select value={skillForm.target_type || '単体エネミー'} onChange={(e) => setSkillForm({...skillForm, target_type: e.target.value})} style={inputStyle}>
@@ -1149,6 +1152,14 @@ const GameMasterDashboard = () => {
 <option value="聖">聖属性（不死・闇に特効・2.0倍）</option>
                     <option value="闇">闇属性</option>
                     <option value="不死">不死属性</option>
+                  </select>
+                </div>
+                {/* 🏹 🆕 スキル射程入力欄をここに追加！ */}
+                <div>
+                  <label style={{ ...labelStyle, color: '#f59e0b' }}>🏹 スキル・魔法の射程</label>
+                  <select value={skillForm.skill_range || 'L'} onChange={(e) => setSkillForm({...skillForm, skill_range: e.target.value})} style={{ ...inputStyle, border: '1px solid #f59e0b44' }}>
+                    <option value="S">Sレンジ（前衛からのみ使用可能）</option>
+                    <option value="L">Lレンジ（後衛からも使用可能）</option>
                   </select>
                 </div>
               </div>
@@ -1459,7 +1470,7 @@ const GameMasterDashboard = () => {
                       </span>
                       <strong style={{ fontSize: '0.82rem', color: '#ffd700' }}>{s.name}</strong>
                       <span style={{ fontSize: '0.65rem', color: s.skill_type === 'magic' ? '#38bdf8' : '#f43f5e', marginLeft: '8px' }}>
-                        [{s.skill_type === 'magic' ? '魔法' : '物理特技'}] 消費SP:{s.sp_cost} | 効力:{s.effect_value}{s.value_type === 'percent' ? '%' : '固定'}
+                        [{s.skill_type === 'magic' ? '魔法' : '物理特技'}/{s.skill_range === 'S' ? 'Sレンジ' : 'Lレンジ'}] 消費SP:{s.sp_cost} | 効力:{s.effect_value}{s.value_type === 'percent' ? '%' : '固定'}
                       </span>
                       {s.effect_type !== 'なし' && (
                         <span style={{ fontSize: '0.6rem', color: '#a78bfa', display: 'block', marginTop: '1px' }}>

@@ -224,11 +224,19 @@ export const gameServices = {
 
       if (error) throw error;
 
-      // 🎒 アイテムマスターデータを全取得して、装備のテキストIDとメモリ上で結合します
+      // 🎒 アイテムマスターデータ ＆ 🔮 スキルマスターデータを同時に全取得します
       const { data: allItems } = await supabase.from('game_master_items').select('*');
+      const { data: allSkills } = await supabase.from('game_master_skills').select('*'); // 🔮 🆕 スキルマスターを直撃ロード！
+
+      // 💡 2つの異なるマスターデータを1つの配列に美しく結合（マージ）して、選抜エンジンのソースの器にします
+      const combinedMasterList = [
+        ...(allItems || []),
+        ...(allSkills || [])
+      ];
+
       const itemMap = allItems ? Object.fromEntries(allItems.map(i => [i.id, i])) : {};
 
-      // 🎴 【神最適化・一撃修正】.select('*') を確実に滑り込ませてエラーを完全撃破！
+      // 🎴 【神最適化・一撃修正】.select('*') を確実に快速配線！
       const { data: allUserCards } = await supabase
         .from('game_character_cards')
         .select('*')
@@ -311,6 +319,32 @@ export const gameServices = {
   equips: equips, 
   meta: master
 };
+
+        // 🔮 🆕 【三土手神特注】ベースLv連動型・同名スキル最高ランク選抜マスタリー
+        const currentJob = master?.job || 'ノービス';
+        const currentLv = ch.level || 1;
+        // 💡 ⚙️ スキルデータが完全合流した「combinedMasterList」にバトンタッチ！
+        const activeSkillsSource = combinedMasterList || []; 
+
+        // ① まず該当の職業とベースLv条件をクリアしているスキルをすべて抽出
+        const allEligibleSkills = activeSkillsSource.filter(s => {
+          if (s.sp_cost === undefined) return false; // アイテムではなくスキルデータであること
+          const jobReq = s.job_requirement || '全職業';
+          const lvReq = Number(s.level_requirement) || 1;
+          return (jobReq === '全職業' || jobReq === currentJob) && currentLv >= lvReq;
+        });
+
+        // ② 同名スキルの中で最も必要レベルが高いもの（最高ランク）だけをマップで選抜上書き
+        const skillMap = {};
+        allEligibleSkills.forEach(sk => {
+          const sName = sk.name;
+          if (!skillMap[sName] || Number(sk.level_requirement) > Number(skillMap[sName].level_requirement)) {
+            skillMap[sName] = sk;
+          }
+        });
+
+        // ③ 絞り込まれた最高ランクのスキル配列をキャラクターデータに直撃バインド！
+        charObject.skillsList = Object.values(skillMap);
 
         // 🧠 心臓部の計算エンジンを通し、戦闘ステータス（roStatus）を自動ドッキング！
         charObject.roStatus = calculateRoStatus(charObject, equips);
