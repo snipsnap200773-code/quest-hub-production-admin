@@ -61,7 +61,12 @@ const GameMasterDashboard = () => {
     target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
     effect_type: 'なし', effect_chance: 0, duration_turns: 0,
     value_type: 'percent',
-    skill_range: 'L' // 🔮 🆕 スキル射程（デフォルトはLレンジ）
+    skill_range: 'L',
+    is_range_damage_cut: false,
+    range_damage_cut_pct: 0,
+    // 🔮 🆕 【三土手神特注】バフ・デバフ専用スペック効果量State
+    buff_value: 0,
+    buff_value_type: 'percent'
   });
 
   // 🔮 🆕 【三土手創世神特注：多層ダンジョン階層コンフィグState】
@@ -276,19 +281,22 @@ const GameMasterDashboard = () => {
         cast_time: Number(skillForm.cast_time),
         job_requirement: skillForm.job_requirement || '全職業',
         level_requirement: Number(skillForm.level_requirement || 1),
-        // 🔮 🆕 拡張パラメータ群を確実にパースしてSupabaseへ完全コミット！
         target_type: skillForm.target_type || '単体エネミー',
         use_condition: skillForm.use_condition || '戦闘中のみ',
         element: skillForm.element || '無',
         effect_type: skillForm.effect_type || 'なし',
         effect_chance: Number(skillForm.effect_chance || 0),
         duration_turns: Number(skillForm.duration_turns || 0),
-        // 🔮 🆕 選択された計算ルールを確実にSupabaseへガキィンとコミット！
         value_type: skillForm.value_type || 'percent',
-        skill_range: skillForm.skill_range || 'L' // 🔮 🆕 スキル射程をSupabaseへ完全コミット！
+        skill_range: skillForm.skill_range || 'L',
+        is_range_damage_cut: skillForm.is_range_damage_cut === true,
+        range_damage_cut_pct: Number(skillForm.range_damage_cut_pct || 0),
+        // 🔮 🆕 【三土手神特注】増幅量データをSupabaseへ完全コミット！
+        buff_value: Number(skillForm.buff_value || 0),
+        buff_value_type: skillForm.buff_value_type || 'percent'
       });
       if (error) throw error;
-      alert('スキル技能を創造しました！');
+      alert('スキル技能を創造しました！(ディフェンダー対応型)');
       resetSkillForm(); fetchData();
     } catch (err) { alert(err.message); }
   };
@@ -367,7 +375,17 @@ const GameMasterDashboard = () => {
       setCardEffectType3(item.card_effect_type_3 || 'none'); setCardEffectTarget3(item.card_effect_target_3 || ''); setCardEffectValue3(item.card_effect_value_3 || 0);
     }
   };
-  const startEditSkill = (skill) => { setIsEditing(true); setEditId(skill.id); setSkillForm({ ...skill }); };
+  const startEditSkill = (skill) => { 
+    setIsEditing(true); 
+    setEditId(skill.id); 
+    setSkillForm({ 
+      ...skill,
+      is_range_damage_cut: skill.is_range_damage_cut || false,
+      range_damage_cut_pct: skill.range_damage_cut_pct || 0,
+      buff_value: skill.buff_value || 0,
+      buff_value_type: skill.buff_value_type || 'percent'
+    }); 
+  };
 
   const resetUnitForm = () => { 
     setIsEditing(false); setEditId(''); 
@@ -409,8 +427,10 @@ const GameMasterDashboard = () => {
       job_requirement: '全職業', level_requirement: 1,
       target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
       effect_type: 'なし', effect_chance: 0, duration_turns: 0,
-      value_type: 'percent', // 🔮 🆕 リセット時もお掃除
-      skill_range: 'L' // 🔮 🆕 スキル射程もお掃除
+      value_type: 'percent', skill_range: 'L', is_range_damage_cut: false, range_damage_cut_pct: 0,
+      // 🧼 お掃除
+      buff_value: 0,
+      buff_value_type: 'percent'
     }); 
   };
 
@@ -1165,35 +1185,84 @@ const GameMasterDashboard = () => {
               </div>
 
               {/* 🧪 🆕 追加効果（状態異常・バフ） ＆ 確率 ＆ 持続時間セクション */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px', background: '#1e1b4b', border: '1px solid #4338ca', padding: '10px', borderRadius: '8px' }}>
-                <div>
-                  <label style={{...labelStyle, color: '#a78bfa'}}>✨ 追加付与効果（バフ・デバフ・異常）</label>
-                  <select value={skillForm.effect_type || 'なし'} onChange={(e) => setSkillForm({...skillForm, effect_type: e.target.value})} style={inputStyle}>
-                    <option value="なし">追加効果なし（純粋ダメージ）</option>
-                    <option value="状態異常回復">状態異常回復（キュア・万能薬）</option>
-                    <option value="スタン">スタン付与（行動不能）</option>
-                    <option value="凍結">凍結付与（水属性化＋行動不能）</option>
-                    <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
-                    <option value="暗闇">暗闇付与（敵の命中率Hitを大幅低下）</option>
-                    
-                    {/* 🆕 新状態異常の4大セレクトオプションをここに完全開通！ */}
-                    <option value="睡眠">睡眠付与（完全行動不能＋被ダメ増）</option>
-                    <option value="沈黙">沈黙付与（敵の魔法・スキルを完全封印）</option>
-                    <option value="呪い">呪い付与（敵のSTR半減＋CRIゼロ化）</option>
-                    <option value="石化">石化付与（完全行動不能＋防御ゼロ化）</option>
+              <div style={{ background: '#1e1b4b', border: '1px solid #4338ca', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '10px' }}>
+                  <div>
+                    <label style={{...labelStyle, color: '#a78bfa'}}>✨ 追加付与効果（バフ・デバフ・異常）</label>
+                    <select value={skillForm.effect_type || 'なし'} onChange={(e) => setSkillForm({...skillForm, effect_type: e.target.value})} style={inputStyle}>
+                      <option value="なし">追加効果なし（純粋ダメージ）</option>
+                      <option value="状態異常回復">状態異常回復（キュア・万能薬）</option>
+                      <option value="スタン">スタン付与（行動不能）</option>
+                      <option value="凍結">凍結付与（水属性化＋行動不能）</option>
+                      <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
+                      <option value="暗闇">暗闇付与（敵の命中率Hitを大幅低下）</option>
+                      <option value="睡眠">睡眠付与（完全行動不能＋被ダメ増）</option>
+                      <option value="沈黙">沈黙付与（敵の魔法・スキルを完全封印）</option>
+                      <option value="呪い">呪い付与（敵のSTR半減＋CRIゼロ化）</option>
+                      <option value="石化">石化付与（完全行動不能＋防御ゼロ化）</option>
+                      <option value="物理ATK増幅">物理ATK増幅（味方・自分）</option>
+                      <option value="物理DEF増幅">物理DEF増幅（味方・自分）</option>
+                      <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{...labelStyle, color: '#a78bfa'}}>🎲 追加効果の発動確率 (%)</label>
+                    <input type="number" min="0" max="100" placeholder="例: 100" value={skillForm.effect_chance || 0} onChange={(e) => setSkillForm({...skillForm, effect_chance: Number(e.target.value)})} style={inputStyle} />
+                  </div>
+                  <div>
+                    <label style={{...labelStyle, color: '#a78bfa'}}>⏱️ 効果の持続ターン数</label>
+                    <input type="number" min="0" placeholder="例: 3" value={skillForm.duration_turns || 0} onChange={(e) => setSkillForm({...skillForm, duration_turns: Number(e.target.value)})} style={inputStyle} />
+                  </div>
+                </div>
 
-                    <option value="攻撃バフ">物理ATK増幅（味方・自分）</option>
-                    <option value="防御バフ">物理DEF増幅（味方・自分）</option>
-                    <option value="速度バフ">行動速度Aspd増幅</option>
-                  </select>
-                </div>
-                <div>
-                  <label style={{...labelStyle, color: '#a78bfa'}}>🎲 追加効果の発動確率 (%)</label>
-                  <input type="number" min="0" max="100" placeholder="例: 30" value={skillForm.effect_chance || 0} onChange={(e) => setSkillForm({...skillForm, effect_chance: Number(e.target.value)})} style={inputStyle} />
-                </div>
-                <div>
-                  <label style={{...labelStyle, color: '#a78bfa'}}>⏱️ 効果の持続ターン数</label>
-                  <input type="number" min="0" placeholder="例: 3" value={skillForm.duration_turns || 0} onChange={(e) => setSkillForm({...skillForm, duration_turns: Number(e.target.value)})} style={inputStyle} />
+                {/* 🔄 🆕 【三土手創世神専用】バフ効果数値・単位連動型シークレットゲート */}
+                {['物理ATK増幅', '物理DEF増幅', '行動速度Aspd増幅'].includes(skillForm.effect_type) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0b0f19', padding: '8px', borderRadius: '6px', border: '1px dashed #6366f1', marginTop: '2px' }}>
+                    <div>
+                      <label style={{ ...labelStyle, color: '#38bdf8' }}>⚡ バフ増幅効果量 (数値)</label>
+                      <input 
+                        type="number" 
+                        placeholder="例: 50%増なら 50 / 固定値でDef+30なら 30" 
+                        value={skillForm.buff_value || ''} 
+                        onChange={(e) => setSkillForm({...skillForm, buff_value: Number(e.target.value)})} 
+                        style={inputStyle} 
+                      />
+                    </div>
+                    <div>
+                      <label style={{ ...labelStyle, color: '#38bdf8' }}>📐 増幅単位</label>
+                      <select value={skillForm.buff_value_type || 'percent'} onChange={(e) => setSkillForm({...skillForm, buff_value_type: e.target.value})} style={inputStyle}>
+                        <option value="percent">％上昇</option>
+                        <option value="fixed">固定値プラス</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 🛡️ 👑 【三土手神特注】紫色の追加効果ボックスの直下に、ディフェンダー専用の特注パネルを結合開通！ */}
+              <div style={{ background: '#0b0f19', border: '1px dashed #ffd700', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold' }}>🛡️ 遠距離物理防衛スペック（ディフェンダー等）</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'center' }}>
+                  <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <input 
+                      type="checkbox" 
+                      checked={skillForm.is_range_damage_cut} 
+                      onChange={(e) => setSkillForm({...skillForm, is_range_damage_cut: e.target.checked})} 
+                    /> 遠距離物理ダメージを割合カットする
+                  </label>
+                  <div>
+                    <label style={labelStyle}>ダメージカット率 (%)</label>
+                    <input 
+                      type="number" 
+                      min="0" 
+                      max="100" 
+                      placeholder="例: 50%カットなら 50 と入力" 
+                      value={skillForm.range_damage_cut_pct || ''} 
+                      onChange={(e) => setSkillForm({...skillForm, range_damage_cut_pct: Number(e.target.value)})} 
+                      style={inputStyle} 
+                      disabled={!skillForm.is_range_damage_cut}
+                    />
+                  </div>
                 </div>
               </div>
 
