@@ -1239,24 +1239,24 @@ const GameMasterDashboard = () => {
                 )}
               </div>
 
-              {/* 🛡️ 👑 【三土手神特注】紫色の追加効果ボックスの直下に、ディフェンダー専用の特注パネルを結合開通！ */}
+              {/* 🛡️ 👑 【三土手神特注】ディフェンダーからディボーション（献身）へ超進化した戦術防衛スペックパネル */}
               <div style={{ background: '#0b0f19', border: '1px dashed #ffd700', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
-                <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold' }}>🛡️ 遠距離物理防衛スペック（ディフェンダー等）</span>
+                <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold' }}>🛡️ ダメージ肩代わりスペック（ディボーション・献身等）</span>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'center' }}>
                   <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
                     <input 
                       type="checkbox" 
                       checked={skillForm.is_range_damage_cut} 
                       onChange={(e) => setSkillForm({...skillForm, is_range_damage_cut: e.target.checked})} 
-                    /> 遠距離物理ダメージを割合カットする
+                    /> 対象へのダメージを術者が代わりに引き受ける
                   </label>
                   <div>
-                    <label style={labelStyle}>ダメージカット率 (%)</label>
+                    <label style={labelStyle}>ダメージ肩代わり率 (%)</label>
                     <input 
                       type="number" 
                       min="0" 
                       max="100" 
-                      placeholder="例: 50%カットなら 50 と入力" 
+                      placeholder="例: 100%肩代わり（対象の被弾0）なら 100 と入力" 
                       value={skillForm.range_damage_cut_pct || ''} 
                       onChange={(e) => setSkillForm({...skillForm, range_damage_cut_pct: Number(e.target.value)})} 
                       style={inputStyle} 

@@ -135,6 +135,16 @@ Deno.serve(async (req) => {
     // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
     if (type === 'cancel' && payload.reservation) {
       const res = payload.reservation;
+
+      // 🚨 【超重要：会計済みブロック】ステータスがすでに 'completed' (完了) なら一発退場！
+      if (res.status === 'completed') {
+        console.log(`[GUARD] 会計処理済み(completed)の予約に対するキャンセルをブロックしました。お客様: ${res.customer_name}`);
+        return new Response(JSON.stringify({ 
+          success: false, 
+          message: "この予約はすでに施術・会計処理が完了しているため、キャンセルできません。" 
+        }), { status: 400, headers: corsHeaders });
+      }
+
       // 🚀 1. 先に shopId を確定させる（URL生成に使うため）
       shopId = shopId || res.shop_id;
 
