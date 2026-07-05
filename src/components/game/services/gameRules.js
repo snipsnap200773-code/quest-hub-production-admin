@@ -293,8 +293,8 @@ export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
  * キャラクターの純粋な「INT」と「DEX」を基に、TRPGライクな魔力のダイス幅を弾き出します。
  */
 export const calculateMatk = (intVal, dexValue) => {
-  const myInt = Number(int) || Number(intVal) || 0;
-  const myDex = Number(dex) || Number(dexValue) || 0;
+  const myInt = Number(intVal) || 0;
+  const myDex = Number(dexValue) || 0;
 
   const minMatk = Math.floor(myInt + (myDex * 0.2));
   const maxMatk = Math.floor(myInt * 2.0 + myDex);

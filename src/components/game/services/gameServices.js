@@ -4,8 +4,9 @@ import {
   calculateJobBonus, 
   calculateDamageModifier, 
   calculateStatusInflictChance, 
-  applyStatusConditionDebuffs 
-} from '../gameRules';
+  applyStatusConditionDebuffs,
+  calculateMatk // 👈 ここにカンマを入れてこれを追記！
+} from './gameRules';
 
 /**
  * 👑 ラグナロクオンライン式・戦闘ステータス完全計算エンジン
@@ -163,7 +164,10 @@ const jobBonus = calculateJobBonus(job, jobLv);
   const hit = baseLv + dex + cardStats.hit;
   const flee = baseLv + agi + cardStats.flee;
   const critical = Math.floor(luk * 0.3) + 1 + cardStats.critical;
-  const matk = int + Math.pow(Math.floor(int / 7), 2);
+  
+  // 🔮 🆕 固定値を粉砕し、intとdex連動型のダイス幅オブジェクト(minMatk, maxMatk)へ換装！
+  const matk = calculateMatk(int, dex); 
+  
   const mdef = Math.floor(int * 0.5) + totalEquipMdef;
 
   // 🔮 🆕 旧レガシー職名条件を、三土手オリジナル職名（スカウト・ファイター）へと安全リフォーム！
@@ -183,7 +187,7 @@ const jobBonus = calculateJobBonus(job, jobLv);
   agi: { base: (Number(charData.meta?.stat_agi) || 0) + (charData.bonus?.agi || 0), bonus: (jobBonus.agi || 0) + cardStats.agi },
   vit: { base: (Number(charData.meta?.stat_vit) || 0) + (charData.bonus?.vit || 0), bonus: (jobBonus.vit || 0) + cardStats.vit },
   int: { base: (Number(charData.meta?.stat_int) || 0) + (charData.bonus?.int || 0), bonus: (jobBonus.int || 0) + cardStats.int },
-  disabled: { base: (Number(charData.meta?.stat_dex) || 0) + (charData.bonus?.dex || 0), bonus: (jobBonus.dex || 0) + cardStats.dex },
+  dex: { base: (Number(charData.meta?.stat_dex) || 0) + (charData.bonus?.dex || 0), bonus: (jobBonus.dex || 0) + cardStats.dex }, // 👈 dexへ修正
   luk: { base: (Number(charData.meta?.stat_luk) || 0) + (charData.bonus?.luk || 0), bonus: (jobBonus.luk || 0) + cardStats.luk },
 };
 

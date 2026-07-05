@@ -64,10 +64,13 @@ const GameMasterDashboard = () => {
     skill_range: 'L',
     is_range_damage_cut: false,
     range_damage_cut_pct: 0,
-    // 🔮 🆕 【三土手神特注】バフ・デバフ専用スペック効果量State
     buff_value: 0,
-    buff_value_type: 'percent'
+    buff_value_type: 'percent',
+    target_priority_jobs: [] // 👈 🆕 優先職業配列のカラム初期値をバインド！
   });
+
+  // 🔮 🆕 UIで一時的に選択されている職をホールドするノブState
+  const [selectedJobToPriority, setSelectedJobToPriority] = useState('ファイター');
 
   // 🔮 🆕 【三土手創世神特注：多層ダンジョン階層コンフィグState】
   const [activeFloorTab, setActiveFloorTab] = useState(1); // 現在編集中の階層（1〜5）
@@ -291,9 +294,9 @@ const GameMasterDashboard = () => {
         skill_range: skillForm.skill_range || 'L',
         is_range_damage_cut: skillForm.is_range_damage_cut === true,
         range_damage_cut_pct: Number(skillForm.range_damage_cut_pct || 0),
-        // 🔮 🆕 【三土手神特注】増幅量データをSupabaseへ完全コミット！
         buff_value: Number(skillForm.buff_value || 0),
-        buff_value_type: skillForm.buff_value_type || 'percent'
+        buff_value_type: skillForm.buff_value_type || 'percent',
+        target_priority_jobs: skillForm.target_priority_jobs || [] // 👈 🆕 配列のまま一撃でSupabaseへ直撃保存！
       });
       if (error) throw error;
       alert('スキル技能を創造しました！(ディフェンダー対応型)');
@@ -417,9 +420,29 @@ const GameMasterDashboard = () => {
   };
   
   const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0 }); };
+
+  // 🔮 🆕 【三土手神特注：バフ優先ターゲット職・配列操作配線】（👈 ここに綺麗に収まります！）
+  const addJobToPriority = () => {
+    // 万が一 null や undefined だった場合も安全に空配列 [] として身代わりに扱う
+    const currentJobs = skillForm.target_priority_jobs || [];
+    
+    if (!currentJobs.includes(selectedJobToPriority)) {
+      setSkillForm(prev => ({
+        ...prev,
+        target_priority_jobs: [...currentJobs, selectedJobToPriority]
+      }));
+    }
+  };
+
+  const removeJobFromPriority = (indexToRemove) => {
+    setSkillForm(prev => ({
+      ...prev,
+      target_priority_jobs: prev.target_priority_jobs.filter((_, idx) => idx !== indexToRemove)
+    }));
+  };
   
   // 🔮 🆕 新設：リセット時（保存完了後など）に職業を全職業、必要Lvを1に綺麗に初期化クリーンする仕様
-  const resetSkillForm = () => { 
+  const resetSkillForm = () => {
     setIsEditing(false); 
     setEditId(''); 
     setSkillForm({ 
@@ -428,9 +451,9 @@ const GameMasterDashboard = () => {
       target_type: '単体エネミー', use_condition: '戦闘中のみ', element: '無',
       effect_type: 'なし', effect_chance: 0, duration_turns: 0,
       value_type: 'percent', skill_range: 'L', is_range_damage_cut: false, range_damage_cut_pct: 0,
-      // 🧼 お掃除
       buff_value: 0,
-      buff_value_type: 'percent'
+      buff_value_type: 'percent',
+      target_priority_jobs: [] // 👈 🆕 お掃除のときも綺麗に初期化！
     }); 
   };
 
@@ -1152,7 +1175,70 @@ const GameMasterDashboard = () => {
                     <option value="自分自身">自分自身（自己強化）</option>
                   </select>
                 </div>
-                <div>
+
+        {/* 👈 ➕ 【ここに差し込みます！】 ─────────────────────────────────── */}
+        {/* 🎯 🆕 【三土手創世神特注：バフ・回復優先ターゲット職業ガンビット設定ボード】 */}
+        {['味方単体', '味方全体'].includes(skillForm.target_type) && (
+          <div style={{ gridColumn: 'span 4', background: '#070a13', border: '1px dashed #38bdf8', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
+            <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>
+              👥 味方支援専用：AI発動時のターゲット職業・優先順位シチュエーション設定
+            </span>
+            
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+              <select 
+                value={selectedJobToPriority} 
+                onChange={(e) => setSelectedJobToPriority(e.target.value)} 
+                style={{ ...inputStyle, flex: 1 }}
+              >
+                <option value="ファイター">ファイター（戦士）</option>
+                <option value="メイジ">メイジ（魔術士）</option>
+                <option value="クレリック">クレリック（聖職者）</option>
+                <option value="スカウト">スカウト（隠密）</option>
+                <option value="ハンター">ハンター（狩人）</option>
+                <option value="トレーダー">トレーダー（商人）</option>
+                <option value="テイマー">テイマー（魔物使い）</option>
+                <option value="ノービス">ノービス（見習い）</option>
+              </select>
+              
+              <button 
+                type="button" 
+                onClick={addJobToPriority} 
+                style={{ background: '#38bdf8', color: '#0b0f19', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.72rem', cursor: 'pointer' }}
+              >
+                ➕ 優先順位に追記
+              </button>
+            </div>
+
+            {/* 現在追加されている優先順位のバッジリスト */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#111827', padding: '8px', borderRadius: '6px', minHeight: '34px' }}>
+  {(skillForm.target_priority_jobs || []).length === 0 ? ( // 👈 ここを (skillForm.target_priority_jobs || []) にガード！
+    <span style={{ fontSize: '0.65rem', color: '#475569', fontStyle: 'italic', padding: '4px' }}>
+                  ※職指定がない場合は、今まで通りHPが一番減っている仲間、または生存している先頭の仲間に発動します。
+                </span>
+              ) : (
+                (skillForm.target_priority_jobs || []).map((jobName, idx) => (
+                  <div 
+                    key={'priority-badge-'+jobName} 
+                    style={{ display: 'flex', alignItems: 'center', gap: '4px', background: idx === 0 ? '#1e3a8a' : '#1e293b', border: idx === 0 ? '1px solid #3b82f6' : '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}
+                  >
+                    <strong style={{ color: idx === 0 ? '#ffd700' : '#94a3b8', marginRight: '2px' }}>第{idx + 1}位:</strong>
+                    <span style={{ color: '#fff' }}>{jobName}</span>
+                    <button 
+                      type="button" 
+                      onClick={() => removeJobFromPriority(idx)} 
+                      style={{ background: 'none', border: 'none', color: '#ef4444', marginLeft: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold' }}
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        )}
+        {/* ───────────────────────────────────────────────────────────── */}
+
+        <div>
                   <label style={labelStyle}>🗺️ 使用可能シチュエーション</label>
                   <select value={skillForm.use_condition || '戦闘中のみ'} onChange={(e) => setSkillForm({...skillForm, use_condition: e.target.value})} style={inputStyle}>
                     <option value="戦闘中のみ">戦闘中のみ可能</option>
@@ -1191,6 +1277,7 @@ const GameMasterDashboard = () => {
                     <label style={{...labelStyle, color: '#a78bfa'}}>✨ 追加付与効果（バフ・デバフ・異常）</label>
                     <select value={skillForm.effect_type || 'なし'} onChange={(e) => setSkillForm({...skillForm, effect_type: e.target.value})} style={inputStyle}>
                       <option value="なし">追加効果なし（純粋ダメージ）</option>
+                      <option value="回復">回復（HPを回復する）</option>
                       <option value="状態異常回復">状態異常回復（キュア・万能薬）</option>
                       <option value="スタン">スタン付与（行動不能）</option>
                       <option value="凍結">凍結付与（水属性化＋行動不能）</option>
@@ -1203,6 +1290,7 @@ const GameMasterDashboard = () => {
                       <option value="物理ATK増幅">物理ATK増幅（味方・自分）</option>
                       <option value="物理DEF増幅">物理DEF増幅（味方・自分）</option>
                       <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
+                      <option value="魔力Matk増幅">魔力Matk増幅（味方・自分）</option>
                     </select>
                   </div>
                   <div>
@@ -1216,7 +1304,7 @@ const GameMasterDashboard = () => {
                 </div>
 
                 {/* 🔄 🆕 【三土手創世神専用】バフ効果数値・単位連動型シークレットゲート */}
-                {['物理ATK増幅', '物理DEF増幅', '行動速度Aspd増幅'].includes(skillForm.effect_type) && (
+                {['物理ATK増幅', '物理DEF増幅', '行動速度Aspd増幅', '魔力Matk増幅'].includes(skillForm.effect_type) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0b0f19', padding: '8px', borderRadius: '6px', border: '1px dashed #6366f1', marginTop: '2px' }}>
                     <div>
                       <label style={{ ...labelStyle, color: '#38bdf8' }}>⚡ バフ増幅効果量 (数値)</label>
