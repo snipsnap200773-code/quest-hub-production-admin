@@ -1150,9 +1150,16 @@ const GameMasterDashboard = () => {
 
               {/* 🔮 🛠️ 創造神リフォーム：数値の単位（％か固定値か）を綺麗に独立選択させる全4列のワイドグリッド！ */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 2fr 1.2fr', gap: '10px' }}>
-                <div><label style={labelStyle}>技能分類</label><select value={skillForm.skill_type} onChange={(e) => setSkillForm({...skillForm, skill_type: e.target.value})} style={inputStyle}><option value="magic">魔法</option><option value="art">物理特技</option></select></div>
-                <div><label style={{...labelStyle, color: '#38bdf8'}}>消費SP</label><input type="number" value={skillForm.sp_cost} onChange={(e) => setSkillForm({...skillForm, sp_cost: e.target.value})} style={inputStyle} /></div>
-                <div><label style={labelStyle}>基礎効果数値（威力 / 回復量）</label><input type="number" value={skillForm.effect_value} onChange={(e) => setSkillForm({...skillForm, effect_value: e.target.value})} style={inputStyle} /></div>
+                <div>
+                  <label style={labelStyle}>技能分類</label>
+                  <select value={skillForm.skill_type} onChange={(e) => setSkillForm({...skillForm, skill_type: e.target.value})} style={inputStyle}>
+                    <option value="magic">魔法</option>
+                    <option value="art">物理特技</option>
+                    <option value="passive">パッシブ（常時発動）</option> {/* 👈 🆕 パッシブ枠を完全解放！ */}
+                  </select>
+                </div>
+                <div><label style={{...labelStyle, color: '#38bdf8'}}>消費SP</label><input type="number" value={skillForm.sp_cost} onChange={(e) => setSkillForm({...skillForm, sp_cost: e.target.value})} style={inputStyle} disabled={skillForm.skill_type === 'passive'} /></div> {/* 💡 パッシブ時は入力不可に */}
+                <div><label style={labelStyle}>基礎効果数値（威力 / パッシブ上昇量）</label><input type="number" value={skillForm.effect_value} onChange={(e) => setSkillForm({...skillForm, effect_value: e.target.value})} style={inputStyle} /></div>
                 <div>
                   <label style={{...labelStyle, color: '#ffd700'}}>📐 計算単位（仕様）</label>
                   <select value={skillForm.value_type || 'percent'} onChange={(e) => setSkillForm({...skillForm, value_type: e.target.value})} style={{ ...inputStyle, border: '1px solid #ffd70044', color: '#ffd700' }}>
@@ -1163,112 +1170,87 @@ const GameMasterDashboard = () => {
               </div>
 
               {/* 🎯 🆕 ターゲット ＆ 発動環境 ＆ 属性セクション */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '10px', background: '#0f172a', border: '1px dashed #475569', padding: '10px', borderRadius: '8px' }}>
-                <div>
-                  <label style={labelStyle}>🎯 効果の対象（ターゲット）</label>
-                  <select value={skillForm.target_type || '単体エネミー'} onChange={(e) => setSkillForm({...skillForm, target_type: e.target.value})} style={inputStyle}>
-                    <option value="単体エネミー">単体エネミー（単体攻撃）</option>
-                    <option value="範囲エネミー">範囲エネミー（敵全体攻撃）</option>
-                    <option value="味方単体">味方単体（回復・バフ）</option>
-                    {/* 🔮 🆕 クエストハブEdition：パーティー全員を一斉救済・強化する「味方全体」枠を完全解放！ */}
-                    <option value="味方全体">味方全体（全体回復・全体バフ）</option>
-                    <option value="自分自身">自分自身（自己強化）</option>
-                  </select>
-                </div>
-
-        {/* 👈 ➕ 【ここに差し込みます！】 ─────────────────────────────────── */}
-        {/* 🎯 🆕 【三土手創世神特注：バフ・回復優先ターゲット職業ガンビット設定ボード】 */}
-        {['味方単体', '味方全体'].includes(skillForm.target_type) && (
-          <div style={{ gridColumn: 'span 4', background: '#070a13', border: '1px dashed #38bdf8', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
-            <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>
-              👥 味方支援専用：AI発動時のターゲット職業・優先順位シチュエーション設定
-            </span>
-            
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
-              <select 
-                value={selectedJobToPriority} 
-                onChange={(e) => setSelectedJobToPriority(e.target.value)} 
-                style={{ ...inputStyle, flex: 1 }}
-              >
-                <option value="ファイター">ファイター（戦士）</option>
-                <option value="メイジ">メイジ（魔術士）</option>
-                <option value="クレリック">クレリック（聖職者）</option>
-                <option value="スカウト">スカウト（隠密）</option>
-                <option value="ハンター">ハンター（狩人）</option>
-                <option value="トレーダー">トレーダー（商人）</option>
-                <option value="テイマー">テイマー（魔物使い）</option>
-                <option value="ノービス">ノービス（見習い）</option>
-              </select>
-              
-              <button 
-                type="button" 
-                onClick={addJobToPriority} 
-                style={{ background: '#38bdf8', color: '#0b0f19', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.72rem', cursor: 'pointer' }}
-              >
-                ➕ 優先順位に追記
-              </button>
-            </div>
-
-            {/* 現在追加されている優先順位のバッジリスト */}
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#111827', padding: '8px', borderRadius: '6px', minHeight: '34px' }}>
-  {(skillForm.target_priority_jobs || []).length === 0 ? ( // 👈 ここを (skillForm.target_priority_jobs || []) にガード！
-    <span style={{ fontSize: '0.65rem', color: '#475569', fontStyle: 'italic', padding: '4px' }}>
-                  ※職指定がない場合は、今まで通りHPが一番減っている仲間、または生存している先頭の仲間に発動します。
-                </span>
-              ) : (
-                (skillForm.target_priority_jobs || []).map((jobName, idx) => (
-                  <div 
-                    key={'priority-badge-'+jobName} 
-                    style={{ display: 'flex', alignItems: 'center', gap: '4px', background: idx === 0 ? '#1e3a8a' : '#1e293b', border: idx === 0 ? '1px solid #3b82f6' : '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}
-                  >
-                    <strong style={{ color: idx === 0 ? '#ffd700' : '#94a3b8', marginRight: '2px' }}>第{idx + 1}位:</strong>
-                    <span style={{ color: '#fff' }}>{jobName}</span>
-                    <button 
-                      type="button" 
-                      onClick={() => removeJobFromPriority(idx)} 
-                      style={{ background: 'none', border: 'none', color: '#ef4444', marginLeft: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold' }}
-                    >
-                      ✕
-                    </button>
+              {skillForm.skill_type !== 'passive' && ( // 👈 🆕 パッシブ時はターゲット・属性セクションを丸ごと非表示ガード！
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1.2fr', gap: '10px', background: '#0f172a', border: '1px dashed #475569', padding: '10px', borderRadius: '8px', marginBottom: '10px' }}>
+                  <div>
+                    <label style={labelStyle}>🎯 効果の対象（ターゲット）</label>
+                    <select value={skillForm.target_type || '単体エネミー'} onChange={(e) => setSkillForm({...skillForm, target_type: e.target.value})} style={inputStyle}>
+                      <option value="単体エネミー">単体エネミー（単体攻撃）</option>
+                      <option value="範囲エネミー">範囲エネミー（敵全体攻撃）</option>
+                      <option value="味方単体">味方単体（回復・バフ）</option>
+                      <option value="味方全体">味方全体（全体回復・全体バフ）</option>
+                      <option value="自分自身">自分自身（自己強化）</option>
+                    </select>
                   </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-        {/* ───────────────────────────────────────────────────────────── */}
 
-        <div>
-                  <label style={labelStyle}>🗺️ 使用可能シチュエーション</label>
-                  <select value={skillForm.use_condition || '戦闘中のみ'} onChange={(e) => setSkillForm({...skillForm, use_condition: e.target.value})} style={inputStyle}>
-                    <option value="戦闘中のみ">戦闘中のみ可能</option>
-                    <option value="フィールドのみ">非戦闘時（フィールド等）のみ</option>
-                    <option value="常時可能">常時どこでも使用可能</option>
-                    <option value="魔物調教">テイマー専用：敵のHP20%以下で可能</option>
-                  </select>
+                  {/* 🎯 🆕 【三土手創世神特注：バフ・回復優先ターゲット職業ガンビット設定ボード】 */}
+                  {['味方単体', '味方全体'].includes(skillForm.target_type) && (
+                    <div style={{ gridColumn: 'span 4', background: '#070a13', border: '1px dashed #38bdf8', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
+                      <span style={{ fontSize: '0.72rem', color: '#38bdf8', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>
+                        👥 味方支援専用：AI発動時のターゲット職業・優先順位シチュエーション設定
+                      </span>
+                      
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                        <select value={selectedJobToPriority} onChange={(e) => setSelectedJobToPriority(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                          <option value="ファイター">ファイター（戦士）</option>
+                          <option value="メイジ">メイジ（魔術士）</option>
+                          <option value="クレリック">クレリック（聖職者）</option>
+                          <option value="スカウト">スカウト（隠密）</option>
+                          <option value="ハンター">ハンター（狩人）</option>
+                          <option value="トレーダー">トレーダー（商人）</option>
+                          <option value="テイマー">テイマー（魔物使い）</option>
+                          <option value="ノービス">ノービス（見習い）</option>
+                        </select>
+                        <button type="button" onClick={addJobToPriority} style={{ background: '#38bdf8', color: '#0b0f19', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.72rem', cursor: 'pointer' }}>➕ 優先順位に追記</button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#111827', padding: '8px', borderRadius: '6px', minHeight: '34px' }}>
+                        {(skillForm.target_priority_jobs || []).length === 0 ? (
+                          <span style={{ fontSize: '0.65rem', color: '#475569', fontStyle: 'italic', padding: '4px' }}>※職指定がない場合は、今まで通りHPが一番減っている仲間、または生存している先頭の仲間に発動します。</span>
+                        ) : (
+                          (skillForm.target_priority_jobs || []).map((jobName, idx) => (
+                            <div key={'priority-badge-'+jobName} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: idx === 0 ? '#1e3a8a' : '#1e293b', border: idx === 0 ? '1px solid #3b82f6' : '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>
+                              <strong style={{ color: idx === 0 ? '#ffd700' : '#94a3b8', marginRight: '2px' }}>第{idx + 1}位:</strong>
+                              <span style={{ color: '#fff' }}>{jobName}</span>
+                              <button type="button" onClick={() => removeJobFromPriority(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', marginLeft: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold' }}>✕</button>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div>
+                    <label style={labelStyle}>🗺️ 使用可能シチュエーション</label>
+                    <select value={skillForm.use_condition || '戦闘中のみ'} onChange={(e) => setSkillForm({...skillForm, use_condition: e.target.value})} style={inputStyle}>
+                      <option value="戦闘中のみ">戦闘中のみ可能</option>
+                      <option value="フィールドのみ">非戦闘時（フィールド等）のみ</option>
+                      <option value="常時可能">常時どこでも使用可能</option>
+                      <option value="魔物調教">テイマー専用：敵のHP20%以下で可能</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>🔥 技・魔法の固有属性</label>
+                    <select value={skillForm.element || '無'} onChange={(e) => setSkillForm({...skillForm, element: e.target.value})} style={inputStyle}>
+                      <option value="無">無属性</option>
+                      <option value="火">火属性（地属性に強い・2.0倍）</option>
+                      <option value="水">水属性（火属性に強い・2.0倍）</option>
+                      <option value="風">風属性（水属性に強い・2.0倍）</option>
+                      <option value="地">地属性（風属性に強い・2.0倍）</option>
+                      <option value="聖">聖属性（不死・闇に特効・2.0倍）</option>
+                      <option value="闇">闇属性</option>
+                      <option value="不死">不死属性</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ ...labelStyle, color: '#f59e0b' }}>🏹 スキル・魔法の射程</label>
+                    <select value={skillForm.skill_range || 'L'} onChange={(e) => setSkillForm({...skillForm, skill_range: e.target.value})} style={{ ...inputStyle, border: '1px solid #f59e0b44' }}>
+                      <option value="S">Sレンジ（前衛からのみ使用可能）</option>
+                      <option value="L">Lレンジ（後衛からも使用可能）</option>
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label style={labelStyle}>🔥 技・魔法の固有属性</label>
-                  <select value={skillForm.element || '無'} onChange={(e) => setSkillForm({...skillForm, element: e.target.value})} style={inputStyle}>
-                    <option value="無">無属性</option>
-<option value="火">火属性（地属性に強い・2.0倍）</option>
-<option value="水">水属性（火属性に強い・2.0倍）</option>
-<option value="風">风属性（水属性に強い・2.0倍）</option> {/* 💡 風は水に強い！ */}
-<option value="地">地属性（風属性に強い・2.0倍）</option> {/* 💡 地は風に強い！ */}
-<option value="聖">聖属性（不死・闇に特効・2.0倍）</option>
-                    <option value="闇">闇属性</option>
-                    <option value="不死">不死属性</option>
-                  </select>
-                </div>
-                {/* 🏹 🆕 スキル射程入力欄をここに追加！ */}
-                <div>
-                  <label style={{ ...labelStyle, color: '#f59e0b' }}>🏹 スキル・魔法の射程</label>
-                  <select value={skillForm.skill_range || 'L'} onChange={(e) => setSkillForm({...skillForm, skill_range: e.target.value})} style={{ ...inputStyle, border: '1px solid #f59e0b44' }}>
-                    <option value="S">Sレンジ（前衛からのみ使用可能）</option>
-                    <option value="L">Lレンジ（後衛からも使用可能）</option>
-                  </select>
-                </div>
-              </div>
+              )}
 
               {/* 🧪 🆕 追加効果（状態異常・バフ） ＆ 確率 ＆ 持続時間セクション */}
               <div style={{ background: '#1e1b4b', border: '1px solid #4338ca', padding: '10px', borderRadius: '8px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -1291,6 +1273,15 @@ const GameMasterDashboard = () => {
                       <option value="物理DEF増幅">物理DEF増幅（味方・自分）</option>
                       <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
                       <option value="魔力Matk増幅">魔力Matk増幅（味方・自分）</option>
+                      {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
+                      <option value="回避Flee増幅">【パッシブ】回避Flee増幅（常時上昇）</option>
+                      <option value="致命打率増幅">【パッシブ】致命打率増幅（常時上昇）</option>
+                      <option value="最大HP増幅">【パッシブ】最大HP増幅（常時％上昇）</option>
+                      <option value="最大SP増幅">【パッシブ】最大SP増幅（常時％上昇）</option>
+                      <option value="パッシブATK増幅">【パッシブ】物理ATK増幅（常時固定値上昇）</option>
+                      <option value="パッシブMATK増幅">【パッシブ】魔力Matk増幅（常時固定値上昇）</option>
+                      <option value="パッシブDEF増幅">【パッシブ】防御力Def増幅（常時固定値上昇）</option> {/* 👈 🆕 防御Def常時上昇！ */}
+                      <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option> {/* 👈 🆕 魔防Mdef常時上昇！ */}
                     </select>
                   </div>
                   <div>
@@ -1328,7 +1319,21 @@ const GameMasterDashboard = () => {
               </div>
 
               {/* 🛡️ 👑 【三土手神特注】ディフェンダーからディボーション（献身）へ超進化した戦術防衛スペックパネル */}
-              <div style={{ background: '#0b0f19', border: '1px dashed #ffd700', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+              {skillForm.skill_type !== 'passive' && ( // 👈 🆕 パッシブ時は身代わりスペックも非表示ガード！
+                <div style={{ background: '#0b0f19', border: '1px dashed #ffd700', padding: '12px', borderRadius: '10px', display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'center' }}>
+                    <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <input type="checkbox" checked={skillForm.is_range_damage_cut} onChange={(e) => setSkillForm({...skillForm, is_range_damage_cut: e.target.checked})} /> 対象へのダメージを術者が代わりに引き受ける
+                    </label>
+                    <div>
+                      <label style={labelStyle}>ダメージ肩代わり率 (%)</label>
+                      <input type="number" min="0" max="100" placeholder="例: 100%肩代わり" value={skillForm.range_damage_cut_pct || ''} onChange={(e) => setSkillForm({...skillForm, range_damage_cut_pct: Number(e.target.value)})} style={inputStyle} disabled={!skillForm.is_range_damage_cut} />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '10px', borderRadius: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold' }}>🛡️ ダメージ肩代わりスペック（ディボーション・献身等）</span>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'center' }}>
                   <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
