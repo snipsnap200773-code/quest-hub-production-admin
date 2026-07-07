@@ -1281,7 +1281,9 @@ const GameMasterDashboard = () => {
                       <option value="パッシブATK増幅">【パッシブ】物理ATK増幅（常時固定値上昇）</option>
                       <option value="パッシブMATK増幅">【パッシブ】魔力Matk増幅（常時固定値上昇）</option>
                       <option value="パッシブDEF増幅">【パッシブ】防御力Def増幅（常時固定値上昇）</option> {/* 👈 🆕 防御Def常時上昇！ */}
-                      <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option> {/* 👈 🆕 魔防Mdef常時上昇！ */}
+                      <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option>
+                      <option value="ツインブレード型連撃">【パッシブ】ツインブレード型連撃（確率で2連撃発動）</option>
+                      <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option> {/* 👈 🆕 HP自動回復の電線を追加！ */}
                     </select>
                   </div>
                   <div>
