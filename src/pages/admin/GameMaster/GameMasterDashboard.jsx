@@ -1283,7 +1283,10 @@ const GameMasterDashboard = () => {
                       <option value="パッシブDEF増幅">【パッシブ】防御力Def増幅（常時固定値上昇）</option> {/* 👈 🆕 防御Def常時上昇！ */}
                       <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option>
                       <option value="ツインブレード型連撃">【パッシブ】ツインブレード型連撃（確率で2連撃発動）</option>
-                      <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option> {/* 👈 🆕 HP自動回復の電線を追加！ */}
+                      <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option>
+                      <option value="パッシブSP自動回復">【パッシブ】マインドリフレッシュ型（5秒周期SP自動回復）</option>
+                      <option value="パッシブDEX増幅">【パッシブ】ディバインアイ型（常時DEX固定値上昇）</option>
+                      <option value="遠隔命中増幅">【パッシブ】ホークアイ型（Lレンジ武器時のみHit固定値上昇）</option>
                     </select>
                   </div>
                   <div>
@@ -1334,32 +1337,6 @@ const GameMasterDashboard = () => {
                   </div>
                 </div>
               )}
-
-              <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '10px', borderRadius: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold' }}>🛡️ ダメージ肩代わりスペック（ディボーション・献身等）</span>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', alignItems: 'center' }}>
-                  <label style={{ fontSize: '0.68rem', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <input 
-                      type="checkbox" 
-                      checked={skillForm.is_range_damage_cut} 
-                      onChange={(e) => setSkillForm({...skillForm, is_range_damage_cut: e.target.checked})} 
-                    /> 対象へのダメージを術者が代わりに引き受ける
-                  </label>
-                  <div>
-                    <label style={labelStyle}>ダメージ肩代わり率 (%)</label>
-                    <input 
-                      type="number" 
-                      min="0" 
-                      max="100" 
-                      placeholder="例: 100%肩代わり（対象の被弾0）なら 100 と入力" 
-                      value={skillForm.range_damage_cut_pct || ''} 
-                      onChange={(e) => setSkillForm({...skillForm, range_damage_cut_pct: Number(e.target.value)})} 
-                      style={inputStyle} 
-                      disabled={!skillForm.is_range_damage_cut}
-                    />
-                  </div>
-                </div>
-              </div>
 
               <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '10px', borderRadius: '8px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
                 <div><label style={{...labelStyle, color: '#a78bfa'}}>⏱️ 基礎詠唱時間（秒）</label><input type="number" step="0.1" value={skillForm.cast_time} onChange={(e) => setSkillForm({...skillForm, cast_time: e.target.value})} style={inputStyle} /></div>

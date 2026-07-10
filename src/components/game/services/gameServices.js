@@ -122,16 +122,29 @@ export const calculateRoStatus = (charData, equips = {}) => {
 
   // 🔮 🆕 ジョブレベルを取得（なければ1）し、独立数理室から配列ベースのジョブボーナスを強制召喚
   const jobLv = charData.level || charData.job_level || 1; 
-const jobBonus = calculateJobBonus(job, jobLv);
+  const jobBonus = calculateJobBonus(job, jobLv);
+
+  // 🎯 【三土手神特注】習得済みスキルから常時発動パッシブの効果量をその場で自動集計！
+  let passiveDexBonus = 0;
+  if (charData.skillsList && Array.isArray(charData.skillsList)) {
+    charData.skillsList.forEach(sk => {
+      if (sk.skill_type === 'passive') {
+        if (sk.effect_type === 'パッシブDEX増幅' || sk.name?.includes('ディバインアイ')) {
+          passiveDexBonus += Number(sk.effect_value || 0);
+        }
+      }
+    });
+  }
 
   // 🔮 🆕 【大革命・引き算UI対応】
-  // 「純粋な自動補正分 (+X)」を格納するオブジェクトを生成（ジョブボーナス + 手振りボーナス + カード効果）
+  // 「純粋な自動補正分 (+X)」を格納するオブジェクトを生成（ジョブボーナス + 手振りボーナス + カード効果 + パッシブスキル）
   const bonus = {
     str: (charData.bonus?.str || 0) + cardStats.str + (jobBonus.str || 0),
     agi: (charData.bonus?.agi || 0) + cardStats.agi + (jobBonus.agi || 0),
     vit: (charData.bonus?.vit || 0) + cardStats.vit + (jobBonus.vit || 0),
     int: (charData.bonus?.int || 0) + cardStats.int + (jobBonus.int || 0),
-    dex: (charData.bonus?.dex || 0) + cardStats.dex + (jobBonus.dex || 0),
+    // 🎯 DEXの自動補正バッファにパッシブスキルでの上昇分を加算！
+    dex: (charData.bonus?.dex || 0) + cardStats.dex + (jobBonus.dex || 0) + passiveDexBonus,
     luk: (charData.bonus?.luk || 0) + cardStats.luk + (jobBonus.luk || 0),
   };
 
@@ -159,9 +172,27 @@ const jobBonus = calculateJobBonus(job, jobLv);
   const totalEquipMdef = (equips.body?.mdef || 0) + (equips.head?.mdef || 0) + (equips.face?.mdef || 0) + cardStats.mdef;
 
   // 🔮 最終Derived計算式に対しても、カードのダイレクトパラメータ修正（Critical, Flee, Hit等）を美しくドッキング
+  let passiveRangedHitBonus = 0;
+  if (charData.skillsList && Array.isArray(charData.skillsList)) {
+    charData.skillsList.forEach(sk => {
+      if (sk.skill_type === 'passive') {
+        if (sk.effect_type === '遠隔命中増幅' || sk.name?.includes('ホークアイ') || sk.name?.includes('遠見の心眼')) {
+          passiveRangedHitBonus += Number(sk.effect_value || 0);
+        }
+      }
+    });
+  }
+
+  // 🎯 右手装備が「Lレンジ（弓など）」であるか判定
+  const isRangedWeapon = equips.right_hand?.range === 'L' || equips.right_hand?.weapon_range === 'L';
+
+  // 🔮 最終Derived計算式に対しても、カードのダイレクトパラメータ修正（Critical, Flee, Hit等）を美しくドッキング
   const atk = str + weaponAtk + Math.pow(Math.floor(str / 10), 2) + accessoryAtk;
   const def = Math.floor(vit * 0.5) + totalEquipDef;
-  const hit = baseLv + dex + cardStats.hit;
+  
+  // 🎯 【三土手神特注】Lレンジ武器装備時のみ、ホークアイの数値をHitに直撃ドッキング！
+  const hit = baseLv + dex + cardStats.hit + (isRangedWeapon ? passiveRangedHitBonus : 0);
+  
   const flee = baseLv + agi + cardStats.flee;
   const critical = Math.floor(luk * 0.3) + 1 + cardStats.critical;
   

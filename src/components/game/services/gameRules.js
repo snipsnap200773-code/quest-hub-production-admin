@@ -286,6 +286,40 @@ export const applyStatusConditionDebuffs = (baseRoStatus, activeStatusType) => {
 };
 
 // ==========================================================
+// 👑 三土手創世神特注：魔法属性コンバートインフラ
+// ==========================================================
+/**
+ * 🔮 装備しているカードから「魔法属性付与」を検知し、魔法スキルの属性を上書き換装します。
+ * @param {object} member - プレイヤー（またはエネミー）の戦闘インスタンスデータ
+ * @param {object} playableSkill - 発動しようとしている魔法スキルのマスターデータ
+ * @returns {string} 最終的に適用される魔法の属性（'火', '水', '地', '風' など）
+ */
+export const enchantMagicElement = (member, playableSkill) => {
+  let activeMagicElement = playableSkill.element || '無';
+
+  if (member && member.equips && typeof member.equips === 'object') {
+    Object.values(member.equips).forEach(slot => {
+      if (slot && Array.isArray(slot.cards)) {
+        slot.cards.forEach(card => {
+          // カードの効果枠①、②、③のいずれかに 'enchant_magic' が設定されているか走査
+          if (card.card_effect_type === 'enchant_magic' && card.card_effect_target) {
+            activeMagicElement = card.card_effect_target;
+          }
+          if (card.card_effect_type_2 === 'enchant_magic' && card.card_effect_target_2) {
+            activeMagicElement = card.card_effect_target_2;
+          }
+          if (card.card_effect_type_3 === 'enchant_magic' && card.card_effect_target_3) {
+            activeMagicElement = card.card_effect_target_3;
+          }
+        });
+      }
+    });
+  }
+
+  return activeMagicElement;
+};
+
+// ==========================================================
 // 👑 三土手創世神特注：魔法攻撃力 (Matk) 算出エンジン
 // ==========================================================
 /**
