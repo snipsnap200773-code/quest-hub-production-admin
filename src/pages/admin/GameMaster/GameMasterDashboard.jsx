@@ -645,7 +645,14 @@ const GameMasterDashboard = () => {
                     <option value="ハンター">ハンター（狩人）</option>
                     <option value="トレーダー">トレーダー（商人）</option>
                     <option value="テイマー">テイマー（魔物使い）</option>
-                  </select>
+          
+          {/* 🐾 🆕 三土手神特注：モンスター専用・種族クラス識別枠 */}
+          <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
+          <option value="植物族">🌱 植物族（ポポリンやマンドラゴラ等）</option>
+          <option value="悪魔族">😈 悪魔族（バフォメット等）</option>
+          <option value="不死族">💀 不死族（ゾンビやスケルトン等）</option>
+          <option value="水棲族">🐟 水棲族（半魚人やクラーケン等）</option>
+        </select>
                 </div>
               </div>
 
@@ -1140,6 +1147,14 @@ const GameMasterDashboard = () => {
                     <option value="ハンター">ハンター（狩人）</option>
                     <option value="トレーダー">トレーダー（商人）</option>
                     <option value="テイマー">テイマー（魔物使い）</option>
+                    
+                    {/* 🐾 🆕 【三土手神特注：モンスター共通 ＆ 種族専用スキル習得バリケード配線】 */}
+                    <option value="魔物共通">🐾 【魔物共通】全モンスター習得可能</option>
+                    <option value="魔獣族">🐾 魔獣族専用スキル・魔法</option>
+                    <option value="植物族">🌱 植物族専用スキル・魔法</option>
+                    <option value="悪魔族">😈 悪魔族専用スキル・魔法</option>
+                    <option value="不死族">💀 不死族専用スキル・魔法</option>
+                    <option value="水棲族">🐟 水棲族専用スキル・魔法</option>
                   </select>
                 </div>
                 <div>

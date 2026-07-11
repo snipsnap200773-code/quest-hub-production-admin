@@ -80,6 +80,47 @@ export const JOB_BONUS_MAP = {
     int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)),
     dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
     luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  // 🐾 🆕 【三土手神特注：モンスター5大種族・自動成長ジョブボーナス増築配線】
+  '魔獣族': {
+    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), // 物理寄りのタフネス
+    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), 
+    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)), 
+    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.05)),
+    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  '植物族': {
+    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
+    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
+    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.35)), // 圧倒的な肉体の壁・生命力
+    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
+    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  '悪魔族': {
+    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)), // 尖った超攻撃スペック
+    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
+    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
+    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  '不死族': {
+    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
+    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.05)), // 鈍重だがタフで呪い特性持ち
+    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
+    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
+    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2))
+  },
+  '水棲族': {
+    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
+    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
+    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
+    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), // 魔法・知性も伸びるハイブリッド
+    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
+    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
   }
 };
 
