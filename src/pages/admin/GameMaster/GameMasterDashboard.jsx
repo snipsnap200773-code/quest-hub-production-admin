@@ -31,7 +31,14 @@ const GameMasterDashboard = () => {
     stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0,
     equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
     equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '',
-    extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
+    
+    // 🐾 🆕 【三土手神特注：固有レアドロップ3連装・拡張インフラState】
+    // 旧武器専用ドロップ確率を廃止し、全ての武具・カードが選べるレア枠を3大スロットへ拡張マウント！
+    extra_drop_item: '', extra_drop_chance: 0,
+    extra_drop_item_2: '', extra_drop_chance_2: 0,
+    extra_drop_item_3: '', extra_drop_chance_3: 0,
+    
+    skill_01: '', skill_02: '', skill_03: '',
     element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
     // 👑 三土手神特注：4大状態異常耐性の初期State配線を開通！
     resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0
@@ -203,29 +210,41 @@ const GameMasterDashboard = () => {
         resist_poison: Number(unitForm.resist_poison || 0),
         resist_blind: Number(unitForm.resist_blind || 0),
 
-        // 🆕 新しく追加した4大状態異常耐性もここで確実にパースしてSupabaseへコミット！
+// 🆕 新しく追加した4大状態異常耐性もここで確実にパースしてSupabaseへコミット！
         resist_sleep: Number(unitForm.resist_sleep || 0),
         resist_silence: Number(unitForm.resist_silence || 0),
         resist_curse: Number(unitForm.resist_curse || 0),
         resist_petrify: Number(unitForm.resist_petrify || 0),
 
-        // 💡 【追記：ドロップ確率 ＆ テイマー調教仲間化パラメータの同期コミット】
-        drop_chance_weapon: Number(unitForm.drop_chance_weapon || 0),
+        // 💡 【追記：テイマー調教仲間化パラメータの同期コミット】
         tame_success_chance: Number(unitForm.tame_success_chance || 0),
         tame_level_req: Number(unitForm.tame_level_req || 1),
 
         // 🔮 【三土手神リフォーム】手入力があれば数値化、空文字なら未指定(null)として安全にDBへ送信！
         enemy_aspd: unitForm.enemy_aspd ? Number(unitForm.enemy_aspd) : null,
         
-        extra_drop_chance: Number(unitForm.extra_drop_chance),
+        // 🐾 🆕 【三土手創世神特注：3連ドロップ・本物カラム完全同期結線】
+        // 古い「drop_chance_weapon」を完全排除！
+        // データベースに本物として存在する3つのスロットのカラム名と確率を100%正確にドッキングさせます！
+        extra_drop_item: (unitForm.extra_drop_item && String(unitForm.extra_drop_item).trim() !== '') ? unitForm.extra_drop_item : null,
+        extra_drop_chance: Number(unitForm.extra_drop_chance || 0),
+        
+        extra_drop_item_2: (unitForm.extra_drop_item_2 && String(unitForm.extra_drop_item_2).trim() !== '') ? unitForm.extra_drop_item_2 : null,
+        extra_drop_chance_2: Number(unitForm.extra_drop_chance_2 || 0),
+        
+        extra_drop_item_3: (unitForm.extra_drop_item_3 && String(unitForm.extra_drop_item_3).trim() !== '') ? unitForm.extra_drop_item_3 : null,
+        extra_drop_chance_3: Number(unitForm.extra_drop_chance_3 || 0),
+
         atk_matk: Number(unitForm.atk_matk), hit_100: Number(unitForm.hit_100), flee_95: Number(unitForm.flee_95),
         equip_right_hand: unitForm.equip_right_hand || null, equip_left_hand: unitForm.equip_left_hand || null,
         equip_head: unitForm.equip_head || null, equip_face: unitForm.equip_face || null,
         equip_body: unitForm.equip_body || null, equip_glove: unitForm.equip_glove || null,
         equip_garment: unitForm.equip_garment || null, equip_shoes: unitForm.equip_shoes || null,
         equip_accessory: unitForm.equip_accessory || null,
-        extra_drop_item: unitForm.extra_drop_item || null,
-        skill_01: unitForm.skill_01 || null, skill_02: unitForm.skill_02 || null, skill_03: unitForm.skill_03 || null
+        
+        skill_01: (unitForm.skill_01 && String(unitForm.skill_01).trim() !== '') ? unitForm.skill_01 : null,
+        skill_02: (unitForm.skill_02 && String(unitForm.skill_02).trim() !== '') ? unitForm.skill_02 : null,
+        skill_03: (unitForm.skill_03 && String(unitForm.skill_03).trim() !== '') ? unitForm.skill_03 : null
       });
       if (error) throw error;
       alert('9部位対応のユニットデータを保存しました！');
@@ -356,7 +375,7 @@ const GameMasterDashboard = () => {
     setActiveFloorTab(1);
   }; // ✨ ⚙️ 巻き込んで消えていたこのカッコを1行書き足して復活させる！
 
-  const startEditUnit = (unit) => { // 🟢 これで構文が繋がり、画面が正常に復活します！
+  const startEditUnit = (unit) => { 
     setIsEditing(true); setEditId(unit.id);
     setUnitForm({ 
       ...unit, 
@@ -366,7 +385,17 @@ const GameMasterDashboard = () => {
       equip_head: unit.equip_head || '', equip_face: unit.equip_face || '', 
       equip_body: unit.equip_body || '', equip_glove: unit.equip_glove || '', 
       equip_garment: unit.equip_garment || '', equip_shoes: unit.equip_shoes || '', equip_accessory: unit.equip_accessory || '', 
-      extra_drop_item: unit.extra_drop_item || '', skill_01: unit.skill_01 || '', skill_02: unit.skill_02 || '', skill_03: unit.skill_03 || '' 
+      
+      // 🐾 🆕 【三土手創世神特注：編集読み込み時の3連ドロップ同期電線】
+      // データベースから修正対象を引っ張ってきた際、3つのレアドロップ枠のIDと確率を完璧にフォームへバインドします[cite: 7]！
+      extra_drop_item: unit.extra_drop_item || '',
+      extra_drop_chance: unit.extra_drop_chance !== undefined ? Number(unit.extra_drop_chance) : 0,
+      extra_drop_item_2: unit.extra_drop_item_2 || '',
+      extra_drop_chance_2: unit.extra_drop_chance_2 !== undefined ? Number(unit.extra_drop_chance_2) : 0,
+      extra_drop_item_3: unit.extra_drop_item_3 || '',
+      extra_drop_chance_3: unit.extra_drop_chance_3 !== undefined ? Number(unit.extra_drop_chance_3) : 0,
+
+      skill_01: unit.skill_01 || '', skill_02: unit.skill_02 || '', skill_03: unit.skill_03 || '' 
     }); 
   };
   
@@ -398,21 +427,25 @@ const GameMasterDashboard = () => {
       stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0, 
       equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
       equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '', 
-      extra_drop_item: '', extra_drop_chance: 0, skill_01: '', skill_02: '', skill_03: '',
+      
+      // 💡 上にあった古いドロップ項目を排除し、スキルIDだけを残します
+      skill_01: '', skill_02: '', skill_03: '',
+      
       element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
-      // 💡 リセット時もお掃除
       resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0,
+      resist_sleep: 0, resist_silence: 0, resist_curse: 0, resist_petrify: 0,
 
-      // 🆕 新しい4つの耐性も、保存完了時やリセット時にきれいに 0 へ初期化クリーンアップ！
-      resist_sleep: 0,
-      resist_silence: 0,
-      resist_curse: 0,
-      resist_petrify: 0,
-
-      // 💡 【追記】ドロップ確率や調教用パラメータも保存後にきれいにリセット
-      drop_chance_weapon: 0,
       tame_success_chance: 0,
       tame_level_req: 1,
+      
+      // 🐾 🆕 【三土手創世神特注：3連ドロップ初期化配線・一本化】
+      // 重複を完全粉砕！ここで3つのスロットのIDと確率を完璧にクリーンアップします[cite: 7]。
+      extra_drop_item: '',
+      extra_drop_chance: 0,
+      extra_drop_item_2: '',
+      extra_drop_chance_2: 0,
+      extra_drop_item_3: '',
+      extra_drop_chance_3: 0,
 
       // 💨 保存後にAspdの入力欄もきれいに空文字へリセットクリーンアップ！
       enemy_aspd: ""
@@ -790,37 +823,53 @@ const GameMasterDashboard = () => {
                     </div>
                   </div>
 
-                  {/* ─── 枠②：装備＆所持品完全連動・ドロップ確率セッティング ─── */}
+                  {/* ─── 枠②：モンスター固有アイテムドロップ3連装マトリクス（右手武器連動を廃止） ─── */}
                   <div style={{ borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
-                    <span style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>📦 戦利品ドロップ：装備武具 ＆ 固有レアアイテムドロップ確率 (%)</span>
+                    <span style={{ fontSize: '0.68rem', color: '#34d399', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>📦 ハクスラ戦利品：固有レアドロップ枠 ＆ ドロップ確率マウント (最大3スロット)</span>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       
-                      {/* 装備連動枠 */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px' }}>
+                      {/* レアドロップ枠 ① */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px', border: '1px solid #1e293b' }}>
                         <div>
-                          <span style={{ fontSize: '0.6rem', color: '#94a3b8', display: 'block' }}>🛡️ 右手武器ドロップ（上の選択に全自動連動）</span>
-                          <strong style={{ fontSize: '0.72rem', color: unitForm.equip_right_hand ? '#ffd700' : '#475569' }}>
-                            {items.find(i => i.id === unitForm.equip_right_hand)?.name || '未装備（ドロップなし）'}
-                          </strong>
-                        </div>
-                        <div>
-                          <label style={labelStyle}>武器ドロップ確率 (%)</label>
-                          <input type="number" min="0" max="100" placeholder="0〜100%" value={unitForm.drop_chance_weapon || 0} onChange={(e) => setUnitForm({...unitForm, drop_chance_weapon: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.equip_right_hand} />
-                        </div>
-                      </div>
-
-                      {/* 固有レア・カードドロップ枠 */}
-                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px' }}>
-                        <div>
-                          <label style={labelStyle}>🃏 固有レアドロップ枠（カードや素材を選択）</label>
+                          <label style={labelStyle}>🃏 固有レアドロップ枠【第1スロット】</label>
                           <select value={unitForm.extra_drop_item || ''} onChange={(e) => setUnitForm({...unitForm, extra_drop_item: e.target.value})} style={inputStyle}>
-                            <option value="">ドロップなし</option>
-                            {items.map(i => <option key={'ed-'+i.id} value={i.id}>[{i.item_subtype}] {i.name}</option>)}
+                            <option value="">ドロップ設定なし</option>
+                            {items.map(i => <option key={'ed1-'+i.id} value={i.id}>[{i.item_subtype}] {i.name}</option>)}
                           </select>
                         </div>
                         <div>
-                          <label style={labelStyle}>レアドロップ確率 (%)</label>
-                          <input type="number" min="0" max="100" placeholder="例: 0.01% 〜 10%" value={unitForm.extra_drop_chance || 0} onChange={(e) => setUnitForm({...unitForm, extra_drop_chance: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.extra_drop_item} />
+                          <label style={labelStyle}>第1枠・ドロップ確率 (%)</label>
+                          <input type="number" step="0.001" min="0" max="100" placeholder="例: 1.5%" value={unitForm.extra_drop_chance || 0} onChange={(e) => setUnitForm({...unitForm, extra_drop_chance: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.extra_drop_item} />
+                        </div>
+                      </div>
+
+                      {/* レアドロップ枠 ② */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+                        <div>
+                          <label style={labelStyle}>🃏 固有レアドロップ枠【第2スロット】</label>
+                          <select value={unitForm.extra_drop_item_2 || ''} onChange={(e) => setUnitForm({...unitForm, extra_drop_item_2: e.target.value})} style={inputStyle}>
+                            <option value="">ドロップ設定なし</option>
+                            {items.map(i => <option key={'ed2-'+i.id} value={i.id}>[{i.item_subtype}] {i.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>第2枠・ドロップ確率 (%)</label>
+                          <input type="number" step="0.001" min="0" max="100" placeholder="例: 0.5%" value={unitForm.extra_drop_chance_2 || 0} onChange={(e) => setUnitForm({...unitForm, extra_drop_chance_2: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.extra_drop_item_2} />
+                        </div>
+                      </div>
+
+                      {/* レアドロップ枠 ③ */}
+                      <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '8px', background: '#0b0f19', padding: '6px', borderRadius: '6px', border: '1px solid #1e293b' }}>
+                        <div>
+                          <label style={labelStyle}>🃏 固有レアドロップ枠【第3スロット】</label>
+                          <select value={unitForm.extra_drop_item_3 || ''} onChange={(e) => setUnitForm({...unitForm, extra_drop_item_3: e.target.value})} style={inputStyle}>
+                            <option value="">ドロップ設定なし</option>
+                            {items.map(i => <option key={'ed3-'+i.id} value={i.id}>[{i.item_subtype}] {i.name}</option>)}
+                          </select>
+                        </div>
+                        <div>
+                          <label style={labelStyle}>第3枠・ドロップ確率 (%)</label>
+                          <input type="number" step="0.001" min="0" max="100" placeholder="例: 0.01%" value={unitForm.extra_drop_chance_3 || 0} onChange={(e) => setUnitForm({...unitForm, extra_drop_chance_3: Number(e.target.value)})} style={inputStyle} disabled={!unitForm.extra_drop_item_3} />
                         </div>
                       </div>
 

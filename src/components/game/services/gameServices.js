@@ -322,6 +322,12 @@ export const gameServices = {
           equip_shoes: ch.equip_shoes,
           equip_accessory: ch.equip_accessory,
 
+          // 🐾 🆕 【三土手神特注：魔物スキル輸送電線】
+          // ⬇️ ここに3行追加！戦闘AIの弾切れバグを完全に粉砕します！
+          skill_01: ch.skill_01,
+          skill_02: ch.skill_02,
+          skill_03: ch.skill_03,
+
           level: ch.level,
           exp: ch.exp,
           
@@ -361,9 +367,16 @@ export const gameServices = {
         // 💡 ⚙️ スキルデータが完全合流した「combinedMasterList」にバトンタッチ！
         const activeSkillsSource = combinedMasterList || []; 
 
+        // 🐾 🆕 【特注インフラ】このキャラクターがDBに直接持っている「固有スキルID」を抽出
+        const inherentSkillIds = [ch.skill_01, ch.skill_02, ch.skill_03].filter(Boolean);
+
         // ① まず該当の職業とベースLv条件をクリアしているスキルをすべて抽出
         const allEligibleSkills = activeSkillsSource.filter(s => {
           if (s.sp_cost === undefined) return false; // アイテムではなくスキルデータであること
+          
+          // 🐾 👑 【神特注ゲート】このキャラが固有に持っているスキルなら、職業・レベル制限を完全に無視して「絶対合格（習得）」させる！
+          if (inherentSkillIds.includes(s.id)) return true;
+
           const jobReq = s.job_requirement || '全職業';
           const lvReq = Number(s.level_requirement) || 1;
           return (jobReq === '全職業' || jobReq === currentJob) && currentLv >= lvReq;
