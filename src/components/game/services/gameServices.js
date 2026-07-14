@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 // 🔮 🆕 独立数理室からジョブボーナス算出ロジックを電線結合！
 import { 
   calculateJobBonus, 
@@ -816,5 +816,151 @@ export const gameServices = {
       console.error('📋 カード装着データ取得失敗:', err);
       return [];
     }
+  }, // 👈 🆕 修正点：次の関数に繋げるためにカンマを打ちました！
+
+  // ─── 🏨 🆕 クエストハブ予約連動：1次職7クラス・コンプリートインジェクションエンジン ───
+  /**
+   * ユーザーが店舗を予約した瞬間、酒場（待機枠）に1次職キャラクターを自動支給します。
+   * 1回目：業種カテゴリに応じた固定クラス
+   * 2〜7回目：まだ所持していない残りの1次職からランダム選抜（7回で確実に全職コンプリート）
+   * 8回目以降：セーフティガード（将来の限界突破やレア武具支給の拡張枠）
+   */
+  async grantCharacterFromReservation(userId, shopId) {
+    try {
+      console.log(`🚀 予約連動ガチャ起動: user_id=${userId}, shop_id=${shopId}`);
+      if (!userId || !shopId) throw new Error("ユーザーIDまたは店舗IDが不足しています");
+
+      // 【1】1次職7クラスの「本物のmaster_id」と職業名の定義マップ[cite: 3]
+      const ALL_JOB_MAP = [
+        { master_id: 'unit_1784020957053',   job_name: 'ノービス' },
+        { master_id: 'unit_1784020869929',   job_name: 'ファイター' },
+        { master_id: 'unit_1784020928288',   job_name: 'メイジ' },
+        { master_id: 'unit_1784020916983',   job_name: 'クレリック' },
+        { master_id: 'unit_1784020901141',   job_name: 'スカウト' },
+        { master_id: 'unit_1783644775835',   job_name: 'ハンター' },
+        { master_id: 'unit_178372889058',    job_name: 'テイマー' }
+      ];
+
+      // 【2】予約された店舗（profiles）の「業種（business_type）」をスキャン
+      const { data: shopProfile, error: shopErr } = await supabase
+        .from('profiles')
+        .select('business_type')
+        .eq('id', shopId)
+        .single();
+
+      if (shopErr) throw shopErr;
+      const bizType = shopProfile?.business_type || 'その他';
+      console.log(`🏨 店舗の業種を識別しました: ${bizType}`);
+
+      // 【3】現在ユーザーが所持している全キャラクターを game_characters から取得
+      const { data: myChars, error: charErr } = await supabase
+        .from('game_characters')
+        .select('master_id')
+        .eq('user_id', userId);
+
+      if (charErr) throw charErr;
+      const myMasterIds = (myChars || []).map(c => c.master_id);
+      console.log("🎒 現在所持しているユニットのmaster_id一覧:", myMasterIds);
+
+      // 現在所持している「1次職」の数をカウント
+      const possessedJobs = ALL_JOB_MAP.filter(j => myMasterIds.includes(j.master_id));
+      const possessedCount = possessedJobs.length;
+      console.log(`📊 1次職コンプリート進捗: ${possessedCount} / 7 つ所持`);
+
+      let targetUnit = null;
+
+      // --- 抽選ロジック分岐 ---
+      if (possessedCount === 0) {
+        // 🌟 1回目（初回）：店舗の業種カテゴリに応じた固定クラスを選定
+        // デフォルトのフォールバックは「ノービス」のIDに設定
+        let targetMasterId = 'unit_1784020957053'; 
+
+        if (bizType.includes('美容') || bizType.includes('サロン') || bizType.includes('ヘア')) {
+          targetMasterId = 'unit_1784020901141'; // 美容室 ➔ スカウト
+        } else if (bizType.includes('整体') || bizType.includes('クリニック') || bizType.includes('医療') || bizType.includes('接骨')) {
+          targetMasterId = 'unit_1784020916983'; // 医療・治療 ➔ クレリック
+        } else if (bizType.includes('飲食') || bizType.includes('フード') || bizType.includes('カフェ')) {
+          targetMasterId = 'unit_178372889058';  // グルメ ➔ テイマー
+        } else if (bizType.includes('ジム') || bizType.includes('スポーツ') || bizType.includes('フィットネス')) {
+          targetMasterId = 'unit_1784020869929'; // 運動・筋トレ ➔ ファイター
+        } else if (bizType.includes('スクール') || bizType.includes('占い') || bizType.includes('学び') || bizType.includes('レッスン')) {
+          targetMasterId = 'unit_1784020928288'; // 知恵・神秘 ➔ メイジ
+        } else if (bizType.includes('イベント') || bizType.includes('アウトドア') || bizType.includes('企画')) {
+          targetMasterId = 'unit_1783644775835'; // 活動 ➔ ハンター
+        }
+
+        targetUnit = ALL_JOB_MAP.find(j => j.master_id === targetMasterId);
+
+        // 🛡️ 【超強力ガード】もし判定漏れ等で万が一見つからなかった場合はノービスを強制選抜
+        if (!targetUnit) {
+          console.warn("⚠️ 割り当てIDが見つからなかったため、ノービスを緊急選抜します。");
+          targetUnit = ALL_JOB_MAP.find(j => j.job_name === 'ノービス');
+        }
+
+        console.log(`➔ 【初回特典】業種連動により固定選抜: ${targetUnit.job_name}`);
+      } 
+      else if (possessedCount >= 1 && possessedCount < 7) {
+        // 🔄 2〜7回目：まだ所持していない「未獲得プール」から厳密にランダム選抜！
+        const unpossessedPool = ALL_JOB_MAP.filter(j => !myMasterIds.includes(j.master_id));
+        
+        // JavaScriptの安全なランダムインデックスで1枠選抜
+        const randomIndex = Math.floor(Math.random() * unpossessedPool.length);
+        targetUnit = unpossessedPool[randomIndex];
+        console.log(`➔ 【リピート特典】未所持プール（残り${unpossessedPool.length}職）からランダム選抜: ${targetUnit.job_name}`);
+      } 
+      else {
+        // 👑 7回以上（全職コンプリート後）：将来の限界突破（+1）やレア武具支給の拡張用のセーフティガード
+        console.log("🎉 すでに1次職7クラスを全てコンプリートしています！(次回拡張アップデートをお楽しみに！)");
+        return { success: true, message: "completed_all_jobs" };
+      }
+
+      if (!targetUnit) throw new Error("支給対象キャラクターの選定に失敗しました");
+
+      // 【4】選ばれた1次職の初期ステータスマスターデータ（game_master_units）を精査するため1発ロード[cite: 3]
+      const { data: masterUnit, error: masterErr } = await supabase
+        .from('game_master_units')
+        .select('*')
+        .eq('id', targetUnit.master_id)
+        .single();
+
+      if (masterErr || !masterUnit) throw new Error(`マスターユニット [${targetUnit.master_id}] が見つかりません。GameMasterDashboardで先に作成されているか確認してください。`);
+
+      // 【5】game_characters に酒場待機状態（party_index = null）でINSERTを実行！
+      const { data: newCharacter, error: insertErr } = await supabase
+        .from('game_characters')
+        .insert([
+          {
+            user_id: userId,
+            master_id: targetUnit.master_id,
+            custom_name: targetUnit.job_name,
+            level: 1,
+            exp: 0,
+            status_points: 6, // 👑 三土手神仕様：初期フリーポイント6を自動チャージ！[cite: 3]
+            current_hp: masterUnit.base_hp || 100,
+            max_hp: masterUnit.base_hp || 100,
+            current_sp: masterUnit.base_sp || 10,
+            max_sp: masterUnit.base_sp || 10,
+            bonus_str: 0,
+            bonus_agi: 0,
+            bonus_vit: 0,
+            bonus_int: 0,
+            bonus_dex: 0,
+            bonus_luk: 0,
+            party_index: null, // 👈 酒場にお留守番（待機状態）
+            guild_name: '無所属'
+          }
+        ])
+        .select()
+        .single();
+
+      if (insertErr) throw insertErr;
+
+      console.log(`🎯 【インジェクション大成功】酒場に『創世の${targetUnit.job_name}』を自動支給しました！`, newCharacter);
+      return { success: true, character: newCharacter };
+
+    } catch (err) {
+      console.error("🚨 【予約キャラ支給エラー詳細】:", err);
+      return { success: false, error: err.message };
+    }
   }
-};
+}; // ➔ ここでオブジェクトの終わりを綺麗に閉じます

@@ -4,6 +4,8 @@ import { supabase, supabaseAnon } from '../supabaseClient';
 import { Loader2, Sparkles, Clock } from 'lucide-react';
 // 🎮 🆕 ゲームとの連絡係をインポート [cite: 2026-03-01]
 import { triggerGameEvent } from '../components/game/GameBridge';
+// 🚀 🆕 admin側：ConfirmReservation.jsx の最上部（Step 1）
+import { gameServices } from '../components/game/services/gameServices';
 
 function ConfirmReservation() {
   const { shopId } = useParams();
@@ -615,25 +617,50 @@ const handleReserve = async () => {
         console.warn("⚠️ 予約データが不完全なため通知をスキップしました:", { finalDisplayName, targetDate, targetTime });
       }
       
+      // 🏨 🎮 🚀 【創世神・直撃インジェクション電線（Supabase直叩き補強版）】
+      console.log("🔥 [爆速チェック] 今まさに予約が成功し、画面が遷移する直前です！");
+
+      // 💡 既存の引き継ぎがundefinedでも、ここでSupabaseの最新セッションから直接ユーザーIDをもぎ取る！[cite: 7]
+      let finalUserId = authUserProfile?.id;
+      if (!finalUserId) {
+        const { data: { session } } = await supabase.auth.getSession();
+        finalUserId = session?.user?.id;
+      }
+      
+      console.log("👤 確定したログインユーザーID ➔:", finalUserId);
+
+      if (finalUserId) {
+        try {
+          console.log("⚙️ ユーザーIDを正常に掴みました。gameServices.grantCharacterFromReservation を実行！");
+          // 💡 非同期（await）で確実にインサートを完了させてから画面を遷移させる鉄壁の同期
+          await gameServices.grantCharacterFromReservation(finalUserId, shopId);
+        } catch (gameErr) {
+          console.error("🚨 ゲーム支給関数がクラッシュしました:", gameErr);
+        }
+      } else {
+        console.warn("⚠️ 警告: 予約は成功しましたが、セッションからもユーザーIDが取得できなかったため支給をスキップしました。");
+      }
+
+      // 🚀 ここから画面遷移ロジックへ
       if (isAdminEntry) {
-  // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
-  // 🆕 state に「fromReserve: true」を追加して、カレンダー側にスクロール禁止を伝えます
-  navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
-  state: { 
-    newlyAdded: true, 
-    fromReserve: true, 
-    targetTime: adminTime || time // 👈 予約した時間をバトンとして渡す
-  } 
-});
-} else {
-  // 🚀 一般ユーザーは達成感を味わってもらうために「完了ページ」へ
-  navigate('/reserved-success', { 
-    state: { 
-      shopName: customShopName || shop.business_name,
-      startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`
-    } 
-  });
-}
+        // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
+        // 🆕 state に「fromReserve: true」を追加して、カレンダー側にスクロール禁止を伝えます
+        navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
+          state: { 
+            newlyAdded: true, 
+            fromReserve: true, 
+            targetTime: adminTime || time // 👈 予約した時間をバトンとして渡す
+          } 
+        });
+      } else {
+        // 🚀 一般ユーザーは達成感を味わってもらうために「完了ページ」へ
+        navigate('/reserved-success', { 
+          state: { 
+            shopName: customShopName || shop.business_name,
+            startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`
+          } 
+        });
+      }
 
     } catch (err) {
       console.error(err);

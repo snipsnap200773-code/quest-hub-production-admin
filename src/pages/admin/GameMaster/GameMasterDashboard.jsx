@@ -41,7 +41,11 @@ const GameMasterDashboard = () => {
     skill_01: '', skill_02: '', skill_03: '',
     element: '無', size: '中型', atk_matk: 0, hit_100: 100, flee_95: 100, is_boss: false, is_range_atk: false,
     // 👑 三土手神特注：4大状態異常耐性の初期State配線を開通！
-    resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0
+    resist_stun: 0, resist_freeze: 0, resist_poison: 0, resist_blind: 0,
+    
+    // 🆕 三土手神特注：1回ごとの戦闘で敵モンスターを撃破した際の獲得報酬State
+    reward_gold_battle: 0,
+    reward_exp_battle: 0
   });
 
   const [itemForm, setItemForm] = useState({
@@ -222,6 +226,10 @@ const GameMasterDashboard = () => {
 
         // 🔮 【三土手神リフォーム】手入力があれば数値化、空文字なら未指定(null)として安全にDBへ送信！
         enemy_aspd: unitForm.enemy_aspd ? Number(unitForm.enemy_aspd) : null,
+
+        // 🆕 戦闘撃破時の個別報酬をパースしてSupabaseへ完全結線！
+        reward_gold_battle: Number(unitForm.reward_gold_battle || 0),
+        reward_exp_battle: Number(unitForm.reward_exp_battle || 0),
         
         // 🐾 🆕 【三土手創世神特注：3連ドロップ・本物カラム完全同期結線】
         // 古い「drop_chance_weapon」を完全排除！
@@ -395,7 +403,11 @@ const GameMasterDashboard = () => {
       extra_drop_item_3: unit.extra_drop_item_3 || '',
       extra_drop_chance_3: unit.extra_drop_chance_3 !== undefined ? Number(unit.extra_drop_chance_3) : 0,
 
-      skill_01: unit.skill_01 || '', skill_02: unit.skill_02 || '', skill_03: unit.skill_03 || '' 
+      skill_01: unit.skill_01 || '', skill_02: unit.skill_02 || '', skill_03: unit.skill_03 || '',
+      
+      // 🆕 既存データを修正保存するためにStateへ同期ロード
+      reward_gold_battle: unit.reward_gold_battle !== undefined ? Number(unit.reward_gold_battle) : 0,
+      reward_exp_battle: unit.reward_exp_battle !== undefined ? Number(unit.reward_exp_battle) : 0
     }); 
   };
   
@@ -448,7 +460,11 @@ const GameMasterDashboard = () => {
       extra_drop_chance_3: 0,
 
       // 💨 保存後にAspdの入力欄もきれいに空文字へリセットクリーンアップ！
-      enemy_aspd: ""
+      enemy_aspd: "",
+
+      // 🆕 フォームリセット時もクリーンに初期化
+      reward_gold_battle: 0,
+      reward_exp_battle: 0
     });  
   };
   
@@ -714,6 +730,19 @@ const GameMasterDashboard = () => {
                     <div><label style={{...labelStyle, color: '#34d399'}}>🎯 100%HIT必要値</label><input type="number" value={unitForm.hit_100} onChange={(e) => setUnitForm({...unitForm, hit_100: e.target.value})} style={inputStyle} /></div>
                     <div><label style={{...labelStyle, color: '#f43f5e'}}>💨 95%FLEE必要値</label><input type="number" value={unitForm.flee_95} onChange={(e) => setUnitForm({...unitForm, flee_95: e.target.value})} style={inputStyle} /></div>
                   </div>
+                  
+                  {/* 🆕 三土手神特注：1体撃破時のお金と経験値の設定項目を追加 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', borderTop: '1px solid #1e293b', paddingTop: '8px', marginTop: '4px' }}>
+                    <div>
+                      <label style={{...labelStyle, color: '#ffd700'}}>💰 1体撃破時の獲得 Zeny</label>
+                      <input type="number" min="0" placeholder="例: 15" value={unitForm.reward_gold_battle} onChange={(e) => setUnitForm({...unitForm, reward_gold_battle: e.target.value})} style={inputStyle} />
+                    </div>
+                    <div>
+                      <label style={{...labelStyle, color: '#34d399'}}>📈 1体撃破時の獲得 Base EXP</label>
+                      <input type="number" min="0" placeholder="例: 25" value={unitForm.reward_exp_battle} onChange={(e) => setUnitForm({...unitForm, reward_exp_battle: e.target.value})} style={inputStyle} />
+                    </div>
+                  </div>
+
                   <div style={{ display: 'flex', gap: '15px', marginTop: '4px' }}>
                     <label style={{ fontSize: '0.68rem', color: '#f59e0b', cursor: 'pointer' }}><input type="checkbox" checked={unitForm.is_boss} onChange={(e) => setUnitForm({...unitForm, is_boss: e.target.checked})} /> BOSS属性</label>
                     <label style={{ fontSize: '0.68rem', color: '#38bdf8', cursor: 'pointer' }}><input type="checkbox" checked={unitForm.is_range_atk} onChange={(e) => setUnitForm({...unitForm, is_range_atk: e.target.checked})} /> 遠距離攻撃</label>
@@ -1585,6 +1614,13 @@ const GameMasterDashboard = () => {
                       <span style={{ fontSize: '0.55rem', color: '#4b5563', display: 'block' }}>ID: {u.id} <span style={{ color: '#ffd700' }}>[Lv.{u.base_level}]</span></span>
                       <strong style={{ fontSize: '0.82rem', color: u.unit_type === 'playable' ? '#fff' : '#ef4444' }}>{u.name}</strong>
                       <span style={{ fontSize: '0.65rem', color: '#64748b', marginLeft: '6px' }}>{u.unit_type === 'playable' ? `職業: ${u.job}` : `☠️ ${u.size} | ${u.race} | ${u.element}属性`}</span>
+                      
+                      {/* 🆕 モンスターブラウザ側にも撃破時の報酬情報を浮き出させる仕様 */}
+                      {u.unit_type === 'enemy' && (
+                        <span style={{ fontSize: '0.62rem', color: '#64748b', display: 'block', marginTop: '2px' }}>
+                          ⚔️ 撃破報酬: <span style={{ color: '#ffd700' }}>{u.reward_gold_battle || 0}z</span> / <span style={{ color: '#34d399' }}>{u.reward_exp_battle || 0} EXP</span>
+                        </span>
+                      )}
                     </div>
                     <div style={{ display: 'flex', gap: '4px' }}>
                       <button onClick={() => startEditUnit(u)} style={iconBtnStyle}><Edit2 size={11}/></button>

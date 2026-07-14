@@ -1,4 +1,4 @@
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../../supabaseClient';
 
 /**
  * 🔮 三土手創世神Edition：戦闘数理 ＆ 成長曲線マスタリーエンジン
