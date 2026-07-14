@@ -6,7 +6,8 @@ import { motion } from 'framer-motion';
 const ReservedSuccess = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { shopName, startTime } = location.state || {};
+  // 🚀 🆕 前の画面から運ばれてきた「獲得したキャラクター名 (acquiredCharacter)」も一緒に受け取ります
+  const { shopName, startTime, acquiredCharacter } = location.state || {};
 
   return (
     <div style={{ minHeight: '100vh', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}>
@@ -40,7 +41,8 @@ const ReservedSuccess = () => {
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
           <button 
-            onClick={() => navigate('/')}
+            // 🚀 🆕 ここを修正！ホームに戻る際に、acquiredCharacter のバトンを state に乗せて投げます
+            onClick={() => navigate('/', { state: { acquiredCharacter } })}
             style={{ width: '100%', padding: '16px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
           >
             <Home size={18} /> ホームに戻る

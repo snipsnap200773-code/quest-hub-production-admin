@@ -629,11 +629,13 @@ const handleReserve = async () => {
       
       console.log("👤 確定したログインユーザーID ➔:", finalUserId);
 
+      let resChar = null;
+
       if (finalUserId) {
         try {
           console.log("⚙️ ユーザーIDを正常に掴みました。gameServices.grantCharacterFromReservation を実行！");
           // 💡 非同期（await）で確実にインサートを完了させてから画面を遷移させる鉄壁の同期
-          await gameServices.grantCharacterFromReservation(finalUserId, shopId);
+          resChar = await gameServices.grantCharacterFromReservation(finalUserId, shopId);
         } catch (gameErr) {
           console.error("🚨 ゲーム支給関数がクラッシュしました:", gameErr);
         }
@@ -653,11 +655,15 @@ const handleReserve = async () => {
           } 
         });
       } else {
+        // 🚀 🆕 インジェクション成功データからキャラクターのカスタムネームを安全に抽出
+        const acquiredName = resChar?.success && resChar.character ? resChar.character.custom_name : null;
+
         // 🚀 一般ユーザーは達成感を味わってもらうために「完了ページ」へ
         navigate('/reserved-success', { 
           state: { 
             shopName: customShopName || shop.business_name,
-            startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`
+            startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`,
+            acquiredCharacter: acquiredName // 🚀 🆕 これで『クレリック』などの名前が完了画面へ向けてシュートされます！
           } 
         });
       }

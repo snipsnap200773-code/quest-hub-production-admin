@@ -838,7 +838,7 @@ export const gameServices = {
         { master_id: 'unit_1784020916983',   job_name: 'クレリック' },
         { master_id: 'unit_1784020901141',   job_name: 'スカウト' },
         { master_id: 'unit_1783644775835',   job_name: 'ハンター' },
-        { master_id: 'unit_178372889058',    job_name: 'テイマー' }
+        { master_id: 'unit_1783729889058',   job_name: 'テイマー' }
       ];
 
       // 【2】予約された店舗（profiles）の「業種（business_type）」をスキャン
@@ -933,9 +933,11 @@ export const gameServices = {
             user_id: userId,
             master_id: targetUnit.master_id,
             custom_name: targetUnit.job_name,
+            job: targetUnit.job_name,       // 🚀 🆕 SQLで増築したjobカラムへ職業名を直接書き込み！
+            race: '人間',                    // 🚀 🆕 SQLで増築したraceカラムへ固定で「人間」を直接書き込み！
             level: 1,
             exp: 0,
-            status_points: 6, // 👑 三土手神仕様：初期フリーポイント6を自動チャージ！[cite: 3]
+            status_points: 6, // 👑 三土手神仕様：初期フリーポイント6を自動チャージ！
             current_hp: masterUnit.base_hp || 100,
             max_hp: masterUnit.base_hp || 100,
             current_sp: masterUnit.base_sp || 10,
