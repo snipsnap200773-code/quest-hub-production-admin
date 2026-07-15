@@ -200,12 +200,27 @@ const GameMasterDashboard = () => {
     e.preventDefault();
     const finalId = isEditing ? editId : `unit_${Date.now()}`;
     try {
+      // 👑 解決：保存時にHP/SPが0や空欄なら、レベルとステータスから適正な自動計算値を算出して身代わり代入するロジック
+      const sLv = Number(unitForm.base_level || 1);
+      const sVit = Number(unitForm.stat_vit || 0);
+      const sInt = Number(unitForm.stat_int || 0);
+      
+      const calcLiveMhp = 100 + (sLv * 15) + (sVit * 8);
+      const calcLiveMsp = 20 + (sLv * 2) + (sInt * 4);
+
+      const finalBaseHp = (unitForm.base_hp && Number(unitForm.base_hp) !== 0) ? Number(unitForm.base_hp) : calcLiveMhp;
+      const finalBaseSp = (unitForm.base_sp && Number(unitForm.base_sp) !== 0) ? Number(unitForm.base_sp) : calcLiveMsp;
+
       // 👑 三土手神仕様：プレイヤー用の仲間ユニットなら、生まれた瞬間にフリーポイント 6 を宿すように拡張！
       const { error } = await supabase.from('game_master_units').upsert({
         id: finalId, ...unitForm,
         is_tamable: unitForm.unit_type === 'enemy' ? unitForm.is_tamable : false,
         base_level: Number(unitForm.base_level), reward_exp: Number(unitForm.reward_exp), reward_gold: Number(unitForm.reward_gold),
-        base_hp: Number(unitForm.base_hp), base_sp: Number(unitForm.base_sp),
+        
+        // 👑 解決：0のまま送信されてデータベースを破壊するのを防ぎ、確定した数値をコミット！
+        base_hp: finalBaseHp, 
+        base_sp: finalBaseSp,
+        
         stat_str: Number(unitForm.stat_str), stat_agi: Number(unitForm.stat_agi), stat_vit: Number(unitForm.stat_vit),
         stat_int: Number(unitForm.stat_int), stat_dex: Number(unitForm.stat_dex), stat_luk: Number(unitForm.stat_luk),
         // 👑 三土手神特注：入力された耐性%を確実にパースしてSupabaseへ完全コミット！
@@ -978,13 +993,27 @@ const GameMasterDashboard = () => {
                 const pHit = Math.floor(sLv + sDex + sLuk * 0.2 + 20);
                 const pFlee = Math.floor(sLv + sAgi + sLuk * 0.2 + 10);
 
-                // 💡 【上書き対応数理】もし入力欄に数値があればそれを採用、なければ基本の150.0を自動マウント！
-                const displayAspd = unitForm.enemy_aspd ? Number(unitForm.enemy_aspd).toFixed(1) : "150.0";
+                // 👑 解決：個別入力（MHP/MSP）が空、または初期値(100/10)のときにベースLv・VIT・INTに連動して育つ数理エンジン
+                const calcLiveMhp = 100 + (sLv * 15) + (sVit * 8);
+                const calcLiveMsp = 20 + (sLv * 2) + (sInt * 4);
+
+                // 入力欄が空欄、もしくは「0」のときは自動計算値をプレビューに点灯させ、独自の数値(3000など)が入っていればそれを最優先！
+                const currentMhp = (unitForm.base_hp && Number(unitForm.base_hp) !== 0) ? Number(unitForm.base_hp) : calcLiveMhp;
+                const currentMsp = (unitForm.base_sp && Number(unitForm.base_sp) !== 0) ? Number(unitForm.base_sp) : calcLiveMsp;
+
+                // 個別上書きがない場合、ベースLv（×0.1）とAGI（×0.4）に連動して標準Aspdが育つ数理エンジン
+                let calculatedAspd = 150.0 + (sLv * 0.1) + (sAgi * 0.4);
+                if (calculatedAspd > 193.0) calculatedAspd = 193.0; // 本家最速キャップ
+
+                // 個別設定欄に入力があればそれを最優先、なければ上記で計算した標準変動値をマウント！
+                const displayAspd = unitForm.enemy_aspd ? Number(unitForm.enemy_aspd).toFixed(1) : calculatedAspd.toFixed(1);
 
                 return (
                   <div style={{ background: '#0b0f19', border: '1px solid #1e293b', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
                     <span style={{ fontSize: '0.7rem', color: '#ffd700', fontWeight: 'bold', display: 'block', marginBottom: '6px' }}>📊 創世ユニット戦闘力予測プレビュー (ステ振り連動)</span>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '6px 12px', fontSize: '0.72rem' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px', gridColumn: 'span 2' }}><span style={{ color: '#34d399', fontWeight: 'bold' }}>❤️ 予測最大HP (Mhp)</span><strong style={{ color: '#34d399', fontFamily: 'monospace' }}>{currentMhp}</strong></div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px', gridColumn: 'span 2' }}><span style={{ color: '#38bdf8', fontWeight: 'bold' }}>💙 予測最大SP (Msp)</span><strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{currentMsp}</strong></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#94a3b8' }}>攻撃力 (Atk)</span><strong style={{ color: '#fff', fontFamily: 'monospace' }}>{pAtk}</strong></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#38bdf8' }}>魔力 (Matk)</span><strong style={{ color: '#38bdf8', fontFamily: 'monospace' }}>{pMinMatk} 〜 {pMaxMatk}</strong></div>
                       <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px solid #1e293b', paddingBottom: '2px' }}><span style={{ color: '#34d399' }}>防御力 (Def)</span><strong style={{ color: '#34d399', fontFamily: 'monospace' }}>+{pDef}</strong></div>

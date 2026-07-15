@@ -16,8 +16,16 @@ import {
 export const calculateRoStatus = (charData, equips = {}) => {
   const baseLv = charData.level || 1;
   
-  // 🔮 🆕 meta.job、直下の job、または custom_name から大文字小文字を無視して執念の抽出！
-  let rawJob = charData.meta?.job || charData.job || charData.custom_name || 'ノービス';
+  // 🔮 🆕 解決：直下のjobがNULLでも、meta.job や、キャラクター直下のオブジェクト情報を網羅して執念で100%確定抽出！
+  let rawJob = 'ノービス';
+  if (charData.meta && charData.meta.job) {
+    rawJob = charData.meta.job;
+  } else if (charData.job) {
+    rawJob = charData.job;
+  } else if (charData.custom_name) {
+    rawJob = charData.custom_name;
+  }
+  
   const checkJob = String(rawJob).trim().toLowerCase();
 
   // 【1】ファイター系（前衛・重装戦士）
@@ -331,13 +339,19 @@ export const gameServices = {
           level: ch.level,
           exp: ch.exp,
           
-          // 💡 もし新規キャラでステータスポイントが0だったら、初期配布分（例：200ポイント）を自動支給！
-          status_points: ch.status_points === 0 && ch.level === 1 ? 6 : ch.status_points,
+          // 👑 【三土手神特注：フリーポイント増殖バグ完全粉砕！】
+          // フロントでの勝手な自動支給を撤廃し、DBに保存された本物の数値を100%信用して直結！
+          status_points: ch.status_points,
   
   current_hp: ch.current_hp,
   max_hp: ch.max_hp,
   current_sp: ch.current_sp,
   max_sp: ch.max_sp,
+  
+  // 👑 【三土手神特注：データ欠損バグ完全粉砕！】
+  // DBの直下カラムに存在する「job」「race」をフロントの器へ確実に引き渡す直撃電線を増築！
+  job: ch.job,
+  race: ch.race,
   guild_name: ch.guild_name,
   
   // セーフティを 1 から 0 に引き下げ
