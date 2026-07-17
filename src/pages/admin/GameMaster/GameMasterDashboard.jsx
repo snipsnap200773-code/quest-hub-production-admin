@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { supabase } from '../../../supabaseClient';
 import { Swords, Shield, Plus, Trash2, Edit2, X, LogOut, BookOpen, Layers, MapPinned } from 'lucide-react';
+// 👑 パスを変更：階層をもう一つ深く遡ってgameRulesを直撃！
+import { calculateTotalStatusPoints } from '../../../components/game/services/gameRules';
+
 // 🆕 三土手創世神専用：大分類に連動する固定武具小分類リスト
 const SUBTYPE_OPTIONS = {
   weapon: ['短剣', '剣', '杖', '鈍器', '斧', '弓', '槍', 'カタール', '本', '爪（ナックル）'],
@@ -27,7 +30,9 @@ const GameMasterDashboard = () => {
   // フォーム初期状態
   const [unitForm, setUnitForm] = useState({
     name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '',
-    base_level: 1, reward_exp: 10, reward_gold: 10, base_hp: 100, base_sp: 10,
+    base_level: 1, reward_exp: 10, reward_gold: 10, 
+    // 👑 初期状態の数値を0に！これで常にレベル適応基準値がプレビューされます
+    base_hp: 0, base_sp: 0,
     stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0,
     equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
     equip_body: '', equip_glove: '', equip_garment: '', equip_shoes: '', equip_accessory: '',
@@ -153,6 +158,52 @@ const GameMasterDashboard = () => {
 
   const handleBackToLogin = () => {
     if (window.confirm("ゲームマスターツールを終了してログイン画面に戻りますか？")) navigate('/');
+  };
+
+  // 👑 【三土手神特注：タイプ別・ステータス自動振り分けエンジン】
+  const handleAutoDistribute = (type) => {
+    // 現在入力されているベースLvから、生涯総獲得フリーポイントを算出
+    const totalPts = calculateTotalStatusPoints(Number(unitForm.base_level || 1));
+    let ratios = { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0 };
+
+    // 各タイプのステータス配分比率（黄金比）
+    switch (type) {
+      case 'physical': // 💪 物理アタッカー型
+        ratios = { str: 0.50, agi: 0.10, vit: 0.10, int: 0.00, dex: 0.30, luk: 0.00 }; break;
+      case 'magic':    // 🔮 魔法アタッカー型
+        ratios = { str: 0.00, agi: 0.10, vit: 0.10, int: 0.50, dex: 0.30, luk: 0.00 }; break;
+      case 'tank':     // 🛡️ 重装装甲タンク型
+        ratios = { str: 0.20, agi: 0.00, vit: 0.60, int: 0.00, dex: 0.10, luk: 0.10 }; break;
+      case 'speed':    // 💨 高速回避スピード型
+        ratios = { str: 0.15, agi: 0.50, vit: 0.00, int: 0.00, dex: 0.20, luk: 0.15 }; break;
+      case 'balance':  // ⚖️ 万能バランス型
+        ratios = { str: 0.16, agi: 0.16, vit: 0.16, int: 0.16, dex: 0.20, luk: 0.00 }; break; // (計1.0)
+      case 'clear':    // 🧹 全クリア
+        setUnitForm(prev => ({...prev, stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0}));
+        return;
+      default: break;
+    }
+
+    const nextStats = { ...unitForm };
+    let remaining = totalPts;
+
+    // 比率に応じてポイントを掛け算し、小数点以下を切り捨てて配分
+    ['str', 'agi', 'vit', 'int', 'dex', 'luk'].forEach(stat => {
+      const allocated = Math.floor(totalPts * ratios[stat]);
+      nextStats[`stat_${stat}`] = allocated;
+      remaining -= allocated;
+    });
+
+    // 端数（切り捨てで余った数ポイント）が出た場合は、そのタイプの長所にブチ込む
+    if (remaining > 0) {
+      if (type === 'physical') nextStats.stat_str += remaining;
+      else if (type === 'magic') nextStats.stat_int += remaining;
+      else if (type === 'tank') nextStats.stat_vit += remaining;
+      else if (type === 'speed') nextStats.stat_agi += remaining;
+      else nextStats.stat_luk += remaining;
+    }
+
+    setUnitForm(nextStats);
   };
 
   const fetchData = async () => {
@@ -943,6 +994,22 @@ const GameMasterDashboard = () => {
 
                 </div>
               )}
+
+              <div style={{ background: '#0f172a', border: '1px dashed #f59e0b', padding: '12px', borderRadius: '10px', marginTop: '4px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                  <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold' }}>
+                    🤖 タイプ別・自動ステータス振り分け（現在Lv.{unitForm.base_level || 1} / 獲得総pt: {calculateTotalStatusPoints(Number(unitForm.base_level || 1))} pt）
+                  </span>
+                </div>
+                <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                  <button type="button" onClick={() => handleAutoDistribute('physical')} style={autoBtnStyle}>💪 物理アタッカー</button>
+                  <button type="button" onClick={() => handleAutoDistribute('magic')} style={autoBtnStyle}>🔮 魔法アタッカー</button>
+                  <button type="button" onClick={() => handleAutoDistribute('tank')} style={autoBtnStyle}>🛡️ 重装タンク</button>
+                  <button type="button" onClick={() => handleAutoDistribute('speed')} style={autoBtnStyle}>💨 高速回避</button>
+                  <button type="button" onClick={() => handleAutoDistribute('balance')} style={autoBtnStyle}>⚖️ 万能バランス</button>
+                  <button type="button" onClick={() => handleAutoDistribute('clear')} style={{...autoBtnStyle, background: '#451a1a', color: '#f43f5e', border: '1px solid #7f1d1d'}}>🧹 リセット(全0)</button>
+                </div>
+              </div>
 
               <div className="stat-grid">
                 <div style={{ gridColumn: 'span 2' }}><label style={{...labelStyle, color: '#f43f5e'}}>MHP (最大HP)</label><input type="number" value={unitForm.base_hp} onChange={(e) => setUnitForm({...unitForm, base_hp: e.target.value})} style={inputStyle} /></div>
@@ -1811,5 +1878,7 @@ const labelStyle = { display: 'block', fontSize: '0.65rem', fontWeight: 'bold', 
 const inputStyle = { width: '100%', padding: '8px', background: '#0b0f19', border: '1px solid #334155', borderRadius: '6px', color: '#fff', fontSize: '0.8rem', boxSizing: 'border-box', outline: 'none' };
 const saveBtnStyle = { flex: 1, padding: '10px', background: 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)', color: '#fff', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px', fontSize: '0.8rem' };
 const iconBtnStyle = { background: '#111827', border: '1px solid #334155', color: '#94a3b8', padding: '5px', borderRadius: '5px', cursor: 'pointer' };
+
+const autoBtnStyle = { flex: 1, padding: '8px', background: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', borderRadius: '6px', fontSize: '0.65rem', fontWeight: 'bold', cursor: 'pointer' };
 
 export default GameMasterDashboard;
