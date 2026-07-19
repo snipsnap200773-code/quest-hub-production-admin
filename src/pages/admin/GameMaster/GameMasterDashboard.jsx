@@ -92,7 +92,7 @@ const GameMasterDashboard = () => {
   const [activeFloorTab, setActiveFloorTab] = useState(1); // 現在編集中の階層（1〜5）
   const [floorConfigs, setFloorConfigs] = useState([
     // 🛠️ 最小出現数（min_spawn: 1）と 最大出現数（max_spawn: 2）の初期値をバインディング！
-    { floor: 1, enemy_ids: ['', '', ''], battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }
+    { floor: 1, enemy_ids: ['', '', ''], boss_id: '', battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }
   ]);
 
   const [questForm, setQuestForm] = useState({
@@ -432,7 +432,7 @@ const GameMasterDashboard = () => {
     setActiveFloorTab(1);
     setQuestForm({ name: '', level: 1, floors: 1, difficulty: 'E', description: '', exp_reward: 50, zeny_reward: 1000 });
     // 🛠️ リセット時も初期値を1〜2体に
-    setFloorConfigs([{ floor: 1, enemy_ids: ['', '', ''], battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }]);
+    setFloorConfigs([{ floor: 1, enemy_ids: ['', '', ''], boss_id: '', battle_count: 3, chest_count: 1, has_fountain: false, min_spawn: 1, max_spawn: 2 }]);
   };
 
   const startEditQuest = (q) => {
@@ -1624,7 +1624,7 @@ const GameMasterDashboard = () => {
                     </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginTop: '4px', background: '#0b0f19', padding: '8px', borderRadius: '6px' }}>
-                      <span style={{ fontSize: '0.62rem', color: '#a78bfa', fontWeight: 'bold' }}>👾 この階層でポップする敵の抽選プール（最大3種類）</span>
+                      <span style={{ fontSize: '0.62rem', color: '#a78bfa', fontWeight: 'bold' }}>👾 この階層で道中ポップする雑魚敵の抽選プール（最大3種類）</span>
                       {[0, 1, 2].map(idx => (
                         <div key={'f-enemy-'+idx}>
                           <label style={labelStyle}>モンスター出現枠 {idx + 1} {idx === 0 && ' (※必須)'}</label>
@@ -1637,6 +1637,26 @@ const GameMasterDashboard = () => {
                         </div>
                       ))}
                     </div>
+
+                    {/* 👑 🆕 三土手神特注：ボス確定出現枠（その階層の最後の1戦で確定ポップ） */}
+                    <div style={{ marginTop: '2px', background: '#3b0764', padding: '10px', borderRadius: '6px', border: '1px solid #a855f7' }}>
+                      <label style={{ ...labelStyle, color: '#fca5a5', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        👑 階層ボス指定（※この階層の【最後の1戦】で確定出現）
+                      </label>
+                      <select 
+                        value={fConfig.boss_id || ''} 
+                        onChange={(e) => handleFloorConfigChange(fConfig.floor, 'boss_id', e.target.value)} 
+                        style={{ ...inputStyle, border: '1px solid #fca5a5', color: '#fca5a5', fontWeight: 'bold' }}
+                      >
+                        <option value="">-- ボスを配置しない（最後まで雑魚抽選） --</option>
+                        {units.filter(u => u.unit_type === 'enemy' || u.unit_type === 'monster').map(u => (
+                          <option key={`f-boss-${fConfig.floor}-${u.id}`} value={u.id}>
+                            {u.is_boss ? '🔥 ' : ''}{u.name} (Lv.{u.base_level})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
                   </div>
                 );
               })}
