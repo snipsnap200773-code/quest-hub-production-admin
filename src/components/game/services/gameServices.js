@@ -165,16 +165,20 @@ export const calculateRoStatus = (charData, equips = {}) => {
   const dex = (Number(charData.meta?.stat_dex) || Number(charData.meta?.dex) || Number(charData.dex) || 1) + bonus.dex;
   const luk = (Number(charData.meta?.stat_luk) || Number(charData.meta?.luk) || Number(charData.luk) || 1) + bonus.luk;
 
-  // 🆕 9部位のスペックを集計
-  const weaponAtk = equips.right_hand?.atk || 0;
-  const shieldDef = equips.left_hand?.def || 0;
-  const headDef = equips.head?.def || 0;
-  const faceDef = equips.face?.def || 0;
-  const bodyDef = equips.body?.def || 0;
-  const gloveDef = equips.glove?.def || 0;
-  const garmentDef = equips.garment?.def || 0;
-  const shoesDef = equips.shoes?.def || 0;
-  const accessoryAtk = equips.accessory?.atk || 0;
+  // 👑 🆕 精錬値ボーナス計算室（武器: +1毎にATK+5 / 防具: +1毎にDEF+2）
+  const getRefineAtk = (eq) => (Number(eq?.refine_level || 0) * 5);
+  const getRefineDef = (eq) => (Number(eq?.refine_level || 0) * 2);
+
+  // 🆕 9部位のスペックを集計（精錬ボーナスを合算！）
+  const weaponAtk = (equips.right_hand?.atk || 0) + getRefineAtk(equips.right_hand);
+  const shieldDef = (equips.left_hand?.def || 0) + getRefineDef(equips.left_hand);
+  const headDef = (equips.head?.def || 0) + getRefineDef(equips.head);
+  const faceDef = (equips.face?.def || 0) + getRefineDef(equips.face);
+  const bodyDef = (equips.body?.def || 0) + getRefineDef(equips.body);
+  const gloveDef = (equips.glove?.def || 0) + getRefineDef(equips.glove);
+  const garmentDef = (equips.garment?.def || 0) + getRefineDef(equips.garment);
+  const shoesDef = (equips.shoes?.def || 0) + getRefineDef(equips.shoes);
+  const accessoryAtk = (equips.accessory?.atk || 0) + getRefineAtk(equips.accessory);
   
   const totalEquipDef = shieldDef + headDef + faceDef + bodyDef + gloveDef + garmentDef + shoesDef;
   const totalEquipMdef = (equips.body?.mdef || 0) + (equips.head?.mdef || 0) + (equips.face?.mdef || 0) + cardStats.mdef;
@@ -295,22 +299,23 @@ export const gameServices = {
         const equips = {
           right_hand: itemMap[ch.equip_right_hand] ? { 
             ...itemMap[ch.equip_right_hand], 
-            // 🛡️ 🆕 射程情報（range）を装備オブジェクトの中に引き渡す！
+            refine_level: ch.equip_right_hand_refine || 0, // 今後の拡張用
             range: itemMap[ch.equip_right_hand].weapon_range || 'S', 
             cards: charCards.filter(c => c.slot_key === 'right_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
           } : null,
           left_hand: itemMap[ch.equip_left_hand] ? { 
             ...itemMap[ch.equip_left_hand], 
-            range: itemMap[ch.equip_left_hand].weapon_range || 'S',
+            refine_level: ch.equip_left_hand_refine || 0,
+            range: itemMap[ch.equip_left_hand].weapon_range || 'S', 
             cards: charCards.filter(c => c.slot_key === 'left_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
           } : null,
-          head: itemMap[ch.equip_head] ? { ...itemMap[ch.equip_head], cards: charCards.filter(c => c.slot_key === 'head').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          face: itemMap[ch.equip_face] ? { ...itemMap[ch.equip_face], cards: charCards.filter(c => c.slot_key === 'face').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          body: itemMap[ch.equip_body] ? { ...itemMap[ch.equip_body], cards: charCards.filter(c => c.slot_key === 'body').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          glove: itemMap[ch.equip_glove] ? { ...itemMap[ch.equip_glove], cards: charCards.filter(c => c.slot_key === 'glove').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          garment: itemMap[ch.equip_garment] ? { ...itemMap[ch.equip_garment], cards: charCards.filter(c => c.slot_key === 'garment').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          shoes: itemMap[ch.equip_shoes] ? { ...itemMap[ch.equip_shoes], cards: charCards.filter(c => c.slot_key === 'shoes').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          accessory: itemMap[ch.equip_accessory] ? { ...itemMap[ch.equip_accessory], cards: charCards.filter(c => c.slot_key === 'accessory').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          head: itemMap[ch.equip_head] ? { ...itemMap[ch.equip_head], refine_level: ch.equip_head_refine || 0, cards: charCards.filter(c => c.slot_key === 'head').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          face: itemMap[ch.equip_face] ? { ...itemMap[ch.equip_face], refine_level: ch.equip_face_refine || 0, cards: charCards.filter(c => c.slot_key === 'face').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          body: itemMap[ch.equip_body] ? { ...itemMap[ch.equip_body], refine_level: ch.equip_body_refine || 0, cards: charCards.filter(c => c.slot_key === 'body').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          glove: itemMap[ch.equip_glove] ? { ...itemMap[ch.equip_glove], refine_level: ch.equip_glove_refine || 0, cards: charCards.filter(c => c.slot_key === 'glove').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          garment: itemMap[ch.equip_garment] ? { ...itemMap[ch.equip_garment], refine_level: ch.equip_garment_refine || 0, cards: charCards.filter(c => c.slot_key === 'garment').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          shoes: itemMap[ch.equip_shoes] ? { ...itemMap[ch.equip_shoes], refine_level: ch.equip_shoes_refine || 0, cards: charCards.filter(c => c.slot_key === 'shoes').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          accessory: itemMap[ch.equip_accessory] ? { ...itemMap[ch.equip_accessory], refine_level: ch.equip_accessory_refine || 0, cards: charCards.filter(c => c.slot_key === 'accessory').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
         };
 
         // 基準キャラクター状態の組み立て
