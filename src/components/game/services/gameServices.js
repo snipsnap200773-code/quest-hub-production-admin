@@ -284,6 +284,14 @@ export const gameServices = {
       const itemMap = allItems ? Object.fromEntries(allItems.map(i => [i.id, i])) : {};
 
       // 🎴 【神最適化・一撃修正】.select('*') を確実に快速配線！
+      const { data: rawInventory } = await supabase
+        .from('game_inventory')
+        .select('*')
+        .eq('user_id', userId);
+
+      const invMap = rawInventory ? Object.fromEntries(rawInventory.map(i => [i.id, i])) : {};
+
+      // 🎴 カードデータの全取得
       const { data: allUserCards } = await supabase
         .from('game_character_cards')
         .select('*')
@@ -291,31 +299,35 @@ export const gameServices = {
 
       return data.map(ch => {
         const master = ch.game_master_units;
-        
-        // 🔮 このキャラクターに刺さっているカードだけをメモリ上で安全にフィルタリング（awaitを不要に！）
         const charCards = (allUserCards || []).filter(c => c.character_id === ch.id);
-        
-        // 各部位の装備オブジェクトを特定し、その装備に刺さっているカードリストも内部に自動集計してドッキング！
+
+        // 9部位の装備をインベントリのUUID経由で復元！
+        const resolveEquip = (equipInvId, slotKey) => {
+          if (!equipInvId) return null;
+          const invRecord = invMap[equipInvId];
+          if (!invRecord) return null;
+          const masterItem = itemMap[invRecord.item_id];
+          if (!masterItem) return null;
+
+          return {
+            ...masterItem,
+            inventory_id: invRecord.id, // インベントリのUUID
+            refine_level: Number(invRecord.refine_level || 0), // 共有倉庫側の精錬値を直接取得！
+            range: masterItem.weapon_range || 'S',
+            cards: charCards.filter(c => c.slot_key === slotKey).map(c => itemMap[c.card_master_id]).filter(Boolean)
+          };
+        };
+
         const equips = {
-          right_hand: itemMap[ch.equip_right_hand] ? { 
-            ...itemMap[ch.equip_right_hand], 
-            refine_level: ch.equip_right_hand_refine || 0, // 今後の拡張用
-            range: itemMap[ch.equip_right_hand].weapon_range || 'S', 
-            cards: charCards.filter(c => c.slot_key === 'right_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
-          } : null,
-          left_hand: itemMap[ch.equip_left_hand] ? { 
-            ...itemMap[ch.equip_left_hand], 
-            refine_level: ch.equip_left_hand_refine || 0,
-            range: itemMap[ch.equip_left_hand].weapon_range || 'S', 
-            cards: charCards.filter(c => c.slot_key === 'left_hand').map(c => itemMap[c.card_master_id]).filter(Boolean) 
-          } : null,
-          head: itemMap[ch.equip_head] ? { ...itemMap[ch.equip_head], refine_level: ch.equip_head_refine || 0, cards: charCards.filter(c => c.slot_key === 'head').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          face: itemMap[ch.equip_face] ? { ...itemMap[ch.equip_face], refine_level: ch.equip_face_refine || 0, cards: charCards.filter(c => c.slot_key === 'face').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          body: itemMap[ch.equip_body] ? { ...itemMap[ch.equip_body], refine_level: ch.equip_body_refine || 0, cards: charCards.filter(c => c.slot_key === 'body').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          glove: itemMap[ch.equip_glove] ? { ...itemMap[ch.equip_glove], refine_level: ch.equip_glove_refine || 0, cards: charCards.filter(c => c.slot_key === 'glove').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          garment: itemMap[ch.equip_garment] ? { ...itemMap[ch.equip_garment], refine_level: ch.equip_garment_refine || 0, cards: charCards.filter(c => c.slot_key === 'garment').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          shoes: itemMap[ch.equip_shoes] ? { ...itemMap[ch.equip_shoes], refine_level: ch.equip_shoes_refine || 0, cards: charCards.filter(c => c.slot_key === 'shoes').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
-          accessory: itemMap[ch.equip_accessory] ? { ...itemMap[ch.equip_accessory], refine_level: ch.equip_accessory_refine || 0, cards: charCards.filter(c => c.slot_key === 'accessory').map(c => itemMap[c.card_master_id]).filter(Boolean) } : null,
+          right_hand: resolveEquip(ch.equip_right_hand, 'right_hand'),
+          left_hand: resolveEquip(ch.equip_left_hand, 'left_hand'),
+          head: resolveEquip(ch.equip_head, 'head'),
+          face: resolveEquip(ch.equip_face, 'face'),
+          body: resolveEquip(ch.equip_body, 'body'),
+          glove: resolveEquip(ch.equip_glove, 'glove'),
+          garment: resolveEquip(ch.equip_garment, 'garment'),
+          shoes: resolveEquip(ch.equip_shoes, 'shoes'),
+          accessory: resolveEquip(ch.equip_accessory, 'accessory'),
         };
 
         // 基準キャラクター状態の組み立て
@@ -461,91 +473,24 @@ export const gameServices = {
   /**
    * 3. 🛡️ 🆕 装備アイテムのパチッと着脱の永続保存コミット
    */
-  async saveEquipmentChange(userId, characterId, slotKey, newItemIdOrNull) {
+  async saveEquipmentChange(userId, characterId, slotKey, newInventoryIdOrNull) {
     try {
-      console.log("=== ⚔️ 9部位ストック連動換装テスト開始 ===");
-      console.log("【入力データ】:", { userId, characterId, slotKey, newItemIdOrNull });
-
-      // 💡 カラム名の2重重複（equip_equip_xxx）を100%シャットアウトする鉄壁の補正
+      console.log("=== ⚔️ アプローチB: 装備UUID換装コミット開始 ===");
       const finalColumnName = slotKey.startsWith('equip_') ? slotKey : `equip_${slotKey}`;
-      console.log(`【狙い撃ちするDBカラム名】: ${finalColumnName}`);
+      const normalizedNewId = newInventoryIdOrNull === undefined ? null : newInventoryIdOrNull;
 
-      // 1. 現在のこのキャラの該当スロットの装備（古い装備）を調べる
-      const { data: char, error: charSelectErr } = await supabase
-        .from('game_characters')
-        .select('*')
-        .eq('id', characterId)
-        .single();
-      
-      if (charSelectErr) throw charSelectErr;
-      
-      // 現在カラムに刺さっている古いアイテムのID（例: 'quad_slot_main' または null）
-      const oldItemIdOrNull = char[finalColumnName] || null;
-      // フロントから流れてきた値をnull基準に100%正規化（undefinedを徹底排除）
-      const normalizedNewItemId = newItemIdOrNull === undefined ? null : newItemIdOrNull;
-
-      console.log(`【クエリ前チェック】: 現在の装備 = [${oldItemIdOrNull}] / 変更後の装備 = [${normalizedNewItemId}]`);
-
-      // 完全に同じ武具への着替え、または未装備(null)から未装備(null)への換装であれば早期終了
-      if (oldItemIdOrNull === normalizedNewItemId) {
-        console.log("ℹ️ 着けようとしている武具状態が現在と完全に一致するため、処理をスキップします。");
-        return { success: true };
-      }
-
-      // 2. 新しい装備を「着ける」場合 ➔ 共有倉庫の在庫を1個減らす（💡エラーで止まらないよう安全に配強化）
-      if (normalizedNewItemId) {
-        console.log(`🎒 共有倉庫からアイテム [${normalizedNewItemId}] の在庫を 1 減らします...`);
-        
-        // ユーザーIDの不一致に備え、item_id の一致を最優先で検索
-        const { data: inv } = await supabase
-          .from('game_inventory')
-          .select('*')
-          .eq('item_id', normalizedNewItemId)
-          .maybeSingle();
-
-        if (inv && inv.count > 0) {
-          await supabase.from('game_inventory').update({ count: inv.count - 1 }).eq('id', inv.id);
-          console.log(`➔ 倉庫の在庫を更新しました (残り: ${inv.count - 1}個)`);
-        } else {
-          console.log("⚠️ 倉庫に在庫が確認できませんでしたが、開発検証のため装備処理を続行します。");
-        }
-      }
-
-      // 3. 古い装備を「外す」場合 ➔ 共有倉庫の在庫を1個戻す
-      if (oldItemIdOrNull) {
-        console.log(`📦 倉庫へ古いアイテム [${oldItemIdOrNull}] の在庫を 1 戻します...`);
-        const { data: inv } = await supabase
-          .from('game_inventory')
-          .select('*')
-          .eq('item_id', oldItemIdOrNull)
-          .maybeSingle();
-        
-        if (inv) {
-          await supabase.from('game_inventory').update({ count: inv.count + 1 }).eq('id', inv.id);
-          console.log(`➔ 倉庫のストックを1つ戻しました (現在: ${inv.count + 1}個)`);
-        } else {
-          // もし倉庫からレコード自体が消えていたら新しく1個で作り直す
-          await supabase.from('game_inventory').insert({ user_id: userId, item_id: oldItemIdOrNull, count: 1 });
-          console.log(`➔ 倉庫にアイテムスロットを新規復元しました (1個)`);
-        }
-      }
-
-      // 4. キャラクターの装備カラムを本番更新
-      console.log(`⚡ Supabaseの game_characters に対して直撃更新を実行中...`);
-      
       const updateData = {};
-      updateData[finalColumnName] = normalizedNewItemId;
+      updateData[finalColumnName] = normalizedNewId;
 
-      const { data, error: updateErr } = await supabase
+      const { data, error } = await supabase
         .from('game_characters')
         .update(updateData)
         .eq('id', characterId)
         .select();
 
-      if (updateErr) throw updateErr;
+      if (error) throw error;
 
-      console.log("🎯 【大成功】装備換装＆倉庫ストックの連動が完了しました！:", data);
-      console.log("=== ⚔️ 9部位ストック連動換装テスト終了 ===");
+      console.log("🎯 【着脱成功】装備スロットへインベントリUUIDを書き込みました:", normalizedNewId);
       return { success: true, data };
       
     } catch (err) {
