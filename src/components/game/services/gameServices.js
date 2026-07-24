@@ -318,16 +318,34 @@ export const gameServices = {
           };
         };
 
+        const myEquippedItems = rawInventory?.filter(inv => inv.equipped_character_id === ch.id) || [];
+
+        const resolveEquipBySlot = (slotKey) => {
+          const invRecord = myEquippedItems.find(inv => inv.equipped_slot_key === slotKey);
+          if (!invRecord) return null;
+
+          const masterItem = itemMap[invRecord.item_id];
+          if (!masterItem) return null;
+
+          return {
+            ...masterItem,
+            inventory_id: invRecord.id,
+            refine_level: Number(invRecord.refine_level || 0),
+            range: masterItem.weapon_range || 'S',
+            cards: charCards.filter(c => c.slot_key === slotKey).map(c => itemMap[c.card_master_id]).filter(Boolean)
+          };
+        };
+
         const equips = {
-          right_hand: resolveEquip(ch.equip_right_hand, 'right_hand'),
-          left_hand: resolveEquip(ch.equip_left_hand, 'left_hand'),
-          head: resolveEquip(ch.equip_head, 'head'),
-          face: resolveEquip(ch.equip_face, 'face'),
-          body: resolveEquip(ch.equip_body, 'body'),
-          glove: resolveEquip(ch.equip_glove, 'glove'),
-          garment: resolveEquip(ch.equip_garment, 'garment'),
-          shoes: resolveEquip(ch.equip_shoes, 'shoes'),
-          accessory: resolveEquip(ch.equip_accessory, 'accessory'),
+          right_hand: resolveEquipBySlot('right_hand'),
+          left_hand: resolveEquipBySlot('left_hand'),
+          head: resolveEquipBySlot('head'),
+          face: resolveEquipBySlot('face'),
+          body: resolveEquipBySlot('body'),
+          glove: resolveEquipBySlot('glove'),
+          garment: resolveEquipBySlot('garment'),
+          shoes: resolveEquipBySlot('shoes'),
+          accessory: resolveEquipBySlot('accessory'),
         };
 
         // 基準キャラクター状態の組み立て
@@ -473,26 +491,43 @@ export const gameServices = {
   /**
    * 3. 🛡️ 🆕 装備アイテムのパチッと着脱の永続保存コミット
    */
-  async saveEquipmentChange(userId, characterId, slotKey, newInventoryIdOrNull) {
+  async saveEquipmentChange(userId, characterId, slotKey, inventoryUuidOrNull) {
     try {
-      console.log("=== ⚔️ アプローチB: 装備UUID換装コミット開始 ===");
       const finalColumnName = slotKey.startsWith('equip_') ? slotKey : `equip_${slotKey}`;
-      const normalizedNewId = newInventoryIdOrNull === undefined ? null : newInventoryIdOrNull;
 
-      const updateData = {};
-      updateData[finalColumnName] = normalizedNewId;
+      // ① まず、このキャラが該当部位に現在装備している旧アイテムを解任 (NULL) にする
+      await supabase
+        .from('game_inventory')
+        .update({ equipped_character_id: null, equipped_slot_key: null })
+        .eq('equipped_character_id', characterId)
+        .eq('equipped_slot_key', slotKey);
 
-      const { data, error } = await supabase
+      // ② 新しい装備UUIDが指定されている場合、game_inventory 側のレコードを「装備中」へセット！
+      if (inventoryUuidOrNull) {
+        const { error: invErr } = await supabase
+          .from('game_inventory')
+          .update({ 
+            equipped_character_id: characterId, 
+            equipped_slot_key: slotKey 
+          })
+          .eq('id', inventoryUuidOrNull);
+
+        if (invErr) throw invErr;
+      }
+
+      // ③ 念のため game_characters 側の同名カラムにも UUID を同期コミット（W保存）
+      const charUpdateData = {};
+      charUpdateData[finalColumnName] = inventoryUuidOrNull;
+
+      const { data, error: charErr } = await supabase
         .from('game_characters')
-        .update(updateData)
+        .update(charUpdateData)
         .eq('id', characterId)
         .select();
 
-      if (error) throw error;
+      if (charErr) throw charErr;
 
-      console.log("🎯 【着脱成功】装備スロットへインベントリUUIDを書き込みました:", normalizedNewId);
       return { success: true, data };
-      
     } catch (err) {
       console.error('🚨 【装備連動換装エラー】:', err);
       return { success: false, error: err.message };
