@@ -495,39 +495,88 @@ export const gameServices = {
     try {
       const finalColumnName = slotKey.startsWith('equip_') ? slotKey : `equip_${slotKey}`;
 
-      // ① まず、このキャラが該当部位に現在装備している旧アイテムを解任 (NULL) にする
-      await supabase
+      // ① 1. 現在装備中のアイテムがあれば解除し、倉庫へ返却（カウント戻し / 装備フラグクリア）
+      const { data: currentEquip } = await supabase
         .from('game_inventory')
-        .update({ equipped_character_id: null, equipped_slot_key: null })
+        .select('*')
         .eq('equipped_character_id', characterId)
-        .eq('equipped_slot_key', slotKey);
+        .eq('equipped_slot_key', slotKey)
+        .maybeSingle();
 
-      // ② 新しい装備UUIDが指定されている場合、game_inventory 側のレコードを「装備中」へセット！
-      if (inventoryUuidOrNull) {
-        const { error: invErr } = await supabase
+      if (currentEquip) {
+        // 装備を外すので equipped_character_id を NULL に戻す
+        await supabase
           .from('game_inventory')
-          .update({ 
-            equipped_character_id: characterId, 
-            equipped_slot_key: slotKey 
-          })
-          .eq('id', inventoryUuidOrNull);
-
-        if (invErr) throw invErr;
+          .update({ equipped_character_id: null, equipped_slot_key: null })
+          .eq('id', currentEquip.id);
       }
 
-      // ③ 念のため game_characters 側の同名カラムにも UUID を同期コミット（W保存）
-      const charUpdateData = {};
-      charUpdateData[finalColumnName] = inventoryUuidOrNull;
+      // ② 新しく装備する場合
+      if (inventoryUuidOrNull) {
+        // 対象の倉庫レコードを取得
+        const { data: targetInv } = await supabase
+          .from('game_inventory')
+          .select('*')
+          .eq('id', inventoryUuidOrNull)
+          .single();
 
-      const { data, error: charErr } = await supabase
-        .from('game_characters')
-        .update(charUpdateData)
-        .eq('id', characterId)
-        .select();
+        if (targetInv) {
+          if (targetInv.count > 1) {
+            // 💡 個数が2個以上あるスタックから装備する場合：
+            // 元の倉庫の数を1減らす
+            await supabase
+              .from('game_inventory')
+              .update({ count: targetInv.count - 1 })
+              .eq('id', targetInv.id);
 
-      if (charErr) throw charErr;
+            // 装備専用の個別レコード（count: 1）を新しく1行追加作成する
+            const { data: newEquipRow, error: newErr } = await supabase
+              .from('game_inventory')
+              .insert({
+                user_id: userId,
+                item_id: targetInv.item_id,
+                count: 1,
+                refine_level: targetInv.refine_level || 0,
+                equipped_character_id: characterId,
+                equipped_slot_key: slotKey
+              })
+              .select()
+              .single();
 
-      return { success: true, data };
+            if (newErr) throw newErr;
+            
+            // キャラクター側にも新作成されたUUIDを紐付け
+            await supabase
+              .from('game_characters')
+              .update({ [finalColumnName]: newEquipRow.id })
+              .eq('id', characterId);
+
+          } else {
+            // 💡 個数が1個だけの単独レコードの場合：
+            // そのままそのレコードを装備中に変更
+            await supabase
+              .from('game_inventory')
+              .update({ 
+                equipped_character_id: characterId, 
+                equipped_slot_key: slotKey 
+              })
+              .eq('id', targetInv.id);
+
+            await supabase
+              .from('game_characters')
+              .update({ [finalColumnName]: targetInv.id })
+              .eq('id', characterId);
+          }
+        }
+      } else {
+        // 外すだけ（NULL）の場合
+        await supabase
+          .from('game_characters')
+          .update({ [finalColumnName]: null })
+          .eq('id', characterId);
+      }
+
+      return { success: true };
     } catch (err) {
       console.error('🚨 【装備連動換装エラー】:', err);
       return { success: false, error: err.message };
