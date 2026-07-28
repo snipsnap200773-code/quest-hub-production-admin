@@ -1381,6 +1381,7 @@ const GameMasterDashboard = () => {
                       
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                         <select value={selectedJobToPriority} onChange={(e) => setSelectedJobToPriority(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                          {/* 👤 人間1次職 */}
                           <option value="ファイター">ファイター（戦士）</option>
                           <option value="メイジ">メイジ（魔術士）</option>
                           <option value="クレリック">クレリック（聖職者）</option>
@@ -1389,6 +1390,13 @@ const GameMasterDashboard = () => {
                           <option value="トレーダー">トレーダー（商人）</option>
                           <option value="テイマー">テイマー（魔物使い）</option>
                           <option value="ノービス">ノービス（見習い）</option>
+                          
+                          {/* 🐾 🆕 テイム仲間モンスター種族クラス */}
+                          <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
+                          <option value="植物族">🌱 植物族（ポポリンやマンドラゴラ等）</option>
+                          <option value="悪魔族">😈 悪魔族（バフォメット等）</option>
+                          <option value="不死族">💀 不死族（ゾンビ等）</option>
+                          <option value="水棲族">🐟 水棲族（半魚人等）</option>
                         </select>
                         <button type="button" onClick={addJobToPriority} style={{ background: '#38bdf8', color: '#0b0f19', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.72rem', cursor: 'pointer' }}>➕ 優先順位に追記</button>
                       </div>
@@ -1460,6 +1468,7 @@ const GameMasterDashboard = () => {
                       <option value="石化">石化付与（完全行動不能＋防御ゼロ化）</option>
                       <option value="物理ATK増幅">物理ATK増幅（味方・自分）</option>
                       <option value="物理DEF増幅">物理DEF増幅（味方・自分）</option>
+                      <option value="全防御増幅">全防御増幅（DEF＆MDEF同時アップ）</option>
                       <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
                       <option value="魔力Matk増幅">魔力Matk増幅（味方・自分）</option>
                       {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
@@ -1489,7 +1498,7 @@ const GameMasterDashboard = () => {
                 </div>
 
                 {/* 🔄 🆕 【三土手創世神専用】バフ効果数値・単位連動型シークレットゲート */}
-                {['物理ATK増幅', '物理DEF増幅', '行動速度Aspd増幅', '魔力Matk増幅'].includes(skillForm.effect_type) && (
+                {['物理ATK増幅', '物理DEF増幅', '全防御増幅', '行動速度Aspd増幅', '魔力Matk増幅'].includes(skillForm.effect_type) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0b0f19', padding: '8px', borderRadius: '6px', border: '1px dashed #6366f1', marginTop: '2px' }}>
                     <div>
                       <label style={{ ...labelStyle, color: '#38bdf8' }}>⚡ バフ増幅効果量 (数値)</label>
