@@ -1472,6 +1472,8 @@ const GameMasterDashboard = () => {
                       <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
                       <option value="魔力Matk増幅">魔力Matk増幅（味方・自分）</option>
                       {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
+                      <option value="セイントブレス">【パッシブ】セイントブレス（DEF増＋対悪魔不死特効）</option>
+                      <option value="ホークアイ">【パッシブ】ホークアイ（Lレンジ時Hit＆Cri増幅：数値連動）</option>
                       <option value="回避Flee増幅">【パッシブ】回避Flee増幅（常時上昇）</option>
                       <option value="致命打率増幅">【パッシブ】致命打率増幅（常時上昇）</option>
                       <option value="最大HP増幅">【パッシブ】最大HP増幅（常時％上昇）</option>
