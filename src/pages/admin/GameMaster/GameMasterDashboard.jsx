@@ -29,7 +29,7 @@ const GameMasterDashboard = () => {
 
   // フォーム初期状態
   const [unitForm, setUnitForm] = useState({
-    name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '',
+    name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'フリーランス', description: '',
     base_level: 1, reward_exp: 10, reward_gold: 10, 
     // 👑 初期状態の数値を0に！これで常にレベル適応基準値がプレビューされます
     base_hp: 0, base_sp: 0,
@@ -125,7 +125,7 @@ const GameMasterDashboard = () => {
   
   // 🔮 🆕 クエストハブ完全オリジナル：本家マネを完全脱却した、1次職＋新職テイマーの神配列にリフォーム！
   const [existingJobs, setExistingJobs] = useState([
-    '全職業', 'ノービス', 'ファイター', 'メイジ', 'クレリック', 'スカウト', 'ハンター', 'トレーダー', 'テイマー'
+    '全職業', 'フリーランス', 'ファイター', 'メイジ', 'クレリック', 'スカウト', 'ハンター', 'トレーダー', 'テイマー'
   ]);
 
   // 🔍 🆕 三土手神専用：インテリジェント多次元検索・フィルタ・ソート制御用State群
@@ -500,7 +500,7 @@ const GameMasterDashboard = () => {
   const resetUnitForm = () => { 
     setIsEditing(false); setEditId(''); 
     setUnitForm({ 
-      name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'ノービス', description: '', 
+      name: '', unit_type: 'playable', is_tamable: false, race: '人間', job: 'フリーランス', description: '', 
       base_level: 1, reward_exp: 10, reward_gold: 10, base_hp: 100, base_sp: 10, 
       stat_str: 0, stat_agi: 0, stat_vit: 0, stat_int: 0, stat_dex: 0, stat_luk: 0, 
       equip_right_hand: '', equip_left_hand: '', equip_head: '', equip_face: '',
@@ -752,7 +752,7 @@ const GameMasterDashboard = () => {
                   {/* 🔮 🆕 ユニット（初期キャラ素体）創造の職業枠を手入力から「オリジナル8職セレクトボックス」へ完全一本化！ */}
                   <label style={labelStyle}>👤 初期職業・クラス制限</label>
                   <select value={unitForm.job} onChange={(e) => setUnitForm({...unitForm, job: e.target.value})} style={inputStyle}>
-                    <option value="ノービス">ノービス</option>
+                    <option value="フリーランス">フリーランス</option>
                     <option value="ファイター">ファイター（戦士）</option>
                     <option value="メイジ">メイジ（魔術士）</option>
                     <option value="クレリック">クレリック（聖職者）</option>
@@ -778,7 +778,7 @@ const GameMasterDashboard = () => {
                     <div>
                       <label style={labelStyle}>属性</label>
                       <select value={unitForm.element} onChange={(e) => setUnitForm({...unitForm, element: e.target.value})} style={inputStyle}>
-                        <option value="無">無</option><option value="火">火</option><option value="水">水</option><option value="風">風</option><option value="地">地</option><option value="聖">聖</option><option value="闇">闇</option><option value="不死">不死</option>
+                        <option value="無">無</option><option value="火">火</option><option value="水">水</option><option value="風">風</option><option value="地">地</option><option value="毒">毒</option><option value="聖">聖</option><option value="闇">闇</option><option value="念">念</option><option value="不死">不死</option>
                       </select>
                     </div>
                     <div>
@@ -1269,7 +1269,7 @@ const GameMasterDashboard = () => {
                       <label style={labelStyle}>👤 装備可能な職業制限</label>
                       <select value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle}>
                         <option value="全職業">全職業共通</option>
-                        <option value="ノービス">ノービス専用</option>
+                        <option value="フリーランス">フリーランス専用</option>
                         <option value="ファイター">ファイター専用</option>
                         <option value="メイジ">メイジ専用</option>
                         <option value="クレリック">クレリック専用</option>
@@ -1313,7 +1313,7 @@ const GameMasterDashboard = () => {
                   <select value={skillForm.job_requirement || '全職業'} onChange={(e) => setSkillForm({...skillForm, job_requirement: e.target.value})} style={inputStyle}>
                     {/* 💡 プルダウンの中身も三土手世界のオリジナル職名へ完全移行！ */}
                     <option value="全職業">全職業共通</option>
-                    <option value="ノービス">ノービス</option>
+                    <option value="フリーランス">フリーランス</option>
                     <option value="ファイター">ファイター（戦士）</option>
                     <option value="メイジ">メイジ（魔術士）</option>
                     <option value="クレリック">クレリック（聖職者）</option>
@@ -1389,7 +1389,7 @@ const GameMasterDashboard = () => {
                           <option value="ハンター">ハンター（狩人）</option>
                           <option value="トレーダー">トレーダー（商人）</option>
                           <option value="テイマー">テイマー（魔物使い）</option>
-                          <option value="ノービス">ノービス（見習い）</option>
+                          <option value="フリーランス">フリーランス</option>
                           
                           {/* 🐾 🆕 テイム仲間モンスター種族クラス */}
                           <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
@@ -1434,8 +1434,10 @@ const GameMasterDashboard = () => {
                       <option value="水">水属性（火属性に強い・2.0倍）</option>
                       <option value="風">風属性（水属性に強い・2.0倍）</option>
                       <option value="地">地属性（風属性に強い・2.0倍）</option>
+                      <option value="毒">毒属性</option>
                       <option value="聖">聖属性（不死・闇に特効・2.0倍）</option>
                       <option value="闇">闇属性</option>
+                      <option value="念">念属性</option>
                       <option value="不死">不死属性</option>
                     </select>
                   </div>
@@ -1470,10 +1472,14 @@ const GameMasterDashboard = () => {
                       <option value="物理DEF増幅">物理DEF増幅（味方・自分）</option>
                       <option value="全防御増幅">全防御増幅（DEF＆MDEF同時アップ）</option>
                       <option value="行動速度Aspd増幅">行動速度Aspd増幅</option>
+                      <option value="ウインドマーチ">ウインドマーチ（味方全体のAspd＆Flee同時30%増幅）</option>
+<option value="シャドウステップ">シャドウステップ（自身にFlee増幅バフ付与）</option>
                       <option value="魔力Matk増幅">魔力Matk増幅（味方・自分）</option>
                       {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
+                      <option value="プレダトリーセンス">【パッシブ】プレダトリーセンス（DEX増＋対動物植物特効）</option>
                       <option value="セイントブレス">【パッシブ】セイントブレス（DEF増＋対悪魔不死特効）</option>
                       <option value="ホークアイ">【パッシブ】ホークアイ（Lレンジ時Hit＆Cri増幅：数値連動）</option>
+                      <option value="シャドウセンス">【パッシブ】シャドウセンス（Flee常時増幅：数値連動）</option>
                       <option value="回避Flee増幅">【パッシブ】回避Flee増幅（常時上昇）</option>
                       <option value="致命打率増幅">【パッシブ】致命打率増幅（常時上昇）</option>
                       <option value="最大HP増幅">【パッシブ】最大HP増幅（常時％上昇）</option>
@@ -1482,6 +1488,7 @@ const GameMasterDashboard = () => {
                       <option value="パッシブMATK増幅">【パッシブ】魔力Matk増幅（常時固定値上昇）</option>
                       <option value="パッシブDEF増幅">【パッシブ】防御力Def増幅（常時固定値上昇）</option> {/* 👈 🆕 防御Def常時上昇！ */}
                       <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option>
+                      <option value="デュアルファング">【パッシブ】デュアルファング（Sレンジ装備時30%で2連撃発動）</option>
                       <option value="ツインブレード型連撃">【パッシブ】ツインブレード型連撃（確率で2連撃発動）</option>
                       <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option>
                       <option value="パッシブSP自動回復">【パッシブ】マインドリフレッシュ型（5秒周期SP自動回復）</option>
@@ -1500,7 +1507,7 @@ const GameMasterDashboard = () => {
                 </div>
 
                 {/* 🔄 🆕 【三土手創世神専用】バフ効果数値・単位連動型シークレットゲート */}
-                {['物理ATK増幅', '物理DEF増幅', '全防御増幅', '行動速度Aspd増幅', '魔力Matk増幅'].includes(skillForm.effect_type) && (
+                {['物理ATK増幅', '物理DEF増幅', '全防御増幅', '行動速度Aspd増幅', 'ウインドマーチ', 'シャドウステップ', '魔力Matk増幅'].includes(skillForm.effect_type) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0b0f19', padding: '8px', borderRadius: '6px', border: '1px dashed #6366f1', marginTop: '2px' }}>
                     <div>
                       <label style={{ ...labelStyle, color: '#38bdf8' }}>⚡ バフ増幅効果量 (数値)</label>
@@ -1723,7 +1730,7 @@ const GameMasterDashboard = () => {
                     </select>
                     <select value={unitFilterElement} onChange={(e) => setUnitFilterElement(e.target.value)} className="filter-select">
                       <option value="all">🔥 全属性</option>
-                      <option value="無">無</option><option value="火">火</option><option value="水">水</option><option value="風">風</option><option value="地">地</option>
+                      <option value="無">無</option><option value="火">火</option><option value="水">水</option><option value="風">風</option><option value="地">地</option><option value="毒">毒</option><option value="聖">聖</option><option value="闇">闇</option><option value="念">念</option><option value="不死">不死</option>
                     </select>
                     <select value={unitFilterSize} onChange={(e) => setUnitFilterSize(e.target.value)} className="filter-select">
                       <option value="all">📏 全サイズ</option>
@@ -1825,7 +1832,7 @@ const GameMasterDashboard = () => {
                 </select>
                 <select value={skillFilterElement} onChange={(e) => setSkillFilterElement(e.target.value)} className="filter-select">
                   <option value="all">🔥 全属性</option>
-                  <option value="無">無属性</option><option value="火">火属性</option><option value="水">水属性</option><option value="風">風属性</option><option value="地">地属性</option><option value="聖">聖属性</option>
+                  <option value="無">無属性</option><option value="火">火属性</option><option value="水">水属性</option><option value="風">風属性</option><option value="地">地属性</option><option value="毒">毒属性</option><option value="聖">聖属性</option><option value="闇">闇属性</option><option value="念">念属性</option><option value="不死">不死属性</option>
                 </select>
               </div>
 

@@ -17,7 +17,7 @@ export const RO_NEXT_EXP_TABLE = [
 // 📊 2. 三土手神オリジナル8職・自動成長ジョブボーナス表
 // レベルに応じて比例して自動加算される仕組みを美しく関数化して格納
 export const JOB_BONUS_MAP = {
-  'ノービス': {
+  'フリーランス': {
     str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
     agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
     vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
@@ -130,45 +130,25 @@ export const JOB_BONUS_MAP = {
 export const calculateJobBonus = (jobName, currentLevel) => {
   const bonuses = { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0, mdef: 0 };
   const jobRules = JOB_BONUS_MAP[jobName];
-  
   if (!jobRules) return bonuses;
-
-  // インデックス用に調整（Lv1なら配列の0番目、Lv50なら49番目のデータを取得）
-  if (currentLevel === 1) {
-    return { str: 0, agi: 0, vit: 0, int: 0, dex: 0, luk: 0, mdef: 0 };
-  }
+  if (currentLevel === 1) return bonuses;
   const idx = Math.min(49, Math.max(0, currentLevel - 1));
-
   Object.keys(jobRules).forEach(stat => {
     bonuses[stat] = jobRules[stat][idx] || 0;
   });
-
   return bonuses;
 };
 
-// ==========================================================
-// 👑 三土手創世神拡張：レベル別・累計獲得フリーポイント数理エンジン
-// ==========================================================
-/**
- * 🔮 レベル別・累計獲得フリーポイント算出ロジック
- * キャラクターの現在の「Baseレベル」を渡すと、レベル1の初期値(6)から
- * 現在のレベルまでに獲得しているべき【総フリーポイント数】をガチッと弾き出します。
- */
 export const calculateTotalStatusPoints = (currentLevel) => {
   const targetLv = Math.max(1, Math.min(50, currentLevel));
-  
-  // レベル1の生まれたては、三土手さん指定の「6ポイント」でフラットスタート！
   let totalPoints = 6; 
-
-  // レベル2から現在のレベルまで、1レベルずつもらえるポイントをシミュレート漸増加算
   for (let lv = 2; lv <= targetLv; lv++) {
-    if (lv <= 10)       totalPoints += 3; // Lv2~10 は毎レベル +3
-    else if (lv <= 20)  totalPoints += 4; // Lv11~20 は毎レベル +4
-    else if (lv <= 30)  totalPoints += 5; // Lv21~30 は毎レベル +5
-    else if (lv <= 40)  totalPoints += 6; // Lv31~40 は毎レベル +6
-    else                totalPoints += 7; // Lv41~50 は毎レベル +7
+    if (lv <= 10)       totalPoints += 3;
+    else if (lv <= 20)  totalPoints += 4;
+    else if (lv <= 30)  totalPoints += 5;
+    else if (lv <= 40)  totalPoints += 6;
+    else                totalPoints += 7;
   }
-
   return totalPoints;
 };
 

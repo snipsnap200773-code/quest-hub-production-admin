@@ -56,11 +56,11 @@ export const calculateRoStatus = (charData, equips = {}) => {
   else if (['テイマー', 'ビーストマスター', 'アニマロード', '魔物使い', 'tamer'].includes(checkJob) || checkJob.includes('tamer')) {
     rawJob = 'テイマー';
   }
-  // 【8】ノービス（またはエクスパート、グランドマスターなど万能ルート）
-  else if (['ノービス', 'エクスパート', 'グランドマスター', 'novice'].includes(checkJob) || checkJob.includes('novice')) {
-    rawJob = 'ノービス';
+  // 【8】フリーランス（トリックスター、プレインウォーカー等万能ルート、旧ノービス互換）
+  else if (['フリーランス', 'トリックスター', 'プレインウォーカー', 'ノービス', 'エクスパート', 'グランドマスター', 'freelance', 'novice'].includes(checkJob) || checkJob.includes('freelance') || checkJob.includes('novice')) {
+    rawJob = 'フリーランス';
   } else {
-    rawJob = 'ノービス';
+    rawJob = 'フリーランス';
   }
 
   const job = rawJob;
@@ -136,9 +136,10 @@ export const calculateRoStatus = (charData, equips = {}) => {
   let passiveDexBonus = 0;
   if (charData.skillsList && Array.isArray(charData.skillsList)) {
     charData.skillsList.forEach(sk => {
-      if (sk.skill_type === 'passive') {
-        if (sk.effect_type === 'パッシブDEX増幅' || sk.name?.includes('ディバインアイ')) {
-          passiveDexBonus += Number(sk.effect_value || 0);
+      const isPassive = sk.skill_type === 'passive' || sk.effect_type?.includes('パッシブ') || sk.effect_type === 'プレダトリーセンス' || sk.name?.includes('プレダトリーセンス') || sk.name?.includes('ディバインアイ');
+      if (isPassive) {
+        if (sk.effect_type === 'パッシブDEX増幅' || sk.effect_type === 'プレダトリーセンス' || sk.name?.includes('プレダトリーセンス') || sk.name?.includes('ディバインアイ')) {
+          passiveDexBonus += Number(sk.effect_value || sk.buff_value || 10);
         }
       }
     });
@@ -878,9 +879,9 @@ export const gameServices = {
       console.log(`🚀 予約連動ガチャ起動: user_id=${userId}, shop_id=${shopId}`);
       if (!userId || !shopId) throw new Error("ユーザーIDまたは店舗IDが不足しています");
 
-      // 【1】1次職7クラスの「本物のmaster_id」と職業名の定義マップ[cite: 3]
+      // 【1】1次職7クラスの「本物のmaster_id」と職業名の定義マップ（ノービス ➔ フリーランスへ修正）
       const ALL_JOB_MAP = [
-        { master_id: 'unit_1784020957053',   job_name: 'ノービス' },
+        { master_id: 'unit_1784020957053',   job_name: 'フリーランス' }, // 👈 'ノービス' から 'フリーランス' に変更！
         { master_id: 'unit_1784020869929',   job_name: 'ファイター' },
         { master_id: 'unit_1784020928288',   job_name: 'メイジ' },
         { master_id: 'unit_1784020916983',   job_name: 'クレリック' },
@@ -920,7 +921,7 @@ export const gameServices = {
       // --- 抽選ロジック分岐 ---
       if (possessedCount === 0) {
         // 🌟 1回目（初回）：店舗の業種カテゴリに応じた固定クラスを選定
-        // デフォルトのフォールバックは「ノービス」のIDに設定
+        // デフォルトのフォールバックは「フリーランス」のIDに設定
         let targetMasterId = 'unit_1784020957053'; 
 
         if (bizType.includes('美容') || bizType.includes('サロン') || bizType.includes('ヘア')) {
@@ -939,10 +940,10 @@ export const gameServices = {
 
         targetUnit = ALL_JOB_MAP.find(j => j.master_id === targetMasterId);
 
-        // 🛡️ 【超強力ガード】もし判定漏れ等で万が一見つからなかった場合はノービスを強制選抜
+        // 🛡️ もし割り当てが見つからなかった場合はフリーランスを安全選抜
         if (!targetUnit) {
-          console.warn("⚠️ 割り当てIDが見つからなかったため、ノービスを緊急選抜します。");
-          targetUnit = ALL_JOB_MAP.find(j => j.job_name === 'ノービス');
+          console.warn("⚠️ 割り当てIDが見つからなかったため、フリーランスを緊急選抜します。");
+          targetUnit = ALL_JOB_MAP.find(j => j.job_name === 'フリーランス');
         }
 
         console.log(`➔ 【初回特典】業種連動により固定選抜: ${targetUnit.job_name}`);
@@ -951,27 +952,25 @@ export const gameServices = {
         // 🔄 2〜7回目：まだ所持していない「未獲得プール」から厳密にランダム選抜！
         const unpossessedPool = ALL_JOB_MAP.filter(j => !myMasterIds.includes(j.master_id));
         
-        // JavaScriptの安全なランダムインデックスで1枠選抜
         const randomIndex = Math.floor(Math.random() * unpossessedPool.length);
         targetUnit = unpossessedPool[randomIndex];
         console.log(`➔ 【リピート特典】未所持プール（残り${unpossessedPool.length}職）からランダム選抜: ${targetUnit.job_name}`);
       } 
       else {
-        // 👑 7回以上（全職コンプリート後）：将来の限界突破（+1）やレア武具支給の拡張用のセーフティガード
-        console.log("🎉 すでに1次職7クラスを全てコンプリートしています！(次回拡張アップデートをお楽しみに！)");
+        console.log("🎉 すでに1次職7クラスを全てコンプリートしています！");
         return { success: true, message: "completed_all_jobs" };
       }
 
       if (!targetUnit) throw new Error("支給対象キャラクターの選定に失敗しました");
 
-      // 【4】選ばれた1次職の初期ステータスマスターデータ（game_master_units）を精査するため1発ロード[cite: 3]
+      // 選ばれた1次職の初期ステータスマスターデータ（game_master_units）をロード
       const { data: masterUnit, error: masterErr } = await supabase
         .from('game_master_units')
         .select('*')
         .eq('id', targetUnit.master_id)
         .single();
 
-      if (masterErr || !masterUnit) throw new Error(`マスターユニット [${targetUnit.master_id}] が見つかりません。GameMasterDashboardで先に作成されているか確認してください。`);
+      if (masterErr || !masterUnit) throw new Error(`マスターユニット [${targetUnit.master_id}] が見つかりません。`);
 
       // 【5】game_characters に酒場待機状態（party_index = null）でINSERTを実行！
       const { data: newCharacter, error: insertErr } = await supabase
@@ -980,12 +979,12 @@ export const gameServices = {
           {
             user_id: userId,
             master_id: targetUnit.master_id,
-            custom_name: targetUnit.job_name,
-            job: targetUnit.job_name,       // 🚀 🆕 SQLで増築したjobカラムへ職業名を直接書き込み！
-            race: '人間',                    // 🚀 🆕 SQLで増築したraceカラムへ固定で「人間」を直接書き込み！
+            custom_name: targetUnit.job_name, // 👈 'フリーランス' が入ります
+            job: targetUnit.job_name,         // 👈 'フリーランス' が入ります
+            race: '人間',
             level: 1,
             exp: 0,
-            status_points: 6, // 👑 三土手神仕様：初期フリーポイント6を自動チャージ！
+            status_points: 6,
             current_hp: masterUnit.base_hp || 100,
             max_hp: masterUnit.base_hp || 100,
             current_sp: masterUnit.base_sp || 10,
@@ -996,7 +995,7 @@ export const gameServices = {
             bonus_int: 0,
             bonus_dex: 0,
             bonus_luk: 0,
-            party_index: null, // 👈 酒場にお留守番（待機状態）
+            party_index: null,
             guild_name: '無所属'
           }
         ])
