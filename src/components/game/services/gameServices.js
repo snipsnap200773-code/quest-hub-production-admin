@@ -134,12 +134,18 @@ export const calculateRoStatus = (charData, equips = {}) => {
 
   // 🎯 【三土手神特注】習得済みスキルから常時発動パッシブの効果量をその場で自動集計！
   let passiveDexBonus = 0;
+  let passiveAllStatBonus = 0; // 👈 🆕 全ステータス加算用バッファを追加！
+
   if (charData.skillsList && Array.isArray(charData.skillsList)) {
     charData.skillsList.forEach(sk => {
-      const isPassive = sk.skill_type === 'passive' || sk.effect_type?.includes('パッシブ') || sk.effect_type === 'プレダトリーセンス' || sk.name?.includes('プレダトリーセンス') || sk.name?.includes('ディバインアイ');
+      const isPassive = sk.skill_type === 'passive' || sk.effect_type?.includes('パッシブ') || sk.effect_type === 'プレダトリーセンス' || sk.name?.includes('プレダトリーセンス') || sk.name?.includes('ディバインアイ') || sk.name?.includes('オールラウンダー') || sk.effect_type?.includes('全ステータス');
       if (isPassive) {
         if (sk.effect_type === 'パッシブDEX増幅' || sk.effect_type === 'プレダトリーセンス' || sk.name?.includes('プレダトリーセンス') || sk.name?.includes('ディバインアイ')) {
           passiveDexBonus += Number(sk.effect_value || sk.buff_value || 10);
+        }
+        // 🌐 🆕 【オールラウンダー検知線】全ステータス加算値を蓄積！
+        if (sk.effect_type === '全ステータス増幅' || sk.name?.includes('オールラウンダー') || sk.effect_type?.includes('全ステータス')) {
+          passiveAllStatBonus += Number(sk.effect_value || sk.buff_value || 5);
         }
       }
     });
@@ -148,13 +154,13 @@ export const calculateRoStatus = (charData, equips = {}) => {
   // 🔮 🆕 【大革命・引き算UI対応】
   // 「純粋な自動補正分 (+X)」を格納するオブジェクトを生成（ジョブボーナス + 手振りボーナス + カード効果 + パッシブスキル）
   const bonus = {
-    str: (charData.bonus?.str || 0) + cardStats.str + (jobBonus.str || 0),
-    agi: (charData.bonus?.agi || 0) + cardStats.agi + (jobBonus.agi || 0),
-    vit: (charData.bonus?.vit || 0) + cardStats.vit + (jobBonus.vit || 0),
-    int: (charData.bonus?.int || 0) + cardStats.int + (jobBonus.int || 0),
-    // 🎯 DEXの自動補正バッファにパッシブスキルでの上昇分を加算！
-    dex: (charData.bonus?.dex || 0) + cardStats.dex + (jobBonus.dex || 0) + passiveDexBonus,
-    luk: (charData.bonus?.luk || 0) + cardStats.luk + (jobBonus.luk || 0),
+    str: (charData.bonus?.str || 0) + cardStats.str + (jobBonus.str || 0) + passiveAllStatBonus,
+    agi: (charData.bonus?.agi || 0) + cardStats.agi + (jobBonus.agi || 0) + passiveAllStatBonus,
+    vit: (charData.bonus?.vit || 0) + cardStats.vit + (jobBonus.vit || 0) + passiveAllStatBonus,
+    int: (charData.bonus?.int || 0) + cardStats.int + (jobBonus.int || 0) + passiveAllStatBonus,
+    // 🎯 DEXの自動補正バッファにパッシブスキル（ディバインアイ＆オールラウンダー）での上昇分を加算！
+    dex: (charData.bonus?.dex || 0) + cardStats.dex + (jobBonus.dex || 0) + passiveDexBonus + passiveAllStatBonus,
+    luk: (charData.bonus?.luk || 0) + cardStats.luk + (jobBonus.luk || 0) + passiveAllStatBonus,
   };
 
   // 🔮 🆕 【フロント引き算UI大文字用】
