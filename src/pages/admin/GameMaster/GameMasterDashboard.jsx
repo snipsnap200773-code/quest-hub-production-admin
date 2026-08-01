@@ -1440,20 +1440,6 @@ const GameMasterDashboard = () => {
                       <option value="念">念属性（念属性同士に特効・2.0倍）</option>
                       <option value="不死">不死属性（聖・火に弱い）</option>
                     </select>
-                  </div><div>
-                    <label style={labelStyle}>🔥 技・魔法の固有属性</label>
-                    <select value={skillForm.element || '無'} onChange={(e) => setSkillForm({...skillForm, element: e.target.value})} style={inputStyle}>
-                      <option value="無">無属性（等倍）</option>
-                      <option value="火">火属性（地・毒・不死に強い・2.0倍）</option>
-                      <option value="水">水属性（火属性に強い・2.0倍）</option>
-                      <option value="風">風属性（水・毒に強い・2.0倍）</option>
-                      <option value="地">地属性（風属性に強い・2.0倍）</option>
-                      <option value="毒">毒属性（同属性無効）</option>
-                      <option value="聖">聖属性（闇・不死・毒に特効・2.0倍）</option>
-                      <option value="闇">闇属性（念属性に強い・1.5倍）</option>
-                      <option value="念">念属性（念属性同士に特効・2.0倍）</option>
-                      <option value="不死">不死属性（聖・火に弱い）</option>
-                    </select>
                   </div>
                   <div>
                     <label style={{ ...labelStyle, color: '#f59e0b' }}>🏹 スキル・魔法の射程</label>
@@ -1492,6 +1478,7 @@ const GameMasterDashboard = () => {
                       {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
                       <option value="プレダトリーセンス">【パッシブ】プレダトリーセンス（DEX増＋対動物植物特効）</option>
                       <option value="セイントブレス">【パッシブ】セイントブレス（DEF増＋対悪魔不死特効）</option>
+                      <option value="野生の絆">【パッシブ】野生の絆（従魔生存時DEF/MDEF増幅）</option>
                       <option value="ホークアイ">【パッシブ】ホークアイ（Lレンジ時Hit＆Cri増幅：数値連動）</option>
                       <option value="シャドウセンス">【パッシブ】シャドウセンス（Flee常時増幅：数値連動）</option>
                       <option value="回避Flee増幅">【パッシブ】回避Flee増幅（常時上昇）</option>
@@ -1506,6 +1493,9 @@ const GameMasterDashboard = () => {
                       <option value="ツインブレード型連撃">【パッシブ】ツインブレード型連撃（確率で2連撃発動）</option>
                       <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option>
                       <option value="パッシブSP自動回復">【パッシブ】マインドリフレッシュ型（5秒周期SP自動回復）</option>
+                      <option value="消費SP軽減">【パッシブ】プレシャスリソース（消費SP軽減＆SP自動回復）</option>
+                      <option value="エーテルリフレッシュ">【パッシブ】エーテルリフレッシュ（SP固定回復＆最大SP15%増幅）</option>
+                      <option value="可能性の覚醒">【パッシブ】可能性の覚醒（Cri+10/Flee+15/全与ダメ10%増幅）</option>
                       <option value="パッシブDEX増幅">【パッシブ】ディバインアイ型（常時DEX固定値上昇）</option>
                       <option value="遠隔命中増幅">【パッシブ】ホークアイ型（Lレンジ武器時のみHit固定値上昇）</option>
 <option value="全ステータス増幅">【パッシブ】オールラウンダー（全ステータス常時固定値上昇）</option>

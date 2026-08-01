@@ -290,11 +290,21 @@ CREATE TABLE IF NOT EXISTS "public"."facility_users" (
     "contact_name" "text",
     "official_url" "text",
     "allowed_categories" "text"[] DEFAULT '{}'::"text"[],
-    "furigana" "text"
+    "furigana" "text",
+    "is_suspended" boolean DEFAULT false NOT NULL,
+    "is_test_mode" boolean DEFAULT false NOT NULL
 );
 
 
 ALTER TABLE "public"."facility_users" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."facility_users"."is_suspended" IS '施設アカウントの一時停止フラグ（trueで停止）';
+
+
+
+COMMENT ON COLUMN "public"."facility_users"."is_test_mode" IS 'テストモードフラグ（trueで過去予約を許可）';
+
 
 
 CREATE TABLE IF NOT EXISTS "public"."favorites" (
@@ -306,6 +316,261 @@ CREATE TABLE IF NOT EXISTS "public"."favorites" (
 
 
 ALTER TABLE "public"."favorites" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_character_cards" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "character_id" "uuid" NOT NULL,
+    "slot_key" "text" NOT NULL,
+    "slot_index" integer NOT NULL,
+    "card_master_id" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
+);
+
+
+ALTER TABLE "public"."game_character_cards" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_characters" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "master_id" "text" NOT NULL,
+    "custom_name" "text",
+    "level" integer DEFAULT 1 NOT NULL,
+    "exp" integer DEFAULT 0 NOT NULL,
+    "status_points" integer DEFAULT 0 NOT NULL,
+    "current_hp" integer DEFAULT 100 NOT NULL,
+    "max_hp" integer DEFAULT 100 NOT NULL,
+    "current_sp" integer DEFAULT 10 NOT NULL,
+    "max_sp" integer DEFAULT 10 NOT NULL,
+    "bonus_str" integer DEFAULT 0 NOT NULL,
+    "bonus_agi" integer DEFAULT 0 NOT NULL,
+    "bonus_vit" integer DEFAULT 0 NOT NULL,
+    "bonus_int" integer DEFAULT 0 NOT NULL,
+    "bonus_dex" integer DEFAULT 0 NOT NULL,
+    "bonus_luk" integer DEFAULT 0 NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "guild_name" character varying(255) DEFAULT NULL::character varying,
+    "equip_right_hand" "uuid",
+    "equip_left_hand" "uuid",
+    "equip_head" "uuid",
+    "equip_face" "uuid",
+    "equip_body" "uuid",
+    "equip_glove" "uuid",
+    "equip_garment" "uuid",
+    "equip_shoes" "uuid",
+    "equip_accessory" "uuid",
+    "bag_items" "jsonb" DEFAULT '[]'::"jsonb",
+    "party_index" integer,
+    "sub_tame_id" "text",
+    "meta" "jsonb",
+    "skill_01" "text",
+    "skill_02" "text",
+    "skill_03" "text",
+    "job" "text",
+    "race" "text"
+);
+
+
+ALTER TABLE "public"."game_characters" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."game_characters"."party_index" IS '編成パーティのインデックス枠（0〜4）。NULLは未編成状態。';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_inventory" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "user_id" "uuid" NOT NULL,
+    "item_id" "text" NOT NULL,
+    "quantity" integer DEFAULT 1 NOT NULL,
+    "socket_card_01" "text",
+    "socket_card_02" "text",
+    "socket_card_03" "text",
+    "socket_card_04" "text",
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "count" integer DEFAULT 1,
+    "is_favorite" boolean DEFAULT false,
+    "refine_level" integer DEFAULT 0,
+    "equipped_character_id" "uuid",
+    "equipped_slot_key" "text"
+);
+
+
+ALTER TABLE "public"."game_inventory" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_master_items" (
+    "id" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "item_type" "text" NOT NULL,
+    "item_subtype" "text" DEFAULT '剣'::"text" NOT NULL,
+    "weapon_range" "text" DEFAULT 'S'::"text" NOT NULL,
+    "slot_count" integer DEFAULT 0 NOT NULL,
+    "rarity" "text" DEFAULT 'common'::"text" NOT NULL,
+    "sell_price" integer DEFAULT 0 NOT NULL,
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "atk" integer DEFAULT 0,
+    "def" integer DEFAULT 0,
+    "mdef" integer DEFAULT 0,
+    "weapon_level" integer DEFAULT 1,
+    "equip_level_req" integer DEFAULT 1,
+    "job_restriction" character varying(255) DEFAULT '全職業'::character varying,
+    "weight" integer DEFAULT 10,
+    "penalty_str" integer DEFAULT 0,
+    "card_effect_type" "text",
+    "card_effect_target" "text",
+    "card_effect_value" integer DEFAULT 0,
+    "card_effect_type_2" "text",
+    "card_effect_target_2" "text",
+    "card_effect_value_2" integer DEFAULT 0,
+    "card_effect_type_3" "text",
+    "card_effect_target_3" "text",
+    "card_effect_value_3" integer DEFAULT 0
+);
+
+
+ALTER TABLE "public"."game_master_items" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_master_quests" (
+    "id" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "level" integer DEFAULT 1,
+    "floors" integer DEFAULT 1,
+    "difficulty" "text" DEFAULT 'E'::"text",
+    "description" "text",
+    "enemy_master_id" "text",
+    "exp_reward" integer DEFAULT 50,
+    "zeny_reward" integer DEFAULT 1000,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "enemy_master_id_2" "text",
+    "enemy_master_id_3" "text",
+    "floor_configs" "jsonb" DEFAULT '[]'::"jsonb",
+    "environment_type" "text" DEFAULT 'dungeon'::"text",
+    "area_type_name" "text" DEFAULT '階層'::"text",
+    "prologue_text" "text"
+);
+
+
+ALTER TABLE "public"."game_master_quests" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."game_master_quests"."floor_configs" IS 'B1〜B5の各階層における出現エネミー・戦闘回数・宝箱・泉のコンフィグ配列';
+
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_master_skills" (
+    "id" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "skill_type" "text" DEFAULT 'magic'::"text" NOT NULL,
+    "sp_cost" integer DEFAULT 0 NOT NULL,
+    "effect_value" integer DEFAULT 0 NOT NULL,
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "job_requirement" "text" DEFAULT '全職業'::"text",
+    "level_requirement" integer DEFAULT 1,
+    "target_type" "text" DEFAULT '単体エネミー'::"text",
+    "use_condition" "text" DEFAULT '戦闘中のみ'::"text",
+    "element" "text" DEFAULT '無'::"text",
+    "effect_type" "text" DEFAULT 'なし'::"text",
+    "effect_chance" integer DEFAULT 0,
+    "duration_turns" integer DEFAULT 0,
+    "value_type" "text" DEFAULT 'percent'::"text",
+    "cast_time" numeric DEFAULT 0,
+    "is_absolute_hit" boolean DEFAULT true,
+    "skill_range" "text" DEFAULT 'L'::"text",
+    "buff_value" numeric DEFAULT 0,
+    "buff_value_type" "text" DEFAULT 'percent'::"text",
+    "is_range_damage_cut" boolean DEFAULT false,
+    "range_damage_cut_pct" numeric DEFAULT 0,
+    "target_priority_jobs" "text"[]
+);
+
+
+ALTER TABLE "public"."game_master_skills" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_master_units" (
+    "id" "text" NOT NULL,
+    "name" "text" NOT NULL,
+    "unit_type" "text" NOT NULL,
+    "is_tamable" boolean DEFAULT false NOT NULL,
+    "race" "text" DEFAULT '人間'::"text" NOT NULL,
+    "job" "text" DEFAULT 'ノービス'::"text" NOT NULL,
+    "base_level" integer DEFAULT 1 NOT NULL,
+    "reward_exp" integer DEFAULT 10 NOT NULL,
+    "reward_gold" integer DEFAULT 10 NOT NULL,
+    "base_hp" integer DEFAULT 100 NOT NULL,
+    "base_sp" integer DEFAULT 10 NOT NULL,
+    "stat_str" integer DEFAULT 1 NOT NULL,
+    "stat_agi" integer DEFAULT 1 NOT NULL,
+    "stat_vit" integer DEFAULT 1 NOT NULL,
+    "stat_int" integer DEFAULT 1 NOT NULL,
+    "stat_dex" integer DEFAULT 1 NOT NULL,
+    "stat_luk" integer DEFAULT 1 NOT NULL,
+    "equip_right_hand" "text",
+    "equip_left_hand" "text",
+    "equip_head" "text",
+    "equip_body" "text",
+    "equip_arm" "text",
+    "equip_foot" "text",
+    "equip_accessory" "text",
+    "extra_drop_item" "text",
+    "extra_drop_chance" integer DEFAULT 0 NOT NULL,
+    "skill_01" "text",
+    "skill_02" "text",
+    "skill_03" "text",
+    "description" "text",
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL,
+    "element" character varying(50) DEFAULT '無'::character varying,
+    "size" character varying(50) DEFAULT '中型'::character varying,
+    "atk_matk" integer DEFAULT 0,
+    "hit_100" integer DEFAULT 100,
+    "flee_95" integer DEFAULT 100,
+    "is_boss" boolean DEFAULT false,
+    "is_range_atk" boolean DEFAULT false,
+    "equip_face" "text",
+    "equip_glove" "text",
+    "equip_garment" "text",
+    "equip_shoes" "text",
+    "resist_stun" integer DEFAULT 0 NOT NULL,
+    "resist_freeze" integer DEFAULT 0 NOT NULL,
+    "resist_poison" integer DEFAULT 0 NOT NULL,
+    "resist_blind" integer DEFAULT 0 NOT NULL,
+    "resist_sleep" integer DEFAULT 0,
+    "resist_silence" integer DEFAULT 0,
+    "resist_curse" integer DEFAULT 0,
+    "resist_petrify" integer DEFAULT 0,
+    "drop_chance_weapon" integer DEFAULT 0,
+    "tame_success_chance" integer DEFAULT 0,
+    "tame_level_req" integer DEFAULT 1,
+    "enemy_aspd" integer,
+    "extra_drop_item_2" "text",
+    "extra_drop_chance_2" numeric DEFAULT 0,
+    "extra_drop_item_3" "text",
+    "extra_drop_chance_3" numeric DEFAULT 0,
+    "reward_gold_battle" integer DEFAULT 0,
+    "reward_exp_battle" integer DEFAULT 0
+);
+
+
+ALTER TABLE "public"."game_master_units" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."game_party_status" (
+    "user_id" "uuid" NOT NULL,
+    "is_exploring" boolean DEFAULT false NOT NULL,
+    "current_quest_id" integer,
+    "explore_start_at" timestamp with time zone,
+    "explore_end_at" timestamp with time zone,
+    "zeny" integer DEFAULT 0 NOT NULL
+);
+
+
+ALTER TABLE "public"."game_party_status" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."holidays" (
@@ -934,6 +1199,46 @@ ALTER TABLE ONLY "public"."favorites"
 
 
 
+ALTER TABLE ONLY "public"."game_character_cards"
+    ADD CONSTRAINT "game_character_cards_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "game_characters_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_master_items"
+    ADD CONSTRAINT "game_master_items_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_master_quests"
+    ADD CONSTRAINT "game_master_quests_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_master_skills"
+    ADD CONSTRAINT "game_master_skills_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."game_party_status"
+    ADD CONSTRAINT "game_party_status_pkey" PRIMARY KEY ("user_id");
+
+
+
 ALTER TABLE ONLY "public"."holidays"
     ADD CONSTRAINT "holidays_pkey" PRIMARY KEY ("id");
 
@@ -1084,6 +1389,16 @@ ALTER TABLE ONLY "public"."staffs"
 
 
 
+ALTER TABLE ONLY "public"."game_character_cards"
+    ADD CONSTRAINT "unique_character_slot_index" UNIQUE ("character_id", "slot_key", "slot_index");
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "unique_party_index" UNIQUE ("party_index");
+
+
+
 ALTER TABLE ONLY "public"."shop_facility_connections"
     ADD CONSTRAINT "unique_shop_facility_pair" UNIQUE ("shop_id", "facility_user_id");
 
@@ -1116,6 +1431,14 @@ ALTER TABLE ONLY "public"."visit_request_residents"
 
 ALTER TABLE ONLY "public"."visit_requests"
     ADD CONSTRAINT "visit_requests_pkey" PRIMARY KEY ("id");
+
+
+
+CREATE INDEX "idx_game_character_cards_char" ON "public"."game_character_cards" USING "btree" ("character_id");
+
+
+
+CREATE INDEX "idx_game_inventory_equipped" ON "public"."game_inventory" USING "btree" ("equipped_character_id");
 
 
 
@@ -1180,6 +1503,176 @@ ALTER TABLE ONLY "public"."favorites"
 
 ALTER TABLE ONLY "public"."favorites"
     ADD CONSTRAINT "favorites_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "auth"."users"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_accessory_inv" FOREIGN KEY ("equip_accessory") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_body_inv" FOREIGN KEY ("equip_body") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_face_inv" FOREIGN KEY ("equip_face") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_garment_inv" FOREIGN KEY ("equip_garment") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_glove_inv" FOREIGN KEY ("equip_glove") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_head_inv" FOREIGN KEY ("equip_head") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_left_hand_inv" FOREIGN KEY ("equip_left_hand") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_right_hand_inv" FOREIGN KEY ("equip_right_hand") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "fk_equip_shoes_inv" FOREIGN KEY ("equip_shoes") REFERENCES "public"."game_inventory"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_character_cards"
+    ADD CONSTRAINT "game_character_cards_character_id_fkey" FOREIGN KEY ("character_id") REFERENCES "public"."game_characters"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "game_characters_master_id_fkey" FOREIGN KEY ("master_id") REFERENCES "public"."game_master_units"("id") ON DELETE RESTRICT;
+
+
+
+ALTER TABLE ONLY "public"."game_characters"
+    ADD CONSTRAINT "game_characters_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_equipped_character_id_fkey" FOREIGN KEY ("equipped_character_id") REFERENCES "public"."game_characters"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_item_id_fkey" FOREIGN KEY ("item_id") REFERENCES "public"."game_master_items"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_socket_card_01_fkey" FOREIGN KEY ("socket_card_01") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_socket_card_02_fkey" FOREIGN KEY ("socket_card_02") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_socket_card_03_fkey" FOREIGN KEY ("socket_card_03") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_socket_card_04_fkey" FOREIGN KEY ("socket_card_04") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_inventory"
+    ADD CONSTRAINT "game_inventory_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."game_master_quests"
+    ADD CONSTRAINT "game_master_quests_enemy_master_id_2_fkey" FOREIGN KEY ("enemy_master_id_2") REFERENCES "public"."game_master_units"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_quests"
+    ADD CONSTRAINT "game_master_quests_enemy_master_id_3_fkey" FOREIGN KEY ("enemy_master_id_3") REFERENCES "public"."game_master_units"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_quests"
+    ADD CONSTRAINT "game_master_quests_enemy_master_id_fkey" FOREIGN KEY ("enemy_master_id") REFERENCES "public"."game_master_units"("id");
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_accessory_fkey" FOREIGN KEY ("equip_accessory") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_arm_fkey" FOREIGN KEY ("equip_arm") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_body_fkey" FOREIGN KEY ("equip_body") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_foot_fkey" FOREIGN KEY ("equip_foot") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_head_fkey" FOREIGN KEY ("equip_head") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_left_hand_fkey" FOREIGN KEY ("equip_left_hand") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_equip_right_hand_fkey" FOREIGN KEY ("equip_right_hand") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_extra_drop_item_fkey" FOREIGN KEY ("extra_drop_item") REFERENCES "public"."game_master_items"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_skill_01_fkey" FOREIGN KEY ("skill_01") REFERENCES "public"."game_master_skills"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_skill_02_fkey" FOREIGN KEY ("skill_02") REFERENCES "public"."game_master_skills"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_master_units"
+    ADD CONSTRAINT "game_master_units_skill_03_fkey" FOREIGN KEY ("skill_03") REFERENCES "public"."game_master_skills"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."game_party_status"
+    ADD CONSTRAINT "game_party_status_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
 
 
@@ -1447,6 +1940,18 @@ CREATE POLICY "Anyone can do anything with visit_requests" ON "public"."visit_re
 
 
 
+CREATE POLICY "Enable all access for authenticated users" ON "public"."portal_categories" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable all access for authenticated users" ON "public"."reservation_guests" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable all access for portal users" ON "public"."reservation_guests" USING (true) WITH CHECK (true);
+
+
+
 CREATE POLICY "Enable all for category" ON "public"."service_categories" USING (true) WITH CHECK (true);
 
 
@@ -1459,7 +1964,31 @@ CREATE POLICY "Enable all for services" ON "public"."services" USING (true) WITH
 
 
 
+CREATE POLICY "Enable all management for admin users" ON "public"."portal_news" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable all management for authenticated users" ON "public"."private_tasks" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable all management for authenticated users" ON "public"."products" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable all management for authenticated users" ON "public"."push_subscriptions" TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
 CREATE POLICY "Enable delete for users based on shop_id" ON "public"."admin_adjustments" FOR DELETE USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "Enable insert access for anyone" ON "public"."inquiries" FOR INSERT WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable insert for all users" ON "public"."push_subscriptions" FOR INSERT WITH CHECK (true);
 
 
 
@@ -1467,7 +1996,35 @@ CREATE POLICY "Enable insert for authenticated users" ON "public"."sales" FOR IN
 
 
 
+CREATE POLICY "Enable insert for authenticated users only" ON "public"."admin_adjustments" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
 CREATE POLICY "Enable insert for owners" ON "public"."sales" FOR INSERT TO "authenticated" WITH CHECK (("shop_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."admin_adjustments" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."portal_categories" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."portal_news" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."private_tasks" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for all users" ON "public"."products" FOR SELECT USING (true);
+
+
+
+CREATE POLICY "Enable read access for authenticated users only" ON "public"."inquiries" FOR SELECT TO "authenticated" USING (true);
 
 
 
@@ -1476,6 +2033,10 @@ CREATE POLICY "Enable read access for own shop" ON "public"."sales" FOR SELECT U
 
 
 CREATE POLICY "Enable update for all" ON "public"."profiles" FOR UPDATE USING (true) WITH CHECK (true);
+
+
+
+CREATE POLICY "Enable update for authenticated users only" ON "public"."admin_adjustments" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
 
 
 
@@ -1535,7 +2096,13 @@ CREATE POLICY "Users can view their linked customers" ON "public"."customers" FO
 
 
 
+ALTER TABLE "public"."admin_adjustments" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."app_users" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."business_settings" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."customers" ENABLE ROW LEVEL SECURITY;
@@ -1555,10 +2122,19 @@ CREATE POLICY "customers_select_test" ON "public"."customers" FOR SELECT TO "aut
 
 
 
+ALTER TABLE "public"."facilities" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."facility_users" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."favorites" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."holidays" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."inquiries" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."keep_dates" ENABLE ROW LEVEL SECURITY;
@@ -1587,13 +2163,34 @@ CREATE POLICY "owner_read_profile" ON "public"."profiles" FOR SELECT TO "authent
 
 
 
+ALTER TABLE "public"."portal_categories" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."portal_news" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."private_tasks" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."products" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."push_subscriptions" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."regular_keep_exclusions" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."reservation_guests" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."reservations" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."residents" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."sales" ENABLE ROW LEVEL SECURITY;
@@ -1953,6 +2550,54 @@ GRANT ALL ON TABLE "public"."facility_users" TO "service_role";
 GRANT ALL ON TABLE "public"."favorites" TO "anon";
 GRANT ALL ON TABLE "public"."favorites" TO "authenticated";
 GRANT ALL ON TABLE "public"."favorites" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_character_cards" TO "anon";
+GRANT ALL ON TABLE "public"."game_character_cards" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_character_cards" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_characters" TO "anon";
+GRANT ALL ON TABLE "public"."game_characters" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_characters" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_inventory" TO "anon";
+GRANT ALL ON TABLE "public"."game_inventory" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_inventory" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_master_items" TO "anon";
+GRANT ALL ON TABLE "public"."game_master_items" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_master_items" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_master_quests" TO "anon";
+GRANT ALL ON TABLE "public"."game_master_quests" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_master_quests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_master_skills" TO "anon";
+GRANT ALL ON TABLE "public"."game_master_skills" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_master_skills" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_master_units" TO "anon";
+GRANT ALL ON TABLE "public"."game_master_units" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_master_units" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."game_party_status" TO "anon";
+GRANT ALL ON TABLE "public"."game_party_status" TO "authenticated";
+GRANT ALL ON TABLE "public"."game_party_status" TO "service_role";
 
 
 
