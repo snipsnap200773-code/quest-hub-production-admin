@@ -1478,7 +1478,13 @@ const GameMasterDashboard = () => {
                       {/* 🔮 🆕 常時発動型パッシブ専用のステータス直撃増幅効果タイプを完全解放！ */}
                       <option value="プレダトリーセンス">【パッシブ】プレダトリーセンス（DEX増＋対動物植物特効）</option>
                       <option value="セイントブレス">【パッシブ】セイントブレス（DEF増＋対悪魔不死特効）</option>
+                      {/* 🐾 🆕 追加：野生の絆 */}
                       <option value="野生の絆">【パッシブ】野生の絆（従魔生存時DEF/MDEF増幅）</option>
+                      
+                      {/* 🐾 🆕 追加：獣王の咆哮 ＆ ヴァルキリースタンス */}
+                      <option value="獣王の咆哮">【パッシブ】獣王の咆哮（魔物ATK増幅＆自身Flee増幅）</option>
+                      <option value="ヴァルキリースタンス">【パッシブ】ヴァルキリースタンス（Cri+15%＆ATK固定増幅）</option>
+                      
                       <option value="ホークアイ">【パッシブ】ホークアイ（Lレンジ時Hit＆Cri増幅：数値連動）</option>
                       <option value="シャドウセンス">【パッシブ】シャドウセンス（Flee常時増幅：数値連動）</option>
                       <option value="回避Flee増幅">【パッシブ】回避Flee増幅（常時上昇）</option>
@@ -1489,7 +1495,7 @@ const GameMasterDashboard = () => {
                       <option value="パッシブMATK増幅">【パッシブ】魔力Matk増幅（常時固定値上昇）</option>
                       <option value="パッシブDEF増幅">【パッシブ】防御力Def増幅（常時固定値上昇）</option> {/* 👈 🆕 防御Def常時上昇！ */}
                       <option value="パッシブMDEF増幅">【パッシブ】魔法防御Mdef増幅（常時固定値上昇）</option>
-                      <option value="デュアルファング">【パッシブ】デュアルファング（Sレンジ装備時30%で2連撃発動）</option>
+                      <option value="デュアルファング">【パッシブ】デュアルファング（Sレンジ装備時で2連撃発動）</option>
                       <option value="ツインブレード型連撃">【パッシブ】ツインブレード型連撃（確率で2連撃発動）</option>
                       <option value="パッシブHP自動回復">【パッシブ】インスティンクト型（5秒周期HP自動回復）</option>
                       <option value="パッシブSP自動回復">【パッシブ】マインドリフレッシュ型（5秒周期SP自動回復）</option>
@@ -1499,6 +1505,8 @@ const GameMasterDashboard = () => {
                       <option value="パッシブDEX増幅">【パッシブ】ディバインアイ型（常時DEX固定値上昇）</option>
                       <option value="遠隔命中増幅">【パッシブ】ホークアイ型（Lレンジ武器時のみHit固定値上昇）</option>
 <option value="全ステータス増幅">【パッシブ】オールラウンダー（全ステータス常時固定値上昇）</option>
+                      {/* 🐾 🆕 追加：ビーストシンパシー */}
+                      <option value="ビーストシンパシー">【パッシブ】ビーストシンパシー（味方魔物の最大HP＆DEF増幅）</option>
                     </select>
                   </div>
                   <div>
@@ -1512,7 +1520,7 @@ const GameMasterDashboard = () => {
                 </div>
 
                 {/* 🔄 🆕 【三土手創世神専用】バフ効果数値・単位連動型シークレットゲート */}
-                {['物理ATK増幅', '物理DEF増幅', '全防御増幅', '行動速度Aspd増幅', 'ウインドマーチ', 'シャドウステップ', '魔力Matk増幅'].includes(skillForm.effect_type) && (
+                {(['物理ATK増幅', '物理DEF増幅', '全防御増幅', '行動速度Aspd増幅', 'ウインドマーチ', 'シャドウステップ', '魔力Matk増幅'].includes(skillForm.effect_type) || skillForm.name?.includes('カロリーチャージ')) && (
                   <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', background: '#0b0f19', padding: '8px', borderRadius: '6px', border: '1px dashed #6366f1', marginTop: '2px' }}>
                     <div>
                       <label style={{ ...labelStyle, color: '#38bdf8' }}>⚡ バフ増幅効果量 (数値)</label>
