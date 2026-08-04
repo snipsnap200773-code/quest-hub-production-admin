@@ -17,7 +17,7 @@ export const calculateRoStatus = (charData, equips = {}) => {
   const baseLv = charData.level || 1;
   
   // 🔮 🆕 解決：直下のjobがNULLでも、meta.job や、キャラクター直下のオブジェクト情報を網羅して執念で100%確定抽出！
-  let rawJob = 'ノービス';
+  let rawJob = 'フリーランス';
   if (charData.meta && charData.meta.job) {
     rawJob = charData.meta.job;
   } else if (charData.job) {
@@ -26,44 +26,49 @@ export const calculateRoStatus = (charData, equips = {}) => {
     rawJob = charData.custom_name;
   }
   
+  // 👑 【重要】2次職の固有ボーナスを独立して引き出すため、元の正確な名前を保持！
+  const exactJob = rawJob; 
   const checkJob = String(rawJob).trim().toLowerCase();
+
+  // 基本システム（攻撃速度Aspdなどのベース判定）用の大枠クラス分類
+  let baseJobClass = 'フリーランス';
 
   // 【1】ファイター系（前衛・重装戦士）
   if (['ファイター', 'クラッシャー', 'ジェネラルナイト', 'テンプラー', 'インクイジター', 'ソードマン', 'fighter', 'swordsman'].includes(checkJob) || checkJob.includes('fighter') || checkJob.includes('swordsman')) {
-    rawJob = 'ファイター';
+    baseJobClass = 'ファイター';
   }
   // 【2】メイジ系（魔法・学術）
   else if (['メイジ', 'ハイウィザード', 'エレメンタルマスター', 'エレミット', 'アルカナロード', 'マジシャン', 'mage', 'magician', 'wizard'].includes(checkJob) || checkJob.includes('mage') || checkJob.includes('wizard')) {
-    rawJob = 'メイジ';
+    baseJobClass = 'メイジ';
   }
   // 【3】クレリック系（信仰・拳法）
   else if (['クレリック', 'ビショップ', 'ホーリーサヴァント', 'グラップラー', 'ヴァジュラ', 'アコライト', 'プリースト', 'cleric', 'priest', 'acolyte'].includes(checkJob) || checkJob.includes('cleric') || checkJob.includes('priest')) {
-    rawJob = 'クレリック';
+    baseJobClass = 'クレリック';
   }
   // 【4】スカウト系（隠密・強襲）
   else if (['スカウト', 'アサシンクロス', 'シャドウレイダー', 'チェイサー', 'ファントムシーフ', 'シーフ', 'thief', 'scout'].includes(checkJob) || checkJob.includes('thief') || checkJob.includes('scout')) {
-    rawJob = 'スカウト';
+    baseJobClass = 'スカウト';
   }
   // 【5】ハンター系（遠隔・芸術）
   else if (['ハンター', 'レンジャー', 'シャープシューター', 'パフォーマー', 'マエストロ', 'ミューズ', 'hunter', 'ranger'].includes(checkJob) || checkJob.includes('hunter') || checkJob.includes('ranger')) {
-    rawJob = 'ハンター';
+    baseJobClass = 'ハンター';
   }
   // 【6】トレーダー系（鍛冶・錬金）
   else if (['トレーダー', 'ブラックスミス', 'マイスター', 'ケミスト', 'ホムンクルスクリエイター', '商人', 'trader', 'blacksmith'].includes(checkJob) || checkJob.includes('trader') || checkJob.includes('blacksmith')) {
-    rawJob = 'トレーダー';
+    baseJobClass = 'トレーダー';
   }
   // 【7】テイマー系（魔物調教・三土手神新規）
-  else if (['テイマー', 'ビーストマスター', 'アニマロード', '魔物使い', 'tamer'].includes(checkJob) || checkJob.includes('tamer')) {
-    rawJob = 'テイマー';
+  else if (['テイマー', 'ビーストマスター', 'アニマロード', 'フロントコマンダー', '魔物使い', 'tamer'].includes(checkJob) || checkJob.includes('tamer')) {
+    baseJobClass = 'テイマー';
   }
-  // 【8】フリーランス（トリックスター、プレインウォーカー等万能ルート、旧ノービス互換）
-  else if (['フリーランス', 'トリックスター', 'プレインウォーカー', 'ノービス', 'エクスパート', 'グランドマスター', 'freelance', 'novice'].includes(checkJob) || checkJob.includes('freelance') || checkJob.includes('novice')) {
-    rawJob = 'フリーランス';
+  // 【8】フリーランス（トリックスター、サバイバー等万能ルート、旧ノービス互換）
+  else if (['フリーランス', 'トリックスター', 'プレインウォーカー', 'ノービス', 'エクスパート', 'サバイバー', 'グランドマスター', 'freelance', 'novice'].includes(checkJob) || checkJob.includes('freelance') || checkJob.includes('novice')) {
+    baseJobClass = 'フリーランス';
   } else {
-    rawJob = 'フリーランス';
+    baseJobClass = 'フリーランス';
   }
 
-  const job = rawJob;
+  const job = exactJob;
 
   // 🔮 全9部位の装備から、刺さっているすべてのカードオブジェクトをフラットな配列として1つに集約
   const allAttachedCards = Object.values(equips)
@@ -130,7 +135,8 @@ export const calculateRoStatus = (charData, equips = {}) => {
 
   // 🔮 🆕 ジョブレベルを取得（なければ1）し、独立数理室から配列ベースのジョブボーナスを強制召喚
   const jobLv = charData.level || charData.job_level || 1; 
-  const jobBonus = calculateJobBonus(job, jobLv);
+  // 👑 【変更】baseJobClass ではなく、厳密な2次職名（exactJob）を渡して専用ボーナスを引き出す！
+  const jobBonus = calculateJobBonus(exactJob, jobLv);
 
   // 🎯 【三土手神特注】習得済みスキルから常時発動パッシブの効果量をその場で自動集計！
   let passiveDexBonus = 0;
@@ -205,26 +211,65 @@ export const calculateRoStatus = (charData, equips = {}) => {
   // 🎯 右手装備が「Lレンジ（弓など）」であるか判定
   const isRangedWeapon = equips.right_hand?.range === 'L' || equips.right_hand?.weapon_range === 'L';
 
+  // 🛡️ 🆕 【三土手神特注：防具・武器の重量ペナルティ ＆ STR着こなし計算】
+  let totalWeight = 0;
+  let totalPenaltyStr = 0;
+
+  Object.values(equips).forEach(eq => {
+    if (eq) {
+      totalWeight += Number(eq.weight || 0);
+      totalPenaltyStr += Number(eq.penalty_str || 0);
+    }
+  });
+
+  let weightFleePenalty = 0;
+  let weightAspdPenalty = 0;
+
+  // 自分のSTRが、装備の要求STR合計を下回っている場合のみペナルティ発生！
+  if (str < totalPenaltyStr) {
+    const deficit = totalPenaltyStr - str;
+    const penaltyRatio = Math.min(1.0, deficit / totalPenaltyStr); // 不足割合（最大100%）
+    
+    // 総重量を元にペナルティの最大値を出し、不足割合を掛ける
+    // 例: 重量300の鎧でSTRが全く足りない(ratio=1)場合、Flee-60、Aspd-20
+    weightFleePenalty = Math.floor((totalWeight / 5) * penaltyRatio);
+    weightAspdPenalty = Math.floor((totalWeight / 15) * penaltyRatio);
+    
+    // 🛠️ デバッグ用：ペナルティが発生した場合にコンソールに警告を出力
+    console.log(`⚖️ 【重量ペナルティ発動】 STR:${str} / 要求:${totalPenaltyStr} ➔ 総重量${totalWeight}により Flee -${weightFleePenalty}, Aspd -${weightAspdPenalty}`);
+  }
+
   // 🔮 最終Derived計算式に対しても、カードのダイレクトパラメータ修正（Critical, Flee, Hit等）を美しくドッキング
   const atk = str + weaponAtk + Math.pow(Math.floor(str / 10), 2) + accessoryAtk;
   const def = Math.floor(vit * 0.5) + totalEquipDef;
-  
-  // 🎯 【三土手神特注】Lレンジ武器装備時のみ、ホークアイの数値をHitに直撃ドッキング！
   const hit = baseLv + dex + cardStats.hit + (isRangedWeapon ? passiveRangedHitBonus : 0);
   
-  const flee = baseLv + agi + cardStats.flee;
+  // 👑 【ペナルティ減算】Fleeから重量ペナルティを引き算（最低値1を保証）
+  const flee = Math.max(1, baseLv + agi + cardStats.flee - weightFleePenalty);
   const critical = Math.floor(luk * 0.3) + 1 + cardStats.critical;
   
-  // 🔮 🆕 固定値を粉砕し、intとdex連動型のダイス幅オブジェクト(minMatk, maxMatk)へ換装！
   const matk = calculateMatk(int, dex); 
-  
   const mdef = Math.floor(int * 0.5) + totalEquipMdef;
 
-  // 🔮 🆕 旧レガシー職名条件を、三土手オリジナル職名（スカウト・ファイター）へと安全リフォーム！
+  // 🔮 🆕 【三土手神特注：本家RO式・武器種連動のシビアなASPD計算エンジン】
   let baseAspd = 150;
-  if (job === 'スカウト') baseAspd = 160;
-  if (job === 'ファイター') baseAspd = 152;
-  const aspd = Math.min(190, baseAspd + agi * 0.5);
+  if (baseJobClass === 'スカウト') baseAspd = 156;
+  if (baseJobClass === 'ハンター') baseAspd = 154;
+  if (baseJobClass === 'ファイター') baseAspd = 152;
+  
+  const wpType = equips.right_hand?.item_subtype || '素手';
+  let weaponPenalty = 0;
+  if (wpType === '短剣' || wpType === '爪（ナックル）') weaponPenalty = 10;
+  else if (wpType === '剣') weaponPenalty = 15;
+  else if (wpType === '弓') weaponPenalty = 20;
+  else if (wpType === '鈍器') weaponPenalty = 25;
+  else if (wpType === '斧') weaponPenalty = 30;
+  else if (wpType === '杖' || wpType === '本') weaponPenalty = 35;
+  
+  const finalBaseAspd = baseAspd - weaponPenalty;
+  
+  // 👑 【ペナルティ減算】Aspdから重量ペナルティを引き算し、最低値10〜最大値193の間にロック！
+  const aspd = Math.max(10, Math.min(193, finalBaseAspd + (agi * 0.25) + (dex * 0.05) - weightAspdPenalty));
 
   // 🔮 🆕 最大HP・最大SPの「VIT・INT掛け算連動ロジック」をここに集約
   // ※フェーズ4後半で職業別の掛け算上昇係数を組み込むためのベース配線を開通
@@ -991,8 +1036,8 @@ export const gameServices = {
           {
             user_id: userId,
             master_id: targetUnit.master_id,
-            custom_name: targetUnit.job_name, // 👈 'フリーランス' が入ります
-            job: targetUnit.job_name,         // 👈 'フリーランス' が入ります
+            custom_name: targetUnit.job_name,
+            job: targetUnit.job_name,
             race: '人間',
             level: 1,
             exp: 0,
@@ -1015,6 +1060,41 @@ export const gameServices = {
         .single();
 
       if (insertErr) throw insertErr;
+
+      // ⚔️ 🛡️ 【三土手創世神特注：初期装備自動インベントリ生成＆パチッと装着配線】
+      // マスターデータ（game_master_units）に設定された右手武器（equip_right_hand）がある場合、
+      // プレイヤーの倉庫に個体（UUID）として1つ作成し、その場でキャラクターへ装着バインドさせます！
+      if (masterUnit.equip_right_hand) {
+        try {
+          // ① game_inventory に初期武器の個体レコードを生成
+          const { data: newEquipInv, error: invErr } = await supabase
+            .from('game_inventory')
+            .insert([
+              {
+                user_id: userId,
+                item_id: masterUnit.equip_right_hand, // 'item_wp_starter_hunter' 等
+                count: 1,
+                refine_level: 0,
+                equipped_character_id: newCharacter.id,
+                equipped_slot_key: 'right_hand'
+              }
+            ])
+            .select()
+            .single();
+
+          if (!invErr && newEquipInv) {
+            // ② 生成された固有UUIDを game_characters の equip_right_hand カラムへ直撃セット！
+            await supabase
+              .from('game_characters')
+              .update({ equip_right_hand: newEquipInv.id })
+              .eq('id', newCharacter.id);
+
+            console.log(`⚔️ 【初期武器装備成功】 ${newCharacter.custom_name} に初期武器 [${masterUnit.equip_right_hand}] (UUID: ${newEquipInv.id}) を自動装着しました！`);
+          }
+        } catch (equipAutoErr) {
+          console.error("⚠️ 初期武器の自動装着処理でエラーが発生しました:", equipAutoErr);
+        }
+      }
 
       console.log(`🎯 【インジェクション大成功】酒場に『創世の${targetUnit.job_name}』を自動支給しました！`, newCharacter);
       return { success: true, character: newCharacter };

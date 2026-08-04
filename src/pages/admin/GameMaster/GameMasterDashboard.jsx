@@ -123,9 +123,17 @@ const GameMasterDashboard = () => {
 
   const [existingRaces, setExistingRaces] = useState(['人間', '植物', '動物', '昆虫', '悪魔', '不死']);
   
-  // 🔮 🆕 クエストハブ完全オリジナル：本家マネを完全脱却した、1次職＋新職テイマーの神配列にリフォーム！
+  // 🔮 🆕 クエストハブ完全オリジナル：本家マネを完全脱却した、1次職＋2次職＋新職テイマーの神配列にリフォーム！
   const [existingJobs, setExistingJobs] = useState([
-    '全職業', 'フリーランス', 'ファイター', 'メイジ', 'クレリック', 'スカウト', 'ハンター', 'トレーダー', 'テイマー'
+    '全職業',
+    'フリーランス', 'エクスパート', 'サバイバー',
+    'ファイター', 'クラッシャー', 'テンプラー',
+    'メイジ', 'ハイウィザード', 'エレミット',
+    'クレリック', 'ビショップ', 'グラップラー',
+    'スカウト', 'アサシンクロス', 'チェイサー',
+    'ハンター', 'レンジャー', 'パフォーマー',
+    'トレーダー', 'ブラックスミス', 'ケミスト',
+    'テイマー', 'ビーストマスター', 'フロントコマンダー'
   ]);
 
   // 🔍 🆕 三土手神専用：インテリジェント多次元検索・フィルタ・ソート制御用State群
@@ -749,17 +757,40 @@ const GameMasterDashboard = () => {
                   )}
                 </div>
                 <div>
-                  {/* 🔮 🆕 ユニット（初期キャラ素体）創造の職業枠を手入力から「オリジナル8職セレクトボックス」へ完全一本化！ */}
+                  {/* 🔮 🆕 ユニット（初期キャラ素体）創造の職業枠を手入力から「オリジナル8職＋2次職セレクトボックス」へ完全一本化！ */}
                   <label style={labelStyle}>👤 初期職業・クラス制限</label>
                   <select value={unitForm.job} onChange={(e) => setUnitForm({...unitForm, job: e.target.value})} style={inputStyle}>
-                    <option value="フリーランス">フリーランス</option>
-                    <option value="ファイター">ファイター（戦士）</option>
-                    <option value="メイジ">メイジ（魔術士）</option>
-                    <option value="クレリック">クレリック（聖職者）</option>
-                    <option value="スカウト">スカウト（隠密）</option>
-                    <option value="ハンター">ハンター（狩人）</option>
-                    <option value="トレーダー">トレーダー（商人）</option>
-                    <option value="テイマー">テイマー（魔物使い）</option>
+                    <option value="フリーランス">フリーランス（1次職）</option>
+                    <option value="エクスパート"> ┣ エクスパート（2次職）</option>
+                    <option value="サバイバー"> ┗ サバイバー（2次職）</option>
+                    
+                    <option value="ファイター">ファイター（1次職）</option>
+                    <option value="クラッシャー"> ┣ クラッシャー（2次職）</option>
+                    <option value="テンプラー"> ┗ テンプラー（2次職）</option>
+
+                    <option value="メイジ">メイジ（1次職）</option>
+                    <option value="ハイウィザード"> ┣ ハイウィザード（2次職）</option>
+                    <option value="エレミット"> ┗ エレミット（2次職）</option>
+
+                    <option value="クレリック">クレリック（1次職）</option>
+                    <option value="ビショップ"> ┣ ビショップ（2次職）</option>
+                    <option value="グラップラー"> ┗ グラップラー（2次職）</option>
+
+                    <option value="スカウト">スカウト（1次職）</option>
+                    <option value="アサシンクロス"> ┣ アサシンクロス（2次職）</option>
+                    <option value="チェイサー"> ┗ チェイサー（2次職）</option>
+
+                    <option value="ハンター">ハンター（1次職）</option>
+                    <option value="レンジャー"> ┣ レンジャー（2次職）</option>
+                    <option value="パフォーマー"> ┗ パフォーマー（2次職）</option>
+
+                    <option value="トレーダー">トレーダー（1次職）</option>
+                    <option value="ブラックスミス"> ┣ ブラックスミス（2次職）</option>
+                    <option value="ケミスト"> ┗ ケミスト（2次職）</option>
+
+                    <option value="テイマー">テイマー（1次職）</option>
+                    <option value="ビーストマスター"> ┣ ビーストマスター（2次職）</option>
+                    <option value="フロントコマンダー"> ┗ フロントコマンダー（2次職）</option>
           
           {/* 🐾 🆕 三土手神特注：モンスター専用・種族クラス識別枠 */}
           <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
@@ -1269,14 +1300,37 @@ const GameMasterDashboard = () => {
                       <label style={labelStyle}>👤 装備可能な職業制限</label>
                       <select value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle}>
                         <option value="全職業">全職業共通</option>
-                        <option value="フリーランス">フリーランス専用</option>
-                        <option value="ファイター">ファイター専用</option>
-                        <option value="メイジ">メイジ専用</option>
-                        <option value="クレリック">クレリック専用</option>
-                        <option value="スカウト">スカウト専用</option>
-                        <option value="ハンター">ハンター専用</option>
-                        <option value="トレーダー">トレーダー専用</option>
-                        <option value="テイマー">テイマー専用</option>
+                        <option value="フリーランス">フリーランス専用（1次職）</option>
+                        <option value="エクスパート"> ┣ エクスパート専用（2次職）</option>
+                        <option value="サバイバー"> ┗ サバイバー専用（2次職）</option>
+                        
+                        <option value="ファイター">ファイター専用（1次職）</option>
+                        <option value="クラッシャー"> ┣ クラッシャー専用（2次職）</option>
+                        <option value="テンプラー"> ┗ テンプラー専用（2次職）</option>
+
+                        <option value="メイジ">メイジ専用（1次職）</option>
+                        <option value="ハイウィザード"> ┣ ハイウィザード専用（2次職）</option>
+                        <option value="エレミット"> ┗ エレミット専用（2次職）</option>
+
+                        <option value="クレリック">クレリック専用（1次職）</option>
+                        <option value="ビショップ"> ┣ ビショップ専用（2次職）</option>
+                        <option value="グラップラー"> ┗ グラップラー専用（2次職）</option>
+
+                        <option value="スカウト">スカウト専用（1次職）</option>
+                        <option value="アサシンクロス"> ┣ アサシンクロス専用（2次職）</option>
+                        <option value="チェイサー"> ┗ チェイサー専用（2次職）</option>
+
+                        <option value="ハンター">ハンター専用（1次職）</option>
+                        <option value="レンジャー"> ┣ レンジャー専用（2次職）</option>
+                        <option value="パフォーマー"> ┗ パフォーマー専用（2次職）</option>
+
+                        <option value="トレーダー">トレーダー専用（1次職）</option>
+                        <option value="ブラックスミス"> ┣ ブラックスミス専用（2次職）</option>
+                        <option value="ケミスト"> ┗ ケミスト専用（2次職）</option>
+
+                        <option value="テイマー">テイマー専用（1次職）</option>
+                        <option value="ビーストマスター"> ┣ ビーストマスター専用（2次職）</option>
+                        <option value="フロントコマンダー"> ┗ フロントコマンダー専用（2次職）</option>
                       </select>
                     </div>
                   </div>
@@ -1311,16 +1365,39 @@ const GameMasterDashboard = () => {
                 <div>
                   <label style={labelStyle}>🔑 習得可能な職業制限</label>
                   <select value={skillForm.job_requirement || '全職業'} onChange={(e) => setSkillForm({...skillForm, job_requirement: e.target.value})} style={inputStyle}>
-                    {/* 💡 プルダウンの中身も三土手世界のオリジナル職名へ完全移行！ */}
                     <option value="全職業">全職業共通</option>
-                    <option value="フリーランス">フリーランス</option>
-                    <option value="ファイター">ファイター（戦士）</option>
-                    <option value="メイジ">メイジ（魔術士）</option>
-                    <option value="クレリック">クレリック（聖職者）</option>
-                    <option value="スカウト">スカウト（隠密）</option>
-                    <option value="ハンター">ハンター（狩人）</option>
-                    <option value="トレーダー">トレーダー（商人）</option>
-                    <option value="テイマー">テイマー（魔物使い）</option>
+                    
+                    <option value="フリーランス">フリーランス（1次職）</option>
+                    <option value="エクスパート"> ┣ エクスパート（2次職）</option>
+                    <option value="サバイバー"> ┗ サバイバー（2次職）</option>
+                    
+                    <option value="ファイター">ファイター（1次職）</option>
+                    <option value="クラッシャー"> ┣ クラッシャー（2次職）</option>
+                    <option value="テンプラー"> ┗ テンプラー（2次職）</option>
+
+                    <option value="メイジ">メイジ（1次職）</option>
+                    <option value="ハイウィザード"> ┣ ハイウィザード（2次職）</option>
+                    <option value="エレミット"> ┗ エレミット（2次職）</option>
+
+                    <option value="クレリック">クレリック（1次職）</option>
+                    <option value="ビショップ"> ┣ ビショップ（2次職）</option>
+                    <option value="グラップラー"> ┗ グラップラー（2次職）</option>
+
+                    <option value="スカウト">スカウト（1次職）</option>
+                    <option value="アサシンクロス"> ┣ アサシンクロス（2次職）</option>
+                    <option value="チェイサー"> ┗ チェイサー（2次職）</option>
+
+                    <option value="ハンター">ハンター（1次職）</option>
+                    <option value="レンジャー"> ┣ レンジャー（2次職）</option>
+                    <option value="パフォーマー"> ┗ パフォーマー（2次職）</option>
+
+                    <option value="トレーダー">トレーダー（1次職）</option>
+                    <option value="ブラックスミス"> ┣ ブラックスミス（2次職）</option>
+                    <option value="ケミスト"> ┗ ケミスト（2次職）</option>
+
+                    <option value="テイマー">テイマー（1次職）</option>
+                    <option value="ビーストマスター"> ┣ ビーストマスター（2次職）</option>
+                    <option value="フロントコマンダー"> ┗ フロントコマンダー（2次職）</option>
                     
                     {/* 🐾 🆕 【三土手神特注：モンスター共通 ＆ 種族専用スキル習得バリケード配線】 */}
                     <option value="魔物共通">🐾 【魔物共通】全モンスター習得可能</option>
@@ -1381,15 +1458,37 @@ const GameMasterDashboard = () => {
                       
                       <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
                         <select value={selectedJobToPriority} onChange={(e) => setSelectedJobToPriority(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
-                          {/* 👤 人間1次職 */}
-                          <option value="ファイター">ファイター（戦士）</option>
-                          <option value="メイジ">メイジ（魔術士）</option>
-                          <option value="クレリック">クレリック（聖職者）</option>
-                          <option value="スカウト">スカウト（隠密）</option>
-                          <option value="ハンター">ハンター（狩人）</option>
-                          <option value="トレーダー">トレーダー（商人）</option>
-                          <option value="テイマー">テイマー（魔物使い）</option>
-                          <option value="フリーランス">フリーランス</option>
+                          <option value="フリーランス">フリーランス（1次職）</option>
+                          <option value="エクスパート"> ┣ エクスパート（2次職）</option>
+                          <option value="サバイバー"> ┗ サバイバー（2次職）</option>
+                          
+                          <option value="ファイター">ファイター（1次職）</option>
+                          <option value="クラッシャー"> ┣ クラッシャー（2次職）</option>
+                          <option value="テンプラー"> ┗ テンプラー（2次職）</option>
+
+                          <option value="メイジ">メイジ（1次職）</option>
+                          <option value="ハイウィザード"> ┣ ハイウィザード（2次職）</option>
+                          <option value="エレミット"> ┗ エレミット（2次職）</option>
+
+                          <option value="クレリック">クレリック（1次職）</option>
+                          <option value="ビショップ"> ┣ ビショップ（2次職）</option>
+                          <option value="グラップラー"> ┗ グラップラー（2次職）</option>
+
+                          <option value="スカウト">スカウト（1次職）</option>
+                          <option value="アサシンクロス"> ┣ アサシンクロス（2次職）</option>
+                          <option value="チェイサー"> ┗ チェイサー（2次職）</option>
+
+                          <option value="ハンター">ハンター（1次職）</option>
+                          <option value="レンジャー"> ┣ レンジャー（2次職）</option>
+                          <option value="パフォーマー"> ┗ パフォーマー（2次職）</option>
+
+                          <option value="トレーダー">トレーダー（1次職）</option>
+                          <option value="ブラックスミス"> ┣ ブラックスミス（2次職）</option>
+                          <option value="ケミスト"> ┗ ケミスト（2次職）</option>
+
+                          <option value="テイマー">テイマー（1次職）</option>
+                          <option value="ビーストマスター"> ┣ ビーストマスター（2次職）</option>
+                          <option value="フロントコマンダー"> ┗ フロントコマンダー（2次職）</option>
                           
                           {/* 🐾 🆕 テイム仲間モンスター種族クラス */}
                           <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
