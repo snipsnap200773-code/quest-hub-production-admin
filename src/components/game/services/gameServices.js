@@ -395,6 +395,9 @@ export const gameServices = {
   job: ch.job,
   race: ch.race,
   guild_name: ch.guild_name,
+
+  // 🧠 🆕 【三土手神特注：忘却スキルリストのバインド】
+  forgotten_skills: ch.forgotten_skills || [],
   
   // セーフティを 1 から 0 に引き下げ
   str: (master.stat_str || 0) + ch.bonus_str,
@@ -432,6 +435,9 @@ export const gameServices = {
           
           // 🐾 👑 【神特注ゲート】このキャラが固有に持っているスキルなら、職業・レベル制限を完全に無視して「絶対合格（習得）」させる！
           if (inherentSkillIds.includes(s.id)) return true;
+
+          // 🧠 🆕 【忘却リストゲート】ブラックリストに入っているスキルは永久に思い出さない！
+          if ((ch.forgotten_skills || []).includes(s.id)) return false;
 
           const jobReq = s.job_requirement || '全職業';
           const lvReq = Number(s.level_requirement) || 1;
@@ -1015,6 +1021,33 @@ export const gameServices = {
 
     } catch (err) {
       console.error("🚨 【予約キャラ支給エラー詳細】:", err);
+      return { success: false, error: err.message };
+    }
+  }, // 👈 カンマを追加して下の新関数へバトンを繋ぎます！
+
+  /**
+   * 🎯 🆕 【三土手神特注：スキル3枠制限システム】
+   * UIから選択された最大3つのアクティブ/パッシブスキルIDを、キャラクターの skill_01〜03 枠へ直撃保存する通信エンジン！
+   */
+  async forgetSkill(userId, characterId, skillIdToForget, currentForgottenSkills = []) {
+    try {
+      const nextForgotten = [...currentForgottenSkills, skillIdToForget];
+
+      const { data, error } = await supabase
+        .from('game_characters')
+        .update({
+          forgotten_skills: nextForgotten
+        })
+        .eq('id', characterId)
+        .eq('user_id', userId)
+        .select()
+        .single();
+
+      if (error) throw error;
+      console.log("🧠 【スキル永久忘却】技を一つ忘れ、魂のキャパシティを確保しました。", data);
+      return { success: true, data };
+    } catch (err) {
+      console.error('💾 【スキル忘却保存エラー】:', err);
       return { success: false, error: err.message };
     }
   }

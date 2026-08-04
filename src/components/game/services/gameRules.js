@@ -4,123 +4,153 @@ import { supabase } from '../../../supabaseClient';
  * 🔮 三土手創世神Edition：戦闘数理 ＆ 成長曲線マスタリーエンジン
  */
 
-// 📊 1. ROラトリオ完全リスペクト：Lv1〜50 必要・累計経験値テーブル
+// 📊 1. ROラトリオ完全リスペクト＆三土手神拡張：Lv1〜99 必要・累計経験値テーブル
 export const RO_NEXT_EXP_TABLE = [
   0,     0,     3,     7,     12,    19,    30,    44,    61,    81, // Lv1 ~ 10
   104,   142,   186,   238,   300,   374,   486,   622,   785,   977, // Lv11 ~ 20
   1201,  1501,  1834,  2201,  2605,  3047,  3679,  4353,  5073,  5484, // Lv21 ~ 30
   6682,  7991,  9373,  10842, 12421, 14124, 17252, 20554, 24080, 27901, // Lv31 ~ 40
-  32067, 40508, 49419, 58925, 69239, 80486, 106695, 134335, 163904, 196150, // Lv41 ~ 49
-  231571 // Lv50
+  32067, 40508, 49419, 58925, 69239, 80486, 106695, 134335, 163904, 196150, // Lv41 ~ 50 (50は231571から調整)
+  231571, 275000, 325000, 385000, 455000, 540000, 640000, 760000, 900000, 1070000, // Lv51 ~ 60
+  1270000, 1500000, 1770000, 2090000, 2460000, 2900000, 3420000, 4030000, 4750000, 5600000, // Lv61 ~ 70
+  6600000, 7780000, 9170000, 10800000, 12700000, 14900000, 17500000, 20500000, 24000000, 28000000, // Lv71 ~ 80
+  32700000, 38200000, 44600000, 52000000, 60600000, 70600000, 82200000, 95800000, 111000000, 128000000, // Lv81 ~ 90
+  147000000, 168000000, 191000000, 216000000, 243000000, 272000000, 303000000, 336000000, 371000000, 0 // Lv91 ~ 99 (99はカンストのため0)
 ];
 
-// 📊 2. 三土手神オリジナル8職・自動成長ジョブボーナス表
-// レベルに応じて比例して自動加算される仕組みを美しく関数化して格納
+// 📊 2. 三土手神オリジナル1次職＆2次職・自動成長ジョブボーナス表
 export const JOB_BONUS_MAP = {
+  // ─── 【1次職（Lv.99まで対応）】 ───
   'フリーランス': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   'ファイター': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.0)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.0)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   'メイジ': {
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.0)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.0)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   'クレリック': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
   },
   'スカウト': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.0)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.0)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
   },
   'ハンター': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   'トレーダー': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25))
   },
   'テイマー': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)),
+    agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)),
+    vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)),
+    int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)),
+    dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)),
+    luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
-  // 🐾 🆕 【三土手神特注：モンスター5大種族・自動成長ジョブボーナス増築配線】
+
+  // ─── 【2次職（上位特化クラス）】 ───
+  'クラッシャー': { // 圧倒的物理破壊力
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.45)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), int: Array.from({length: 99}, (_, i) => 0), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05))
+  },
+  'テンプラー': { // 鉄壁の聖騎士
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.45)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => 0)
+  },
+  'アサシンクロス': { // 超回避と連撃・致命
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.4)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), int: Array.from({length: 99}, (_, i) => 0), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
+  },
+  'チェイサー': { // 器用な罠と短剣技術
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), luk: Array.from({length: 99}, (_, i) => 0)
+  },
+  'ビショップ': { // 最高位の回復・支援
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.4)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05))
+  },
+  'グラップラー': { // 会心の神聖打撃
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'ハイウィザード': { // 極大魔法火力
+    str: Array.from({length: 99}, (_, i) => 0), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.45)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'エレミット': { // バフ・結界の賢者
+    str: Array.from({length: 99}, (_, i) => 0), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.35)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'レンジャー': { // 必中の超狙撃手
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.4)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'パフォーマー': { // 戦場を支配する旋律
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'ブラックスミス': { // 鋼鉄の鍛冶神
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.35)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'ケミスト': { // 錬金術と劇薬の支配者
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
+  },
+  'ビーストマスター': { // 魔物軍団の指揮官
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.35)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.35)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05))
+  },
+  'フロントコマンダー': { // 前衛で共に戦う獣王
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05))
+  },
+  'エクスパート': { // 全能力を底上げした熟練者
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
+  },
+  'サバイバー': { // 絶対に死なない生存の達人
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
+  },
+
+  // ─── 【魔物クラス（変更なし・Lv.99対応へ拡張）】 ───
   '魔獣族': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), // 物理寄りのタフネス
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), 
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)), 
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.05)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   '植物族': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.35)), // 圧倒的な肉体の壁・生命力
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.35)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   '悪魔族': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)), // 尖った超攻撃スペック
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   },
   '不死族': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.05)), // 鈍重だがタフで呪い特性持ち
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.3)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.05)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.3)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2))
   },
   '水棲族': {
-    str: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    agi: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.15)),
-    vit: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.2)),
-    int: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.25)), // 魔法・知性も伸びるハイブリッド
-    dex: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1)),
-    luk: Array.from({length: 50}, (_, i) => Math.floor((i + 1) * 0.1))
+    str: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), agi: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.15)), vit: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.2)), int: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.25)), dex: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1)), luk: Array.from({length: 99}, (_, i) => Math.floor((i + 1) * 0.1))
   }
 };
 
@@ -132,7 +162,9 @@ export const calculateJobBonus = (jobName, currentLevel) => {
   const jobRules = JOB_BONUS_MAP[jobName];
   if (!jobRules) return bonuses;
   if (currentLevel === 1) return bonuses;
-  const idx = Math.min(49, Math.max(0, currentLevel - 1));
+  
+  // 👑 上限を49から98（Lv.99用）へアンロック！
+  const idx = Math.min(98, Math.max(0, currentLevel - 1));
   Object.keys(jobRules).forEach(stat => {
     bonuses[stat] = jobRules[stat][idx] || 0;
   });
@@ -140,14 +172,21 @@ export const calculateJobBonus = (jobName, currentLevel) => {
 };
 
 export const calculateTotalStatusPoints = (currentLevel) => {
-  const targetLv = Math.max(1, Math.min(50, currentLevel));
+  // 👑 上限を50から99へアンロック！
+  const targetLv = Math.max(1, Math.min(99, currentLevel));
   let totalPoints = 6; 
   for (let lv = 2; lv <= targetLv; lv++) {
     if (lv <= 10)       totalPoints += 3;
     else if (lv <= 20)  totalPoints += 4;
     else if (lv <= 30)  totalPoints += 5;
     else if (lv <= 40)  totalPoints += 6;
-    else                totalPoints += 7;
+    else if (lv <= 50)  totalPoints += 7;
+    // 👑 50以降の圧倒的なポイント獲得カーブを追加！
+    else if (lv <= 60)  totalPoints += 8;
+    else if (lv <= 70)  totalPoints += 9;
+    else if (lv <= 80)  totalPoints += 10;
+    else if (lv <= 90)  totalPoints += 11;
+    else                totalPoints += 13; // 91〜99はフィーバータイム
   }
   return totalPoints;
 };
