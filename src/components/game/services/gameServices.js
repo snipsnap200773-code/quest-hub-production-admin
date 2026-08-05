@@ -474,6 +474,12 @@ export const gameServices = {
         // 🐾 🆕 【特注インフラ】このキャラクターがDBに直接持っている「固有スキルID」を抽出
         const inherentSkillIds = [ch.skill_01, ch.skill_02, ch.skill_03].filter(Boolean);
 
+        // 🧠 👑 【忘却スキル完全同期インフラ】名前による同名スキル（上位互換）のゾンビ復活を完全遮断！
+        const myForgottenSkills = ch.forgotten_skills || [];
+        const forgottenSkillNames = activeSkillsSource
+          .filter(sk => myForgottenSkills.includes(sk.id))
+          .map(sk => sk.name);
+
         // ① まず該当の職業とベースLv条件をクリアしているスキルをすべて抽出
         const allEligibleSkills = activeSkillsSource.filter(s => {
           if (s.sp_cost === undefined) return false; // アイテムではなくスキルデータであること
@@ -481,8 +487,8 @@ export const gameServices = {
           // 🐾 👑 【神特注ゲート】このキャラが固有に持っているスキルなら、職業・レベル制限を完全に無視して「絶対合格（習得）」させる！
           if (inherentSkillIds.includes(s.id)) return true;
 
-          // 🧠 🆕 【忘却リストゲート】ブラックリストに入っているスキルは永久に思い出さない！
-          if ((ch.forgotten_skills || []).includes(s.id)) return false;
+          // 🧠 🆕 【忘却リストゲート】ブラックリストに入っているIDと「同じ名前のスキル」は上位互換含めて永久に思い出さない！
+          if (myForgottenSkills.includes(s.id) || forgottenSkillNames.includes(s.name)) return false;
 
           const jobReq = s.job_requirement || '全職業';
           const lvReq = Number(s.level_requirement) || 1;

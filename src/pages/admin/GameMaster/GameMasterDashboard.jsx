@@ -125,7 +125,7 @@ const GameMasterDashboard = () => {
   
   // 🔮 🆕 クエストハブ完全オリジナル：本家マネを完全脱却した、1次職＋2次職＋新職テイマーの神配列にリフォーム！
   const [existingJobs, setExistingJobs] = useState([
-    '全職業',
+    '全職業', '魔物共通',
     'フリーランス', 'エクスパート', 'サバイバー',
     'ファイター', 'クラッシャー', 'テンプラー',
     'メイジ', 'ハイウィザード', 'エレミット',
@@ -133,7 +133,8 @@ const GameMasterDashboard = () => {
     'スカウト', 'アサシンクロス', 'チェイサー',
     'ハンター', 'レンジャー', 'パフォーマー',
     'トレーダー', 'ブラックスミス', 'ケミスト',
-    'テイマー', 'ビーストマスター', 'フロントコマンダー'
+    'テイマー', 'ビーストマスター', 'フロントコマンダー',
+    '魔獣族', '植物族', '悪魔族', '不死族', '水棲族'
   ]);
 
   // 🔍 🆕 三土手神専用：インテリジェント多次元検索・フィルタ・ソート制御用State群
@@ -227,8 +228,9 @@ const GameMasterDashboard = () => {
         setUnits(u);
         const races = Array.from(new Set(u.map(item => item.race).filter(Boolean)));
         const jobs = Array.from(new Set(u.map(item => item.job).filter(Boolean)));
-        if (races.length > 0) setExistingRaces(races);
-        if (jobs.length > 0) setExistingJobs(jobs);
+        // 👑 解決：上書き（上書き消去）ではなく、配列を合体（マージ）させることで初期リストの消滅を防ぐ！
+        if (races.length > 0) setExistingRaces(prev => Array.from(new Set([...prev, ...races])));
+        if (jobs.length > 0) setExistingJobs(prev => Array.from(new Set([...prev, ...jobs])));
       }
       if (i) setItems(i);
       if (s) setSkills(s);
@@ -487,11 +489,19 @@ const GameMasterDashboard = () => {
   
   const startEditItem = (item) => { 
     setIsEditing(true); setEditId(item.id); setItemForm({ ...item }); 
-    if(item.item_type === 'card') {
-      setCardEffectType1(item.card_effect_type || 'add_stat'); setCardEffectTarget1(item.card_effect_target || 'hp'); setCardEffectValue1(item.card_effect_value || 0);
-      setCardEffectType2(item.card_effect_type_2 || 'none'); setCardEffectTarget2(item.card_effect_target_2 || ''); setCardEffectValue2(item.card_effect_value_2 || 0);
-      setCardEffectType3(item.card_effect_type_3 || 'none'); setCardEffectTarget3(item.card_effect_target_3 || ''); setCardEffectValue3(item.card_effect_value_3 || 0);
-    }
+    
+    // 👑 解決：カード以外の武具を開いた時も、Stateを綺麗にクリアして残像バグを粉砕！
+    setCardEffectType1(item.card_effect_type || (item.item_type === 'card' ? 'add_stat' : 'none')); 
+    setCardEffectTarget1(item.card_effect_target || ''); 
+    setCardEffectValue1(item.card_effect_value || 0);
+    
+    setCardEffectType2(item.card_effect_type_2 || 'none'); 
+    setCardEffectTarget2(item.card_effect_target_2 || ''); 
+    setCardEffectValue2(item.card_effect_value_2 || 0);
+    
+    setCardEffectType3(item.card_effect_type_3 || 'none'); 
+    setCardEffectTarget3(item.card_effect_target_3 || ''); 
+    setCardEffectValue3(item.card_effect_value_3 || 0);
   };
   const startEditSkill = (skill) => { 
     setIsEditing(true); 
@@ -618,6 +628,8 @@ const GameMasterDashboard = () => {
           <option value="dex">DEX（技量）</option><option value="luk">LUK（幸運）</option>
           <option value="critical">クリティカル率</option><option value="flee">Flee（回避）</option>
           <option value="mdef">MDEF（魔法防御）</option><option value="hit">Hit（命中）</option>
+          {/* 🆕 物理ATKと物理DEFの選択肢を完全解放！ */}
+          <option value="atk">物理ATK</option><option value="def">物理DEF</option>
         </>
       )}
       {type === 'pct_hp_sp' && (
@@ -627,9 +639,30 @@ const GameMasterDashboard = () => {
         </>
       )}
       {type === 'damage_size' && (<><option value="小型">小型</option><option value="中型">中型</option><option value="大型">大型</option></>)}
-      {type === 'damage_race' && (<><option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option><option value="植物">植物</option><option value="昆虫">昆虫</option><option value="魚貝">魚貝</option><option value="悪魔">悪魔</option><option value="人間">人間</option><option value="天使">天使</option><option value="竜族">竜族</option></>)}
-      {type === 'damage_element' && (<><option value="無">無属性</option><option value="水">水属性</option><option value="地">地属性</option><option value="火">火属性</option><option value="風">風属性</option><option value="毒">毒属性</option><option value="聖">聖属性</option><option value="闇">闇属性</option><option value="念">念属性</option><option value="不死">不死属性</option></>)}
-      {(type === 'resist_status' || type === 'inflict_status') && (<><option value="スタン">スタン</option><option value="凍結">凍結</option><option value="毒">毒</option><option value="暗闇">暗闇</option><option value="睡眠">睡眠</option><option value="沈滅">沈黙</option><option value="呪い">呪い</option><option value="石化">石化</option></>)}
+      {type === 'damage_race' && (
+        <>
+          <option value="無形">無形</option><option value="不死">不死</option><option value="動物">動物</option>
+          <option value="植物">植物</option><option value="昆虫">昆虫</option><option value="魚貝">魚貝</option>
+          <option value="悪魔">悪魔</option><option value="人間">人間</option><option value="天使">天使</option><option value="竜族">竜族</option>
+          {/* 🐾 🆕 三土手神特注の新種族クラスをすべてターゲットに追加！ */}
+          <option value="魔獣族">魔獣族</option><option value="植物族">植物族</option>
+          <option value="悪魔族">悪魔族</option><option value="不死族">不死族</option><option value="水棲族">水棲族</option>
+        </>
+      )}
+      {type === 'damage_element' && (
+        <>
+          <option value="無">無属性</option><option value="水">水属性</option><option value="地">地属性</option>
+          <option value="火">火属性</option><option value="風">風属性</option><option value="毒">毒属性</option>
+          <option value="聖">聖属性</option><option value="闇">闇属性</option><option value="念">念属性</option><option value="不死">不死属性</option>
+        </>
+      )}
+      {(type === 'resist_status' || type === 'inflict_status') && (
+        <>
+          <option value="スタン">スタン</option><option value="凍結">凍結</option><option value="毒">毒</option>
+          <option value="暗闇">暗闇</option><option value="睡眠">睡眠</option><option value="沈黙">沈黙</option>
+          <option value="呪い">呪い</option><option value="石化">石化</option>
+        </>
+      )}
       {type === 'hp_drain' && (
         <>
           <option value="">-- 吸収量（割合）を選択 --</option>
@@ -716,13 +749,26 @@ const GameMasterDashboard = () => {
 
       <div className="gm-grid">
         <div style={{ background: '#111827', border: '1px solid #1e293b', borderRadius: '16px', padding: '20px', height: 'fit-content' }}>
-          {!isEditing && (
-            <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', background: '#0b0f19', padding: '4px', borderRadius: '8px' }}>
-              <button type="button" onClick={() => setActiveTab('units')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'units' ? '#1e293b' : 'none', color: activeTab === 'units' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>① ユニット創造</button>
-              <button type="button" onClick={() => setActiveTab('items')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'items' ? '#1e293b' : 'none', color: activeTab === 'items' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>② 武具アイテム創造</button>
-              <button type="button" onClick={() => setActiveTab('skills')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'skills' ? '#1e293b' : 'none', color: activeTab === 'skills' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>③ スキル特技創造</button>
-              {/* 🔮 🆕 クエスト創造タブを綺麗に4番目へ拡張！ */}
-              <button type="button" onClick={() => setActiveTab('quests')} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'quests' ? '#1e293b' : 'none', color: activeTab === 'quests' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>④ クエスト創造</button>
+          {/* 👑 解決：編集モード中でもタブを常時表示！タブを押したら編集を強制キャンセルして新規画面へ */}
+          <div style={{ display: 'flex', gap: '6px', marginBottom: '15px', background: '#0b0f19', padding: '4px', borderRadius: '8px' }}>
+            <button type="button" onClick={() => { setActiveTab('units'); resetUnitForm(); }} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'units' ? '#1e293b' : 'none', color: activeTab === 'units' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>① ユニット創造</button>
+            <button type="button" onClick={() => { setActiveTab('items'); resetItemForm(); }} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'items' ? '#1e293b' : 'none', color: activeTab === 'items' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>② 武具アイテム創造</button>
+            <button type="button" onClick={() => { setActiveTab('skills'); resetSkillForm(); }} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'skills' ? '#1e293b' : 'none', color: activeTab === 'skills' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>③ スキル特技創造</button>
+            <button type="button" onClick={() => { setActiveTab('quests'); resetQuestForm(); }} style={{ flex: 1, padding: '8px 2px', background: activeTab === 'quests' ? '#1e293b' : 'none', color: activeTab === 'quests' ? '#f59e0b' : '#64748b', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}>④ クエスト創造</button>
+          </div>
+
+          {/* 👑 追加：現在「既存のデータを編集中」であることがハッキリ分かるヘッダー */}
+          {isEditing && (
+            <div style={{ padding: '8px', background: '#451a1a', border: '1px solid #ef4444', borderRadius: '6px', marginBottom: '15px', color: '#fca5a5', fontSize: '0.75rem', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span>⚠️ 現在、既存のデータを【修正・編集】しています。</span>
+              <button onClick={() => {
+                if (activeTab === 'units') resetUnitForm();
+                if (activeTab === 'items') resetItemForm();
+                if (activeTab === 'skills') resetSkillForm();
+                if (activeTab === 'quests') resetQuestForm();
+              }} style={{ background: '#ef4444', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}>
+                編集をキャンセル
+              </button>
             </div>
           )}
 
@@ -1744,12 +1790,12 @@ const GameMasterDashboard = () => {
                       {/* 🆕 最小出現数入力欄 */}
                       <div>
                         <label style={{ ...labelStyle, color: '#f43f5e' }}>👹 最小出現</label>
-                        <input type="number" min="1" max="3" value={fConfig.min_spawn || 1} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'min_spawn', Math.min(3, Math.max(1, Number(e.target.value))))} style={inputStyle} />
+                        <input type="number" min="1" max="5" value={fConfig.min_spawn || 1} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'min_spawn', Math.min(5, Math.max(1, Number(e.target.value))))} style={inputStyle} />
                       </div>
                       {/* 🆕 最大出現数入力欄 */}
                       <div>
                         <label style={{ ...labelStyle, color: '#f43f5e' }}>👹 最大出現</label>
-                        <input type="number" min="1" max="3" value={fConfig.max_spawn || 2} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'max_spawn', Math.min(3, Math.max(1, Number(e.target.value))))} style={inputStyle} />
+                        <input type="number" min="1" max="5" value={fConfig.max_spawn || 2} onChange={(e) => handleFloorConfigChange(fConfig.floor, 'max_spawn', Math.min(5, Math.max(1, Number(e.target.value))))} style={inputStyle} />
                       </div>
                     </div>
 
