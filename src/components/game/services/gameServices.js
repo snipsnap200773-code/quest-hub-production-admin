@@ -260,9 +260,9 @@ export const calculateRoStatus = (charData, equips = {}) => {
   const wpType = equips.right_hand?.item_subtype || '素手';
   let weaponPenalty = 0;
   if (wpType === '短剣' || wpType === '爪（ナックル）') weaponPenalty = 10;
-  else if (wpType === '剣') weaponPenalty = 15;
-  else if (wpType === '弓') weaponPenalty = 20;
-  else if (wpType === '鈍器') weaponPenalty = 25;
+  else if (wpType === '剣' || wpType === '鞭') weaponPenalty = 15;
+  else if (wpType === '弓' || wpType === 'スリング') weaponPenalty = 20;
+  else if (wpType === '鈍器' || wpType === '楽器') weaponPenalty = 25;
   else if (wpType === '斧') weaponPenalty = 30;
   else if (wpType === '杖' || wpType === '本') weaponPenalty = 35;
   
@@ -418,10 +418,10 @@ export const gameServices = {
           equip_accessory: ch.equip_accessory,
 
           // 🐾 🆕 【三土手神特注：魔物スキル輸送電線】
-          // ⬇️ ここに3行追加！戦闘AIの弾切れバグを完全に粉砕します！
-          skill_01: ch.skill_01,
-          skill_02: ch.skill_02,
-          skill_03: ch.skill_03,
+          // ⬇️ 👼 最新のGMダッシュボード設定を、既存の仲間モンスターにもリアルタイム同期！
+          skill_01: master?.skill_01 || ch.skill_01,
+          skill_02: master?.skill_02 || ch.skill_02,
+          skill_03: master?.skill_03 || ch.skill_03,
 
           level: ch.level,
           exp: ch.exp,

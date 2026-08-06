@@ -7,7 +7,7 @@ import { calculateTotalStatusPoints } from '../../../components/game/services/ga
 
 // 🆕 三土手創世神専用：大分類に連動する固定武具小分類リスト
 const SUBTYPE_OPTIONS = {
-  weapon: ['短剣', '剣', '杖', '鈍器', '斧', '弓', '槍', 'カタール', '本', '爪（ナックル）'],
+  weapon: ['短剣', '剣', '杖', '鈍器', '斧', '弓', '槍', 'カタール', '本', '爪（ナックル）', 'スリング', '鞭', '楽器'],
   armor: ['兜', 'フェイス', '鎧', '小手', '盾', '肩', '靴', 'アクセサリ'],
   card: ['カード'],
   consumable: ['ポーション', '材料', 'その他'],
@@ -87,6 +87,37 @@ const GameMasterDashboard = () => {
 
   // 🔮 🆕 UIで一時的に選択されている職をホールドするノブState
   const [selectedJobToPriority, setSelectedJobToPriority] = useState('ファイター');
+
+  // 🛡️ 🆕 UIで一時的に選択されている職をホールドするノブState（アイテム装備制限用）
+  const [selectedJobToItem, setSelectedJobToItem] = useState('フリーランス');
+
+  // 🛡️ 🆕 【三土手神特注：アイテム装備職業・複数指定ガンビット配線】
+  const addItemJobRestriction = () => {
+    let currentJobs = itemForm.job_restriction || [];
+    // 既存データが文字列の場合の安全処理
+    if (typeof currentJobs === 'string') {
+      currentJobs = currentJobs === '全職業' ? [] : currentJobs.split(',').map(s => s.trim());
+    }
+    
+    if (!currentJobs.includes(selectedJobToItem)) {
+      setItemForm(prev => ({
+        ...prev,
+        job_restriction: [...currentJobs, selectedJobToItem]
+      }));
+    }
+  };
+
+  const removeItemJobRestriction = (indexToRemove) => {
+    let currentJobs = itemForm.job_restriction || [];
+    if (typeof currentJobs === 'string') {
+      currentJobs = currentJobs === '全職業' ? [] : currentJobs.split(',').map(s => s.trim());
+    }
+
+    setItemForm(prev => ({
+      ...prev,
+      job_restriction: currentJobs.filter((_, idx) => idx !== indexToRemove)
+    }));
+  };
 
   // 🔮 🆕 【三土手創世神特注：多層ダンジョン階層コンフィグState】
   const [activeFloorTab, setActiveFloorTab] = useState(1); // 現在編集中の階層（1〜5）
@@ -342,6 +373,11 @@ const GameMasterDashboard = () => {
     try {
       const isCard = itemForm.item_type === 'card';
 
+      // 🛡️ 配列化された職業制限をカンマ区切りの文字列に戻す（空なら '全職業'）
+      const finalJobRestriction = (!itemForm.job_restriction || itemForm.job_restriction.length === 0) 
+        ? '全職業' 
+        : (Array.isArray(itemForm.job_restriction) ? itemForm.job_restriction.join(', ') : itemForm.job_restriction);
+
       const { error } = await supabase.from('game_master_items').upsert({ 
         id: finalId, ...itemForm, 
         slot_count: Number(itemForm.slot_count), sell_price: Number(itemForm.sell_price),
@@ -349,6 +385,7 @@ const GameMasterDashboard = () => {
         def: isCard ? 0 : Number(itemForm.def), 
         mdef: isCard ? 0 : Number(itemForm.mdef),
         weapon_level: Number(itemForm.weapon_level), equip_level_req: Number(itemForm.equip_level_req),
+        job_restriction: finalJobRestriction, // 👈 🆕 ここで文字列に直して保存
         weight: Number(itemForm.weight), penalty_str: Number(itemForm.penalty_str),
         
         // 🔮 👑 創世神リフォーム：カード限定の縛りを完全撤廃！武器・防具でも特殊効果がそのまま宿る神配線
@@ -488,7 +525,17 @@ const GameMasterDashboard = () => {
   };
   
   const startEditItem = (item) => { 
-    setIsEditing(true); setEditId(item.id); setItemForm({ ...item }); 
+    setIsEditing(true); setEditId(item.id); 
+
+    // 👑 既存の文字列カンマ区切りデータをUI用の配列へパース！
+    let parsedJobRes = [];
+    if (item.job_restriction && item.job_restriction !== '全職業') {
+      parsedJobRes = typeof item.job_restriction === 'string' 
+        ? item.job_restriction.split(',').map(s => s.trim()) 
+        : item.job_restriction;
+    }
+    
+    setItemForm({ ...item, job_restriction: parsedJobRes }); 
     
     // 👑 解決：カード以外の武具を開いた時も、Stateを綺麗にクリアして残像バグを粉砕！
     setCardEffectType1(item.card_effect_type || (item.item_type === 'card' ? 'add_stat' : 'none')); 
@@ -552,7 +599,7 @@ const GameMasterDashboard = () => {
     });  
   };
   
-  const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: '全職業', weight: 10, penalty_str: 0 }); };
+  const resetItemForm = () => { setIsEditing(false); setEditId(''); setItemForm({ name: '', item_type: 'weapon', item_subtype: '短剣', weapon_range: 'S', slot_count: 0, rarity: 'common', sell_price: 100, description: '', atk: 0, def: 0, mdef: 0, weapon_level: 1, equip_level_req: 1, job_restriction: [], weight: 10, penalty_str: 0 }); };
 
   // 🔮 🆕 【三土手神特注：バフ優先ターゲット職・配列操作配線】（👈 ここに綺麗に収まります！）
   const addJobToPriority = () => {
@@ -1343,41 +1390,64 @@ const GameMasterDashboard = () => {
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: '6px' }}>
                     <div><label style={labelStyle}>装備制限ベースLv</label><input type="number" min="1" value={itemForm.equip_level_req} onChange={(e) => setItemForm({...itemForm, equip_level_req: e.target.value})} style={inputStyle} /></div>
                     <div>
-                      <label style={labelStyle}>👤 装備可能な職業制限</label>
-                      <select value={itemForm.job_restriction} onChange={(e) => setItemForm({...itemForm, job_restriction: e.target.value})} style={inputStyle}>
-                        <option value="全職業">全職業共通</option>
-                        <option value="フリーランス">フリーランス専用（1次職）</option>
-                        <option value="エクスパート"> ┣ エクスパート専用（2次職）</option>
-                        <option value="サバイバー"> ┗ サバイバー専用（2次職）</option>
-                        
-                        <option value="ファイター">ファイター専用（1次職）</option>
-                        <option value="クラッシャー"> ┣ クラッシャー専用（2次職）</option>
-                        <option value="テンプラー"> ┗ テンプラー専用（2次職）</option>
+                      <label style={labelStyle}>👤 装備可能な職業制限（複数選択可）</label>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '8px' }}>
+                        <select value={selectedJobToItem} onChange={(e) => setSelectedJobToItem(e.target.value)} style={{ ...inputStyle, flex: 1 }}>
+                          <option value="フリーランス">フリーランス（1次職）</option>
+                          <option value="エクスパート"> ┣ エクスパート（2次職）</option>
+                          <option value="サバイバー"> ┗ サバイバー（2次職）</option>
+                          
+                          <option value="ファイター">ファイター（1次職）</option>
+                          <option value="クラッシャー"> ┣ クラッシャー（2次職）</option>
+                          <option value="テンプラー"> ┗ テンプラー（2次職）</option>
 
-                        <option value="メイジ">メイジ専用（1次職）</option>
-                        <option value="ハイウィザード"> ┣ ハイウィザード専用（2次職）</option>
-                        <option value="エレミット"> ┗ エレミット専用（2次職）</option>
+                          <option value="メイジ">メイジ（1次職）</option>
+                          <option value="ハイウィザード"> ┣ ハイウィザード（2次職）</option>
+                          <option value="エレミット"> ┗ エレミット（2次職）</option>
 
-                        <option value="クレリック">クレリック専用（1次職）</option>
-                        <option value="ビショップ"> ┣ ビショップ専用（2次職）</option>
-                        <option value="グラップラー"> ┗ グラップラー専用（2次職）</option>
+                          <option value="クレリック">クレリック（1次職）</option>
+                          <option value="ビショップ"> ┣ ビショップ（2次職）</option>
+                          <option value="グラップラー"> ┗ グラップラー（2次職）</option>
 
-                        <option value="スカウト">スカウト専用（1次職）</option>
-                        <option value="アサシンクロス"> ┣ アサシンクロス専用（2次職）</option>
-                        <option value="チェイサー"> ┗ チェイサー専用（2次職）</option>
+                          <option value="スカウト">スカウト（1次職）</option>
+                          <option value="アサシンクロス"> ┣ アサシンクロス（2次職）</option>
+                          <option value="チェイサー"> ┗ チェイサー（2次職）</option>
 
-                        <option value="ハンター">ハンター専用（1次職）</option>
-                        <option value="レンジャー"> ┣ レンジャー専用（2次職）</option>
-                        <option value="パフォーマー"> ┗ パフォーマー専用（2次職）</option>
+                          <option value="ハンター">ハンター（1次職）</option>
+                          <option value="レンジャー"> ┣ レンジャー（2次職）</option>
+                          <option value="パフォーマー"> ┗ パフォーマー（2次職）</option>
 
-                        <option value="トレーダー">トレーダー専用（1次職）</option>
-                        <option value="ブラックスミス"> ┣ ブラックスミス専用（2次職）</option>
-                        <option value="ケミスト"> ┗ ケミスト専用（2次職）</option>
+                          <option value="トレーダー">トレーダー（1次職）</option>
+                          <option value="ブラックスミス"> ┣ ブラックスミス（2次職）</option>
+                          <option value="ケミスト"> ┗ ケミスト（2次職）</option>
 
-                        <option value="テイマー">テイマー専用（1次職）</option>
-                        <option value="ビーストマスター"> ┣ ビーストマスター専用（2次職）</option>
-                        <option value="フロントコマンダー"> ┗ フロントコマンダー専用（2次職）</option>
-                      </select>
+                          <option value="テイマー">テイマー（1次職）</option>
+                          <option value="ビーストマスター"> ┣ ビーストマスター（2次職）</option>
+                          <option value="フロントコマンダー"> ┗ フロントコマンダー（2次職）</option>
+                          
+                          {/* 🐾 🆕 【三土手神特注：モンスターの装備制限を追加】 */}
+                          <option value="魔物共通">🐾 【魔物共通】全モンスター装備可能</option>
+                          <option value="魔獣族">🐾 魔獣族（ポリンやウルフ等）</option>
+                          <option value="植物族">🌱 植物族（ポポリンやマンドラゴラ等）</option>
+                          <option value="悪魔族">😈 悪魔族（バフォメット等）</option>
+                          <option value="不死族">💀 不死族（ゾンビ等）</option>
+                          <option value="水棲族">🐟 水棲族（半魚人やアクアジェリー等）</option>
+                        </select>
+                        <button type="button" onClick={addItemJobRestriction} style={{ background: '#38bdf8', color: '#0b0f19', border: 'none', padding: '8px 14px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.72rem', cursor: 'pointer' }}>➕ 追加</button>
+                      </div>
+
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', background: '#111827', padding: '8px', borderRadius: '6px', minHeight: '34px' }}>
+                        {(!itemForm.job_restriction || itemForm.job_restriction.length === 0 || itemForm.job_restriction === '全職業') ? (
+                          <span style={{ fontSize: '0.65rem', color: '#475569', fontStyle: 'italic', padding: '4px' }}>※指定がない場合は「全職業共通」として扱われます。</span>
+                        ) : (
+                          (Array.isArray(itemForm.job_restriction) ? itemForm.job_restriction : String(itemForm.job_restriction).split(',').map(s=>s.trim())).map((jobName, idx) => (
+                            <div key={'item-job-'+jobName} style={{ display: 'flex', alignItems: 'center', gap: '4px', background: '#1e293b', border: '1px solid #334155', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem' }}>
+                              <span style={{ color: '#fff' }}>{jobName}</span>
+                              <button type="button" onClick={() => removeItemJobRestriction(idx)} style={{ background: 'none', border: 'none', color: '#ef4444', marginLeft: '4px', cursor: 'pointer', fontSize: '0.65rem', fontWeight: 'bold' }}>✕</button>
+                            </div>
+                          ))
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -1605,6 +1675,7 @@ const GameMasterDashboard = () => {
                       <option value="なし">追加効果なし（純粋ダメージ）</option>
                       <option value="回復">回復（HPを回復する）</option>
                       <option value="状態異常回復">状態異常回復（キュア・万能薬）</option>
+                      <option value="蘇生">蘇生（戦闘不能の味方を復活）</option> {/* 👈 👼 🆕 ここに追加！ */}
                       <option value="スタン">スタン付与（行動不能）</option>
                       <option value="凍結">凍結付与（水属性化＋行動不能）</option>
                       <option value="毒">毒付与（ターン毎にスリップダメージ）</option>
