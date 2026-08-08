@@ -39,6 +39,7 @@ import FacilitySearch from './components/FacilitySearch';
 import ShopSearch from './components/ShopSearch';
 import ScrollToTop from './components/ScrollToTop';
 import InquiryForm from "./components/InquiryForm";
+import SettingsPreviewLayout from './components/SettingsPreviewLayout'; // 👈 これを追加
 
 // 🚀 🆕 【ねじ込み予約用に必須】ユーザーエリアの画面をインポート
 import ReservationForm from './pages/ReservationForm';
@@ -91,7 +92,14 @@ function App() {
         {/* --- ⚙️ 設定系 --- */}
         <Route path="/admin/:shopId/settings/basic" element={<BasicSettings />} />
         <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />
-        <Route path="/admin/:shopId/settings/menu" element={<MenuSettings />} />
+        
+        {/* 👇 修正：MenuSettings を SettingsPreviewLayout で囲む */}
+        <Route path="/admin/:shopId/settings/menu" element={
+          <SettingsPreviewLayout>
+            <MenuSettings />
+          </SettingsPreviewLayout>
+        } />
+        
         <Route path="/admin/:shopId/settings/schedule" element={<ScheduleSettings />} />
         <Route path="/admin/:shopId/settings/email" element={<EmailSettings />} />
         <Route path="/admin/:shopId/settings/line" element={<LineSettings />} />
