@@ -534,16 +534,21 @@ const isPC = windowWidth > 1024;
     // 💡 🚀 【ここが最大のキモ！】もしめくった先の日付（ customTargetDate ）が指定され、それが基本範囲外なら、その月だけを「小分け通信」で狙い撃ち
     if (customTargetDate) {
       const activeDate = new Date(customTargetDate);
-      // 基本範囲外かチェック
-      if (activeDate < historyPast || activeDate > futureLimit) {
-        const firstDayOfMonth = new Date(activeDate.getFullYear(), activeDate.getMonth(), 1);
-        const lastDayOfMonth = new Date(activeDate.getFullYear(), activeDate.getMonth() + 1, 0);
+      // 🚀 🆕 修正：カレンダーの「表示週の初日（月曜日）」を基準にして判定するように変更
+      const dayOfWeek = activeDate.getDay();
+      const firstDayOfWeek = new Date(activeDate);
+      firstDayOfWeek.setDate(activeDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
+
+      // 基本範囲外かチェック（週の初日が過去30日より前なら発動）
+      if (firstDayOfWeek < historyPast || activeDate > futureLimit) {
+        const firstDayOfMonth = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), 1);
+        const lastDayOfMonth = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth() + 1, 0);
         
         startRangeStr = firstDayOfMonth.toLocaleDateString('sv-SE') + "T00:00:00Z";
         endRangeStr = lastDayOfMonth.toLocaleDateString('sv-SE') + "T23:59:59Z";
         finalStartDayStr = firstDayOfMonth.toLocaleDateString('sv-SE');
         finalEndDayStr = lastDayOfMonth.toLocaleDateString('sv-SE');
-        console.log(`⏱ 範囲外データを検知: ${activeDate.getFullYear()}年${activeDate.getMonth()+1}月分を追っかけロードします。`);
+        console.log(`⏱ 範囲外データを検知: ${firstDayOfMonth.getFullYear()}年${firstDayOfMonth.getMonth()+1}月分を追っかけロードします。`);
       }
     }
 
@@ -564,30 +569,22 @@ const isPC = windowWidth > 1024;
 setSalesRecords(salesRes.data || []);
 
     // 💡 🚀 もし追っかけロード（追加通信）だったら、既存のデータと合体（マージ）させて蓄積する
-    if (customTargetDate && (new Date(customTargetDate) < historyPast || new Date(customTargetDate) > futureLimit)) {
-      setReservations(prev => {
-        const unique = new Map([...prev, ...(resRes.data || [])].map(item => [item.id, item]));
-        return Array.from(unique.values());
-      });
-      setPrivateTasks(prev => {
-        const unique = new Map([...prev, ...(privRes.data || [])].map(item => [item.id, item]));
-        return Array.from(unique.values());
-      });
-      setVisitRequests(prev => {
-        const unique = new Map([...prev, ...(visitRes.data || [])].map(item => [item.id, item]));
-        return Array.from(unique.values());
-      });
-      setManualKeeps(prev => {
-        const unique = new Map([...prev, ...(keepRes.data || [])].map(item => [item.id, item]));
-        return Array.from(unique.values());
-      });
-    } else {
-      // 通常（初期ロード範囲内）ならそのままセット
-      setReservations(resRes.data || []);
-      setPrivateTasks(privRes.data || []);
-      setVisitRequests(visitRes.data || []);
-      setManualKeeps(keepRes.data || []);
-    }
+    setReservations(prev => {
+      const unique = new Map([...prev, ...(resRes.data || [])].map(item => [item.id, item]));
+      return Array.from(unique.values());
+    });
+    setPrivateTasks(prev => {
+      const unique = new Map([...prev, ...(privRes.data || [])].map(item => [item.id, item]));
+      return Array.from(unique.values());
+    });
+    setVisitRequests(prev => {
+      const unique = new Map([...prev, ...(visitRes.data || [])].map(item => [item.id, item]));
+      return Array.from(unique.values());
+    });
+    setManualKeeps(prev => {
+      const unique = new Map([...prev, ...(keepRes.data || [])].map(item => [item.id, item]));
+      return Array.from(unique.values());
+    });
 
     setFacilityConnections(connRes.data || []);
     setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
