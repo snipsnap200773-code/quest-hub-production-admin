@@ -13,13 +13,17 @@ import AdminFacilityVisit_PC from './pages/AdminFacilityVisit_PC';
 // --- ⚙️ 店舗設定 ---
 import BasicSettings from './pages/admin/settings/BasicSettings';
 import MenuSettings from './pages/admin/settings/MenuSettings';
+import BookingFormSettings from './pages/admin/settings/BookingFormSettings'; // 👈 🆕 これを追加
 import ScheduleSettings from './pages/admin/settings/ScheduleSettings';
 import LineSettings from './pages/admin/settings/LineSettings';
 import GeneralSettings from './pages/admin/settings/GeneralSettings';
 import EmailSettings from './pages/admin/settings/EmailSettings';
 import StaffSettings from './pages/admin/settings/StaffSettings';
 import FormCustomizer from './pages/admin/settings/FormCustomizer';
-import TodayTasks from './pages/admin/settings/TodayTasks'; 
+import BookingDetailsSettings from './pages/admin/settings/BookingDetailsSettings';
+import BookingScheduleSettings from './pages/admin/settings/BookingScheduleSettings'; 
+import CheckoutSettings from './pages/admin/settings/CheckoutSettings'; // 👈 🆕 これを追加
+import TodayTasks from './pages/admin/settings/TodayTasks';
 
 // --- ✨ ガイド ---
 import BasicSettingsGuide from './pages/admin/settings/BasicSettingsGuide';
@@ -92,19 +96,49 @@ function App() {
         {/* --- ⚙️ 設定系 --- */}
         <Route path="/admin/:shopId/settings/basic" element={<BasicSettings />} />
         <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />
-        
-        {/* 👇 修正：MenuSettings を SettingsPreviewLayout で囲む */}
-        <Route path="/admin/:shopId/settings/menu" element={
+
+        {/* 👇 修正：BasicSettings を SettingsPreviewLayout で囲む */}
+        <Route path="/admin/:shopId/settings/basic" element={
           <SettingsPreviewLayout>
-            <MenuSettings />
+            <BasicSettings />
           </SettingsPreviewLayout>
         } />
         
-        <Route path="/admin/:shopId/settings/schedule" element={<ScheduleSettings />} />
+        {/* 👇 修正：MenuSettings の代わりに BookingFormSettings を SettingsPreviewLayout で囲む */}
+        <Route path="/admin/:shopId/settings/menu" element={
+          <SettingsPreviewLayout>
+            <BookingFormSettings />  {/* 👈 🆕 ここを書き換え */}
+          </SettingsPreviewLayout>
+        } />
+        
+        {/* 👇 修正：ScheduleSettings を BookingScheduleSettings に差し替え、レイアウトで囲む */}
+        <Route path="/admin/:shopId/settings/schedule" element={
+          <SettingsPreviewLayout>
+            <BookingScheduleSettings />
+          </SettingsPreviewLayout>
+        } />
+
+        {/* 👇 🆕 追加：タスク・お会計設定（CheckoutSettings）をレイアウトで囲む */}
+        <Route path="/admin/:shopId/settings/checkout" element={
+          <SettingsPreviewLayout>
+            <CheckoutSettings />
+          </SettingsPreviewLayout>
+        } />
+
         <Route path="/admin/:shopId/settings/email" element={<EmailSettings />} />
         <Route path="/admin/:shopId/settings/line" element={<LineSettings />} />
-        <Route path="/admin/:shopId/settings/general" element={<GeneralSettings />} />
-        <Route path="/admin/:shopId/settings/form" element={<FormCustomizer />} />
+        <Route path="/admin/:shopId/settings/general" element={
+          <SettingsPreviewLayout>
+            <GeneralSettings />
+          </SettingsPreviewLayout>
+        } />
+        
+        {/* 👇 修正：FormCustomizer を BookingDetailsSettings に変え、SettingsPreviewLayout で囲む */}
+        <Route path="/admin/:shopId/settings/form" element={
+          <SettingsPreviewLayout>
+            <BookingDetailsSettings />
+          </SettingsPreviewLayout>
+        } />
 
         {/* ガイド */}
         <Route path="/admin/:shopId/settings/basic-guide" element={<BasicSettingsGuide />} />

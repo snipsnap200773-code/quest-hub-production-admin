@@ -72,6 +72,10 @@ const TodayTasks = () => {
   const [categoryMap, setCategoryMap] = useState({});
   const [staffCount, setStaffCount] = useState(0);
 
+  // 👈 🆕 追加：プレビューモードかどうかを判定
+  const searchParams = new URLSearchParams(location.search);
+  const isPreviewMode = searchParams.get('mode') === 'preview';
+
   // --- 2. カレンダー用の計算式 (今追加したブロック) ---
   const miniCalendarDays = useMemo(() => {
     const year = viewMonth.getFullYear(); 
@@ -311,7 +315,51 @@ const { data: resData, error: resError } = await supabase
     
 const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
 
-// 🆕 Step 3: AdminManagement.jsx から移植した「正確な金額集計」ロジック [cite: 2026-03-08]
+// 👇 🚀 🆕 追加：ここから ------------------------------------
+  // プレビューモード専用のダミーデータ生成と強制ポップアップ
+  useEffect(() => {
+    if (isPreviewMode && !loading && services.length > 0) {
+      // マスターから最初のメニューを適当に拝借
+      const dummyService = services[0] || { id: 'dummy_1', name: 'カット', price: 4000 };
+      
+      const dummyTask = {
+        id: 'dummy_task_999',
+        task_type: 'individual',
+        customer_name: 'プレビュー 太郎',
+        customer_phone: '090-0000-0000',
+        start_time: new Date().toISOString(),
+        options: JSON.stringify({
+          services: [dummyService],
+          options: {},
+          products: [],
+          adjustments: []
+        }),
+        customers: {
+          name: 'プレビュー 太郎',
+          furigana: 'プレビュー タロウ',
+          phone: '090-0000-0000'
+        }
+      };
+
+      // プレビュー用にタスクをセットし、レジ画面を強制的に開く
+      setSelectedTask(dummyTask);
+      
+      const initialSvcs = [dummyService];
+      setSelectedServices(initialSvcs);
+      setSelectedOptions({});
+      setSelectedAdjustments([]);
+      setSelectedProducts([]);
+      
+      const initialPrice = Number(dummyService.price);
+      setFinalPrice(initialPrice); 
+      setIsManualPrice(false);
+      
+      setIsCheckoutOpen(true);
+    }
+  }, [isPreviewMode, loading, services]);
+// 👆 🚀 🆕 追加：ここまで ------------------------------------
+
+// 🆕 Step 3: AdminManagement.jsx から移植した「正確な金額集計」ロジック
 // 予約データの JSON(options) を解読して、メニューと枝分かれの合計額を算出します
 const calculateInitialPrice = (task) => {
   if (!task) return 0;
@@ -918,39 +966,42 @@ const handleSaveMemo = async () => {
       )}
 
       {/* --- 🚀 修正後のヘッダー ＆ カレンダー差し込みエリア --- */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
-        <div>
-          <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e293b', fontWeight: '900' }}>⚡ タスク実行</h2>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-            <button onClick={() => {
-              const d = new Date(targetDate);
-              d.setDate(d.getDate() - 1);
-              setTargetDate(d.toLocaleDateString('sv-SE'));
-              setViewMonth(d);
-            }} style={arrowBtnStyle}>◀</button>
+      {/* 👇 修正：プレビューモードの時はヘッダー部分を隠す */}
+      {!isPreviewMode && (
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
+          <div>
+            <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e293b', fontWeight: '900' }}>⚡ タスク実行</h2>
+            
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+              <button onClick={() => {
+                const d = new Date(targetDate);
+                d.setDate(d.getDate() - 1);
+                setTargetDate(d.toLocaleDateString('sv-SE'));
+                setViewMonth(d);
+              }} style={arrowBtnStyle}>◀</button>
 
-            <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
-              padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-              background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' 
-            }}>
-              <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
-            </button>
+              <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
+                padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+                background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' 
+              }}>
+                <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
+              </button>
 
-            <button onClick={() => {
-              const d = new Date(targetDate);
-              d.setDate(d.getDate() + 1);
-              setTargetDate(d.toLocaleDateString('sv-SE'));
-              setViewMonth(d);
-            }} style={arrowBtnStyle}>▶</button>
+              <button onClick={() => {
+                const d = new Date(targetDate);
+                d.setDate(d.getDate() + 1);
+                setTargetDate(d.toLocaleDateString('sv-SE'));
+                setViewMonth(d);
+              }} style={arrowBtnStyle}>▶</button>
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/reservations`)} style={navSwitchBtnStyle}><Calendar size={14} /> カレンダーへ</button>
+            <button onClick={() => navigate(`/admin/${shopId}/timeline`)} style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}><Clock size={14} /> タイムラインへ</button>
           </div>
         </div>
-
-        <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
-          <button onClick={() => navigate(`/admin/${shopId}/reservations`)} style={navSwitchBtnStyle}><Calendar size={14} /> カレンダーへ</button>
-          <button onClick={() => navigate(`/admin/${shopId}/timeline`)} style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}><Clock size={14} /> タイムラインへ</button>
-        </div>
-      </div>
+      )}
 
       {/* 🚀 🆕 1ヶ月カレンダー表示部 */}
       {showCalendar && (

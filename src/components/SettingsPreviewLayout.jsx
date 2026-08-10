@@ -32,9 +32,26 @@ const SettingsPreviewLayout = ({ children }) => {
     return child;
   });
 
+  // 👇 🆕 修正：URLを自動判定し、表示する画面を振り分ける
+  const searchParams = window.location.search;
+  const isDetailsPreview = searchParams.includes('preview=details');
+  const isCalendarPreview = searchParams.includes('preview=calendar');
+  const isTasksPreview = searchParams.includes('preview=tasks'); 
+  const isShopPreview = searchParams.includes('preview=shop'); // 👈 🆕 これを追加
+
+  // 👇 修正：isShopPreview の場合は店舗詳細ページを表示するように追加
+  const iframeSrc = isShopPreview
+    ? `/shop/${shopId}?mode=preview` // 👈 🆕 これを追加
+    : isTasksPreview
+      ? `/admin/${shopId}/today-tasks?mode=preview` 
+      : isCalendarPreview 
+        ? `/admin/${shopId}/reservations?mode=preview` 
+        : isDetailsPreview 
+          ? `/shop/${shopId}/confirm?mode=preview` 
+          : `/shop/${shopId}/reserve?mode=preview`;
+
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', position: 'relative' }}>
-      
       {/* 🔴 左側：設定画面エリア */}
       <div style={{ 
         flex: 1, 
@@ -75,9 +92,10 @@ const SettingsPreviewLayout = ({ children }) => {
             width: '375px', height: '812px', background: '#fff', borderRadius: '40px',
             border: '12px solid #1e293b', overflow: 'hidden', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', position: 'relative'
           }}>
+            {/* 👇 修正：src を iframeSrc に変更 */}
             <iframe 
               ref={iframeRef}
-              src={`/shop/${shopId}/reserve`}
+              src={iframeSrc}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Preview"
             />
@@ -90,7 +108,8 @@ const SettingsPreviewLayout = ({ children }) => {
         <button
           onClick={() => setShowMobilePreview(true)}
           style={{
-            position: 'fixed', bottom: '20px', right: '20px', zIndex: 1000,
+            // 👇 修正：right: '20px' を left: '20px' に変更（保存ボタンとの被り防止）
+            position: 'fixed', bottom: '24px', left: '20px', zIndex: 1000,
             display: 'flex', alignItems: 'center', gap: '8px',
             padding: '14px 20px', background: '#2563eb', color: '#fff',
             border: 'none', borderRadius: '30px', fontWeight: 'bold',
@@ -128,9 +147,10 @@ const SettingsPreviewLayout = ({ children }) => {
           </div>
           {/* iframe本体 */}
           <div style={{ flex: 1, position: 'relative' }}>
+            {/* 👇 修正：src を iframeSrc に変更 */}
             <iframe 
               ref={iframeRef}
-              src={`/shop/${shopId}/reserve`}
+              src={iframeSrc}
               style={{ width: '100%', height: '100%', border: 'none' }}
               title="Mobile Preview"
             />

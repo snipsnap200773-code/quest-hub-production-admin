@@ -7,7 +7,8 @@ import {
   Users,
   Layout,
   Building2,
-  LogOut
+  LogOut,
+  Store // 👈 🆕 これを追加してください！
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -210,36 +211,58 @@ const AdminDashboard = () => {
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* 店舗情報 */}
+        {/* 店舗基本設定のカード */}
         <NavCard 
-          title="店舗情報" desc="店名、住所、サブタイトルなどの基本設定" icon={<MapPin size={28} />} color="#3b82f6"
-          to={`/admin/${shopId}/settings/basic`}
+          title="店舗基本設定" 
+          desc="店名・住所・紹介文などの基本情報" 
+          icon={<Store size={28} />} 
+          color="#3b82f6"
+          to={`/admin/${shopId}/settings/basic?preview=shop`} // 👈 🆕 ここに「?preview=shop」を追加！
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* 🆕 予約フォーム設定（ここを追加） */}
+        {/* 👇 修正：リンク先に ?preview=details を追加し、説明文を微調整 */}
         <NavCard 
           title="予約フォーム設定" 
-          desc="業種に合わせた入力項目のカスタマイズ" 
+          desc="予約時の入力項目のカスタマイズ" 
           icon={<Layout size={28} />} 
           color="#f97316"
-          to={`/admin/${shopId}/settings/form`}
+          to={`/admin/${shopId}/settings/form?preview=details`} 
           cardStyle={cardStyle} 
           iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* メニュー管理 */}
+        {/* 👇 修正：メニュー管理を「メニュー・予約受付設定」に変更 */}
         <NavCard 
-          title="メニュー管理" desc="サービス・連動設定の構築" icon={<MenuIcon size={28} />} color="#ec4899"
+          title="メニュー・予約受付設定" 
+          desc="メニュー・枝分かれ・注意事項などの設定" 
+          icon={<MenuIcon size={28} />} 
+          color="#ec4899"
           to={`/admin/${shopId}/settings/menu`}
-          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+          cardStyle={cardStyle} 
+          iconBoxStyle={iconBoxStyle} 
         />
 
         {/* 営業時間 */}
         <NavCard 
-          title="営業時間・休日" desc="1コマの単位・同時予約数・定休日・予約制限" icon={<Clock size={28} />} color="#f59e0b"
-          to={`/admin/${shopId}/settings/schedule`}
-          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+          title="カレンダー・スケジュール設定" 
+          desc="1コマの単位・営業時間・休日・予約制限" 
+          icon={<Clock size={28} />} 
+          color="#f59e0b"
+          to={`/admin/${shopId}/settings/schedule?preview=calendar`} // 👈 🆕 これを追加
+          cardStyle={cardStyle} 
+          iconBoxStyle={iconBoxStyle} 
+        />
+
+        {/* 🆕 タスク・お会計設定 */}
+        <NavCard 
+          title="タスク・お会計設定" 
+          desc="店販商品・調整（割引）マスター・自動処理" 
+          icon={<ClipboardList size={28} />} 
+          color="#10b981"
+          to={`/admin/${shopId}/settings/checkout?preview=tasks`} 
+          cardStyle={cardStyle} 
+          iconBoxStyle={iconBoxStyle} 
         />
 
         {/* メール設定 */}
@@ -259,7 +282,7 @@ const AdminDashboard = () => {
         {/* 全般設定 */}
         <NavCard 
           title="全般設定" desc="カラー・共有ID・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
-          to={`/admin/${shopId}/settings/general`}
+          to={`/admin/${shopId}/settings/general?preview=reserve`} // 👈 🆕 「?preview=reserve」を追加
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 

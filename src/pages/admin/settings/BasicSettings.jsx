@@ -17,7 +17,7 @@ import HelpTooltip from '../../../components/ui/HelpTooltip';
 
 
 
-const BasicSettings = () => {
+const BasicSettings = ({ reloadPreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
 
@@ -82,7 +82,13 @@ setAddress(data.address || '');
     }
   };
 
-  const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
+  const showMsg = (txt) => { 
+    setMessage(txt); 
+    setTimeout(() => setMessage(''), 3000); 
+    if (typeof reloadPreview === 'function') {
+      setTimeout(() => reloadPreview(), 300);
+    }
+  };
 
   // --- 画像アップロード処理 (修正済みの確実なロジックを完全維持) ---
   const handleFileUpload = async (e) => {
@@ -385,39 +391,24 @@ const handleSave = async () => {
             <input type="email" value={emailContact} onChange={(e) => setEmailContact(e.target.value)} style={inputStyle} placeholder="mail@example.com" />
           </div>
         </div>
-        
-        {/* サブタイトル (プレビュー付き) */}
-        <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-  サブタイトル (予約画面に表示されます)
-  <HelpTooltip themeColor={themeColor} text="店名の下に表示される短いキャッチコピーです。「/」を入力した場所で、実際の画面では改行されます。" />
-</label>
-        <input value={description} onChange={(e) => setDescription(e.target.value)} style={{ ...inputStyle, marginBottom: '8px' }} placeholder="スラッシュ(/)で改行できます" />
-<div style={{ marginBottom: '24px', padding: '16px', background: '#f8fafc', borderRadius: '12px', border: `1px solid ${themeColor}22` }}>
-          <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: themeColor, lineHeight: '1.6' }}>
-            {description ? (description || '').split('/').map((line, idx) => (
-              <React.Fragment key={idx}>{line}{idx < (description || '').split('/').length - 1 && <br />}</React.Fragment>
-            )) : 'プレビューが表示されます'}
-          </div>
-        </div>
 
         {/* 紹介・詳細 */}
         <div style={{ marginBottom: '20px' }}>
           <label style={labelStyle}><Info size={14} /> 店舗紹介・詳細アピール文</label>
           <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} style={{ ...inputStyle, minHeight: '150px' }} placeholder="お客様へのメッセージをご記入ください" />
         </div>
-        
-        <div style={{ marginBottom: '24px' }}>
-          <label style={labelStyle}><AlertCircle size={14} /> 注意事項</label>
-          <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, border: '2px solid #fee2e2', minHeight: '80px' }} placeholder="キャンセル規定や遅刻についてなど" />
-        </div>
+      </section>
 
+      {/* 👇 修正：BookingScheduleSettings などと同じ、フッター固定＆横幅いっぱいのデザインに統一 */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
         <button 
           onClick={handleSave} 
-          style={{ width: '100%', padding: '18px', background: themeColor, color: '#fff', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1.1rem', marginTop: '10px', boxShadow: `0 8px 20px ${themeColor}44`, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+          style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: `0 10px 25px ${themeColor}66`, cursor: 'pointer' }}
         >
-          <Save size={20} /> 設定内容を保存する 💾
+          <Save size={22} /> 設定内容を保存する 💾
         </button>
-      </section>
+      </div>
+
     </div>
   );
 };

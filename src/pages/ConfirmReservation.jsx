@@ -44,6 +44,9 @@ function ConfirmReservation() {
 // 🚀 🆕 追加：URLの末尾にある ?type=○○ を読み取る処理
   const params = new URLSearchParams(window.location.search);
   const urlBizType = params.get('type');
+  
+  // 👇 追加：プレビューモードかどうかを判定
+  const isPreviewMode = params.get('mode') === 'preview';
 
   // 💡 管理者ねじ込みならstateの値を、お客様予約ならURLの値を最終的なキーとして採用する
   const finalBizType = adminBizType || urlBizType;
@@ -685,9 +688,12 @@ const handleReserve = async () => {
       </div>
     );
   }
-    const themeColor = shop?.theme_color || '#2563eb';
-  const displayDate = (adminDate || date).replace(/-/g, '/');
-  const displayTime = adminTime || time;
+  
+  const themeColor = shop?.theme_color || '#2563eb';
+  
+  // 👇 修正：プレビュー画面などで日付がない場合のクラッシュを防ぐ安全処理を追加
+  const displayDate = (adminDate || date) ? String(adminDate || date).replace(/-/g, '/') : '----/--/--';
+  const displayTime = adminTime || time || '--:--';
 
   // ✅ 🆕 修正：選択中の全メニューから「時間制限」があるものを抽出
   const selectedServices = (people || []).flatMap(p => p.services || []);
@@ -1000,21 +1006,25 @@ return (
 
 <button 
           onClick={handleReserve} 
-          disabled={isSubmitting} 
+          // 👇 修正：プレビューモードの時は無効化する
+          disabled={isSubmitting || isPreviewMode} 
           style={{ 
             marginTop: '20px', padding: '18px', 
-            // 🆕 送信中は中央揃えにしてアイコンと文字を並べる
             display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px',
-            background: isSubmitting ? '#94a3b8' : (isAdminEntry ? '#e11d48' : themeColor), 
+            // 👇 修正：プレビューモードの時は強制的に灰色にする
+            background: isPreviewMode ? '#cbd5e1' : (isSubmitting ? '#94a3b8' : (isAdminEntry ? '#e11d48' : themeColor)), 
             color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1.1rem', 
-            cursor: isSubmitting ? 'not-allowed' : 'pointer',
-            boxShadow: `0 4px 12px ${themeColor}33`,
-            width: '100%' // 幅を安定させる
+            // 👇 修正：プレビューモードの時はカーソルを禁止マークに
+            cursor: (isSubmitting || isPreviewMode) ? 'not-allowed' : 'pointer',
+            boxShadow: isPreviewMode ? 'none' : `0 4px 12px ${themeColor}33`,
+            width: '100%' 
           }}
         >
-          {isSubmitting ? (
+          {isPreviewMode ? (
+            // 👇 追加：プレビュー用のテキスト
+            'プレビュー表示（操作不可）'
+          ) : isSubmitting ? (
             <>
-              {/* 🆕 styleに直接アニメーションを書いています。これでグルグル回ります */}
               <Loader2 size={22} style={{ animation: 'spin 1s linear infinite' }} />
               <span>予約を確定しています...</span>
             </>

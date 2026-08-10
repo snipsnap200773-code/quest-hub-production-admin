@@ -31,6 +31,21 @@ const StaffSettings = () => {
     fetchStaffs();
   }, [shopId]);
 
+  const [shopData, setShopData] = useState(null);
+
+  useEffect(() => {
+    fetchStaffs();
+    fetchShopData(); // 👈 🆕 追加
+  }, [shopId]);
+
+  // 👇 🆕 追加：テーマカラーの取得
+  const fetchShopData = async () => {
+    const { data } = await supabase.from('profiles').select('theme_color').eq('id', shopId).single();
+    if (data) setShopData(data);
+  };
+
+  const themeColor = shopData?.theme_color || '#2563eb';
+
   const fetchStaffs = async () => {
     setLoading(true);
     const { data } = await supabase
@@ -103,39 +118,39 @@ const StaffSettings = () => {
     }));
   };
 
-  const saveStaffSetting = async (staff) => {
-    setIsSaving(staff.id);
-    
-    // 🚀 🆕 デフォルト設定を保存する（この人がデフォルトなら、他の人を全て解除する）
-    if (staff.is_default_for_admin) {
-      await supabase.from('staffs').update({ is_default_for_admin: false }).eq('shop_id', shopId);
-    }
-
-    const { error } = await supabase
-      .from('staffs')
-      .update({ 
+  // 👇 修正：個別の保存を廃止し、一括で upsert（更新・追加）する関数に変更
+  const handleSaveAll = async () => {
+    setIsSaving('all');
+    try {
+      const updates = staffs.map(staff => ({
+        id: staff.id,
+        shop_id: shopId,
         name: staff.name,
+        role: staff.role,
         weekly_holidays: staff.weekly_holidays,
         concurrent_capacity: staff.concurrent_capacity || 1,
         role_type: staff.role_type,
-        is_default_for_admin: staff.is_default_for_admin // 👈 ここを追加
-      })
-      .eq('id', staff.id);
+        is_default_for_admin: staff.is_default_for_admin
+      }));
 
-    if (!error) {
-      alert(`${staff.name}さんの設定を保存しました！`);
+      const { error } = await supabase.from('staffs').upsert(updates);
+      if (error) throw error;
+      
+      alert('すべてのスタッフ設定を保存しました！');
       fetchStaffs(); // 状態を再同期
-    } else {
-      console.error(error); 
-      alert("保存に失敗しました。SQLでのカラム追加はお済みですか？");
+    } catch (err) {
+      console.error(err);
+      alert('保存に失敗しました。');
+    } finally {
+      setIsSaving(null);
     }
-    setIsSaving(null);
   };
 
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
 
   return (
-    <div style={{ maxWidth: '700px', margin: isPC ? '40px auto' : '20px auto', padding: '20px', fontFamily: 'sans-serif' }}>
+    // 👇 修正：ボタンと被らないように paddingBottom: '120px' を追加
+    <div style={{ maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', fontFamily: 'sans-serif' }}>
       
       <div style={{ marginBottom: '30px' }}>
         <button 
@@ -184,7 +199,7 @@ const StaffSettings = () => {
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
                   
                   {/* 左側：名前とバッジ */}
-                  <div style={{ flex: 1 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
                       <input 
                         style={{ fontWeight: 'bold', color: '#1e293b', border: '1px dashed transparent', background: 'transparent', fontSize: '1.1rem', width: '100%', maxWidth: '200px', padding: '4px', outline: 'none' }}
@@ -195,31 +210,32 @@ const StaffSettings = () => {
                       />
                     </div>
 
-                    <div style={{ display: 'flex', gap: '6px' }}>
-  <span style={{ fontSize: '0.65rem', color: '#64748b', background: '#e2e8f0', padding: '3px 8px', borderRadius: '6px', fontWeight: 'bold' }}>
-    {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
-  </span>
+                    {/* 👇 修正：flexWrap: 'wrap' と gap: '8px' を設定し、アイテムが自動で折りたたまれるように変更 */}
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: '0.7rem', color: '#64748b', background: '#e2e8f0', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', whiteSpace: 'nowrap' }}>
+                        {staff.role === 'owner' ? 'オーナー' : 'スタッフ'}
+                      </span>
 
-  {/* 🚀 🆕 追加：デフォルト設定ボタン */}
-  <button
-    onClick={() => setStaffs(prev => prev.map(s => ({
-      ...s,
-      is_default_for_admin: s.id === staff.id ? !s.is_default_for_admin : false
-    })))}
-    style={{
-      fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 'bold',
-      background: staff.is_default_for_admin ? '#f59e0b' : '#fff',
-      color: staff.is_default_for_admin ? '#fff' : '#64748b'
-    }}
-  >
-    {staff.is_default_for_admin ? '⭐ デフォルト予約先' : '☆ デフォルトに設定'}
-  </button>
+                      {/* 🚀 🆕 追加：デフォルト設定ボタン */}
+                      <button
+                        onClick={() => setStaffs(prev => prev.map(s => ({
+                          ...s,
+                          is_default_for_admin: s.id === staff.id ? !s.is_default_for_admin : false
+                        })))}
+                        style={{
+                          fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', border: '1px solid #e2e8f0', cursor: 'pointer', fontWeight: 'bold', whiteSpace: 'nowrap',
+                          background: staff.is_default_for_admin ? '#f59e0b' : '#fff',
+                          color: staff.is_default_for_admin ? '#fff' : '#64748b'
+                        }}
+                      >
+                        {staff.is_default_for_admin ? '⭐ デフォルト予約先' : '☆ デフォルトに設定'}
+                      </button>
 
-  <select 
-    value={staff.role_type}
+                      <select 
+                        value={staff.role_type}
                         onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, role_type: e.target.value } : s))}
                         style={{ 
-                          fontSize: '0.65rem', padding: '2px 8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', outline: 'none',
+                          fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap',
                           background: isStylist ? '#f43f5e15' : '#f1f5f9',
                           color: isStylist ? '#f43f5e' : '#64748b'
                         }}
@@ -232,13 +248,7 @@ const StaffSettings = () => {
 
                   {/* 右側：アクションボタン */}
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button 
-                      onClick={() => saveStaffSetting(staff)} 
-                      disabled={isSaving === staff.id}
-                      style={{ background: '#10b981', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.85rem' }}
-                    >
-                      <Save size={16} /> {isSaving === staff.id ? '保存中...' : '保存'}
-                    </button>
+                    {/* 👇 修正：個別の保存ボタンを削除しました */}
                     <button onClick={() => deleteStaff(staff.id)} style={{ color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '8px' }}>
                       <Trash2 size={20} />
                     </button>
@@ -349,6 +359,23 @@ const StaffSettings = () => {
           })}
         </div>
       </div>
+
+      {/* 👇 🆕 追加：BookingScheduleSettings などと同じ、フッター固定＆横幅いっぱいのデザイン */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        <button 
+          onClick={handleSaveAll} 
+          disabled={isSaving === 'all'}
+          style={{ 
+            width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', 
+            justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, 
+            color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', 
+            boxShadow: `0 10px 25px ${themeColor}66`, cursor: isSaving === 'all' ? 'not-allowed' : 'pointer' 
+          }}
+        >
+          <Save size={22} /> {isSaving === 'all' ? '保存中...' : '全スタッフの設定を保存 💾'}
+        </button>
+      </div>
+
     </div>
   );
 };

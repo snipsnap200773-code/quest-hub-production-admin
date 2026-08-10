@@ -20,7 +20,7 @@ function urlBase64ToUint8Array(base64String) {
   return outputArray;
 }
 
-const GeneralSettings = () => {
+const GeneralSettings = ({ reloadPreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -229,75 +229,6 @@ const GeneralSettings = () => {
         </div>
       </section>
 
-      {/* 🆕 自動処理・効率化設定 */}
-<section style={{ ...cardStyle, borderLeft: `8px solid #3b82f6`, background: '#f8faff' }}>
-  <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
-    <RefreshCcw size={20} /> 自動処理・効率化設定
-  </h3>
-
-  {/* --- ① 一括売上確定モード（手動ボタン用） --- */}
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #e2e8f0' }}>
-    <div style={{ flex: 1, paddingRight: '15px' }}>
-      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
-        一括売上確定モード
-      </div>
-      <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-        ONにすると、未処理の予約をボタン一つで一括確定できるようになります。
-      </div>
-    </div>
-    <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-      <input 
-        type="checkbox" 
-        checked={allowBatchMatching} 
-        onChange={(e) => setAllowBatchMatching(e.target.checked)} 
-        style={{ opacity: 0, width: 0, height: 0 }} 
-      />
-      <span style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: allowBatchMatching ? themeColor : '#cbd5e1',
-        transition: '.3s', borderRadius: '34px'
-      }}>
-        <span style={{
-          position: 'absolute', content: '""', height: '18px', width: '18px',
-          left: allowBatchMatching ? '28px' : '4px', bottom: '4px',
-          backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
-        }}></span>
-      </span>
-    </label>
-  </div>
-
-  {/* --- ② 自動売上確定モード（深夜自動用） --- */}
-  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-    <div style={{ flex: 1, paddingRight: '15px' }}>
-      <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
-        自動売上確定モード（深夜自動）
-      </div>
-      <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-        ONにすると、深夜に未処理の予約を自動的に集計します。
-      </div>
-    </div>
-    <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-      <input 
-        type="checkbox" 
-        checked={autoSalesMatching} 
-        onChange={(e) => setAutoSalesMatching(e.target.checked)} 
-        style={{ opacity: 0, width: 0, height: 0 }} 
-      />
-      <span style={{
-        position: 'absolute', top: 0, left: 0, right: 0, bottom: 0,
-        backgroundColor: autoSalesMatching ? themeColor : '#cbd5e1',
-        transition: '.3s', borderRadius: '34px'
-      }}>
-        <span style={{
-          position: 'absolute', content: '""', height: '18px', width: '18px',
-          left: autoSalesMatching ? '28px' : '4px', bottom: '4px',
-          backgroundColor: 'white', transition: '.3s', borderRadius: '50%'
-        }}></span>
-      </span>
-    </label>
-  </div>
-</section>
-
       {/* 📱 🆕 プッシュ通知設定カード */}
       <section style={{ 
         ...cardStyle, 
@@ -341,42 +272,6 @@ const GeneralSettings = () => {
         </div>
       </section>
 
-      {/* 📌 管理画面の表示拡張（30分固定表示版） */}
-      <section style={{ ...cardStyle, background: '#fdfcf5', border: '1px solid #eab308' }}>
-        <h3 style={{ marginTop: 0, color: '#a16207', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-          <Layout size={20} /> 管理画面の表示拡張
-        </h3>
-        {/* 🆕 説明文をより具体的に変更 */}
-        <p style={{ fontSize: '0.75rem', color: '#854d0e', marginBottom: '20px', lineHeight: '1.5' }}>
-          営業時間の前後に、個人的な予定（プライベート予定）を書き込める予備枠を表示します。<br />
-          <b>※予約設定に関わらず、拡張枠は1コマ30分固定でスッキリ表示されます。</b>
-        </p>
-        
-        <div style={{ marginBottom: '20px' }}>
-          {/* 🆕 ラベルに (30分単位) を追記 */}
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>☀ 開店前の拡張 (30分 × 数):</label>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-              <button key={n} type="button" onClick={() => setExtraSlotsBefore(n)} style={{ ...btnActiveS(extraSlotsBefore, n), width: '40px', height: '40px' }}>{n}</button>
-            ))}
-          </div>
-          {/* 🆕 合計何分増えるか目安を表示（親切設計） */}
-          {extraSlotsBefore > 0 && <span style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '5px', display: 'block' }}>➔ 開店前を {extraSlotsBefore * 30}分 拡張中</span>}
-        </div>
-
-        <div>
-          {/* 🆕 ラベルに (30分単位) を追記 */}
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>🌙 閉店後の拡張 (30分 × 数):</label>
-          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-              <button key={n} type="button" onClick={() => setExtraSlotsAfter(n)} style={{ ...btnActiveS(extraSlotsAfter, n), width: '40px', height: '40px' }}>{n}</button>
-            ))}
-          </div>
-          {/* 🆕 合計何分増えるか目安を表示 */}
-          {extraSlotsAfter > 0 && <span style={{ fontSize: '0.7rem', color: '#a16207', marginTop: '5px', display: 'block' }}>➔ 閉店後を {extraSlotsAfter * 30}分 拡張中</span>}
-        </div>
-      </section>
-
       {/* 🔐 セキュリティ設定 */}
       <section style={{ ...cardStyle, border: `2px solid #1e293b` }}>
         <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', color: '#1e293b', marginBottom: '20px' }}>
@@ -406,20 +301,16 @@ const GeneralSettings = () => {
         )}
       </section>
 
-      {/* 💾 常に浮いている保存ボタン */}
-      <button 
-        onClick={handleSave} 
-        style={{ 
-          position: 'fixed', bottom: '24px', right: '24px', 
-          padding: '18px 40px', background: themeColor, color: '#fff', 
-          border: 'none', borderRadius: '50px', fontWeight: 'bold', 
-          boxShadow: `0 10px 25px ${themeColor}66`, zIndex: 1000, 
-          display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer',
-          fontSize: '1.1rem'
-        }}
-      >
-        <Save size={22} /> 全設定を保存する 💾
-      </button>
+      {/* 👇 修正：他の設定ページと同じ、フッター固定＆横幅いっぱいのデザインに統一 */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        <button 
+          onClick={handleSave} 
+          style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: `0 10px 25px ${themeColor}66`, cursor: 'pointer' }}
+        >
+          <Save size={22} /> 全設定を保存する 💾
+        </button>
+      </div>
+
     </div>
   );
 };

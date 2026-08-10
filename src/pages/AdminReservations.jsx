@@ -108,6 +108,10 @@ function AdminReservations() {
   // 🆕 予約から戻った直後のスクロールを止めるフラグ
   const [isScrollLocked, setIsScrollLocked] = useState(false);
 
+  // 👇 🆕 追加：プレビューモードかどうかを判定
+  const searchParams = new URLSearchParams(location.search);
+  const isPreviewMode = searchParams.get('mode') === 'preview';
+
   // --- 状態管理 ---
   const [shop, setShop] = useState(null);
   const [staffs, setStaffs] = useState([]);
@@ -438,7 +442,8 @@ const [editFields, setEditFields] = useState({
     }
   }, [showMobileCalendar]);
 
-const isPC = windowWidth > 1024;
+  // 👇 修正：プレビューモードの時は、画面幅に関わらず強制的にモバイル版(isPC=false)として扱う
+  const isPC = isPreviewMode ? false : windowWidth > 1024;
 
   // 🆕 項目が有効（WebまたはLINEのいずれか）か判定し、ラベルを取得するヘルパー
   const shouldShowInAdmin = (key) => {
@@ -2441,7 +2446,7 @@ else if (
             </div>
           </div>
         )}
-        {!isPC && (
+        {!isPC && !isPreviewMode && (
         <div style={{ 
           position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px', 
           background: '#fff', borderTop: '1px solid #e2e8f0', display: 'flex', 
