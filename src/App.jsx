@@ -50,6 +50,7 @@ import ReservationForm from './pages/ReservationForm';
 import TimeSelectionCalendar from './pages/TimeSelectionCalendar'; 
 import ConfirmReservation from './pages/ConfirmReservation';
 import ReservedSuccess from './pages/ReservedSuccess';
+import ShopDetail from './pages/ShopDetail';
 
 function App() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
@@ -94,10 +95,9 @@ function App() {
         <Route path="/admin/:shopId/today-tasks" element={<TodayTasks />} />
 
         {/* --- ⚙️ 設定系 --- */}
-        <Route path="/admin/:shopId/settings/basic" element={<BasicSettings />} />
         <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />
 
-        {/* 👇 修正：BasicSettings を SettingsPreviewLayout で囲む */}
+        {/* 👇 修正：BasicSettings を SettingsPreviewLayout で囲む（古い記述を削除しました） */}
         <Route path="/admin/:shopId/settings/basic" element={
           <SettingsPreviewLayout>
             <BasicSettings />
@@ -160,7 +160,8 @@ function App() {
         {/* -----------------------------------------------------------
             🆕 【ねじ込み予約用】ユーザー側画面のルートを復活（Adminアプリ内での表示用）
         -------------------------------------------------------------- */}
-        <Route path="/shop/:shopId" element={<ReservationForm />} /> 
+        {/* 👇 修正：店舗詳細ページを表示するように変更 */}
+        <Route path="/shop/:shopId" element={<ShopDetail />} /> 
         <Route path="/shop/:shopId/reserve" element={<ReservationForm />} />
         <Route path="/shop/:shopId/reserve/time" element={<TimeSelectionCalendar />} />
         <Route path="/shop/:shopId/confirm" element={<ConfirmReservation />} />

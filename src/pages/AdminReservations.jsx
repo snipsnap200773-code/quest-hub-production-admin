@@ -307,9 +307,11 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
         });
       }
 
+      setVisitRequests(prev => prev.filter(v => v.id !== id));
+
       setShowFacCancelModal(false);
       showMsg(`${name} 様の予定をキャンセルしました。`);
-      fetchData(); // 🔄 これでカレンダーから消えます
+      fetchData(); // 🔄 バックグラウンドで最新データを同期
     } catch (err) {
       alert("実行エラー: " + err.message);
     }
@@ -1347,6 +1349,8 @@ setSalesRecords(salesRes.data || []);
         await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', selectedRes.customer_id);
       }
       
+      setReservations(prev => prev.map(r => r.id === id ? { ...r, status: 'canceled' } : r));
+
       setShowDetailModal(false);
       fetchData();
       showMsg("キャンセルとして記録しました");
@@ -1385,8 +1389,14 @@ setSalesRecords(salesRes.data || []);
         }
       }
       
+      if (isPrivate) {
+        setPrivateTasks(prev => prev.filter(p => p.id !== id));
+      } else {
+        setReservations(prev => prev.filter(r => r.id !== id));
+      }
+
       setShowDetailModal(false); 
-      fetchData(); // 再読み込み
+      fetchData(); // バックグラウンドで最新データを同期
       showMsg(isPrivate ? "予定を削除しました" : "予約を削除しました");
     }
   };
