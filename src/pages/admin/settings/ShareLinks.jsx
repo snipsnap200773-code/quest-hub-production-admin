@@ -40,7 +40,10 @@ const ShareLinks = () => {
   };
 
   const themeColor = shopData?.theme_color || '#2563eb';
-  const baseUrl = window.location.origin;
+  
+  // 🚀 修正：お客様用(portal)と管理者用(admin)のURLを明確に分離
+  const portalBaseUrl = 'https://questhub-portal.vercel.app';
+  const adminBaseUrl = window.location.origin;
 
   // コピー機能
   const handleCopy = (url, id) => {
@@ -105,15 +108,15 @@ const ShareLinks = () => {
 
         <LinkItem 
           id="portal" label="🏠 店舗詳細ページ（ポータルTOP）" 
-          url={`${baseUrl}/shop/${shopId}`} icon={<Globe size={18} />} highlight={true} 
+          url={`${portalBaseUrl}/shop/${shopId}`} icon={<Globe size={18} />} highlight={true} 
         />
         <LinkItem 
           id="reserve" label="📅 総合予約フォーム" 
-          url={`${baseUrl}/shop/${shopId}/reserve`} icon={<Calendar size={18} />} 
+          url={`${portalBaseUrl}/shop/${shopId}/reserve`} icon={<Calendar size={18} />} 
         />
         <LinkItem 
           id="inquiry" label="✉️ お問い合わせフォーム" 
-          url={`${baseUrl}/shop/${shopId}/inquiry`} icon={<MessageCircle size={18} />} 
+          url={`${portalBaseUrl}/shop/${shopId}/inquiry`} icon={<MessageCircle size={18} />} 
         />
       </section>
 
@@ -132,11 +135,11 @@ const ShareLinks = () => {
               </div>
               <LinkItem 
                 id={`res-${cat.url_key}`} label="専用予約フォーム" 
-                url={`${baseUrl}/shop/${shopId}/reserve?type=${cat.url_key}`} icon={<Calendar size={16} />} 
+                url={`${portalBaseUrl}/shop/${shopId}/reserve?type=${cat.url_key}`} icon={<Calendar size={16} />} 
               />
               <LinkItem 
                 id={`inq-${cat.url_key}`} label="専用お問い合わせフォーム" 
-                url={`${baseUrl}/shop/${shopId}/inquiry?type=${cat.url_key}`} icon={<MessageCircle size={16} />} 
+                url={`${portalBaseUrl}/shop/${shopId}/inquiry?type=${cat.url_key}`} icon={<MessageCircle size={16} />} 
               />
             </div>
           ))}
@@ -150,8 +153,8 @@ const ShareLinks = () => {
         </h3>
         <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '20px' }}>ご自身のスマホやPC、タブレットのブラウザで「ブックマーク（お気に入り登録）」しておくと便利です。</p>
 
-        <LinkItem id="dash" label="📊 ダッシュボード（管理トップ）" url={`${baseUrl}/admin/${shopId}/dashboard`} icon={<Settings size={18} />} />
-        <LinkItem id="admin-res" label="📅 予約管理カレンダー" url={`${baseUrl}/admin/${shopId}/reservations`} icon={<Calendar size={18} />} />
+        <LinkItem id="dash" label="📊 ダッシュボード（管理トップ）" url={`${adminBaseUrl}/admin/${shopId}/dashboard`} icon={<Settings size={18} />} />
+        <LinkItem id="admin-res" label="📅 予約管理カレンダー" url={`${adminBaseUrl}/admin/${shopId}/reservations`} icon={<Calendar size={18} />} />
       </section>
 
       {/* 📱 QRコード表示モーダル */}
