@@ -151,6 +151,8 @@ Deno.serve(async (req) => {
       customerEmail = customerEmail || res.customer_email;
       customerName = customerName || res.customer_name;
       startTime = startTime || res.start_time;
+      // 🆕 【ここを追加！】LINE予約のお客様を判定するため line_user_id も復元する
+      lineUserId = lineUserId || res.line_user_id;
 
       // 🚀 2. 【ここを追加！】新しい予約を入れるためのURLを自動生成
       // これにより、メール内のリンクが正しく予約ページを向くようになります
@@ -1062,17 +1064,20 @@ const sendMail = async (to: string, isOwner: boolean) => {
       let finalHtml = "";
 
       if (type === 'cancel') {
-        // --- 🚀 🆕 キャンセル通知（デザイン版） ---
-        const d = new Date(targetTime);
-        // 🚀 🆕 サーバーの時間ではなく、強制的に「日本時間」として整形する
-        const dateStr = d.toLocaleString('ja-JP', {
-          timeZone: 'Asia/Tokyo',
-          year: 'numeric',
-          month: '2-digit',
-          day: '2-digit',
-          hour: '2-digit',
-          minute: '2-digit',
-        }).replace(/\//g, '年').replace(' ', '日 ');
+      // 🚀 🆕 【ここを追加！】送られてきたデータの中身をログに出力して確認する
+      console.log("🔍 キャンセルリクエスト受信データ:", JSON.stringify({ payload, reservation: payload?.reservation }));
+
+      // --- 🚀 🆕 キャンセル通知（デザイン版） ---
+      const d = new Date(targetTime);
+      // 🚀 🆕 サーバーの時間ではなく、強制的に「日本時間」として整形する
+      const dateStr = d.toLocaleString('ja-JP', {
+        timeZone: 'Asia/Tokyo',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      }).replace(/\//g, '年').replace(' ', '日 ');
 
         if (isOwner) {
           // 🏪 店舗様向け通知
@@ -1106,6 +1111,37 @@ const sendMail = async (to: string, isOwner: boolean) => {
                 <a href="${reserve_url || '#'}" style="display: inline-block; background: #475569; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">新しい予約を入れる</a>
               </div>
             </div>`;
+
+          // 🚀 🆕 【ここから追加】お客様へのLINEキャンセル通知処理
+          // フロントから渡された reservation データと、店舗設定(profile)を使用
+          const targetLineId = payload?.reservation?.line_user_id || payload?.line_user_id;
+
+        if (
+          targetLineId && 
+          profile?.customer_line_booking_enabled && 
+          profile?.line_channel_access_token
+        ) {
+          try {
+            const lineMessage = `【キャンセル完了のお知らせ】\n\n${targetName} 様\nご予約の取り消しを承りました。\n\n📅 日時: ${dateStr}\n🏨 店舗名: ${shopName}\n\nまたのご利用をスタッフ一同、心よりお待ちしております。`;
+
+            // 🚀 外部関数に頼らず、直接 LINE API へリクエストを送る
+            await fetch('https://api.line.me/v2/bot/message/push', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${profile.line_channel_access_token}`
+              },
+              body: JSON.stringify({ // ⚠️ここのbodyはLINEの仕様なのでこのままでOK！
+                to: targetLineId,
+                messages: [{ type: 'text', text: lineMessage }]
+              })
+            });
+            console.log("✅ LINEキャンセル通知送信成功:", targetLineId);
+          } catch (lineErr) {
+            console.error("LINEキャンセル通知失敗:", lineErr);
+          }
+        }
+          // 🚀 🆕 【ここまで追加】
         }
       }
       else {
