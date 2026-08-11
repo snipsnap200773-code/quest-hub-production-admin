@@ -8,7 +8,9 @@ import {
   Layout,
   Building2,
   LogOut,
-  Store // 👈 🆕 これを追加してください！
+  Store,
+  Share2, // 👈 🆕 これを追加
+  QrCode  // 👈 🆕 これを追加
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -282,7 +284,17 @@ const AdminDashboard = () => {
         {/* 全般設定 */}
         <NavCard 
           title="全般設定" desc="カラー・共有ID・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
-          to={`/admin/${shopId}/settings/general?preview=reserve`} // 👈 🆕 「?preview=reserve」を追加
+          to={`/admin/${shopId}/settings/general?preview=reserve`}
+          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+        />
+
+        {/* 👇 🆕 追加：リンク・シェア用URL管理 */}
+        <NavCard 
+          title="リンク・シェア用URL" 
+          desc="SNS掲載用URL・QRコードの発行" 
+          icon={<Share2 size={28} />} 
+          color="#06b6d4" // 少し爽やかなシアン色
+          to={`/admin/${shopId}/settings/share-links`}
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 

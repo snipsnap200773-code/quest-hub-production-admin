@@ -159,6 +159,10 @@ const handleSave = async () => {
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
   const labelStyle = { fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#334155' };
 
+  // 👇 🆕 追加：店舗の業種が「訪問サービス系」かどうかを判定する
+  const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+  const isVisit = VISIT_KEYWORDS.some(keyword => (businessType || '').includes(keyword));
+
   return (
     <div style={containerStyle}>
       {/* 🔔 通知メッセージ */}
@@ -338,48 +342,51 @@ const handleSave = async () => {
           </div>
         </div>
         
+        {/* 👇 修正：訪問系の場合のみ表示 */}
         {/* 🆕 訪問サービス専用設定セクション */}
-        <div style={{ marginTop: '30px', padding: '20px', background: '#f0f9ff', borderRadius: '16px', border: '1px solid #bae6fd' }}>
-          <h4 style={{ marginTop: 0, fontSize: '0.9rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <MapPin size={18} /> 訪問サービス・移動時間設定
-          </h4>
-          <p style={{ fontSize: '0.75rem', color: '#0c4a6e', marginBottom: '15px' }}>
-            ※訪問先までの移動時間を自動計算するために使用します。
-          </p>
-
-          <div style={{ marginBottom: '15px' }}>
-            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-  出発・帰還の拠点住所
-  <HelpTooltip themeColor={themeColor} text="出張・訪問サービスを行う際の「出発地点」です。自宅や事務所の住所を入力してください。店舗と同じ場所なら同じ住所でOKです。" />
-</label>
-            <input 
-              value={baseAddress} 
-              onChange={(e) => setBaseAddress(e.target.value)} 
-              style={inputStyle} 
-              placeholder="事務所や自宅の住所" 
-            />
-          </div>
-
-          <div>
-            <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-  移動スピード目安
-  <HelpTooltip themeColor={themeColor} text="1km移動するのにかかる「分」を入力します（例：車なら3分、自転車なら5分）。これにより、移動時間を含めた予約枠の自動調整が行われます。" />
-</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-              <span style={{ fontSize: '0.85rem' }}>1km あたり</span>
-              <input 
-                type="number" 
-                value={minutesPerKm} 
-                onChange={(e) => setMinutesPerKm(e.target.value)} 
-                style={{ ...inputStyle, width: '80px', textAlign: 'center' }} 
-              />
-              <span style={{ fontSize: '0.85rem' }}>分で移動</span>
-            </div>
-            <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '5px' }}>
-              （例：車なら3分、自転車なら5分程度が目安です）
+        {isVisit && (
+          <div style={{ marginTop: '30px', padding: '20px', background: '#f0f9ff', borderRadius: '16px', border: '1px solid #bae6fd' }}>
+            <h4 style={{ marginTop: 0, fontSize: '0.9rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <MapPin size={18} /> 訪問サービス・移動時間設定
+            </h4>
+            <p style={{ fontSize: '0.75rem', color: '#0c4a6e', marginBottom: '15px' }}>
+              ※訪問先までの移動時間を自動計算するために使用します。
             </p>
+
+            <div style={{ marginBottom: '15px' }}>
+              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
+                出発・帰還の拠点住所
+                <HelpTooltip themeColor={themeColor} text="出張・訪問サービスを行う際の「出発地点」です。自宅や事務所の住所を入力してください。店舗と同じ場所なら同じ住所でOKです。" />
+              </label>
+              <input 
+                value={baseAddress} 
+                onChange={(e) => setBaseAddress(e.target.value)} 
+                style={inputStyle} 
+                placeholder="事務所や自宅の住所" 
+              />
+            </div>
+
+            <div>
+              <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
+                移動スピード目安
+                <HelpTooltip themeColor={themeColor} text="1km移動するのにかかる「分」を入力します（例：車なら3分、自転車なら5分）。これにより、移動時間を含めた予約枠の自動調整が行われます。" />
+              </label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <span style={{ fontSize: '0.85rem' }}>1km あたり</span>
+                <input 
+                  type="number" 
+                  value={minutesPerKm} 
+                  onChange={(e) => setMinutesPerKm(e.target.value)} 
+                  style={{ ...inputStyle, width: '80px', textAlign: 'center' }} 
+                />
+                <span style={{ fontSize: '0.85rem' }}>分で移動</span>
+              </div>
+              <p style={{ fontSize: '0.7rem', color: '#64748b', marginTop: '5px' }}>
+                （例：車なら3分、自転車なら5分程度が目安です）
+              </p>
+            </div>
           </div>
-        </div>
+        )}
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
           <div>

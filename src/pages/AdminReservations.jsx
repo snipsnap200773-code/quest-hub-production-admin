@@ -2185,6 +2185,9 @@ return (
                 const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
                 const hours = shop?.business_hours?.[dayName];
                 const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
+                
+                // 👇 🆕 休憩時間かどうかの判定を追加
+                const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
 
                 // この枠でちょうど開始するか
                 const startingHere = isArray ? resAt.filter(r => 
@@ -2288,7 +2291,8 @@ else if (
                       borderBottom: '1px solid #e2e8f0', 
                       position: 'relative', 
                       cursor: 'pointer', 
-                      background: isStandardTime ? '#fff' : '#fffff3',
+                      // 👇 修正：休憩時間のときは背景色をグレー（#f1f5f9）にする
+                      background: isRestTime ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'),
                       
                       ...(applyCurrentTimeMarker(dStr, time) && {
                         borderLeft: '3px solid #14a9d7',
