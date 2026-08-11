@@ -228,44 +228,6 @@ const BookingDetailsSettings = ({ reloadPreview }) => {
         <ClipboardList size={28} style={{ verticalAlign: 'middle', marginRight: '10px' }} /> 予約時の入力項目設定
       </h2>
 
-      <div style={{ ...cardStyle, border: `1px solid ${themeColor}30`, background: `${themeColor}05`, marginBottom: '30px' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-          <h3 style={{ fontSize: '1rem', color: themeColor, margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <MessageSquare size={18} /> お問い合わせURLの発行・コピー
-          </h3>
-        </div>
-        <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '15px', lineHeight: '1.5' }}>
-          SNSのプロフィール等に貼り付けて利用してください。<br/>
-          屋号別のURLを使うと、メールに自動で屋号名が記載されます。
-        </p>
-        <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: themeColor, display: 'block', marginBottom: '5px' }}>基本（店舗全体）</label>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <input readOnly value={inquiryUrl} style={{ flex: 1, padding: '10px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.8rem', background: '#fff' }} />
-            <button onClick={() => { navigator.clipboard.writeText(inquiryUrl); showMsg('コピーしました！'); }} style={copyBtnStyle(themeColor)}>コピー</button>
-          </div>
-        </div>
-        {brandCategories.length > 0 && (
-          <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '15px' }}>
-            <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '10px' }}>屋号別（専用フォーム）</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {brandCategories.map((cat, index) => {
-                const brandUrl = `${inquiryUrl}?type=${cat.url_key}`;
-                return (
-                  <div key={`${cat.url_key}-${index}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '8px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                    <div style={{ flex: 1, paddingLeft: '5px' }}>
-                      <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#1e293b' }}>{cat.custom_shop_name || cat.name}</div>
-                      <div style={{ fontSize: '0.65rem', color: '#94a3b8', wordBreak: 'break-all' }}>{brandUrl}</div>
-                    </div>
-                    <button onClick={() => { navigator.clipboard.writeText(brandUrl); showMsg(`${cat.custom_shop_name || cat.name}のURLをコピーしました！`); }} style={{ ...copyBtnStyle(themeColor), padding: '6px 12px', fontSize: '0.7rem' }}>コピー</button>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-      </div>
-
       <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ 基本情報</h3>
       <section style={{ ...cardStyle, borderTop: `6px solid #94a3b8` }}>
         <ConfigItem id="name" icon={User} title="お名前" description="必須項目です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />

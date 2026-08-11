@@ -257,29 +257,6 @@ const BookingFormSettings = ({ reloadPreview }) => {
         予約フォームの設定
       </h2>
 
-      {/* --- 🚀 URLご案内 --- */}
-      <section style={{ ...cardStyle, background: '#f0fdf4', border: '1px solid #bbf7d0', padding: '20px' }}>
-        <h3 style={{ marginTop: 0, fontSize: '0.9rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}><Link2 size={18} /> 予約フォームURLのご案内</h3>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-          <div style={{ background: '#fff', padding: '12px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
-            <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>全メニュー表示用（共通）</label>
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-              <code style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{`${BIZ_URL}/shop/${shopId}/reserve`}</code>
-              <button onClick={() => copyToClipboard(`${BIZ_URL}/shop/${shopId}/reserve`)} style={{ padding: '6px 12px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>コピー</button>
-            </div>
-          </div>
-          {Array.from(new Set(categories.map(c => c.url_key).filter(Boolean))).map(key => (
-            <div key={key} style={{ background: '#fff', padding: '12px', borderRadius: '12px', border: '1px solid #dcfce7' }}>
-              <label style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold', display: 'block', marginBottom: '4px' }}>事業専用：{categories.find(c => c.url_key === key)?.name || key}</label>
-              <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                <code style={{ flex: 1, minWidth: 0, fontSize: '0.8rem', color: '#166534', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{`${BIZ_URL}/shop/${shopId}/reserve?type=${key}`}</code>
-                <button onClick={() => copyToClipboard(`${BIZ_URL}/shop/${shopId}/reserve?type=${key}`)} style={{ padding: '6px 12px', background: '#22c55e', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>コピー</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </section>
-
       {/* --- 🚀 統合セクション：フォームの基本設定 --- */}
       <section style={{ ...cardStyle, border: `2px solid ${themeColor}` }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', color: themeColor, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
