@@ -108,7 +108,7 @@ const ShareLinks = () => {
 
         <LinkItem 
           id="portal" label="🏠 店舗詳細ページ（ポータルTOP）" 
-          url={`${portalBaseUrl}/shop/${shopId}`} icon={<Globe size={18} />} highlight={true} 
+          url={`${portalBaseUrl}/shop/${shopId}/detail`} icon={<Globe size={18} />} highlight={true} 
         />
         <LinkItem 
           id="reserve" label="📅 総合予約フォーム" 
