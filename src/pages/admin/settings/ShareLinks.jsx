@@ -116,7 +116,7 @@ const ShareLinks = () => {
         />
         <LinkItem 
           id="inquiry" label="✉️ お問い合わせフォーム" 
-          url={`${portalBaseUrl}/shop/${shopId}/inquiry`} icon={<MessageCircle size={18} />} 
+          url={`${adminBaseUrl}/shop/${shopId}/inquiry`} icon={<MessageCircle size={18} />} 
         />
       </section>
 
@@ -128,21 +128,22 @@ const ShareLinks = () => {
           </h3>
           <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '20px' }}>指定したブランドのメニューだけが表示される専用の予約・問い合わせ画面です。</p>
 
-          {categories.map(cat => (
-            <div key={cat.url_key} style={{ marginBottom: '20px', borderBottom: '1px dashed #e2e8f0', paddingBottom: '10px' }}>
-              <div style={{ fontWeight: 'bold', color: themeColor, marginBottom: '10px' }}>
-                ✨ {cat.custom_shop_name || cat.name} 専用
-              </div>
-              <LinkItem 
-                id={`res-${cat.url_key}`} label="専用予約フォーム" 
-                url={`${portalBaseUrl}/shop/${shopId}/reserve?type=${cat.url_key}`} icon={<Calendar size={16} />} 
-              />
-              <LinkItem 
-                id={`inq-${cat.url_key}`} label="専用お問い合わせフォーム" 
-                url={`${portalBaseUrl}/shop/${shopId}/inquiry?type=${cat.url_key}`} icon={<MessageCircle size={16} />} 
-              />
+          {/* 2. ブランド・屋号別 URL */}
+        {categories.map(cat => (
+          <div key={cat.url_key} style={{ marginBottom: '20px', borderBottom: '1px dashed #e2e8f0', paddingBottom: '10px' }}>
+            <div style={{ fontWeight: 'bold', color: themeColor, marginBottom: '10px' }}>
+              ✨ {cat.custom_shop_name || cat.name} 専用
             </div>
-          ))}
+            <LinkItem 
+              id={`res-${cat.url_key}`} label="専用予約フォーム" 
+              url={`${portalBaseUrl}/shop/${shopId}/reserve?type=${cat.url_key}`} icon={<Calendar size={16} />} 
+            />
+            <LinkItem 
+              id={`inq-${cat.url_key}`} label="専用お問い合わせフォーム" 
+              url={`${adminBaseUrl}/shop/${shopId}/inquiry?type=${cat.url_key}`} icon={<MessageCircle size={16} />} 
+            />
+          </div>
+        ))}
         </section>
       )}
 
