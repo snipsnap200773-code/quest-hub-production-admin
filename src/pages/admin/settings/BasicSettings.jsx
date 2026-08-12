@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 
 import HelpTooltip from '../../../components/ui/HelpTooltip';
+import imageCompression from 'browser-image-compression';
 
 const BasicSettings = ({ reloadPreview }) => {
   const { shopId } = useParams();
@@ -65,6 +66,7 @@ const BasicSettings = ({ reloadPreview }) => {
 
   // 🛑 週間スケジュール用のStateを追加
   const [weeklySchedule, setWeeklySchedule] = useState([]);
+  const [weeklyScheduleNote, setWeeklyScheduleNote] = useState('');
 
   useEffect(() => {
     if (shopId) fetchInitialShopData();
@@ -118,6 +120,7 @@ const BasicSettings = ({ reloadPreview }) => {
       
       setFaqs(data.faqs || []);
       setWeeklySchedule(data.weekly_schedule || []);
+      setWeeklyScheduleNote(data.weekly_schedule_note || '');
     }
   };
 
@@ -129,19 +132,39 @@ const BasicSettings = ({ reloadPreview }) => {
     }
   };
 
+  // --- 画像圧縮共通関数 ---
+  const compressImage = async (imageFile) => {
+    const options = {
+      maxSizeMB: 0.3,          // 最大ファイルサイズ（0.3MB = 300KB）
+      maxWidthOrHeight: 1200,  // 最大幅/高さ（1200pxを超えたら縮小）
+      useWebWorker: true,      // 処理を軽くするための設定
+    };
+    try {
+      showMsg('画像を最適化しています...');
+      return await imageCompression(imageFile, options);
+    } catch (error) {
+      console.error('画像圧縮エラー:', error);
+      return imageFile; // エラー時は念のため元のファイルを返す
+    }
+  };
+
   // --- 画像アップロード処理 ---
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const fileExt = file.name.split('.').pop();
+
+    // 🛑 圧縮処理を実行
+    const compressedFile = await compressImage(file);
+
+    const fileExt = compressedFile.name.split('.').pop();
     const fileName = `${shopId}-main.${fileExt}`;
     
     showMsg('画像を更新中...');
 
     const { error: uploadError } = await supabase.storage
       .from('shop-images')
-      .upload(fileName, file, { 
-        contentType: 'image/jpeg', 
+      .upload(fileName, compressedFile, { // 🛑 file から compressedFile に変更
+        contentType: compressedFile.type || 'image/jpeg', 
         upsert: true 
       });
 
@@ -175,7 +198,7 @@ const BasicSettings = ({ reloadPreview }) => {
   const uploadImageToStorage = async (file, fileName) => {
     const { error: uploadError } = await supabase.storage
       .from('shop-images')
-      .upload(fileName, file, { contentType: file.type, upsert: true });
+      .upload(fileName, file, { contentType: file.type || 'image/jpeg', upsert: true });
 
     if (uploadError) throw uploadError;
     const { data } = supabase.storage.from('shop-images').getPublicUrl(fileName);
@@ -187,9 +210,11 @@ const BasicSettings = ({ reloadPreview }) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
+      // 🛑 圧縮処理を実行
+      const compressedFile = await compressImage(file);
       showMsg('代表者画像を更新中...');
-      const fileName = `${shopId}-owner.${file.name.split('.').pop()}`;
-      const url = await uploadImageToStorage(file, fileName);
+      const fileName = `${shopId}-owner.${compressedFile.name.split('.').pop()}`;
+      const url = await uploadImageToStorage(compressedFile, fileName); // 🛑 compressedFile に変更
       setOwnerImageUrl(`${url}?t=${Date.now()}`);
       showMsg('代表者画像を更新しました！');
     } catch (err) {
@@ -202,9 +227,11 @@ const BasicSettings = ({ reloadPreview }) => {
     const file = e.target.files[0];
     if (!file) return;
     try {
+      // 🛑 圧縮処理を実行
+      const compressedFile = await compressImage(file);
       showMsg('ギャラリー画像をアップロード中...');
-      const fileName = `${shopId}-gallery-${Date.now()}.${file.name.split('.').pop()}`;
-      const url = await uploadImageToStorage(file, fileName);
+      const fileName = `${shopId}-gallery-${Date.now()}.${compressedFile.name.split('.').pop()}`;
+      const url = await uploadImageToStorage(compressedFile, fileName); // 🛑 compressedFile に変更
       setGalleryUrls([...galleryUrls, url]);
       showMsg('ギャラリーに追加しました！');
     } catch (err) {
@@ -301,7 +328,8 @@ const BasicSettings = ({ reloadPreview }) => {
       menu_section_title: menuSectionTitle,
       highlight_menus: highlightMenus,
       faqs: faqs,   // 👈 🛑このカンマ(,)を忘れずに！
-      weekly_schedule: weeklySchedule
+      weekly_schedule: weeklySchedule,
+      weekly_schedule_note: weeklyScheduleNote
     }).eq('id', shopId);
 
     if (!error) showMsg('店舗プロフィールを保存しました！');
@@ -791,6 +819,17 @@ const BasicSettings = ({ reloadPreview }) => {
           <button onClick={addSchedule} style={{ width: '100%', padding: '10px', background: '#fff', border: `1px dashed ${themeColor}`, color: themeColor, borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', cursor: 'pointer' }}>
             <Plus size={16} /> 時間枠を追加する
           </button>
+
+          {/* 🆕 補足注記コメント入力欄 */}
+          <div style={{ marginTop: '15px' }}>
+            <label style={{ ...labelStyle, fontSize: '0.8rem', color: '#64748b' }}>※ 補足コメント（スケジュール表の最下部に表示）</label>
+            <input 
+              value={weeklyScheduleNote} 
+              onChange={(e) => setWeeklyScheduleNote(e.target.value)} 
+              style={{ ...inputStyle, fontSize: '0.85rem', padding: '8px 12px' }} 
+              placeholder="例: ※祝日の診療時間は土曜と同じになります / ※予約優先制" 
+            />
+          </div>
         </div>
       </section>
 

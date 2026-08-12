@@ -228,18 +228,18 @@ const toggleFavorite = async () => {
             transform: 'translateX(-50%)', 
             width: '90%', 
             maxWidth: '500px', 
-            background: 'rgba(255, 255, 255, 0.45)', /* 透明度をアップ（0.65 -> 0.45） */
-            backdropFilter: 'blur(6px)', /* すりガラス感を維持して可読性を確保 */
+            background: 'rgba(255, 255, 255, 0.45)', 
+            backdropFilter: 'blur(6px)', 
             padding: '15px 20px', 
             borderRadius: '16px', 
             boxShadow: '0 4px 15px rgba(0,0,0,0.08)', 
-            textAlign: 'center',
+            textAlign: 'left', /* 🛑 テキスト配置を左揃えに変更 */
             zIndex: 10
           }}>
             <div style={{ 
               fontSize: '0.95rem', 
               fontWeight: 'bold', 
-              color: '#1e293b', /* クッキリ読めるシックな濃いグレーテキスト */
+              color: '#1e293b', 
               lineHeight: '1.6',
               whiteSpace: 'pre-wrap'
             }}>
@@ -428,17 +428,34 @@ const toggleFavorite = async () => {
 
           {/* --- 🆕 代表者プロフィール --- */}
           {(shop.owner_name || shop.owner_bio || shop.owner_image_url) && (
-            <div style={{ margin: '30px 0', padding: '20px', background: '#fff', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
-              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <User size={20} color={themeColor} /> 代表者メッセージ
+            /* 🛑 上の余白(margin-top)を10pxまで削り、カード内のパディングも12pxに縮小 */
+            <div style={{ margin: '10px 0 20px 0', padding: '12px 15px', background: '#fff', borderRadius: '16px', boxShadow: '0 2px 10px rgba(0,0,0,0.03)', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '0.95rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px', color: '#1e293b' }}>
+                <User size={16} color={themeColor} /> 代表者メッセージ
               </h3>
-              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
                 {shop.owner_image_url && (
-                  <img src={shop.owner_image_url} alt="owner" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: `2px solid ${themeColor}33` }} />
+                  <img src={shop.owner_image_url} alt="owner" style={{ width: '60px', height: '60px', objectFit: 'cover', borderRadius: '50%', border: `2px solid ${themeColor}33`, flexShrink: 0 }} />
                 )}
-                <div style={{ flex: 1, minWidth: '200px' }}>
-                  {shop.owner_name && <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b', marginBottom: '10px' }}>{shop.owner_name}</div>}
-                  {shop.owner_bio && <p style={{ fontSize: '0.9rem', color: '#4b5563', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>{shop.owner_bio}</p>}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  {/* 🛑 名前とふりがなを横並びに配置 */}
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px', marginBottom: '6px' }}>
+                    {shop.owner_name && (
+                      <span style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b', whiteSpace: 'nowrap' }}>
+                        {shop.owner_name}
+                      </span>
+                    )}
+                    {shop.owner_name_kana && (
+                      <span style={{ fontSize: '0.75rem', color: '#64748b', whiteSpace: 'nowrap' }}>
+                        （{shop.owner_name_kana}）
+                      </span>
+                    )}
+                  </div>
+                  {shop.owner_bio && (
+                    <p style={{ fontSize: '0.85rem', color: '#4b5563', lineHeight: '1.5', margin: 0, whiteSpace: 'pre-wrap' }}>
+                      {shop.owner_bio}
+                    </p>
+                  )}
                 </div>
               </div>
             </div>
@@ -504,6 +521,13 @@ const toggleFavorite = async () => {
                   </tbody>
                 </table>
               </div>
+
+              {/* 🆕 補足注記コメント表示 */}
+              {shop.weekly_schedule_note && (
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '8px', paddingLeft: '4px', lineHeight: '1.4', whiteSpace: 'pre-wrap' }}>
+                  {shop.weekly_schedule_note.startsWith('※') ? shop.weekly_schedule_note : `※${shop.weekly_schedule_note}`}
+                </div>
+              )}
             </div>
           )}
 
