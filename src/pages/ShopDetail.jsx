@@ -249,10 +249,12 @@ const toggleFavorite = async () => {
         )}
       </div>
 
-      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
+      {/* 🛑 padding を '20px' から '10px' に減らして左右の幅を広げます */}
+      <div style={{ maxWidth: '600px', margin: '0 auto', padding: '10px' }}>
         
         {/* 基本情報カード */}
-        <div style={{ background: '#fff', borderRadius: '24px', padding: '25px', marginTop: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', position: 'relative' }}>
+        {/* 🛑 padding を '25px' から '15px' に変更し、角丸も '24px' から '20px' に少しスッキリさせます */}
+        <div style={{ background: '#fff', borderRadius: '20px', padding: '15px', marginTop: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', position: 'relative' }}>
           
           {/* 🆕 タイトルとハートボタンの横並びエリア */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px', gap: '15px' }}>
