@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 // 👇 修正：ここに「useLocation」を追加します！
 import { useParams, Link, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { MapPin, Phone, MessageCircle, ExternalLink, Mail, ChevronLeft, Info, Home as HomeIcon, Sparkles, Heart } from 'lucide-react';
+import { MapPin, Phone, MessageCircle, ExternalLink, Mail, ChevronLeft, Info, Home as HomeIcon, Sparkles, Heart, Clock, Calendar, Instagram, Twitter, Youtube, User, Image as ImageIcon, List, HelpCircle } from 'lucide-react';
 
 function ShopDetail() {
   const { shopId } = useParams();
@@ -66,6 +66,12 @@ useEffect(() => {
           setShop(null); // shopを空にすることで、下の「店舗が見つかりませんでした」が表示されます
           setLoading(false);
           return;
+        }
+
+        // 🛑 ここを追加：古いデータを新しい「カテゴリ型」に自動変換してエラーを防ぐ
+        const fetchedMenus = data.highlight_menus || [];
+        if (fetchedMenus.length > 0 && !fetchedMenus[0].items) {
+          data.highlight_menus = [{ categoryName: '基本メニュー', items: fetchedMenus }];
         }
 
         setShop(data);
@@ -209,19 +215,45 @@ const toggleFavorite = async () => {
       </div>
 
       {/* メイン画像エリア */}
-      <div style={{ width: '100%', height: '300px', background: '#eee', backgroundImage: shop.image_url ? `url(${shop.image_url})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {/* 🛑 position: 'relative' を追加しました */}
+      <div style={{ width: '100%', height: '300px', background: '#eee', backgroundImage: shop.image_url ? `url(${shop.image_url})` : 'none', backgroundSize: 'cover', backgroundPosition: 'center', position: 'relative' }}>
         {!shop.image_url && <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#ccc' }}>NO IMAGE</div>}
+        
+        {/* 🛑 画像の上に重ねるキャッチコピー */}
+        {shop.catchphrase && (
+          <div style={{ 
+            position: 'absolute', 
+            bottom: '20px', 
+            left: '50%', 
+            transform: 'translateX(-50%)', 
+            width: '90%', 
+            maxWidth: '500px', 
+            background: 'rgba(255, 255, 255, 0.45)', /* 透明度をアップ（0.65 -> 0.45） */
+            backdropFilter: 'blur(6px)', /* すりガラス感を維持して可読性を確保 */
+            padding: '15px 20px', 
+            borderRadius: '16px', 
+            boxShadow: '0 4px 15px rgba(0,0,0,0.08)', 
+            textAlign: 'center',
+            zIndex: 10
+          }}>
+            <div style={{ 
+              fontSize: '0.95rem', 
+              fontWeight: 'bold', 
+              color: '#1e293b', /* クッキリ読めるシックな濃いグレーテキスト */
+              lineHeight: '1.6',
+              whiteSpace: 'pre-wrap'
+            }}>
+              {shop.catchphrase}
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{ maxWidth: '600px', margin: '0 auto', padding: '20px' }}>
         
         {/* 基本情報カード */}
         <div style={{ background: '#fff', borderRadius: '24px', padding: '25px', marginTop: '10px', boxShadow: '0 10px 30px rgba(0,0,0,0.08)', position: 'relative' }}>
-          {/* ✅ 業種ラベルのカラー連動 */}
-<div style={{ background: themeColor, color: '#fff', fontSize: '0.7rem', fontWeight: 'bold', padding: '4px 12px', borderRadius: '20px', display: 'inline-block', marginBottom: '10px' }}>
-            {shop.business_type}
-          </div>
-          
+          
           {/* 🆕 タイトルとハートボタンの横並びエリア */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '5px', gap: '15px' }}>
             <h2 style={{ fontSize: '1.5rem', fontWeight: '900', margin: 0, color: '#1a1a1a', flex: 1, lineHeight: '1.2' }}>
@@ -333,18 +365,196 @@ const toggleFavorite = async () => {
             </div>
           )}
 
-          {/* 📞 住所・連絡先 */}
+          {/* --- 🆕 ギャラリーセクション --- */}
+          {shop.gallery_urls && shop.gallery_urls.length > 0 && (
+            <div style={{ margin: '30px 0' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: `2px solid ${themeColor}33`, paddingBottom: '8px' }}>
+                {/* 🛑 自由に設定したタイトルを表示 */}
+                <ImageIcon size={20} color={themeColor} /> {shop.gallery_section_title || 'ギャラリー'}
+              </h3>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: '10px' }}>
+                {shop.gallery_urls.map((url, idx) => (
+                  <div key={idx} style={{ position: 'relative', paddingTop: '100%', borderRadius: '12px', overflow: 'hidden', boxShadow: '0 4px 6px rgba(0,0,0,0.05)' }}>
+                    <img src={url} alt={`gallery-${idx}`} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* --- 🆕 カスタムメニュー・料金表（画像デザイン風） --- */}
+          {shop.highlight_menus && shop.highlight_menus.length > 0 && (
+            <div style={{ margin: '40px 0' }}>
+              {/* 自由に設定したタイトル */}
+              <div style={{ textAlign: 'center', marginBottom: '25px' }}>
+                {/* 🛑 1. 固定の「Price」から、自由に設定したサブタイトルへ変更 */}
+                <div style={{ color: themeColor, fontSize: '0.85rem', fontWeight: 'bold', textTransform: 'uppercase', marginBottom: '5px' }}>
+                  {shop.menu_section_subtitle || 'PRICE'}
+                </div>
+                <h3 style={{ fontSize: '1.4rem', fontWeight: 'bold', margin: '0 0 10px 0', color: '#1a1a1a' }}>
+                  {shop.menu_section_title || '料金表'}
+                </h3>
+                <div style={{ width: '40px', height: '3px', background: themeColor, margin: '0 auto' }}></div>
+              </div>
+
+              <div style={{ display: 'grid', gap: '20px' }}>
+                {shop.highlight_menus.map((category, catIdx) => (
+                  <details key={catIdx} style={{ background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0', overflow: 'hidden' }} open={catIdx === 0}>
+                    <summary style={{ background: '#f4ece4', padding: '12px 15px', fontWeight: 'bold', color: '#4b3e35', fontSize: '1rem', cursor: 'pointer', outline: 'none' }}>
+                      {category.categoryName}
+                    </summary>
+                    
+                    {/* メニューリスト（テーブル風） */}
+                    <div style={{ display: 'flex', flexDirection: 'column' }}>
+                      {category.items.map((item, itemIdx) => (
+                        <div key={itemIdx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px', borderBottom: itemIdx !== category.items.length - 1 ? '1px solid #f1f5f9' : 'none' }}>
+                          <div style={{ flex: 1, paddingRight: '15px' }}>
+                            <div style={{ color: '#333', fontSize: '0.95rem', lineHeight: '1.4' }}>{item.name}</div>
+                            {item.desc && <div style={{ color: '#666', fontSize: '0.75rem', marginTop: '4px' }}>{item.desc}</div>}
+                          </div>
+                          <div style={{ fontWeight: 'bold', color: '#c2410c', fontSize: '1rem', whiteSpace: 'nowrap' }}>
+                            {item.price}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* --- 🆕 代表者プロフィール --- */}
+          {(shop.owner_name || shop.owner_bio || shop.owner_image_url) && (
+            <div style={{ margin: '30px 0', padding: '20px', background: '#fff', borderRadius: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <User size={20} color={themeColor} /> 代表者メッセージ
+              </h3>
+              <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', flexWrap: 'wrap' }}>
+                {shop.owner_image_url && (
+                  <img src={shop.owner_image_url} alt="owner" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '50%', border: `2px solid ${themeColor}33` }} />
+                )}
+                <div style={{ flex: 1, minWidth: '200px' }}>
+                  {shop.owner_name && <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b', marginBottom: '10px' }}>{shop.owner_name}</div>}
+                  {shop.owner_bio && <p style={{ fontSize: '0.9rem', color: '#4b5563', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>{shop.owner_bio}</p>}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* --- 🆕 よくある質問 (FAQ) --- */}
+          {shop.faqs && shop.faqs.length > 0 && (
+            <div style={{ margin: '30px 0' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: `2px solid ${themeColor}33`, paddingBottom: '8px' }}>
+                <HelpCircle size={20} color={themeColor} /> よくある質問
+              </h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                {shop.faqs.map((faq, idx) => (
+                  <details key={idx} style={{ background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', padding: '15px' }}>
+                    <summary style={{ fontWeight: 'bold', color: '#1e293b', cursor: 'pointer', outline: 'none', display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.95rem' }}>
+                      <span style={{ color: themeColor }}>Q.</span> {faq.q}
+                    </summary>
+                    <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #cbd5e1', fontSize: '0.9rem', color: '#4b5563', lineHeight: '1.5', whiteSpace: 'pre-wrap', paddingLeft: '25px' }}>
+                      <span style={{ color: '#ef4444', fontWeight: 'bold', position: 'absolute', marginLeft: '-25px' }}>A.</span> {faq.a}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* --- 🆕 週間スケジュール表 --- */}
+          {shop.weekly_schedule && shop.weekly_schedule.length > 0 && (
+            <div style={{ margin: '30px 0', display: 'grid' }}>
+              <h3 style={{ fontSize: '1.1rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: `2px solid ${themeColor}33`, paddingBottom: '8px' }}>
+                <Calendar size={20} color={themeColor} /> 診療・営業時間表
+              </h3>
+              
+              <div style={{ minWidth: 0, overflowX: 'auto', borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+                <table style={{ width: '100%', minWidth: '450px', borderCollapse: 'collapse', textAlign: 'center', background: '#fff' }}>
+                  <thead>
+                    <tr style={{ background: '#f8fafc', borderBottom: '2px solid #e2e8f0' }}>
+                      <th style={{ padding: '12px 8px', color: '#64748b', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>時間</th>
+                      <th style={{ padding: '12px 8px', color: '#1e293b', fontSize: '0.85rem' }}>月</th>
+                      <th style={{ padding: '12px 8px', color: '#1e293b', fontSize: '0.85rem' }}>火</th>
+                      <th style={{ padding: '12px 8px', color: '#1e293b', fontSize: '0.85rem' }}>水</th>
+                      <th style={{ padding: '12px 8px', color: '#1e293b', fontSize: '0.85rem' }}>木</th>
+                      <th style={{ padding: '12px 8px', color: '#1e293b', fontSize: '0.85rem' }}>金</th>
+                      <th style={{ padding: '12px 8px', color: '#3b82f6', fontSize: '0.85rem' }}>土</th>
+                      <th style={{ padding: '12px 8px', color: '#ef4444', fontSize: '0.85rem' }}>日</th>
+                      <th style={{ padding: '12px 8px', color: '#ef4444', fontSize: '0.85rem' }}>祝</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {shop.weekly_schedule.map((row, idx) => (
+                      <tr key={idx} style={{ borderBottom: idx !== shop.weekly_schedule.length - 1 ? '1px solid #e2e8f0' : 'none' }}>
+                        <td style={{ padding: '12px 8px', fontSize: '0.85rem', fontWeight: 'bold', color: themeColor, whiteSpace: 'nowrap' }}>{row.time}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.mon === '休' || row.mon === '×' ? '#ef4444' : '#333' }}>{row.mon}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.tue === '休' || row.tue === '×' ? '#ef4444' : '#333' }}>{row.tue}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.wed === '休' || row.wed === '×' ? '#ef4444' : '#333' }}>{row.wed}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.thu === '休' || row.thu === '×' ? '#ef4444' : '#333' }}>{row.thu}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.fri === '休' || row.fri === '×' ? '#ef4444' : '#333' }}>{row.fri}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.sat === '休' || row.sat === '×' ? '#ef4444' : '#3b82f6' }}>{row.sat}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.sun === '休' || row.sun === '×' ? '#ef4444' : '#ef4444' }}>{row.sun}</td>
+                        <td style={{ padding: '12px 8px', fontSize: '0.9rem', color: row.hol === '休' || row.hol === '×' ? '#ef4444' : '#ef4444' }}>{row.hol}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* 📞 営業情報・住所・連絡先 */}
           <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            
+            {/* 🆕 営業時間・定休日 */}
+            {shop.business_hours && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.85rem', color: '#4b5563' }}>
+                <Clock size={18} color={themeColor} style={{ flexShrink: 0 }} />
+                {/* 🛑 オブジェクト型（古いデータ）の場合はクラッシュを防ぐ処理 */}
+                <span>{typeof shop.business_hours === 'string' ? shop.business_hours : '※設定画面で営業時間を再入力してください'}</span>
+              </div>
+            )}
+            {shop.regular_holiday && (
+              <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.85rem', color: '#4b5563' }}>
+                <Calendar size={18} color={themeColor} style={{ flexShrink: 0 }} />
+                {/* 🛑 こちらも同様に安全対策 */}
+                <span>{typeof shop.regular_holiday === 'string' ? shop.regular_holiday : '※設定画面で定休日を再入力してください'}</span>
+              </div>
+            )}
+
+            {/* 住所・電話番号 */}
             <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.85rem', color: '#666' }}>
               <MapPin size={18} color={themeColor} style={{ flexShrink: 0 }} />
               <span>{shop.address || '住所未登録'}</span>
             </div>
-            
             {shop.phone && (
               <a href={`tel:${shop.phone}`} style={{ display: 'flex', gap: '10px', alignItems: 'center', fontSize: '0.85rem', color: themeColor, textDecoration: 'none', fontWeight: 'bold' }}>
                 <Phone size={18} color={themeColor} style={{ flexShrink: 0 }} />
                 <span>{shop.phone} (タップで発信)</span>
               </a>
+            )}
+
+            {/* 🆕 SNSリンク */}
+            {(shop.instagram_url || shop.x_url || shop.youtube_url) && (
+              <div style={{ display: 'flex', gap: '15px', marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed #e2e8f0' }}>
+                {shop.instagram_url && (
+                  <a href={shop.instagram_url} target="_blank" rel="noreferrer" style={{ color: '#e1306c' }}>
+                    <Instagram size={24} />
+                  </a>
+                )}
+                {shop.x_url && (
+                  <a href={shop.x_url} target="_blank" rel="noreferrer" style={{ color: '#1da1f2' }}>
+                    <Twitter size={24} />
+                  </a>
+                )}
+                {shop.youtube_url && (
+                  <a href={shop.youtube_url} target="_blank" rel="noreferrer" style={{ color: '#ff0000' }}>
+                    <Youtube size={24} />
+                  </a>
+                )}
+              </div>
             )}
           </div>
 
