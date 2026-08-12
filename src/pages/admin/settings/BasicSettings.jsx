@@ -12,7 +12,7 @@ import {
 import HelpTooltip from '../../../components/ui/HelpTooltip';
 import imageCompression from 'browser-image-compression';
 
-const BasicSettings = ({ reloadPreview }) => {
+const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
 
@@ -96,7 +96,7 @@ const BasicSettings = ({ reloadPreview }) => {
 
       // 🆕 取得処理の追加
       setCatchphrase(data.catchphrase || '');
-      setBusinessHours(typeof data.business_hours === 'string' ? data.business_hours : '');
+      setBusinessHours(data.display_business_hours || '');
       setRegularHoliday(data.regular_holiday || '');
       setInstagramUrl(data.instagram_url || '');
       setXUrl(data.x_url || '');
@@ -315,7 +315,7 @@ const BasicSettings = ({ reloadPreview }) => {
 
       // 🆕 保存対象に追加
       catchphrase,
-      business_hours: businessHours,
+      display_business_hours: businessHours,
       regular_holiday: regularHoliday,
       instagram_url: instagramUrl,
       x_url: xUrl,
@@ -354,50 +354,6 @@ const BasicSettings = ({ reloadPreview }) => {
         </div>
       )}
 
-      {/* ナビゲーションヘッダー */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', gap: '10px' }}>
-        <button 
-          onClick={() => navigate(`/admin/${shopId}/dashboard`)}
-          style={{ 
-            background: '#fff', 
-            border: '1px solid #e2e8f0', 
-            padding: isPC ? '10px 20px' : '10px 12px', 
-            borderRadius: '30px', 
-            fontWeight: 'bold', 
-            color: '#64748b', 
-            cursor: 'pointer', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            fontSize: isPC ? '1rem' : '0.8rem',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <ArrowLeft size={18} /> {isPC ? 'ダッシュボードへ' : '戻る'}
-        </button>
-
-        <button 
-          disabled={true} 
-          style={{ 
-            background: '#cbd5e1', 
-            border: 'none', 
-            padding: isPC ? '10px 20px' : '10px 15px', 
-            borderRadius: '30px', 
-            fontSize: isPC ? '0.9rem' : '0.8rem', 
-            fontWeight: 'bold', 
-            color: '#fff', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            cursor: 'not-allowed', 
-            boxShadow: 'none', 
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <Sparkles size={16} /> {isPC ? '案内人（準備中）' : '準備中'}
-        </button>
-      </div>
 
       <h2 style={{ fontSize: '1.4rem', color: '#1e293b', marginBottom: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
         店舗基本設定
@@ -872,14 +828,40 @@ const BasicSettings = ({ reloadPreview }) => {
         </div>
       </section>
 
-      {/* フッター固定保存ボタン */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
-        <button 
-          onClick={handleSave} 
-          style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: `0 10px 25px ${themeColor}66`, cursor: 'pointer' }}
-        >
-          <Save size={22} /> 設定内容を保存する 💾
-        </button>
+      {/* 🛑 新しい3ボタン固定フッター */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        {isPC ? (
+          <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ArrowLeft size={18} /> 戻る
+            </button>
+            <button onClick={handleSave} style={{ flex: 1, padding: '15px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: `0 4px 15px ${themeColor}66` }}>
+              <Save size={20} /> 設定内容を保存する
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+              <ArrowLeft size={20} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
+            </button>
+            <button onClick={handleSave} style={{ flex: 1.8, padding: '10px 0', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: `0 4px 15px ${themeColor}66` }}>
+              <Save size={20} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>設定保存</span>
+            </button>
+            {/* 🛑 右側のボタンの onClick を修正。別タブを開かず、現在のURLに ?preview=shop を付けて遷移させます */}
+            <button 
+              onClick={() => {
+                navigate(`?preview=shop`, { replace: true });
+                if (setShowMobilePreview) setShowMobilePreview(true);
+              }} 
+              style={{ flex: 1, padding: '10px 0', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(37,99,235,0.4)' }}
+            >
+              <Globe size={20} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>プレビュー</span>
+            </button>
+          </div>
+        )}
       </div>
 
     </div>

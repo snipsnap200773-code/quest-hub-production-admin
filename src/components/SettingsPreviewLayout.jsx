@@ -27,7 +27,7 @@ const SettingsPreviewLayout = ({ children }) => {
   // これにより、MenuSettingsの保存ボタンを押した後に props.reloadPreview() が呼べます
   const childrenWithProps = React.Children.map(children, child => {
     if (React.isValidElement(child)) {
-      return React.cloneElement(child, { reloadPreview });
+      return React.cloneElement(child, { reloadPreview, setShowMobilePreview });
     }
     return child;
   });
@@ -103,22 +103,6 @@ const SettingsPreviewLayout = ({ children }) => {
         </div>
       )}
 
-      {/* 📱 モバイル用：フローティングボタン */}
-      {isMobile && !showMobilePreview && (
-        <button
-          onClick={() => setShowMobilePreview(true)}
-          style={{
-            // 👇 修正：right: '20px' を left: '20px' に変更（保存ボタンとの被り防止）
-            position: 'fixed', bottom: '24px', left: '20px', zIndex: 1000,
-            display: 'flex', alignItems: 'center', gap: '8px',
-            padding: '14px 20px', background: '#2563eb', color: '#fff',
-            border: 'none', borderRadius: '30px', fontWeight: 'bold',
-            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.4)'
-          }}
-        >
-          <Smartphone size={20} /> プレビューを見る
-        </button>
-      )}
 
       {/* 📱 モバイル用：プレビューモーダル（全画面） */}
       {isMobile && showMobilePreview && (

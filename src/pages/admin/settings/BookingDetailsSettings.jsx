@@ -5,7 +5,7 @@ import {
   ClipboardList, ArrowLeft, Save, CheckCircle2, 
   MapPin, Car, Building2, HeartPulse, MessageSquare, 
   ToggleLeft, ToggleRight,
-  User, Mail, Phone, Scissors, Sparkles, Plus, Trash2
+  User, Mail, Phone, Scissors, Sparkles, Plus, Trash2, Globe // 👈 Globe を追加
 } from 'lucide-react';
 
 const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor, toggleField }) => {
@@ -108,7 +108,7 @@ const CustomFieldItem = ({ field, themeColor, updateCustomField, deleteCustomFie
   );
 };
 
-const BookingDetailsSettings = ({ reloadPreview }) => {
+const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => { 
   const { shopId } = useParams();
   const navigate = useNavigate();
   const [message, setMessage] = useState('');
@@ -260,11 +260,39 @@ const BookingDetailsSettings = ({ reloadPreview }) => {
         </button>
       </section>
 
-      {/* 👇 修正：BookingScheduleSettings と同じ、フッター固定＆横幅いっぱいのデザインに統一 */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
-        <button onClick={handleSave} style={{ width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', boxShadow: `0 10px 25px ${themeColor}66`, cursor: 'pointer' }}>
-          <Save size={22} /> 設定を保存 💾
-        </button>
+      {/* 🛑 3ボタン固定フッターに差し替え */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        {isPC ? (
+          <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ArrowLeft size={18} /> 戻る
+            </button>
+            <button onClick={handleSave} style={{ flex: 1, padding: '15px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: `0 4px 15px ${themeColor}66` }}>
+              <Save size={20} /> 設定内容を保存する
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+              <ArrowLeft size={20} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
+            </button>
+            <button onClick={handleSave} style={{ flex: 1.8, padding: '10px 0', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: `0 4px 15px ${themeColor}66` }}>
+              <Save size={20} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>設定保存</span>
+            </button>
+            <button 
+              onClick={() => {
+                navigate(`?preview=details`, { replace: true }); // 👈 details に修正します
+                if (setShowMobilePreview) setShowMobilePreview(true);
+              }} 
+              style={{ flex: 1, padding: '10px 0', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(37,99,235,0.4)' }}
+            >
+              <Globe size={20} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>プレビュー</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

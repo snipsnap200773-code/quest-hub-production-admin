@@ -535,11 +535,10 @@ const toggleFavorite = async () => {
           <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             
             {/* 🆕 営業時間・定休日 */}
-            {shop.business_hours && (
+            {shop.display_business_hours && (
               <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.85rem', color: '#4b5563' }}>
                 <Clock size={18} color={themeColor} style={{ flexShrink: 0 }} />
-                {/* 🛑 オブジェクト型（古いデータ）の場合はクラッシュを防ぐ処理 */}
-                <span>{typeof shop.business_hours === 'string' ? shop.business_hours : '※設定画面で営業時間を再入力してください'}</span>
+                <span>{shop.display_business_hours}</span>
               </div>
             )}
             {shop.regular_holiday && (
