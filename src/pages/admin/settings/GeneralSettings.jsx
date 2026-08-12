@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { 
   Settings, Shield, Palette, Layout, Save, 
   ArrowLeft, CheckCircle2, RefreshCcw,
-  Bell, Globe // 👈 Globe を追加
+  Bell, Globe, Mail // 👈 Mail を追加
 } from 'lucide-react';
 
 // 🆕 追加：VAPID公開鍵を変換するヘルパー関数
@@ -37,10 +37,16 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
   const [themeColor, setThemeColor] = useState('#2563eb');
   const [extraSlotsBefore, setExtraSlotsBefore] = useState(0);
   const [extraSlotsAfter, setExtraSlotsAfter] = useState(0);
-  const [autoSalesMatching, setAutoSalesMatching] = useState(false); // 🆕 自動売上確定のState
+  const [autoSalesMatching, setAutoSalesMatching] = useState(false); 
   const [allowBatchMatching, setAllowBatchMatching] = useState(false);
-  // 🆕 追加：プッシュ通知の状態
-  const [isPushEnabled, setIsPushEnabled] = useState(false);
+
+  // 🚀 🆕 引っ越し：メール通知設定のState
+  const [notifyMailEnabled, setNotifyMailEnabled] = useState(true);
+  const [notifyMailRemindEnabled, setNotifyMailRemindEnabled] = useState(true);
+
+// 🆕 プッシュ通知の状態
+const [isPushEnabled, setIsPushEnabled] = useState(false);
+const [initialDataStr, setInitialDataStr] = useState(null);
 
   // 🆕 追加：通知のON/OFFを切り替える魔法の関数
   const handlePushToggle = async (enabled) => {
@@ -126,6 +132,20 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
       setExtraSlotsAfter(data.extra_slots_after || 0);
       setAutoSalesMatching(data.auto_sales_matching || false);
       setAllowBatchMatching(data.allow_batch_matching || false);
+      // 🚀 🆕 取得処理に追加
+      setNotifyMailEnabled(data.notify_mail_enabled ?? true);
+      setNotifyMailRemindEnabled(data.notify_mail_remind_enabled ?? true);
+
+      // 🚀 🆕 追加：取得した直後の状態を「初期データ」として文字列で記憶
+      setInitialDataStr(JSON.stringify({
+        themeColor: data.theme_color || '#2563eb',
+        extraSlotsBefore: data.extra_slots_before || 0,
+        extraSlotsAfter: data.extra_slots_after || 0,
+        autoSalesMatching: data.auto_sales_matching || false,
+        allowBatchMatching: data.allow_batch_matching || false,
+        notifyMailEnabled: data.notify_mail_enabled ?? true,
+        notifyMailRemindEnabled: data.notify_mail_remind_enabled ?? true
+      }));
     }
 
     // 2. 🆕 端末固有の通知状態を確認
@@ -147,17 +167,30 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
 
   const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
 
+  // 🚀 🆕 追加：現在の入力状態を文字列化して、初期データと比較
+  const currentDataStr = JSON.stringify({
+    themeColor, extraSlotsBefore, extraSlotsAfter, autoSalesMatching, allowBatchMatching, notifyMailEnabled, notifyMailRemindEnabled
+  });
+  const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
+
   const handleSave = async () => {
     const { error } = await supabase.from('profiles').update({
       theme_color: themeColor,
       extra_slots_before: extraSlotsBefore,
       extra_slots_after: extraSlotsAfter,
       auto_sales_matching: autoSalesMatching,
-      allow_batch_matching: allowBatchMatching
+      allow_batch_matching: allowBatchMatching,
+      notify_mail_enabled: notifyMailEnabled,              // 🚀 🆕 保存処理に追加
+      notify_mail_remind_enabled: notifyMailRemindEnabled  // 🚀 🆕 保存処理に追加
     }).eq('id', shopId);
 
-    if (!error) showMsg('全般設定を保存しました！');
-    else alert('保存に失敗しました。');
+    if (!error) {
+      showMsg('全般設定を保存しました！');
+      // 🚀 🆕 追加：保存が完了したら、今の状態を新しい「初期データ」として記憶し直す（ボタンをグレーに戻すため）
+      setInitialDataStr(currentDataStr);
+    } else {
+      alert('保存に失敗しました。');
+    }
   };
 
   const handleUpdatePassword = async () => {
@@ -176,7 +209,7 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
   const btnActiveS = (val, target) => ({ padding: '12px 5px', background: val === target ? (themeColor || '#2563eb') : '#fff', color: val === target ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' });
   
-  return (
+return (
     <div style={containerStyle}>
       {message && (
         <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', boxShadow: '0 10px 15px -3px rgba(0,0,0,0.1)', fontWeight: 'bold' }}>
@@ -184,35 +217,11 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
         </div>
       )}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-start', alignItems: 'center', marginBottom: '30px' }}>
-        <button 
-          onClick={() => navigate(`/admin/${shopId}/dashboard`)}
-          style={{ 
-            background: '#fff', 
-            border: '1px solid #e2e8f0', 
-            padding: isPC ? '10px 20px' : '10px 12px', 
-            borderRadius: '30px', 
-            fontWeight: 'bold', 
-            color: '#64748b', 
-            cursor: 'pointer', 
-            display: 'flex', 
-            alignItems: 'center', 
-            gap: '8px', 
-            fontSize: isPC ? '1rem' : '0.8rem',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-            whiteSpace: 'nowrap'
-          }}
-        >
-          <ArrowLeft size={18} /> {isPC ? 'ダッシュボードへ' : '戻る'}
-        </button>
-      </div>
-
       <h2 style={{ fontSize: '1.4rem', color: '#1e293b', marginBottom: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <Settings size={28} /> 全般設定・セキュリティ
       </h2>
 
-      {/* 🎨 外観設定 */}
-      <section style={{ ...cardStyle, borderLeft: `8px solid ${themeColor}` }}>
+      {/* 🎨 外観設定 */}      <section style={{ ...cardStyle, borderLeft: `8px solid ${themeColor}` }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', color: themeColor, display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
           <Palette size={20} /> お店のテーマカラー
         </h3>
@@ -233,7 +242,7 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
       <section style={{ 
         ...cardStyle, 
         borderLeft: `8px solid #94a3b8`, // グレーに変更
-        background: '#f8fafc',           // 薄いグレーに変更
+        background: '#f8fafc',
         opacity: 0.6,                   // 少し透かせて「無効感」を出す
         pointerEvents: 'none'           // ⚡️ カード全体をクリック不可にする
       }}>
@@ -272,6 +281,41 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
         </div>
       </section>
 
+      {/* ✉️ 🆕 引っ越し：メール通知設定 */}
+      <section style={{ ...cardStyle, borderLeft: `8px solid #0369a1` }}>
+        <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+          <Mail size={20} /> システムからの自動メール通知
+        </h3>
+
+        {/* 1. 店舗向け（新着予約） */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '20px', borderBottom: '1px solid #e2e8f0' }}>
+          <div style={{ flex: 1, paddingRight: '15px' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>新着予約のメール通知を受け取る（店舗向け）</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>店舗用メールアドレス宛に、予約が入った際にお知らせを送信します。</div>
+          </div>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={notifyMailEnabled} onChange={(e) => setNotifyMailEnabled(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyMailEnabled ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
+              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: notifyMailEnabled ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
+            </span>
+          </label>
+        </div>
+
+        {/* 2. お客様向け（リマインド） */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1, paddingRight: '15px' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>リマインドメールを自動送信する（お客様向け）</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ご予約の24時間前に、Web予約をされたお客様へ自動で確認メールを送信します。</div>
+          </div>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+            <input type="checkbox" checked={notifyMailRemindEnabled} onChange={(e) => setNotifyMailRemindEnabled(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyMailRemindEnabled ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
+              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: notifyMailRemindEnabled ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
+            </span>
+          </label>
+        </div>
+      </section>
+
       {/* 🔐 セキュリティ設定 */}
       <section style={{ ...cardStyle, border: `2px solid #1e293b` }}>
         <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1rem', color: '#1e293b', marginBottom: '20px' }}>
@@ -301,15 +345,37 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
         )}
       </section>
 
-      {/* 🛑 3ボタン固定フッターに差し替え */}
+      {/* 🛑 PC/モバイル対応・変更検知機能付き固定フッター */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        
+        {/* 🚀 🆕 点滅アニメーションの定義 */}
+        <style>{`
+          @keyframes pulse-btn {
+            0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+            50% { transform: scale(1.02); box-shadow: 0 4px 25px ${themeColor}99; }
+            100% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+          }
+        `}</style>
+
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
-            <button onClick={handleSave} style={{ flex: 1, padding: '15px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: `0 4px 15px ${themeColor}66` }}>
-              <Save size={20} /> 設定内容を保存する
+            <button 
+              onClick={handleSave} 
+              disabled={!hasChanges} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: hasChanges ? 'pointer' : 'not-allowed', 
+                animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
+              }}
+            >
+              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
             </button>
           </div>
         ) : (
@@ -318,19 +384,21 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>
-            <button onClick={handleSave} style={{ flex: 1.8, padding: '10px 0', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: `0 4px 15px ${themeColor}66` }}>
-              <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>設定保存</span>
-            </button>
             <button 
-              onClick={() => {
-                navigate(`?preview=reserve`, { replace: true });
-                if (setShowMobilePreview) setShowMobilePreview(true);
-              }} 
-              style={{ flex: 1, padding: '10px 0', background: '#2563eb', color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: '0 4px 15px rgba(37,99,235,0.4)' }}
+              onClick={handleSave} 
+              disabled={!hasChanges} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 2.2, padding: '10px 0', border: 'none', borderRadius: '12px', 
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: hasChanges ? 'pointer' : 'not-allowed', 
+                animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
+              }}
             >
-              <Globe size={20} />
-              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>プレビュー</span>
+              <Save size={20} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
             </button>
           </div>
         )}

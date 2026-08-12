@@ -40,6 +40,26 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
   const [extraSlotsBefore, setExtraSlotsBefore] = useState(0);
   const [extraSlotsAfter, setExtraSlotsAfter] = useState(0);
 
+  // 🚀 🆕 変更検知用のStateとロジックを追加
+  const [initialDataStr, setInitialDataStr] = useState(null);
+  const [isDataReady, setIsDataReady] = useState(false);
+
+  // 📝 現在の全入力状態を文字列（JSON）化してまとめる
+  const currentDataStr = JSON.stringify({
+    businessHours, regularHolidays, bufferPreparationMin, minLeadTimeHours, autoFillLogic, maxCapacity, isStrictFillMode, useTravelTimeLogic, specialHolidays, slotIntervalMin, extraSlotsBefore, extraSlotsAfter
+  });
+
+  // 💡 初期データと現在のデータに差分があるかを判定
+  const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
+
+  // 💡 データ読み込み直後のみ、初期データとして記憶する
+  useEffect(() => {
+    if (isDataReady) {
+      setInitialDataStr(currentDataStr);
+      setIsDataReady(false);
+    }
+  }, [isDataReady, currentDataStr]);
+
   const dayMap = { mon: '月曜日', tue: '火曜日', wed: '水曜日', thu: '木曜日', fri: '金曜日', sat: '土曜日', sun: '日曜日' };
   const weekLabels = [
     { key: '1', label: '第1' }, { key: '2', label: '第2' }, { key: '3', label: '第3' },
@@ -81,6 +101,8 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
       setSlotIntervalMin(data.slot_interval_min || 30);
       setExtraSlotsBefore(data.extra_slots_before || 0);
       setExtraSlotsAfter(data.extra_slots_after || 0);
+      
+      setIsDataReady(true); // 🚀 🆕 追加：データの読み込み完了を合図する
     }
   };
 
@@ -140,8 +162,12 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
       extra_slots_after: extraSlotsAfter
     }).eq('id', shopId);
 
-    if (!error) showMsg('全スケジュール設定を保存しました！');
-    else alert('保存に失敗しました。');
+    if (!error) {
+      showMsg('全スケジュール設定を保存しました！');
+      setInitialDataStr(currentDataStr); // 🚀 🆕 追加：保存完了後に変更検知をリセット
+    } else {
+      alert('保存に失敗しました。');
+    }
   };
 
   const themeColor = shopData?.theme_color || '#2563eb';
@@ -160,25 +186,6 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         </div>
       )}
 
-      {/* ナビゲーション */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px', gap: '10px' }}>
-        <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ background: '#fff', border: '1px solid #e2e8f0', padding: isPC ? '10px 20px' : '10px 12px', borderRadius: '30px', fontWeight: 'bold', color: '#64748b', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: isPC ? '1rem' : '0.8rem', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', whiteSpace: 'nowrap' }}>
-          <ArrowLeft size={18} /> {isPC ? 'ダッシュボードへ' : '戻る'}
-        </button>
-        <button onClick={() => {
-          if(window.confirm('月曜日の設定を全曜日にコピーしますか？')){
-            const mon = businessHours['mon'];
-            const newH = {};
-            ['mon','tue','wed','thu','fri','sat','sun'].forEach(d => newH[d] = {...mon});
-            setBusinessHours(newH);
-            showMsg('全曜日にコピーしました！');
-          }
-        }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '10px 15px', borderRadius: '30px', fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <Sparkles size={16} /> <span>全曜日にコピー</span>
-          <HelpTooltip themeColor={themeColor} showDown={true} text="「月曜日」に設定した内容を全曜日に一括反映させます。" />
-        </button>
-      </div>
-      
       <h2 style={{ fontSize: '1.4rem', color: '#1e293b', marginBottom: '24px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
         <Calendar size={28} /> カレンダー・スケジュール設定
       </h2>
@@ -206,9 +213,23 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
 
       {/* ⏰ 曜日別営業時間・休憩 */}
       <section style={cardStyle}>
-        <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', color: '#1e293b', marginBottom: '20px' }}>
-          <Clock size={22} color={themeColor} /> 曜日別営業時間・休憩
-        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+          <h3 style={{ margin: 0, display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.1rem', color: '#1e293b' }}>
+            <Clock size={22} color={themeColor} /> 曜日別営業時間・休憩
+          </h3>
+          <button onClick={() => {
+            if(window.confirm('月曜日の設定を全曜日にコピーしますか？')){
+              const mon = businessHours['mon'];
+              const newH = {};
+              ['mon','tue','wed','thu','fri','sat','sun'].forEach(d => newH[d] = {...mon});
+              setBusinessHours(newH);
+              showMsg('全曜日にコピーしました！');
+            }
+          }} style={{ background: '#f8fafc', border: '1px solid #cbd5e1', padding: '8px 15px', borderRadius: '30px', fontSize: '0.8rem', fontWeight: 'bold', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Sparkles size={16} /> <span>全曜日にコピー</span>
+            <HelpTooltip themeColor={themeColor} showDown={true} text="「月曜日」に設定した内容を全曜日に一括反映させます。" />
+          </button>
+        </div>
         {Object.keys(dayMap).map(day => (
           <div key={day} style={{ borderBottom: '1px solid #f1f5f9', padding: '15px 0' }}>
             <b style={{ fontSize: '0.95rem', color: '#1e293b', display: 'block', marginBottom: '12px' }}>{dayMap[day]}</b>
@@ -425,15 +446,37 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         </div>
       </section>
 
-      {/* 🛑 3ボタン固定フッターに差し替え */}
+      {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        
+        {/* 🚀 🆕 点滅アニメーションの定義 */}
+        <style>{`
+          @keyframes pulse-btn {
+            0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+            50% { transform: scale(1.02); box-shadow: 0 4px 25px ${themeColor}99; }
+            100% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+          }
+        `}</style>
+
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
-            <button onClick={handleSave} style={{ flex: 1, padding: '15px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: `0 4px 15px ${themeColor}66` }}>
-              <Save size={20} /> 設定内容を保存する
+            <button 
+              onClick={handleSave} 
+              disabled={!hasChanges} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: hasChanges ? 'pointer' : 'not-allowed', 
+                animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
+              }}
+            >
+              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
             </button>
           </div>
         ) : (
@@ -442,9 +485,21 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>
-            <button onClick={handleSave} style={{ flex: 1.8, padding: '10px 0', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer', boxShadow: `0 4px 15px ${themeColor}66` }}>
+            <button 
+              onClick={handleSave} 
+              disabled={!hasChanges} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 1.8, padding: '10px 0', border: 'none', borderRadius: '12px', 
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: hasChanges ? 'pointer' : 'not-allowed', 
+                animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
+              }}
+            >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>設定保存</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
             </button>
             <button 
               onClick={() => {

@@ -256,7 +256,7 @@ const AdminDashboard = () => {
           iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* 🆕 タスク・お会計設定 */}
+        {/* タスク・お会計設定 */}
         <NavCard 
           title="タスク・お会計設定" 
           desc="店販商品・調整（割引）マスター・自動処理" 
@@ -267,12 +267,13 @@ const AdminDashboard = () => {
           iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* メール設定 */}
+        {/* メール設定（※複雑なため現在は非表示。必要になればコメントアウトを外して復活）
         <NavCard 
           title="メール設定" desc="予約完了メールを自分らしくカスタマイズ" icon={<Mail size={28} />} color="#8b5cf6"
           to={`/admin/${shopId}/settings/email`}
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
+        */}
 
         {/* LINE連携 */}
         <NavCard 

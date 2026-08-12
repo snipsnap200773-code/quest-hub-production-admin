@@ -25,6 +25,19 @@ const StaffSettings = () => {
   const [copiedId, setCopiedId] = useState(null); 
   const [showQrId, setShowQrId] = useState(null); 
 
+  // 🚀 🆕 変更検知用のStateと、比較用データの整形関数を追加
+  const [initialDataStr, setInitialDataStr] = useState(null);
+  const getSimplifiedStaffsStr = (list) => {
+    return JSON.stringify(list.map(s => ({
+      id: s.id,
+      name: s.name,
+      role_type: s.role_type || 'stylist',
+      concurrent_capacity: s.concurrent_capacity || 1,
+      weekly_holidays: s.weekly_holidays || [],
+      is_default_for_admin: !!s.is_default_for_admin // true/falseを厳密にするため
+    })));
+  };
+
   const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
 
   useEffect(() => {
@@ -58,9 +71,12 @@ const StaffSettings = () => {
       const initialized = data.map(s => ({
         ...s,
         weekly_holidays: s.weekly_holidays || [],
-        role_type: s.role_type || 'stylist' // 🚀 🆕 技術者/アシスタントの初期値
+        role_type: s.role_type || 'stylist', // 🚀 🆕 技術者/アシスタントの初期値
+        concurrent_capacity: s.concurrent_capacity || 1, // 👈 比較用に明示
+        is_default_for_admin: !!s.is_default_for_admin   // 👈 比較用に明示
       }));
       setStaffs(initialized);
+      setInitialDataStr(getSimplifiedStaffsStr(initialized)); // 🚀 🆕 取得したデータを「初期値」として記憶
     }
     setLoading(false);
   };
@@ -146,25 +162,15 @@ const StaffSettings = () => {
     }
   };
 
+  // 🚀 🆕 現在の入力状態を文字列化して、初期データと比較
+  const currentDataStr = getSimplifiedStaffsStr(staffs);
+  const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
+
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
 
   return (
     // 👇 修正：ボタンと被らないように paddingBottom: '120px' を追加
     <div style={{ maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', fontFamily: 'sans-serif' }}>
-      
-      <div style={{ marginBottom: '30px' }}>
-        <button 
-          onClick={() => navigate(`/admin/${shopId}/dashboard`)} 
-          style={{ 
-            background: '#fff', border: '1px solid #e2e8f0', padding: isPC ? '10px 20px' : '10px 12px', 
-            borderRadius: '30px', fontWeight: 'bold', color: '#64748b', cursor: 'pointer', 
-            display: 'flex', alignItems: 'center', gap: '8px', fontSize: isPC ? '1rem' : '0.8rem',
-            boxShadow: '0 2px 4px rgba(0,0,0,0.05)', whiteSpace: 'nowrap'
-          }}
-        >
-          <ArrowLeft size={18} /> {isPC ? 'ダッシュボードへ' : '戻る'}
-        </button>
-      </div>
       
       <div style={{ background: '#fff', padding: '30px', borderRadius: '24px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)', border: '1px solid #e2e8f0' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
@@ -360,20 +366,65 @@ const StaffSettings = () => {
         </div>
       </div>
 
-      {/* 👇 🆕 追加：BookingScheduleSettings などと同じ、フッター固定＆横幅いっぱいのデザイン */}
-      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: '24px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
-        <button 
-          onClick={handleSaveAll} 
-          disabled={isSaving === 'all'}
-          style={{ 
-            width: '100%', maxWidth: '500px', margin: '0 auto', display: 'flex', alignItems: 'center', 
-            justifyContent: 'center', gap: '10px', padding: '18px', background: themeColor, 
-            color: '#fff', border: 'none', borderRadius: '50px', fontWeight: 'bold', fontSize: '1.1rem', 
-            boxShadow: `0 10px 25px ${themeColor}66`, cursor: isSaving === 'all' ? 'not-allowed' : 'pointer' 
-          }}
-        >
-          <Save size={22} /> {isSaving === 'all' ? '保存中...' : '全スタッフの設定を保存 💾'}
-        </button>
+      {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
+      <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        
+        {/* 🚀 🆕 点滅アニメーションの定義 */}
+        <style>{`
+          @keyframes pulse-btn {
+            0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+            50% { transform: scale(1.02); box-shadow: 0 4px 25px ${themeColor}99; }
+            100% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+          }
+        `}</style>
+
+        {isPC ? (
+          <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <ArrowLeft size={18} /> 戻る
+            </button>
+            <button 
+              onClick={handleSaveAll} 
+              disabled={!hasChanges || isSaving === 'all'} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: (hasChanges && isSaving !== 'all') ? 'pointer' : 'not-allowed', 
+                animation: (hasChanges && isSaving !== 'all') ? 'pulse-btn 2s infinite' : 'none' 
+              }}
+            >
+              <Save size={20} /> {isSaving === 'all' ? '保存中...' : (hasChanges ? '未保存の変更があります' : '変更はありません')}
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+              <ArrowLeft size={20} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
+            </button>
+            <button 
+              onClick={handleSaveAll} 
+              disabled={!hasChanges || isSaving === 'all'} // 👈 変更がない時は押せない
+              style={{ 
+                flex: 1.8, padding: '10px 0', border: 'none', borderRadius: '12px', 
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
+                // 👈 変更があればテーマカラー＋点滅、なければグレー
+                background: hasChanges ? themeColor : '#cbd5e1', 
+                color: '#fff', 
+                cursor: (hasChanges && isSaving !== 'all') ? 'pointer' : 'not-allowed', 
+                animation: (hasChanges && isSaving !== 'all') ? 'pulse-btn 2s infinite' : 'none' 
+              }}
+            >
+              <Save size={20} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isSaving === 'all' ? '保存中...' : (hasChanges ? '保存する' : '変更なし')}</span>
+            </button>
+            {/* 👇 プレビューボタンと同じ大きさの透明な「空きスペース」 */}
+            <div style={{ flex: 1 }}></div>
+          </div>
+        )}
       </div>
 
     </div>

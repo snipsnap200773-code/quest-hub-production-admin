@@ -53,10 +53,10 @@ const ShareLinks = () => {
   };
 
   // スタイル定義
-  const containerStyle = { fontFamily: 'sans-serif', maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: '50px' };
-  const cardStyle = { marginBottom: '25px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
-  const linkBoxStyle = { background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '10px' };
-  const urlTextStyle = { fontSize: '0.85rem', color: '#334155', background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto', whiteSpace: 'nowrap', fontFamily: 'monospace' };
+  const containerStyle = { fontFamily: 'sans-serif', width: '100%', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '50px', boxSizing: 'border-box' };
+  const cardStyle = { marginBottom: '25px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', width: '100%', boxSizing: 'border-box', overflow: 'hidden' };
+  const linkBoxStyle = { background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #cbd5e1', marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' };
+  const urlTextStyle = { fontSize: '0.85rem', color: '#334155', background: '#fff', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', overflowX: 'auto', whiteSpace: 'nowrap', fontFamily: 'monospace', width: '100%', boxSizing: 'border-box' };
 
   // URL項目を描画する共通コンポーネント
   const LinkItem = ({ id, label, url, icon, highlight = false }) => (
@@ -65,17 +65,18 @@ const ShareLinks = () => {
         {icon} {label}
       </div>
       <div style={urlTextStyle}>{url}</div>
-      <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+      {/* 🚀 修正：スマホの極小画面でもボタンがはみ出さないように flexWrap を追加 */}
+      <div style={{ display: 'flex', gap: '10px', marginTop: '5px', flexWrap: 'wrap' }}>
         <button 
           onClick={() => handleCopy(url, id)} 
-          style={{ flex: 1, padding: '10px', background: copiedId === id ? '#10b981' : '#fff', color: copiedId === id ? '#fff' : '#475569', border: `1px solid ${copiedId === id ? '#10b981' : '#cbd5e1'}`, borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'all 0.2s' }}
+          style={{ flex: '1 1 150px', padding: '10px', background: copiedId === id ? '#10b981' : '#fff', color: copiedId === id ? '#fff' : '#475569', border: `1px solid ${copiedId === id ? '#10b981' : '#cbd5e1'}`, borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: 'all 0.2s', boxSizing: 'border-box' }}
         >
           {copiedId === id ? <Check size={16} /> : <Copy size={16} />} 
           {copiedId === id ? 'コピーしました！' : 'URLをコピー'}
         </button>
         <button 
           onClick={() => setQrUrl(url)} 
-          style={{ padding: '10px 15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px' }}
+          style={{ flex: '1 1 100px', padding: '10px 15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', boxSizing: 'border-box' }}
         >
           <QrCode size={16} /> QR表示
         </button>
