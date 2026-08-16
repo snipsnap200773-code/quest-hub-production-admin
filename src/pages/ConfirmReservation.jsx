@@ -648,15 +648,25 @@ const handleReserve = async () => {
 
       // 🚀 ここから画面遷移ロジックへ
       if (isAdminEntry) {
-        // 🚀 管理者の「ねじ込み」は作業効率優先で、ポップアップなしで即戻る
-        // 🆕 state に「fromReserve: true」を追加して、カレンダー側にスクロール禁止を伝えます
-        navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
-          state: { 
-            newlyAdded: true, 
-            fromReserve: true, 
-            targetTime: adminTime || time // 👈 予約した時間をバトンとして渡す
-          } 
-        });
+        // 🚀 🆕 修正：タイムラインから来た場合はタイムラインに戻る分岐を追加
+        if (fromView === 'timeline') {
+          navigate(`/admin/${shopId}/timeline?date=${targetDate}`, { 
+            state: { 
+              newlyAdded: true, 
+              fromReserve: true, 
+              targetTime: adminTime || time 
+            } 
+          });
+        } else {
+          // 従来のルート（カレンダーから来た場合はカレンダーに戻る）
+          navigate(`/admin/${shopId}/reservations?date=${targetDate}`, { 
+            state: { 
+              newlyAdded: true, 
+              fromReserve: true, 
+              targetTime: adminTime || time 
+            } 
+          });
+        }
       } else {
         // 🚀 🆕 インジェクション成功データからキャラクターのカスタムネームを安全に抽出
         const acquiredName = resChar?.success && resChar.character ? resChar.character.custom_name : null;

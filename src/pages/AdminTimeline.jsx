@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useMemo, useRef } from 'react';
 // 🚀 🆕 motion, AnimatePresence を追加
 import { motion, AnimatePresence } from 'framer-motion'; 
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
@@ -98,19 +98,39 @@ function AdminTimeline() {
   const scrollRef = useRef(null);
 
   // --- 状態管理 ---
+  const location = useLocation(); // 🚀 🆕 追加
   const [shop, setShop] = useState(null);
   const [staffs, setStaffs] = useState([]);
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('sv-SE'));
-  const [categoryMap, setCategoryMap] = useState({});
   
-// モーダル・操作用
+  // 🚀 🆕 修正：URLパラメータに日付があればそれを優先して初期表示する
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const dateParam = params.get('date');
+    return dateParam || new Date().toLocaleDateString('sv-SE');
+  });
+  const [categoryMap, setCategoryMap] = useState({});
+
+  // 🚀 🆕 追加：画面遷移で戻ってきた時にURLの日付パラメータを検知して更新する
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const dateParam = params.get('date');
+    if (dateParam && dateParam !== selectedDate) {
+      setSelectedDate(dateParam);
+    }
+  }, [location.search]);
+  
+  // モーダル・操作用
   const [showMenuModal, setShowMenuModal] = useState(false);
   const [targetTime, setTargetTime] = useState('');
   const [targetStaffId, setTargetStaffId] = useState(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedRes, setSelectedRes] = useState(null);
+  
+  // 🚀 🆕 メニュー移植のために追加する2行
+  const [showBlockEndSelector, setShowBlockEndSelector] = useState(false); 
+  const [isTargetOutsideHours, setIsTargetOutsideHours] = useState(false); 
 
   const [showHistoryDetail, setShowHistoryDetail] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
@@ -505,31 +525,34 @@ const handleSavePrivateTask = async () => {
     }
   };
 
-  // --- 臨時休業（ブロック）の設定 ---
-  const handleBlockTime = async () => {
-    const reason = window.prompt("予定名（例：打ち合わせ、忘年会）を入力してください", "管理者ブロック");
-    if (reason === null) return; 
-
+  // 🚀 🆕 修正：カレンダーと同じ、終了時間を選択できる「✕」ブロック処理
+  const executeBlockTime = async (slots) => {
+    const interval = shop?.slot_interval_min || 15;
     const start = new Date(`${selectedDate}T${targetTime}:00`);
-    const intervalMin = shop?.slot_interval_min || 15;
-    const end = new Date(start.getTime() + intervalMin * 60000);
+    const end = new Date(start.getTime() + (interval * slots) * 60000);
     
     const insertData = {
       shop_id: shopId, 
-      customer_name: reason, 
+      customer_name: '✕', 
       res_type: 'blocked',
-      is_block: true, // 🚀 🆕 「これは売上ではない」という目印を追加！
-      staff_id: targetStaffId, 
+      is_block: true, 
       start_time: start.toISOString(), 
       end_time: end.toISOString(),
-      total_slots: 1, 
+      total_slots: slots, 
       customer_email: null, 
       customer_phone: '---', 
+      staff_id: targetStaffId, 
       options: { type: 'admin_block' }
     };
     
-    await supabase.from('reservations').insert([insertData]);
-    setShowMenuModal(false); fetchData();
+    const { error } = await supabase.from('reservations').insert([insertData]);
+    if (error) {
+      alert(`エラー: ${error.message}`); 
+    } else { 
+      setShowMenuModal(false); 
+      setShowBlockEndSelector(false); 
+      fetchData(); 
+    }
   };
 
   const handleBlockFullDay = async () => {
@@ -601,16 +624,13 @@ const handleCellClick = (slotMatches, time, staffId) => {
   const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
   
   // ✅ 🆕 修正：統合した休日判定関数を使うように変更
-  const isHoliday = isShopHoliday(shop, new Date(selectedDate));
-  const isBlocked = dbRecords.some(r => r.res_type === 'blocked');
+    const isHoliday = isShopHoliday(shop, new Date(selectedDate));
+    const isBlocked = dbRecords.some(r => r.res_type === 'blocked');
 
-  if (isStandardTime && !isHoliday && !isBlocked) {
-    setShowMenuModal(true); 
-  } else {
-    setPrivateTaskFields({ title: '', note: '' });
-    setShowPrivateModal(true); // 営業時間外・定休日はプライベート予定
-  }
-};
+    // 🚀 🆕 修正：カレンダー画面と同じように、どんな枠でもまずはメニューを開く！
+    setIsTargetOutsideHours(!isStandardTime || isHoliday);
+    setShowMenuModal(true);
+  };
 // --- 修正後：動的に時間軸を計算するコード ---
 const timeSlots = useMemo(() => {
   if (!shop?.business_hours) return [];
@@ -732,6 +752,15 @@ const timeSlots = useMemo(() => {
         </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* 🚀 🆕 追加：選択中の日付を「YYYY年M月D日(曜)」形式で表示 */}
+          <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#1e293b', marginRight: '10px' }}>
+            {(() => {
+              const d = new Date(selectedDate);
+              const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+              return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`;
+            })()}
+          </div>
+          
           <div style={{ position: 'relative', display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '5px' }}>
             <CalendarIcon size={22} color={themeColor} />
             <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }} />
@@ -921,33 +950,101 @@ const timeSlots = useMemo(() => {
       )}
       {/* 🆕 追記ここまで */}
 
-      {/* 📅 モーダル1：管理メニュー (AdminReservations完全移植) */}
+      {/* ⚙️ モーダル1：管理メニュー (予約管理画面から完全移植) */}
       {showMenuModal && (
-        <div style={overlayStyle} onClick={() => setShowMenuModal(false)}>
-          <div style={{ ...modalContentStyle, maxWidth: '340px', textAlign: 'center' }} onClick={e => e.stopPropagation()}>
-            <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
-            <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 30px 0' }}>{targetTime}</p>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-<button 
-  onClick={() => navigate(`/shop/${shopId}/reserve`, { 
-    state: { 
-      adminDate: selectedDate, 
-      adminTime: targetTime, 
-      adminStaffId: targetStaffId, // ✅ どのスタッフの枠か
-      fromView: 'timeline',        // ✅ 「タイムラインから来た」という目印
-      isAdminMode: true 
-    } 
-  })} 
-  style={{ padding: '22px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer' }}
->
-  予約を入れる
-</button>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                <button onClick={handleBlockTime} style={{ padding: '15px', background: '#fff', color: themeColor, border: `2px solid ${themeColor}22`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem' }}>「✕」または予定</button>
-                <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem' }}>今日を休みにする</button>
+        <div onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={overlayStyle}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: '#fff', padding: '35px', borderRadius: '30px', width: '90%', maxWidth: '340px', textAlign: 'center', position: 'relative' }}>
+            
+            {showBlockEndSelector ? (
+              /* A：終了時間選択モード（✕専用） */
+              <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <h3 style={{ margin: '0 0 5px 0', color: '#ef4444', fontSize: '1.1rem', fontWeight: '900' }}>何時まで「✕」にしますか？</h3>
+                <p style={{ fontWeight: 'bold', color: '#64748b', marginBottom: '20px', fontSize: '0.85rem' }}>開始: {targetTime} 〜</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '320px', overflowY: 'auto', padding: '5px' }}>
+                  {timeSlots.slice(timeSlots.indexOf(targetTime) + 1).map((endTime, idx) => {
+                    const slotsCount = idx + 1;
+                    return (
+                      <button
+                        key={endTime}
+                        onClick={() => executeBlockTime(slotsCount)}
+                        style={{
+                          padding: '16px', background: '#f8fafc', border: '2px solid #e2e8f0',
+                          borderRadius: '16px', color: '#1e293b', fontWeight: 'bold', fontSize: '1rem',
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer'
+                        }}
+                      >
+                        <span>〜 {endTime} まで</span>
+                        <span style={{ color: '#ef4444', fontSize: '0.8rem', background: '#fee2e2', padding: '2px 8px', borderRadius: '6px' }}>
+                          {slotsCount}コマ
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+                <button onClick={() => setShowBlockEndSelector(false)} style={{ marginTop: '15px', padding: '10px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold' }}>
+                  ◀ 戻る
+                </button>
               </div>
-              <button onClick={() => setShowMenuModal(false)} style={{ padding: '15px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer' }}>キャンセル</button>
-            </div>
+            ) : (
+              /* B：基本メニューモード（2択 or 4択） */
+              <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
+                <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
+                <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 25px 0' }}>{targetTime}</p>
+                
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  <button 
+                    onClick={() => {
+                      setShowBlockEndSelector(false);
+                      navigate(`/shop/${shopId}/reserve`, { 
+                        state: { 
+                          adminDate: selectedDate, 
+                          adminTime: targetTime, 
+                          fromView: 'timeline', 
+                          isAdminMode: true,
+                          adminStaffId: targetStaffId
+                        } 
+                      });
+                    }} 
+                    style={{ padding: '20px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', boxShadow: `0 4px 10px ${themeColor}44` }}
+                  >
+                    予約を入れる
+                  </button>
+
+                  {/* ☕️ プライベート予定 */}
+                  <button 
+                    onClick={() => {
+                      setShowMenuModal(false); 
+                      setShowBlockEndSelector(false);
+                      setPrivateTaskFields({ title: '', note: '' });
+                      setShowPrivateModal(true); 
+                    }} 
+                    style={{ padding: '15px', background: '#f8fafc', color: '#475569', border: '2px solid #cbd5e1', borderRadius: '20px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}
+                  >
+                    ☕️ プライベート予定
+                  </button>
+
+                  {/* 🔴 ✕ と 休み（営業時間内 && 定休日でない場合のみ表示） */}
+                  {!isTargetOutsideHours && (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', animation: 'fadeIn 0.3s' }}>
+                      <button 
+                        onClick={() => setShowBlockEndSelector(true)}
+                        style={{ padding: '15px', background: '#fff', color: '#ef4444', border: `2px solid #fca5a5`, borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}
+                      >
+                        ✕ (枠を閉じる)
+                      </button>
+                      <button onClick={handleBlockFullDay} style={{ padding: '15px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '20px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer' }}>
+                        今日を休みにする
+                      </button>
+                    </div>
+                  )}
+
+                  <button onClick={() => { setShowMenuModal(false); setShowBlockEndSelector(false); }} style={{ padding: '10px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold', marginTop: '5px' }}>
+                    キャンセル
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

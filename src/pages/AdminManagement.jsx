@@ -872,7 +872,15 @@ const completePayment = async () => {
           months[mIdx].technical += techSum;
           months[mIdx].product += prodSum;
           months[mIdx].breakdown[bizName] = (months[mIdx].breakdown[bizName] || 0) + amount;
-          months[mIdx].staffBreakdown[staffName] = (months[mIdx].staffBreakdown[staffName] || 0) + amount;
+          
+          // 🚀 🆕 修正：担当者別集計に「客数」「施術」「店販」の要素を追加
+          if (!months[mIdx].staffBreakdown[staffName]) {
+            months[mIdx].staffBreakdown[staffName] = { total: 0, count: 0, technical: 0, product: 0 };
+          }
+          months[mIdx].staffBreakdown[staffName].total += amount;
+          months[mIdx].staffBreakdown[staffName].count += actualCustomerCount;
+          months[mIdx].staffBreakdown[staffName].technical += techSum;
+          months[mIdx].staffBreakdown[staffName].product += prodSum;
 
           // 日別の集計データ側にも同様に本当の人数を反映
           months[mIdx].days[dIdx].total += amount;
@@ -885,6 +893,33 @@ const completePayment = async () => {
     });
     return months;
   }, [allReservations, salesRecords, viewYear, categoryMap, shop]);
+
+// 🚀 🆕 追加：analyticsData（月別）を使って「年間トータル」を一気に計算する
+const yearlySummary = useMemo(() => {
+  const summary = {
+    total: 0, count: 0, technical: 0, product: 0,
+    staffBreakdown: {}
+  };
+
+  analyticsData.forEach(m => {
+    summary.total += m.total;
+    summary.count += m.count;
+    summary.technical += m.technical;
+    summary.product += m.product;
+
+    Object.entries(m.staffBreakdown).forEach(([staffName, stats]) => {
+      if (!summary.staffBreakdown[staffName]) {
+        summary.staffBreakdown[staffName] = { total: 0, count: 0, technical: 0, product: 0 };
+      }
+      summary.staffBreakdown[staffName].total += stats.total;
+      summary.staffBreakdown[staffName].count += stats.count;
+      summary.staffBreakdown[staffName].technical += stats.technical;
+      summary.staffBreakdown[staffName].product += stats.product;
+    });
+  });
+
+  return summary;
+}, [analyticsData]);
 
 // 🚀 🆕 追加：全顧客を50音順（フリガナ順）にソートしたリストを作成
 const sortedAllCustomers = useMemo(() => {
@@ -956,22 +991,39 @@ const sortedAllCustomers = useMemo(() => {
     return sorted.reduce((acc, adj) => { const cat = adj.category || 'その他'; if (!acc[cat]) acc[cat] = []; acc[cat].push(adj); return acc; }, {});
   }, [adminAdjustments]);
 
-  // ✅ 🆕 データをCSV形式でダウンロードする関数
+  // ✅ 🆕 データをCSV形式でダウンロードする関数（内訳詳細版）
   const handleExportCSV = (monthData) => {
     if (!monthData) return;
     
-    // ヘッダーに列を追加
-    let csvContent = "日付,来客数,施術売上,商品売上,売上合計\n";
+    // 1. 日別データの出力
+    let csvContent = "【日別売上】\n";
+    csvContent += "日付,来客数,施術売上,商品売上,売上合計\n";
     
     monthData.days.forEach(d => {
       if (d.total > 0) {
-        // 各項目の値をカンマ区切りで追加
         csvContent += `${viewYear}/${monthData.month}/${d.day},${d.count},${d.technical},${d.product},${d.total}\n`;
       }
     });
     
-    csvContent += `合計,${monthData.count},${monthData.technical},${monthData.product},${monthData.total}\n`;
+    csvContent += "\n"; // 空行を挟む
 
+    // 2. 店舗合計の出力
+    const totalCount = monthData.days.reduce((sum, d) => sum + (d.count || 0), 0); // 画面の総客数と同じ計算式
+    csvContent += "【店舗合計】\n";
+    csvContent += "来客数,施術売上,商品売上,売上合計\n";
+    csvContent += `${totalCount}名,¥${monthData.technical},¥${monthData.product},¥${monthData.total}\n\n`;
+
+    // 3. 担当者別実績の出力
+    if (monthData.staffBreakdown && Object.keys(monthData.staffBreakdown).length > 0) {
+      csvContent += "【担当者別 月間実績】\n";
+      csvContent += "担当者名,来客数,施術売上,商品売上,売上合計\n";
+      
+      Object.entries(monthData.staffBreakdown).forEach(([staffName, stats]) => {
+        csvContent += `${staffName},${stats.count}名,¥${stats.technical},¥${stats.product},¥${stats.total}\n`;
+      });
+    }
+
+    // 文字化け防止（BOM付き）でBlobを作成してダウンロード
     const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -981,6 +1033,39 @@ const sortedAllCustomers = useMemo(() => {
     link.click();
     document.body.removeChild(link);
   };
+
+  // ==========================================
+  // 🚀 🆕 ここに丸ごと追加：年間データをCSV形式でダウンロードする関数
+  // ==========================================
+  const handleExportYearlyCSV = (summary) => {
+    if (!summary) return;
+    
+    let csvContent = `【${viewYear}年 店舗年間トータル】\n`;
+    csvContent += "来客数,施術売上,商品売上,売上合計\n";
+    csvContent += `${summary.count}名,¥${summary.technical},¥${summary.product},¥${summary.total}\n\n`;
+
+    if (summary.staffBreakdown && Object.keys(summary.staffBreakdown).length > 0) {
+      csvContent += `【${viewYear}年 担当者別 年間実績】\n`;
+      csvContent += "担当者名,来客数,施術売上,商品売上,売上合計\n";
+      
+      Object.entries(summary.staffBreakdown).forEach(([staffName, stats]) => {
+        csvContent += `${staffName},${stats.count}名,¥${stats.technical},¥${stats.product},¥${stats.total}\n`;
+      });
+    }
+
+    // 文字化け防止（BOM付き）でBlobを作成してダウンロード
+    const blob = new Blob(["\uFEFF" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `年間売上詳細_${viewYear}年.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+  // ==========================================
+  // 🚀 🆕 追加ここまで
+  // ==========================================
 
   // 🆕 修正後：お客様詳細（カルテ）を開く関数（400エラー回避・高速版）
   const openCustomerInfo = async (res) => {
@@ -1248,8 +1333,17 @@ return (
       {isPC && (
         <div style={sidebarStyle}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <h2 style={{ fontSize: '2.2rem', fontStyle: 'italic', fontWeight: '900', color: '#4b2c85', margin: 0 }}>SOLO</h2>
-            <p style={{ fontSize: '0.6rem', fontWeight: 'bold' }}>MANAGEMENT</p>
+            <h2 style={{ 
+              fontSize: shop?.business_name?.length > 7 ? '1.5rem' : '2.2rem', 
+              fontStyle: 'italic', 
+              fontWeight: '900', 
+              color: '#4b2c85', 
+              margin: 0,
+              lineHeight: '1.2'
+            }}>
+              {shop?.business_name || 'SOLO'}
+            </h2>
+            <p style={{ fontSize: '0.6rem', fontWeight: 'bold', marginTop: '4px' }}>MANAGEMENT</p>
           </div>
           <button style={navBtnStyle(activeMenu === 'work', '#d34817')} onClick={() => setActiveMenu('work')}>日常業務</button>
           <button style={navBtnStyle(activeMenu === 'customers', '#4285f4')} onClick={() => setActiveMenu('customers')}>顧客名簿</button>
@@ -1929,66 +2023,131 @@ return (
     // 🆕 修正：スマホの時だけ下を80px空けて、ボトムナビを避ける
     paddingBottom: isPC ? '0' : '80px' 
   }}>
-            {/* 🆕 年度切り替えヘッダー */}
-            <div style={{ background: '#008000', padding: '15px 25px', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '30px' }}>
+            {/* 🆕 年度切り替えヘッダー（ヘッダー自体は固定させるため flexShrink: 0 を追加） */}
+            <div style={{ background: '#008000', padding: '15px 25px', color: '#fff', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '30px', flexShrink: 0 }}>
               <button onClick={() => setViewYear(v => v - 1)} style={yearBtnStyle}>◀</button>
               <h2 style={{ margin: 0, fontStyle: 'italic', fontSize: '1.6rem' }}>{viewYear}年 売上分析</h2>
               <button onClick={() => setViewYear(v => v + 1)} style={yearBtnStyle}>▶</button>
             </div>
 
-            {/* 🆕 月別カードグリッド（タイル状に並べる） */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
-              {analyticsData.map(m => (
-                <div key={m.month} onClick={() => setSelectedMonthData(m)} style={monthCardStyle}>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                    <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#008000' }}>{m.month}月</span>
-                    <BarChart3 size={20} color="#94a3b8" />
+            {/* 🚀 🆕 ここから下（年間パネル＋月別カード）をまとめてスクロールさせる大枠を追加 */}
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              
+              {/* 🚀 🆕 年間売上サマリーパネル */}
+              <div style={{ padding: '20px 20px 0 20px' }}>
+                <div style={{ background: '#fff', borderRadius: '16px', border: '2px solid #008000', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
+                  
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                    <h3 style={{ margin: 0, color: '#008000', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <BarChart3 size={20} /> {viewYear}年 年間トータル
+                    </h3>
+                    <button onClick={() => handleExportYearlyCSV(yearlySummary)} style={{ padding: '6px 12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                      📥 CSV保存
+                    </button>
                   </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                    <span style={{ color: '#666', fontSize: '0.8rem' }}>来客数</span>
-                    <span style={{ fontWeight: 'bold' }}>{m.count} 名</span>
-                  </div>
-
-                  {/* 🚀 🆕 修正：施術と店販の内訳をメインに据える */}
-                  <div style={{ borderTop: '1px solid #f1f5f9', marginTop: '10px', paddingTop: '10px' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
-                      <span style={{ color: '#64748b', fontWeight: 'bold' }}>✂️ 施術売上</span>
-                      <span style={{ fontWeight: 'bold' }}>¥{m.technical.toLocaleString()}</span>
+                  
+                  {/* 全体集計 */}
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #e2e8f0' }}>
+                    <div style={{ flex: 1, minWidth: '120px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>年間来客数</div>
+                      <div style={{ fontSize: '1.8rem', fontWeight: '900', color: '#1e293b' }}>{yearlySummary.count} <span style={{fontSize: '1rem'}}>名</span></div>
                     </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '8px' }}>
-                      <span style={{ color: '#008000', fontWeight: 'bold' }}>🛍 店販売上</span>
-                      <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{m.product.toLocaleString()}</span>
+                    <div style={{ flex: 1, minWidth: '120px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>年間施術売上</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#475569' }}>¥{yearlySummary.technical.toLocaleString()}</div>
                     </div>
-
-                    {/* 屋号別の内訳（これまで通り小さく表示） */}
-                    <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', marginBottom: '10px' }}>
-                      {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
-                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', marginBottom: '2px', opacity: 0.8 }}>
-                          <span style={{ color: '#64748b' }}>{name}</span>
-                          <span>¥{price.toLocaleString()}</span>
-                        </div>
-                      ))}
+                    <div style={{ flex: 1, minWidth: '120px' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#008000', fontWeight: 'bold' }}>年間店販売上</div>
+                      <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: '#008000' }}>¥{yearlySummary.product.toLocaleString()}</div>
                     </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '1px dashed #eee', paddingTop: '5px' }}>
-                      <span style={{ color: '#1e293b', fontSize: '0.8rem', fontWeight: 'bold' }}>総合計</span>
-                      <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#d34817' }}>¥ {m.total.toLocaleString()}</span>
+                    <div style={{ flex: 1, minWidth: '150px', textAlign: 'right' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#d34817', fontWeight: 'bold' }}>年間総売上</div>
+                      <div style={{ fontSize: '2rem', fontWeight: '900', color: '#d34817' }}>¥{yearlySummary.total.toLocaleString()}</div>
                     </div>
                   </div>
-                  <div style={{ marginTop: '12px', fontSize: '0.65rem', color: '#4285f4', textAlign: 'right', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>タップして日別詳細を表示 →</div>
+
+                  {/* 担当者別集計 */}
+                  {Object.keys(yearlySummary.staffBreakdown).length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#4b2c85', marginBottom: '10px' }}>👤 担当者別 年間実績</div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        {Object.entries(yearlySummary.staffBreakdown).map(([staffName, stats]) => (
+                          <div key={staffName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#f8fafc', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                            <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem' }}>{staffName}</span>
+                            
+                            <div style={{ width: '140px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>客数:</span><b style={{ color: '#1e293b' }}>{stats.count}名</b></div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>施術:</span><b style={{ color: '#475569' }}>¥{stats.technical.toLocaleString()}</b></div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#008000' }}>店販:</span><b style={{ color: '#008000' }}>¥{stats.product.toLocaleString()}</b></div>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '2px' }}><span style={{ color: '#d34817' }}>合計:</span><b style={{ color: '#d34817', fontSize: '1rem' }}>¥{stats.total.toLocaleString()}</b></div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
-              ))}
+              </div>
+
+              {/* 🆕 月別カードグリッド（ここにあった overflowY: 'auto' と flex: 1 を削除しました） */}
+              <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
+                {analyticsData.map(m => (
+                  <div key={m.month} onClick={() => setSelectedMonthData(m)} style={monthCardStyle}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                      <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#008000' }}>{m.month}月</span>
+                      <BarChart3 size={20} color="#94a3b8" />
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                      <span style={{ color: '#666', fontSize: '0.8rem' }}>来客数</span>
+                      <span style={{ fontWeight: 'bold' }}>{m.count} 名</span>
+                    </div>
+
+                    <div style={{ borderTop: '1px solid #f1f5f9', marginTop: '10px', paddingTop: '10px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
+                        <span style={{ color: '#64748b', fontWeight: 'bold' }}>✂️ 施術売上</span>
+                        <span style={{ fontWeight: 'bold' }}>¥{m.technical.toLocaleString()}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '8px' }}>
+                        <span style={{ color: '#008000', fontWeight: 'bold' }}>🛍 店販売上</span>
+                        <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{m.product.toLocaleString()}</span>
+                      </div>
+
+                      <div style={{ background: '#f8fafc', padding: '6px 8px', borderRadius: '8px', marginBottom: '10px' }}>
+                        {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
+                          <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', marginBottom: '2px', opacity: 0.8 }}>
+                            <span style={{ color: '#64748b' }}>{name}</span>
+                            <span>¥{price.toLocaleString()}</span>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '1px dashed #eee', paddingTop: '5px' }}>
+                        <span style={{ color: '#1e293b', fontSize: '0.8rem', fontWeight: 'bold' }}>総合計</span>
+                        <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#d34817' }}>¥ {m.total.toLocaleString()}</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: '12px', fontSize: '0.65rem', color: '#4285f4', textAlign: 'right', borderTop: '1px solid #f1f5f9', paddingTop: '8px' }}>タップして日別詳細を表示 →</div>
+                  </div>
+                ))}
+              </div>
+            
             </div>
 
-            {/* 🆕 日別詳細ポップアップ（モーダル） */}
+            {/* 🆕 日別詳細ポップアップ（モーダル）スマホ最適化版 */}
             {selectedMonthData && (
               <div style={modalOverlayStyle} onClick={() => setSelectedMonthData(null)}>
-                <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
+                {/* 🚀 🆕 修正：高さを画面の90%に制限し、フレックスボックスで縦に並べる */}
+                <div style={{ 
+                  ...modalContentStyle, 
+                  maxHeight: '90vh', 
+                  display: 'flex', 
+                  flexDirection: 'column', 
+                  padding: isPC ? '25px' : '15px' 
+                }} onClick={e => e.stopPropagation()}>
                   
-                  {/* 💡 ここから書き換え：タイトルとボタンを横並びにします */}
-                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #008000', paddingBottom: '10px', marginBottom: '15px', alignItems: 'center' }}>
+                  {/* 1. ヘッダー（上部に固定：flexShrink: 0 で潰れないようにする） */}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #008000', paddingBottom: '10px', marginBottom: '15px', alignItems: 'center', flexShrink: 0 }}>
                     <h3 style={{ margin: 0, fontSize: '1rem' }}>{viewYear}年 {selectedMonthData.month}月 日別詳細</h3>
-                    
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       <button onClick={() => handleExportCSV(selectedMonthData)} style={{ padding: '6px 12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         📥 CSV保存
@@ -1997,30 +2156,38 @@ return (
                     </div>
                   </div>
 
-                  {/* 🚀 🆕 ここに追加：この月の事業別合計内訳を表示するパネル */}
-                  <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px solid #e2e8f0' }}>
-                    {Object.entries(selectedMonthData.breakdown).map(([name, price]) => price > 0 && (
-                      <div key={name}>
-                        <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>{name} 合計</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: name.includes('フット') ? '#4285f4' : '#1e293b' }}>
-                          ¥{price.toLocaleString()}
+                  {/* 2. 真ん中（ここだけがスクロールする） */}
+                  <div style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
+                    
+                    {/* 事業別合計内訳パネル */}
+                    <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px solid #e2e8f0' }}>
+                      {Object.entries(selectedMonthData.breakdown).map(([name, price]) => price > 0 && (
+                        <div key={name}>
+                          <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>{name} 合計</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: '900', color: name.includes('フット') ? '#4285f4' : '#1e293b' }}>
+                            ¥{price.toLocaleString()}
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
 
-                  {/* 🚀 🆕 追加：担当者別の売上内訳パネル */}
-                  <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', marginBottom: '15px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px dashed #00800044' }}>
-                    {Object.entries(selectedMonthData.staffBreakdown || {}).map(([name, price]) => (
-                      <div key={name}>
-                        <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>👤 {name} 担当分</div>
-                        <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#008000' }}>
-                          ¥{price.toLocaleString()}
+                    {/* 担当者別 月間実績パネル */}
+                    <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', marginBottom: '15px', display: 'flex', flexDirection: 'column', gap: '8px', border: '1px dashed #00800044' }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#008000', marginBottom: '4px' }}>👤 担当者別 月間実績</div>
+                      {Object.entries(selectedMonthData.staffBreakdown || {}).map(([name, stats]) => (
+                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#f8fafc', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                          <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem' }}>{name}</span>
+                          <div style={{ width: '140px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.85rem' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>客数:</span><b style={{ color: '#1e293b' }}>{stats.count}名</b></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>施術:</span><b style={{ color: '#475569' }}>¥{stats.technical.toLocaleString()}</b></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#008000' }}>店販:</span><b style={{ color: '#008000' }}>¥{stats.product.toLocaleString()}</b></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '2px' }}><span style={{ color: '#008000' }}>合計:</span><b style={{ color: '#008000', fontSize: '1rem' }}>¥{stats.total.toLocaleString()}</b></div>
+                          </div>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ maxHeight: '50vh', overflowY: 'auto' }}>
+                      ))}
+                    </div>
+
+                    {/* 日別テーブル（ここの高さ制限を解除し、親要素にスクロールを任せる） */}
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                       <thead style={{ position: 'sticky', top: 0, background: '#fff', zIndex: 1 }}>
                         <tr style={{ background: '#f8fafc' }}>
@@ -2044,19 +2211,20 @@ return (
                       </tbody>
                     </table>
                   </div>
-                  <div style={{ marginTop: '20px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+
+                  {/* 3. フッター（下部に固定：flexShrink: 0。スマホで文字が潰れないようにサイズを微調整） */}
+                  <div style={{ marginTop: '15px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
                     <span style={{ fontWeight: 'bold', color: '#008000' }}>{selectedMonthData.month}月 合計</span>
-                    
-                    {/* 🚀 🆕 その月に完了した日別の本当の人数をすべて合計する処理を追加 */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                      <span style={{ fontSize: '1rem', fontWeight: 'bold', color: '#166534' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#166534' }}>
                         総客数: {selectedMonthData.days.reduce((sum, d) => sum + (d.count || 0), 0)} 名
                       </span>
-                      <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#d34817' }}>
+                      <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#d34817' }}>
                         ¥ {selectedMonthData.total.toLocaleString()}
                       </span>
                     </div>
                   </div>
+
                 </div>
               </div>
             )}
