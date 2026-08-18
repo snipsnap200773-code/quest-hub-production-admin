@@ -29,7 +29,8 @@ const FacilityLogin = () => {
       if (session && session.user && !isLogoutMode) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id, role')
+          // 🚀 修正：is_timeline_default を読み取る
+          .select('id, role, is_timeline_default')
           .eq('id', session.user.id)
           .maybeSingle();
 
@@ -42,7 +43,8 @@ const FacilityLogin = () => {
             setShowGmModal(true);
             setLoading(false);
           } else {
-            navigate(`/admin/${profile.id}/reservations`);
+            // 🚀 修正：設定がONならタイムライン、OFFならカレンダーへ飛ばす
+            navigate(profile.is_timeline_default ? `/admin/${profile.id}/timeline` : `/admin/${profile.id}/reservations`);
           }
           return;
         }
@@ -82,7 +84,8 @@ const FacilityLogin = () => {
       if (!authError && authData.user) {
         const { data: profile } = await supabase
           .from('profiles')
-          .select('id, role, business_name')
+          // 🚀 修正：is_timeline_default を読み取る
+          .select('id, role, business_name, is_timeline_default')
           .eq('id', authData.user.id)
           .maybeSingle();
 
@@ -96,7 +99,8 @@ const FacilityLogin = () => {
             setShowGmModal(true);
           } else {
             setIsProcessing(false);
-            navigate(`/admin/${profile.id}/reservations`);
+            // 🚀 修正：設定がONならタイムライン、OFFならカレンダーへ飛ばす
+            navigate(profile.is_timeline_default ? `/admin/${profile.id}/timeline` : `/admin/${profile.id}/reservations`);
           }
           return;
         }
@@ -104,7 +108,8 @@ const FacilityLogin = () => {
 
       const { data: shopUser } = await supabase
         .from('profiles')
-        .select('id, business_name, role, admin_password')
+        // 🚀 修正：is_timeline_default を読み取る
+        .select('id, business_name, role, admin_password, is_timeline_default')
         .eq('email_contact', loginId)
         .eq('admin_password', password)
         .maybeSingle();
@@ -134,7 +139,8 @@ const FacilityLogin = () => {
         }
 
         setIsProcessing(false);
-        navigate(`/admin/${shopUser.id}/reservations`); 
+        // 🚀 修正：設定がONならタイムライン、OFFならカレンダーへ飛ばす
+        navigate(shopUser.is_timeline_default ? `/admin/${shopUser.id}/timeline` : `/admin/${shopUser.id}/reservations`); 
         return;
       } else {
         alert('ログインIDまたはパスワードが正しくありません。');

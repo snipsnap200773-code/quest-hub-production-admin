@@ -31,6 +31,9 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
   const [isStrictFillMode, setIsStrictFillMode] = useState(false);
   const [useTravelTimeLogic, setUseTravelTimeLogic] = useState(true);
   const [specialHolidays, setSpecialHolidays] = useState([]);
+  
+  // 🚀 🆕 追加：アシスタント不在時の制限フラグ
+  const [restrictStylistWithoutAssistant, setRestrictStylistWithoutAssistant] = useState(false);
   const [newSpecialHoliday, setNewSpecialHoliday] = useState({ name: '', start: '', end: '' });
 
   // 🚚 MenuSettingsからのお引っ越し
@@ -46,7 +49,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
 
   // 📝 現在の全入力状態を文字列（JSON）化してまとめる
   const currentDataStr = JSON.stringify({
-    businessHours, regularHolidays, bufferPreparationMin, minLeadTimeHours, autoFillLogic, maxCapacity, isStrictFillMode, useTravelTimeLogic, specialHolidays, slotIntervalMin, extraSlotsBefore, extraSlotsAfter
+    businessHours, regularHolidays, bufferPreparationMin, minLeadTimeHours, autoFillLogic, maxCapacity, isStrictFillMode, useTravelTimeLogic, specialHolidays, slotIntervalMin, extraSlotsBefore, extraSlotsAfter, restrictStylistWithoutAssistant // 🚀 🆕 追加
   });
 
   // 💡 初期データと現在のデータに差分があるかを判定
@@ -96,6 +99,8 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
       setUseTravelTimeLogic(data.use_travel_time_logic ?? true);
       setMaxCapacity(data.max_capacity || 1);
       setSpecialHolidays(data.special_holidays || []);
+      // 🚀 🆕 追加：データベースから設定を読み込む
+      setRestrictStylistWithoutAssistant(data.restrict_stylist_without_assistant ?? false);
       
       // 引っ越しデータ
       setSlotIntervalMin(data.slot_interval_min || 30);
@@ -156,6 +161,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
       is_strict_fill_mode: isStrictFillMode,
       use_travel_time_logic: useTravelTimeLogic,
       max_capacity: maxCapacity,
+      restrict_stylist_without_assistant: restrictStylistWithoutAssistant, // 🚀 🆕 追加：データベースに保存する
       // 引っ越しデータも一緒に保存
       slot_interval_min: slotIntervalMin,
       extra_slots_before: extraSlotsBefore,
@@ -288,16 +294,51 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
           <Zap size={22} color={themeColor} /> 予約受付ルールの詳細
         </h3>
         
-        <div style={{ marginBottom: '25px' }}>
-          <label style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', marginBottom: '10px', fontSize: '0.85rem', color: '#334155' }}>
-            同時予約の受け入れ上限（キャパシティ）
-            <HelpTooltip themeColor={themeColor} showDown={true} text="同じ時間帯に、最大で何組（何名）まで予約を受け付けるかを設定します。一人で運営している場合は「1名」を選択してください。" />
+        {/* 🚀 🆕 修正：固定キャパシティを廃止し、アシスタント不在時の挙動スイッチに変更 */}
+        <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: `1px solid ${themeColor}33` }}>
+          <label style={{ fontWeight: '900', display: 'flex', alignItems: 'center', marginBottom: '10px', fontSize: '0.9rem', color: themeColor }}>
+            アシスタント不在時の予約ルール
+            <HelpTooltip themeColor={themeColor} showDown={true} text="技術者が複数人いる場合に、アシスタントがいない時間帯の予約の入り方を決定します。" />
           </label>
-          <select value={maxCapacity} onChange={(e) => handleCapacityChange(e.target.value)} style={selectStyle}>
-            {Array.from({ length: 10 }, (_, i) => i + 1).map(num => (
-              <option key={num} value={num}>{num}名（{num === 1 ? 'マンツーマン' : '同時受付可能'}）</option>
-            ))}
-          </select>
+          <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '15px', lineHeight: '1.5' }}>
+            ※店舗全体の受け入れ上限は、「出勤している技術者＋アシスタントのサポート力」で毎時間自動計算されます。
+          </p>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {/* モード①：歩合制（早い者勝ち） */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '12px', background: !restrictStylistWithoutAssistant ? '#fff' : 'transparent', border: !restrictStylistWithoutAssistant ? `2px solid ${themeColor}` : '1px solid #cbd5e1', borderRadius: '10px', transition: '0.2s' }}>
+              <input 
+                type="radio" 
+                name="restrict_mode" 
+                checked={!restrictStylistWithoutAssistant} 
+                onChange={() => setRestrictStylistWithoutAssistant(false)} 
+                style={{ marginTop: '2px', accentColor: themeColor }} 
+              />
+              <div>
+                <b style={{ fontSize: '0.85rem', color: !restrictStylistWithoutAssistant ? themeColor : '#334155' }}>早い者勝ちモード（歩合制など）</b>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+                  アシスタントがいなくても、技術者の「個人上限」を維持します。先に予約を取った技術者が優先され、店舗上限に達した時点で他スタッフの予約はブロックされます。
+                </p>
+              </div>
+            </label>
+
+            {/* モード②：平等（上限1名に制限） */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', padding: '12px', background: restrictStylistWithoutAssistant ? '#fff' : 'transparent', border: restrictStylistWithoutAssistant ? `2px solid ${themeColor}` : '1px solid #cbd5e1', borderRadius: '10px', transition: '0.2s' }}>
+              <input 
+                type="radio" 
+                name="restrict_mode" 
+                checked={restrictStylistWithoutAssistant} 
+                onChange={() => setRestrictStylistWithoutAssistant(true)} 
+                style={{ marginTop: '2px', accentColor: themeColor }} 
+              />
+              <div>
+                <b style={{ fontSize: '0.85rem', color: restrictStylistWithoutAssistant ? themeColor : '#334155' }}>平等モード（枠を均等に割り振り）</b>
+                <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+                  アシスタントがいない時間は、すべての技術者の個人上限を強制的に「1名（マンツーマン）」に制限します。スタッフ全員に均等に予約が入りやすくなります。
+                </p>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div style={{ marginBottom: '20px' }}>

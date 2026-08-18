@@ -6,7 +6,7 @@ import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
-  ShoppingBag, Scissors // 👈 Scissorsも忘れずに
+  ShoppingBag, Scissors, Settings, Search // 🚀 🆕 Search を追加
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -92,6 +92,23 @@ const isShopHoliday = (shop, date) => {
   return false;
 };
 
+// 🚀 🆕 ここに追加！：フリガナから「あ行・か行...」を判定する関数
+const getKanaGroup = (kana) => {
+  if (!kana) return "その他";
+  const firstChar = kana.charAt(0);
+  if (firstChar.match(/[あ-おア-オ]/)) return "あ行";
+  if (firstChar.match(/[か-こカ-コ]/)) return "か行";
+  if (firstChar.match(/[さ-そサ-ソ]/)) return "さ行";
+  if (firstChar.match(/[た-とタ-ト]/)) return "た行";
+  if (firstChar.match(/[な-のナ-ノ]/)) return "な行";
+  if (firstChar.match(/[は-ほハ-ホ]/)) return "は行";
+  if (firstChar.match(/[ま-もマ-モ]/)) return "ま行";
+  if (firstChar.match(/[や-よヤ-ヨ]/)) return "や行";
+  if (firstChar.match(/[ら-ろラ-ロ]/)) return "ら行";
+  if (firstChar.match(/[わ-をワ-ヲ]/)) return "わ行";
+  return "その他";
+};
+
 function AdminTimeline() {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -134,6 +151,14 @@ function AdminTimeline() {
 
   const [showHistoryDetail, setShowHistoryDetail] = useState(false);
   const [selectedHistory, setSelectedHistory] = useState(null);
+
+  // 🚀 🆕 ここから追加：検索＆カレンダーポップアップ用のState
+  const [showMobileCalendar, setShowMobileCalendar] = useState(false);
+  const [viewMonth, setViewMonth] = useState(new Date()); 
+  const [showMobileSearchModal, setShowMobileSearchModal] = useState(false);
+  const [allCustomers, setAllCustomers] = useState([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const touchStartX = useRef(0);
 
   const [expandedYears, setExpandedYears] = useState({});
 
@@ -190,6 +215,14 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   }, []);
   const isPC = windowWidth > 1024; 
 
+  // 🚀 🆕 追加：日付移動の関数
+  const goPrev = () => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toLocaleDateString('sv-SE')); };
+  const goNext = () => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); setSelectedDate(d.toLocaleDateString('sv-SE')); };
+  const goToday = () => setSelectedDate(new Date().toLocaleDateString('sv-SE'));
+
+  // 🚀 🆕 追加：ヘッダーボタンのスタイル
+  const headerBtnStylePC = { padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' };
+
   useEffect(() => { fetchData(); }, [shopId, selectedDate]);
 
   // 🚀 🆕 追加：履歴カードをタップした時に詳細を開く命令
@@ -245,6 +278,63 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
     setPrivateTasks(privData || []); // ✅ セット
     setLoading(false);
   };
+
+  // =========================================================
+  // 🚀 🆕 ここから追加：検索＆カレンダーを動かすためのロジック群
+  // =========================================================
+  const fetchAllCustomersForSearch = async () => {
+    const { data } = await supabase.from('customers').select('*').eq('shop_id', shopId).order('furigana', { ascending: true });
+    if (data) {
+      const uniqueMap = new Map();
+      data.forEach(c => {
+        const nameKey = (c.name || "").trim();
+        if (!uniqueMap.has(nameKey) || (c.address && !uniqueMap.get(nameKey).address)) uniqueMap.set(nameKey, c);
+      });
+      const blockNames = ['臨時休業', '管理者ブロック', '休憩', '銀行', '買い出し', '移動'];
+      setAllCustomers(Array.from(uniqueMap.values()).filter(c => !blockNames.includes(c.name)));
+    }
+  };
+
+  const openCustomerDetail = async (customer) => {
+    setCustomerHistory([]); 
+    const { data: latestCust } = await supabase.from('customers').select('*').eq('id', customer.id).maybeSingle();
+    if (!latestCust) return;
+
+    setEditFields({ 
+      name: latestCust.name || '', admin_name: latestCust.admin_name || '', furigana: latestCust.furigana || '',
+      phone: latestCust.phone || '', email: latestCust.email || '', address: latestCust.address || '',
+      zip_code: latestCust.zip_code || '', parking: latestCust.parking || '', memo: latestCust.memo || '',
+      line_user_id: latestCust.line_user_id || null, custom_answers: latestCust.custom_answers || {}
+    });
+    setSelectedCustomer(latestCust);
+    setSelectedRes({ res_type: 'normal', customer_id: latestCust.id, customer_name: latestCust.name, status: 'completed' });
+
+    const { data } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', shopId)
+      .or(`customer_id.eq.${latestCust.id},customer_name.eq.${latestCust.name}`).order('start_time', { ascending: false });
+      
+    setCustomerHistory(data || []);
+    setSearchTerm('');
+    setShowMobileSearchModal(false);
+    setShowDetailModal(true);
+  };
+
+  const miniCalendarDays = useMemo(() => {
+    const year = viewMonth.getFullYear(); const month = viewMonth.getMonth();
+    const firstDay = new Date(year, month, 1).getDay();
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const days = [];
+    for (let i = 0; i < (firstDay === 0 ? 6 : firstDay - 1); i++) days.push(null);
+    for (let i = 1; i <= daysInMonth; i++) days.push(new Date(year, month, i));
+    return days;
+  }, [viewMonth]);
+
+  const getDayEventSummary = (date) => {
+    if (!date) return { isHoliday: false, firstEntry: null };
+    return { isHoliday: isShopHoliday(shop, date), firstEntry: null }; // タイムライン用の軽量版
+  };
+  // =========================================================
+  // 🚀 🆕 追加ここまで
+  // =========================================================
 
 // 🆕 1. スカウター発動：予約をタップした瞬間に重複を検知
 const openDetail = async (res) => {
@@ -598,37 +688,53 @@ const handleSavePrivateTask = async () => {
     scrollRef.current.scrollLeft = scrollLeft - walk;
   };
 const handleCellClick = (slotMatches, time, staffId) => {
-  if (hasMoved) return;
-  setTargetTime(time);
-  const actualStaffId = staffId === 'free' ? null : staffId;
-  setTargetStaffId(actualStaffId); 
+    if (hasMoved) return;
+    setTargetTime(time);
+    const actualStaffId = staffId === 'free' ? null : staffId;
+    setTargetStaffId(actualStaffId); 
 
-  // 💡 1. DBに記録があるもの（予約、プライベート予定、ブロック）を探す
-  // 判定条件に 'blocked' を追加します
-  const dbRecords = slotMatches.filter(r => r.id && (r.res_type === 'normal' || r.res_type === 'private_task' || r.res_type === 'blocked'));
-  const activeTask = dbRecords[0];
+    // 💡 1. DBに記録があるもの（予約、プライベート予定、ブロック）を探す
+    const dbRecords = slotMatches.filter(r => r.id && (r.res_type === 'normal' || r.res_type === 'private_task' || r.res_type === 'blocked'));
+    const activeTask = dbRecords[0];
 
-  // 💡 2. すでに予定（ブロック含む）がある場合は詳細を開く
-  if (activeTask) {
-    if (dbRecords.length > 1) {
-      setSelectedSlotReservations(dbRecords); setShowSlotListModal(true);
-    } else {
-      openDetail(activeTask);
+    // 💡 2. すでに予定（ブロック含む）がある場合は詳細を開く
+    if (activeTask) {
+      if (dbRecords.length > 1) {
+        setSelectedSlotReservations(dbRecords); setShowSlotListModal(true);
+      } else {
+        openDetail(activeTask);
+      }
+      return;
     }
-    return;
-  }
 
-  // 💡 3. 本当に何もない空き枠、またはシステム上の定休日
-  const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(selectedDate).getDay()];
-  const hours = shop?.business_hours?.[dayName];
-  const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
-  
-  // ✅ 🆕 修正：統合した休日判定関数を使うように変更
-    const isHoliday = isShopHoliday(shop, new Date(selectedDate));
-    const isBlocked = dbRecords.some(r => r.res_type === 'blocked');
+    // 💡 3. 本当に何もない空き枠、またはシステム上の定休日の判定
+    const targetDate = new Date(selectedDate);
+    const dayIndex = targetDate.getDay();
+    const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex];
+    const hours = shop?.business_hours?.[dayName];
+    const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
+    
+    // 🚀 🆕 修正：店舗の定休日に加え、スタッフのシフト（時間外）も厳密にチェック！
+    const isShopClosed = isShopHoliday(shop, targetDate);
+    const staffObj = staffs.find(s => s.id === actualStaffId);
+    
+    let isStaffHoliday = false;
+    let isOutsideShift = false;
 
-    // 🚀 🆕 修正：カレンダー画面と同じように、どんな枠でもまずはメニューを開く！
-    setIsTargetOutsideHours(!isStandardTime || isHoliday);
+    if (staffObj) {
+      if (staffObj.weekly_holidays?.includes(dayIndex)) isStaffHoliday = true;
+      const shift = staffObj.custom_shifts?.[selectedDate];
+      if (shift) {
+        if (shift.type === 'off') isStaffHoliday = true;
+        else if (shift.type === 'time') {
+          isStaffHoliday = false;
+          if (time < shift.start || time >= shift.end) isOutsideShift = true;
+        }
+      }
+    }
+
+    // 🚀 🆕 修正：店舗休み・スタッフ休み・シフト時間外の場合は「時間外（2択メニュー）」として扱う！
+    setIsTargetOutsideHours(!isStandardTime || isShopClosed || isStaffHoliday || isOutsideShift);
     setShowMenuModal(true);
   };
 // --- 修正後：動的に時間軸を計算するコード ---
@@ -694,81 +800,160 @@ const timeSlots = useMemo(() => {
   return (
     <div style={{ position: 'fixed', inset: 0, width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#fff', overflow: 'hidden' }}>
       
-      {/* ヘッダー */}
-      <div style={{ padding: '8px 15px', borderBottom: '2px solid #94a3b8', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', zIndex: 1000 }}>
-<div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <h1 style={{ fontSize: '1rem', fontWeight: '900', margin: 0, color: themeColor }}>Timeline</h1>
-          
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '8px' }}>
-  <button onClick={() => navigate(`/admin/${shopId}/reservations`)} style={switchBtnStyle(false)}>カレンダー</button>
-  <button style={switchBtnStyle(true)}>タイムライン</button>
-</div>
+      {/* 🚀 🆕 修正：AdminReservationsからヘッダーを完全移植 */}
+      <div style={{ padding: isPC ? '15px 25px' : '15px 10px', borderBottom: '0.5px solid #cbd5e1', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', zIndex: 1000, flexShrink: 0 }}>
+        {isPC ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', width: '100%', flexWrap: 'wrap' }}>
+            
+            {/* 🚀 🆕 【引っ越しその1】設定（歯車）ボタンを一番左端に配置！ */}
+            <button 
+              onClick={() => navigate(`/admin/${shopId}/dashboard`)}
+              style={{ ...headerBtnStylePC, padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              title="基本設定"
+            >
+              <Settings size={16} color="#64748b" />
+            </button>
 
-{/* ✅ 🆕 追加：現場での実行用「今日のタスク」ボタン */}
-<button 
-  onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
-  style={{
-    padding: '6px 15px',
-    background: '#1e293b', // カレンダー/タイムラインと差別化
-    color: '#fff',
-    border: 'none',
-    borderRadius: '8px',
-    cursor: 'pointer',
-    fontWeight: 'bold',
-    fontSize: '0.75rem',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-    marginLeft: '10px'
-  }}
->
-  ⚡ 本日のタスク (実行)
-</button>
+            {/* 🏢 店舗ロゴ ＆ タイトル */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '15px' }}>
+              <h1 style={{ fontSize: '1.1rem', fontWeight: '900', margin: 0, color: '#1e293b', whiteSpace: 'nowrap' }}>
+                {shop?.business_name || 'SnipSnap Admin'}
+              </h1>
+            </div>
 
-{/* 📊 顧客・売上管理ボタン（既存） */}
-<button 
-  onClick={() => shop?.is_management_enabled && navigate(`/admin/${shopId}/management`)}
-  style={{
-    padding: '6px 15px',
-    borderRadius: '8px',
-    border: '1px solid #e2e8f0',
-    background: shop?.is_management_enabled ? '#fff' : '#f1f5f9',
-    fontSize: '0.75rem',
-    fontWeight: 'bold',
-    cursor: shop?.is_management_enabled ? 'pointer' : 'not-allowed',
-    color: shop?.is_management_enabled ? '#008000' : '#94a3b8',
-    display: 'flex',
-    alignItems: 'center',
-    gap: '5px',
-    boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-    transition: 'all 0.2s',
-    marginLeft: '10px' // ボタン間の隙間
-  }}
->
-  {shop?.is_management_enabled ? '📊 顧客・売上管理' : '🔒 売上管理'}
-</button>
-        </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {/* 🚀 🆕 追加：選択中の日付を「YYYY年M月D日(曜)」形式で表示 */}
-          <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#1e293b', marginRight: '10px' }}>
-            {(() => {
-              const d = new Date(selectedDate);
-              const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-              return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日(${dayNames[d.getDay()]})`;
-            })()}
+            {/* 📅 ナビゲーション 🚀 🆕 【引っ越しその2】「前週」➔「今日」➔「次週」の並び順に変更！ */}
+            <div style={{ display: 'flex', gap: '6px' }}>
+              <button onClick={goPrev} style={headerBtnStylePC}>◀</button>
+              <button onClick={goToday} style={headerBtnStylePC}>今日</button>
+              <button onClick={goNext} style={headerBtnStylePC}>▶</button>
+            </div>
+
+            {/* 左サイドバーから引っ越してきたPC用横並びナビゲーションメニュー一式 */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', background: '#f1f5f9', padding: '4px', borderRadius: '12px', marginLeft: '10px' }}>
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/reservations?date=${selectedDate}`)} 
+                style={{ ...switchBtnStyle(false), padding: '6px 14px' }}
+              >
+                カレンダー
+              </button>
+              <button style={{ ...switchBtnStyle(true), padding: '6px 14px' }}>
+                タイムライン
+              </button>
+            </div>
+
+            {/* ⚡ 本日のタスク（実行）ボタン */}
+            <button 
+              onClick={() => navigate(`/admin/${shopId}/today-tasks`)}
+              style={{ ...headerBtnStylePC, background: '#13a11a', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
+            >
+              <span>タスク</span>
+            </button>
+
+            {/* 📊 顧客・売上管理ボタン */}
+            <button 
+              onClick={() => shop?.is_management_enabled && navigate(`/admin/${shopId}/management`)} 
+              disabled={!shop?.is_management_enabled}
+              style={{ 
+                ...headerBtnStylePC, 
+                background: shop?.is_management_enabled ? '#0b63d7' : '#f1f9f6', 
+                color: shop?.is_management_enabled ? '#ffffff' : '#94a3b8',
+                cursor: shop?.is_management_enabled ? 'pointer' : 'not-allowed',
+                border: shop?.is_management_enabled ? '1px solid #cbd5e1' : '1px solid #e2e8f0'
+              }}
+            >
+              売上管理
+            </button>
+
+            <div style={{ width: '1px', height: '24px', background: '#cbd5e1', margin: '0 5px' }} />
+
+            {/* 🔍 顧客検索ポップアップボタン */}
+            <button 
+              onClick={() => {
+                fetchAllCustomersForSearch(); 
+                setShowMobileSearchModal(true); 
+              }} 
+              style={{ 
+                ...headerBtnStylePC, 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '8px', 
+                background: '#f8fafc',
+                color: themeColor
+              }}
+            >
+              <Search size={18} />
+            </button>
+
+            {/* 📅 1か月カレンダー起動ボタン */}
+            <button
+              onClick={() => {
+                setViewMonth(new Date(selectedDate)); // 🚀 🆕 修正：カレンダーを開く際、選択中の日付の月を初期表示にする
+                setShowMobileCalendar(true);       
+              }}
+              style={{
+                ...headerBtnStylePC,
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                background: `${themeColor}15`, // 🚀 🆕 修正：themeColorLight を直接指定
+                border: `1px solid ${themeColor}44`,
+                color: themeColor
+              }}
+            >
+              <CalendarIcon size={18} />
+            </button>
+
+            {/* 🚀 🆕 修正：現在表示中の年月（日はテーブル左上に表示するため省略） */}
+            <h2 style={{ fontSize: '1.1rem', margin: '0 0 0 auto', fontWeight: '900', color: '#1e293b', whiteSpace: 'nowrap' }}>
+              {(() => {
+                const d = new Date(selectedDate);
+                return `${d.getFullYear()}年${d.getMonth() + 1}月`;
+              })()}
+            </h2>
           </div>
-          
-          <div style={{ position: 'relative', display: 'flex', alignItems: 'center', cursor: 'pointer', padding: '5px' }}>
-            <CalendarIcon size={22} color={themeColor} />
-            <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} style={{ position: 'absolute', inset: 0, opacity: 0, cursor: 'pointer', width: '100%' }} />
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', width: '100%', gap: '12px' }}>
+            {/* 上段：カレンダーボタン ＆ 年月ナビ ＆ 検索ボタン */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: '100%', gap: '10px', position: 'relative' }}>
+              {/* 📅 左：カレンダーボタン */}
+              <button 
+                onClick={() => {
+                  setViewMonth(new Date(selectedDate)); // 🚀 🆕 修正：カレンダーを開く際、選択中の日付の月を初期表示にする
+                  setShowMobileCalendar(true);
+                }}
+                style={{ 
+                  position: 'absolute', left: '0', background: `${themeColor}15`, border: `1px solid ${themeColor}33`, // 🚀 🆕 修正：themeColorLight を直接指定
+                  color: themeColor, padding: '8px', borderRadius: '10px'
+                }}
+              >
+                <CalendarIcon size={20} />
+              </button>
+
+              <button onClick={goPrev} style={{ background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1rem', cursor: 'pointer' }}>◀</button>
+              <h2 style={{ fontSize: '1.1rem', margin: 0, fontWeight: '900', color: '#1e293b' }}>
+                {(() => {
+                  const d = new Date(selectedDate);
+                  return `${d.getFullYear()}年${d.getMonth() + 1}月`; // 🚀 🆕 修正：年月だけにする
+                })()}
+              </h2>
+              <button onClick={goNext} style={{ background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', fontSize: '1rem', cursor: 'pointer' }}>▶</button>
+
+              {/* 🔍 🚀 🆕 右：検索ポップアップ起動ボタン */}
+              <button 
+                onClick={() => {
+                  fetchAllCustomersForSearch();
+                  setShowMobileSearchModal(true);
+                }}
+                style={{ 
+                  position: 'absolute', right: '0', background: `${themeColor}15`, border: `1px solid ${themeColor}33`, // 🚀 🆕 修正：themeColorLight を直接指定
+                  color: themeColor, padding: '8px', borderRadius: '10px'
+                }}
+              >
+                <Search size={20} />
+              </button>
+            </div>
           </div>
-          <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toLocaleDateString('sv-SE')); }} style={navBtnStyle}><ChevronLeft size={18} /></button>
-          <button onClick={() => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); setSelectedDate(d.toLocaleDateString('sv-SE')); }} style={navBtnStyle}><ChevronRight size={18} /></button>
-          <button onClick={() => setSelectedDate(new Date().toLocaleDateString('sv-SE'))} style={{ ...navBtnStyle, background: themeColor, color: '#fff', fontSize: '0.8rem', padding: '6px 15px' }}>今日</button>
-        </div>
+        )}
       </div>
 
       {/* タイムライン本体 */}
@@ -776,7 +961,14 @@ const timeSlots = useMemo(() => {
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 100 }}>
             <tr>
-              <th style={{ position: 'sticky', left: 0, zIndex: 110, background: '#e2e8f0', padding: '10px', borderRight: '3px solid #94a3b8', borderBottom: '3px solid #94a3b8', width: '140px', color: '#475569', fontSize: '0.75rem' }}>スタッフ</th>
+              {/* 🚀 🆕 修正：スタッフを日付（曜日）表示に変更 */}
+              <th style={{ position: 'sticky', left: 0, zIndex: 110, background: '#e2e8f0', padding: '10px', borderRight: '3px solid #94a3b8', borderBottom: '3px solid #94a3b8', width: '140px', color: '#1e293b', fontSize: '1.2rem', fontWeight: '900', textAlign: 'center' }}>
+                {(() => {
+                  const d = new Date(selectedDate);
+                  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+                  return `${d.getDate()}日(${dayNames[d.getDay()]})`;
+                })()}
+              </th>
               {timeSlots.map(time => (
                 <th key={time} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '0.75rem', background: '#e2e8f0', textAlign: 'center' }}>{time}</th>
               ))}
@@ -792,6 +984,42 @@ const timeSlots = useMemo(() => {
 {timeSlots.map(time => {
         const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
         const staffIdVal = staff.id === 'free' ? null : staff.id;
+
+        // 🚀 🆕 修正：店舗全体の定休日と、スタッフ個別の定休日を追加で判定する！
+        const targetDate = new Date(selectedDate);
+        const dayIndex = targetDate.getDay();
+        const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex];
+        const hours = shop?.business_hours?.[dayName];
+        
+        // 💡 1. 店舗の定休日判定
+        const isShopClosed = isShopHoliday(shop, targetDate);
+        
+        // 💡 2. 🚀 🆕 修正：スタッフ個別の定休日 ＆ シフト（時間指定）判定！
+        let isStaffHoliday = false;
+        let isOutsideShift = false;
+
+        if (staff.id !== 'free') {
+          // まず通常の曜日休みをチェック
+          if (staff.weekly_holidays?.includes(dayIndex)) {
+            isStaffHoliday = true;
+          }
+          // 次にカスタムシフト（優先）をチェック
+          const shift = staff.custom_shifts?.[selectedDate];
+          if (shift) {
+            if (shift.type === 'off') {
+              isStaffHoliday = true; // 終日休み
+            } else if (shift.type === 'time') {
+              isStaffHoliday = false; // 休みの日でもシフトがあれば「出勤扱い」に戻す
+              // シフトの出勤時間外なら「シフト外（グレー）」にする
+              if (time < shift.start || time >= shift.end) {
+                isOutsideShift = true; 
+              }
+            }
+          }
+        }
+
+        const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
+        const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
         
         // 1. この枠に重なっている全予約を取得
         // 1. お客様の予約・ブロック
@@ -817,7 +1045,16 @@ const timeSlots = useMemo(() => {
         const colors = getCustomerColor(firstRes?.customer_name);
 
         return (
-          <td key={time} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ minWidth: '120px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1.5px solid #cbd5e1', position: 'relative', background: '#fff', padding: 0, cursor: 'pointer' }}>
+          <td key={time} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ 
+            minWidth: '120px', 
+            borderRight: '1.5px solid #cbd5e1', 
+            borderBottom: '1.5px solid #cbd5e1', 
+            position: 'relative', 
+            // 🚀 🆕 修正：シフト時間外(isOutsideShift)もグレー表示の対象に追加！
+            background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'),
+            padding: 0, 
+            cursor: 'pointer' 
+          }}>
             {hasRes && (
               <div style={{ position: 'absolute', inset: '6px 0', background: isMultiple ? '#e0e7ff' : colors.bg, borderTop: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderBottom: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderLeft: isStart ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRight: isEnd ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRadius: `${isStart ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isStart ? '8px' : '0'}`, display: 'flex', alignItems: 'center', justifyContent: isStart ? 'flex-start' : 'center', padding: isStart ? '0 10px' : '0', zIndex: 5, overflow: 'hidden' }}>
                 
@@ -1558,6 +1795,130 @@ const timeSlots = useMemo(() => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ======================================================== */}
+      {/* 🚀 🆕 ここから追加：カレンダーポップアップ本体 */}
+      {/* ======================================================== */}
+      {showMobileCalendar && (
+        <div style={overlayStyle} onClick={() => setShowMobileCalendar(false)}>
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ ...modalContentStyle, maxWidth: isPC ? '580px' : '95%', width: '580px', padding: '25px 20px', borderRadius: '32px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '22px', padding: '10px', background: '#f8fafc', borderRadius: '18px' }}>
+              <button onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1))} style={{ border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderRadius: '12px', width: '46px', height: '46px', fontSize: '1.1rem', color: themeColor, cursor: 'pointer' }}>◀</button>
+              <div style={{ textAlign: 'center', flex: 1 }}>
+                <div style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>{viewMonth.getFullYear()}年</div>
+                <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#1e293b', marginTop: '2px' }}>{viewMonth.getMonth() + 1}月</div>
+              </div>
+              <button onClick={() => setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1))} style={{ border: 'none', background: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.05)', borderRadius: '12px', width: '46px', height: '46px', fontSize: '1.1rem', color: themeColor, cursor: 'pointer' }}>▶</button>
+            </div>
+
+            <div 
+              onTouchStart={(e) => { touchStartX.current = e.touches[0].clientX; }}
+              onTouchEnd={(e) => {
+                const diff = touchStartX.current - e.changedTouches[0].clientX;
+                if (Math.abs(diff) > 50) {
+                  if (diff > 0) setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1));
+                  else setViewMonth(new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1));
+                }
+              }}
+              style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '6px', textAlign: 'center' }}
+            >
+              {['月','火','水','木','金','土','日'].map(d => (
+                <div key={d} style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '12px' }}>{d}</div>
+              ))}
+              
+              {miniCalendarDays.map((date, i) => {
+                if (!date) return <div key={i} />;
+                const dStr = date.toLocaleDateString('sv-SE');
+                const isSelected = dStr === selectedDate;
+                const isToday = dStr === new Date().toLocaleDateString('sv-SE');
+                const summary = getDayEventSummary(date);
+
+                return (
+                  <div 
+                    key={i} 
+                    onClick={() => {
+                      setSelectedDate(dStr);
+                      setShowMobileCalendar(false);
+                    }}
+                    style={{ 
+                      padding: '6px 0', cursor: 'pointer', borderRadius: '16px',
+                      background: summary.isHoliday ? '#f1f5f9' : 'none',
+                      opacity: summary.isHoliday ? 0.6 : 1,
+                      minHeight: '72px', display: 'flex', flexDirection: 'column', alignItems: 'center'
+                    }}
+                  >
+                    <div style={{
+                      width: '32px', height: '32px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      fontSize: '1.05rem', fontWeight: 'bold',
+                      background: isSelected ? themeColor : (isToday ? `${themeColor}15` : 'none'),
+                      color: isSelected ? '#fff' : (isToday ? themeColor : (summary.isHoliday ? '#94a3b8' : '#1e293b'))
+                    }}>
+                      {date.getDate()}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <button onClick={() => setShowMobileCalendar(false)} style={isPC ? { width: '100%', marginTop: '20px', padding: '14px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '14px', fontWeight: 'bold', cursor: 'pointer', fontSize: '1rem' } : { position: 'fixed', bottom: '30px', left: '50%', transform: 'translateX(-50%)', background: '#1e293b', color: '#fff', border: 'none', padding: '12px 40px', borderRadius: '50px', fontWeight: 'bold', boxShadow: '0 10px 20px rgba(0,0,0,0.3)', zIndex: 4000 }}>
+              閉じる ✕
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 🚀 🆕 ここに追加：全顧客検索モーダル本体 */}
+      {/* ======================================================== */}
+      {showMobileSearchModal && (
+        <div style={overlayStyle} onClick={() => { setShowMobileSearchModal(false); setSearchTerm(''); }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '450px', height: '85vh', padding: '0', display: 'flex', flexDirection: 'column', borderRadius: '30px', overflow: 'hidden' }}>
+            <div style={{ padding: '20px', borderBottom: '1px solid #f1f5f9', textAlign: 'center', flexShrink: 0 }}>
+              <h3 style={{ margin: 0, fontSize: '1.1rem', fontWeight: '900', color: '#1e293b' }}>👤 顧客名簿 (50音順)</h3>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto', padding: '10px', background: '#fcfcfc' }}>
+              {(() => {
+                let lastLabel = ""; 
+                return allCustomers
+                  .filter(c => (c.admin_name || c.name || '').includes(searchTerm) || (c.furigana || '').includes(searchTerm) || (c.phone || '').includes(searchTerm))
+                  .map((c) => {
+                    const currentLabel = getKanaGroup(c.furigana);
+                    const isNewGroup = currentLabel !== lastLabel;
+                    lastLabel = currentLabel;
+                    return (
+                      <React.Fragment key={c.id}>
+                        {isNewGroup && (
+                          <div style={{ padding: '12px 10px 4px', fontSize: '0.8rem', fontWeight: '900', color: themeColor, borderBottom: '1px solid #eee', marginBottom: '8px', background: 'linear-gradient(to right, #fcfcfc, #fff)', position: 'sticky', top: 0, zIndex: 2 }}>
+                            {currentLabel}
+                          </div>
+                        )}
+                        <div onClick={() => openCustomerDetail(c)} style={{ padding: '16px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', background: '#fff', borderRadius: '12px', marginBottom: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{c.admin_name || c.name} 様</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '4px' }}>{c.furigana || '---'} / {c.phone || '電話未登録'}</div>
+                          </div>
+                          <div style={{ color: themeColor, opacity: 0.3 }}>〉</div>
+                        </div>
+                      </React.Fragment>
+                    );
+                  });
+              })()}
+              {allCustomers.length === 0 && <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8' }}>顧客データを読み込んでいます...</div>}
+            </div>
+            <div style={{ padding: '20px', background: '#fff', borderTop: '1px solid #f1f5f9', boxShadow: '0 -10px 20px rgba(0,0,0,0.05)', flexShrink: 0 }}>
+              <div style={{ position: 'relative', marginBottom: '15px' }}>
+                <input type="text" placeholder="名前・フリガナ・電話番号で絞り込み..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} style={{ ...inputStyle, marginBottom: 0, paddingLeft: '40px', background: '#f8fafc', border: `1px solid ${themeColor}22` }} />
+                <Search size={18} style={{ position: 'absolute', left: '12px', top: '13px', color: '#94a3b8' }} />
+              </div>
+              <button onClick={() => { setShowMobileSearchModal(false); setSearchTerm(''); }} style={{ width: '100%', padding: '16px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '15px', fontWeight: 'bold', cursor: 'pointer' }}>閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

@@ -3,7 +3,8 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   Users, Plus, Trash2, ArrowLeft, Save, 
-  Calendar, Copy, QrCode, Check, Scissors 
+  Calendar, Copy, QrCode, Check, Scissors,
+  ChevronLeft, ChevronRight, X, Clock // 🚀 🆕 Clock を追加！
 } from 'lucide-react';
 
 const StaffSettings = () => {
@@ -27,6 +28,13 @@ const StaffSettings = () => {
 
   // 🚀 🆕 変更検知用のStateと、比較用データの整形関数を追加
   const [initialDataStr, setInitialDataStr] = useState(null);
+  
+  const [openCalendarId, setOpenCalendarId] = useState(null); 
+  const [staffMonths, setStaffMonths] = useState({}); 
+
+  // 🚀 🆕 追加：シフト編集ポップアップ用のState
+  const [editingShift, setEditingShift] = useState(null); 
+
   const getSimplifiedStaffsStr = (list) => {
     return JSON.stringify(list.map(s => ({
       id: s.id,
@@ -34,11 +42,56 @@ const StaffSettings = () => {
       role_type: s.role_type || 'stylist',
       concurrent_capacity: s.concurrent_capacity || 1,
       weekly_holidays: s.weekly_holidays || [],
-      is_default_for_admin: !!s.is_default_for_admin // true/falseを厳密にするため
+      custom_shifts: s.custom_shifts || {}, // 🚀 🆕 specific_holidays を custom_shifts に変更！
+      is_default_for_admin: !!s.is_default_for_admin
     })));
   };
 
   const DAYS = ['日', '月', '火', '水', '木', '金', '土'];
+
+  const changeMonth = (staffId, offset) => {
+    setStaffMonths(prev => {
+      const current = prev[staffId] || new Date();
+      return { ...prev, [staffId]: new Date(current.getFullYear(), current.getMonth() + offset, 1) };
+    });
+  };
+
+  // 🚀 🆕 追加：カレンダーの日付をタップした時、ポップアップを開く関数
+  const handleOpenShiftEdit = (staff, dateStr) => {
+    const existing = staff.custom_shifts?.[dateStr];
+    if (existing) {
+      setEditingShift({ staffId: staff.id, dateStr, type: existing.type, start: existing.start || '10:00', end: existing.end || '15:00' });
+    } else {
+      setEditingShift({ staffId: staff.id, dateStr, type: 'off', start: '10:00', end: '15:00' });
+    }
+  };
+
+  // 🚀 🆕 追加：ポップアップで「保存」を押した時の関数
+  const handleSaveShift = () => {
+    if (!editingShift) return;
+    setStaffs(prev => prev.map(s => {
+      if (s.id !== editingShift.staffId) return s;
+      const newShifts = { ...(s.custom_shifts || {}) };
+      newShifts[editingShift.dateStr] = {
+        type: editingShift.type,
+        ...(editingShift.type === 'time' ? { start: editingShift.start, end: editingShift.end } : {})
+      };
+      return { ...s, custom_shifts: newShifts };
+    }));
+    setEditingShift(null); // モーダルを閉じる
+  };
+
+  // 🚀 🆕 追加：ポップアップで「削除（通常出勤に戻す）」を押した時の関数
+  const handleDeleteShift = () => {
+    if (!editingShift) return;
+    setStaffs(prev => prev.map(s => {
+      if (s.id !== editingShift.staffId) return s;
+      const newShifts = { ...(s.custom_shifts || {}) };
+      delete newShifts[editingShift.dateStr]; // その日の特別設定を削除
+      return { ...s, custom_shifts: newShifts };
+    }));
+    setEditingShift(null); // モーダルを閉じる
+  };
 
   useEffect(() => {
     fetchStaffs();
@@ -71,12 +124,13 @@ const StaffSettings = () => {
       const initialized = data.map(s => ({
         ...s,
         weekly_holidays: s.weekly_holidays || [],
-        role_type: s.role_type || 'stylist', // 🚀 🆕 技術者/アシスタントの初期値
-        concurrent_capacity: s.concurrent_capacity || 1, // 👈 比較用に明示
-        is_default_for_admin: !!s.is_default_for_admin   // 👈 比較用に明示
+        custom_shifts: s.custom_shifts || {}, // 🚀 🆕 JSONB用の初期化
+        role_type: s.role_type || 'stylist',
+        concurrent_capacity: s.concurrent_capacity || 1,
+        is_default_for_admin: !!s.is_default_for_admin
       }));
       setStaffs(initialized);
-      setInitialDataStr(getSimplifiedStaffsStr(initialized)); // 🚀 🆕 取得したデータを「初期値」として記憶
+      setInitialDataStr(getSimplifiedStaffsStr(initialized));
     }
     setLoading(false);
   };
@@ -98,8 +152,9 @@ const StaffSettings = () => {
       shop_id: shopId,
       name: newStaffName,
       role: isFirstStaff ? 'owner' : 'staff',
-      role_type: 'stylist', // 🚀 🆕 新規作成時はデフォルトで技術者
-      weekly_holidays: []
+      role_type: 'stylist',
+      weekly_holidays: [],
+      custom_shifts: {} // 🚀 🆕 JSONBの空データをセット
     }]);
 
     if (!error) {
@@ -144,6 +199,7 @@ const StaffSettings = () => {
         name: staff.name,
         role: staff.role,
         weekly_holidays: staff.weekly_holidays,
+        custom_shifts: staff.custom_shifts, // 🚀 🆕 保存対象を custom_shifts に！
         concurrent_capacity: staff.concurrent_capacity || 1,
         role_type: staff.role_type,
         is_default_for_admin: staff.is_default_for_admin
@@ -310,9 +366,11 @@ const StaffSettings = () => {
                   </div>
                 )}
 
-                <div style={{ marginBottom: '25px', padding: '15px', background: '#fff', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
-                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Users size={14} /> 同時並行 予約受け入れ上限（人）
+                {/* 🚀 🆕 修正：役割（技術者 vs アシスタント）によってラベルと説明文を切り替える */}
+                <div style={{ marginBottom: '25px', padding: '15px', background: isStylist ? '#fff' : '#f0f9ff', borderRadius: '15px', border: `1px solid ${isStylist ? '#e2e8f0' : '#bae6fd'}` }}>
+                  <div style={{ fontSize: '0.8rem', color: isStylist ? '#64748b' : '#0284c7', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                    <Users size={14} /> 
+                    {isStylist ? '個人の同時受け入れ上限（人）' : '店舗のサポート力（人）'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <input 
@@ -329,8 +387,12 @@ const StaffSettings = () => {
                         textAlign: 'center', color: '#1e293b' 
                       }}
                     />
-                    <div style={{ fontSize: '0.75rem', color: '#94a3b8', lineHeight: '1.4' }}>
-                      ※このスタッフが同じ時間に<br />最大何人まで掛け持ちできるか
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+                      {isStylist ? (
+                        <>アシスタントがいる前提で、この人が同じ時間に<br />最大何人まで掛け持ちできるか</>
+                      ) : (
+                        <>この人が出勤していると、お店全体の<br />最大受け入れ枠がプラス何人増えるか</>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -360,11 +422,197 @@ const StaffSettings = () => {
                     })}
                   </div>
                 </div>
+
+                {/* ======================================================= */}
+                {/* 🚀 🆕 ここから追加：シフト休み（特定日）設定カレンダーUI */}
+                {/* ======================================================= */}
+                <div style={{ marginTop: '20px', borderTop: '1px dashed #cbd5e1', paddingTop: '15px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                      <Calendar size={14} /> シフト休み（特定日）の設定
+                    </div>
+                    <button
+                      onClick={() => setOpenCalendarId(openCalendarId === staff.id ? null : staff.id)}
+                      style={{ 
+                        fontSize: '0.75rem', padding: '6px 12px', borderRadius: '8px', 
+                        background: openCalendarId === staff.id ? '#1e293b' : '#fff', 
+                        color: openCalendarId === staff.id ? '#fff' : '#1e293b', 
+                        border: '1px solid #cbd5e1', cursor: 'pointer', fontWeight: 'bold', transition: '0.2s'
+                      }}
+                    >
+                      {openCalendarId === staff.id ? 'カレンダーを閉じる' : '📅 カレンダーを開く'}
+                    </button>
+                  </div>
+
+                  {/* カレンダー本体 */}
+                  {openCalendarId === staff.id && (
+                    <div style={{ marginTop: '15px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '15px', padding: '15px', animation: 'fadeIn 0.3s ease' }}>
+                      {(() => {
+                        const vMonth = staffMonths[staff.id] || new Date();
+                        const y = vMonth.getFullYear();
+                        const m = vMonth.getMonth();
+                        const firstDay = new Date(y, m, 1).getDay();
+                        const daysInMonth = new Date(y, m + 1, 0).getDate();
+                        const days = [...Array(firstDay).fill(null), ...Array.from({length: daysInMonth}, (_, i) => i + 1)];
+
+                        return (
+                          <>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                              <button onClick={() => changeMonth(staff.id, -1)} style={{ background: '#f1f5f9', border: 'none', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronLeft size={16}/></button>
+                              <div style={{ fontWeight: '900', color: '#1e293b' }}>{y}年 {m + 1}月</div>
+                              <button onClick={() => changeMonth(staff.id, 1)} style={{ background: '#f1f5f9', border: 'none', width: '30px', height: '30px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ChevronRight size={16}/></button>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px', textAlign: 'center', fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', marginBottom: '8px' }}>
+                              {['日', '月', '火', '水', '木', '金', '土'].map(d => <div key={d}>{d}</div>)}
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '4px' }}>
+                              {days.map((d, i) => {
+                                if (!d) return <div key={i} />;
+                                const dStr = `${y}-${String(m + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+                                
+                                // 🚀 🆕 修正：その日のシフト設定を取り出す
+                                const shiftData = staff.custom_shifts?.[dStr];
+                                const isOff = shiftData?.type === 'off';
+                                const isTime = shiftData?.type === 'time';
+
+                                return (
+                                  <div
+                                    key={i}
+                                    onClick={() => handleOpenShiftEdit(staff, dStr)} // 🚀 🆕 タップでポップアップを開く！
+                                    style={{
+                                      padding: '8px 0', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer',
+                                      // 🚀 🆕 休みは赤、時短はオレンジ、通常はグレー
+                                      background: isOff ? '#f43f5e' : (isTime ? '#f59e0b' : '#f8fafc'),
+                                      color: (isOff || isTime) ? '#fff' : '#1e293b',
+                                      border: (isOff || isTime) ? 'none' : '1px solid #e2e8f0',
+                                      textAlign: 'center', transition: '0.1s'
+                                    }}
+                                  >
+                                    {d}
+                                    {/* 時短の場合は小さな時計マークを出す */}
+                                    {isTime && <div style={{ fontSize: '0.5rem', marginTop: '-2px' }}>🕒</div>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '10px', textAlign: 'center' }}>
+                              タップして「休み」や「出勤時間」を設定します。
+                            </div>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* 🚀 🆕 修正：選択されている日付のバッジ表示 */}
+                  {Object.keys(staff.custom_shifts || {}).length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                      {Object.entries(staff.custom_shifts).sort(([a], [b]) => a.localeCompare(b)).map(([dStr, shift]) => (
+                        <span 
+                          key={dStr} 
+                          onClick={() => handleOpenShiftEdit(staff, dStr)}
+                          style={{ 
+                            fontSize: '0.7rem', cursor: 'pointer',
+                            background: shift.type === 'off' ? '#fff1f2' : '#fffbeb', 
+                            color: shift.type === 'off' ? '#e11d48' : '#d97706', 
+                            padding: '4px 8px', borderRadius: '6px', 
+                            border: `1px solid ${shift.type === 'off' ? '#fecdd3' : '#fde68a'}`, 
+                            fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' 
+                          }}
+                        >
+                          {dStr.replace(/-/g, '/')}
+                          {shift.type === 'off' ? ' (休み)' : ` (${shift.start}〜${shift.end})`}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* 選択されている日付のバッジ表示（カレンダーを閉じても見える） */}
+                  {staff.specific_holidays?.length > 0 && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
+                      {staff.specific_holidays.sort().map(d => (
+                        <span key={d} style={{ fontSize: '0.7rem', background: '#fff1f2', color: '#e11d48', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                          {d.replace(/-/g, '/')}
+                          <button onClick={() => toggleSpecificHoliday(staff.id, d)} style={{ background: 'none', border: 'none', color: '#e11d48', cursor: 'pointer', padding: 0, display: 'flex' }}>
+                            <X size={12}/>
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {/* 🚀 🆕 追加ここまで */}
+
               </div>
             );
           })}
         </div>
       </div>
+
+      {/* ======================================================= */}
+      {/* 🚀 🆕 ここに追加：シフト時間設定ポップアップ */}
+      {/* ======================================================= */}
+      {editingShift && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
+          <div style={{ background: '#fff', width: '90%', maxWidth: '350px', borderRadius: '24px', padding: '25px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+            <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: '#1e293b' }}>
+              {editingShift.dateStr.replace(/-/g, '/')} のシフト
+            </h3>
+            <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '20px' }}>
+              {staffs.find(s => s.id === editingShift.staffId)?.name} さんの設定
+            </p>
+
+            {/* 選択ボタン：終日休み vs 時間指定 */}
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+              <button 
+                onClick={() => setEditingShift({ ...editingShift, type: 'off' })}
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: editingShift.type === 'off' ? '2px solid #f43f5e' : '1px solid #e2e8f0', background: editingShift.type === 'off' ? '#fff1f2' : '#fff', color: editingShift.type === 'off' ? '#f43f5e' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
+              >
+                終日休み
+              </button>
+              <button 
+                onClick={() => setEditingShift({ ...editingShift, type: 'time' })}
+                style={{ flex: 1, padding: '12px', borderRadius: '12px', border: editingShift.type === 'time' ? '2px solid #f59e0b' : '1px solid #e2e8f0', background: editingShift.type === 'time' ? '#fffbeb' : '#fff', color: editingShift.type === 'time' ? '#d97706' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}
+              >
+                時間指定（出勤）
+              </button>
+            </div>
+
+            {/* 時間指定が選ばれた時だけ表示する入力欄 */}
+            {editingShift.type === 'time' && (
+              <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}>
+                <Clock size={18} color="#94a3b8" />
+                <input 
+                  type="time" 
+                  value={editingShift.start} 
+                  onChange={(e) => setEditingShift({ ...editingShift, start: e.target.value })} 
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', outline: 'none' }}
+                />
+                <span style={{ fontWeight: 'bold', color: '#64748b' }}>〜</span>
+                <input 
+                  type="time" 
+                  value={editingShift.end} 
+                  onChange={(e) => setEditingShift({ ...editingShift, end: e.target.value })} 
+                  style={{ padding: '8px', borderRadius: '8px', border: '1px solid #cbd5e1', fontWeight: 'bold', outline: 'none' }}
+                />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button onClick={handleSaveShift} style={{ width: '100%', padding: '14px', background: themeColor, color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
+                設定を適用する
+              </button>
+              <button onClick={handleDeleteShift} style={{ width: '100%', padding: '14px', background: '#fff', color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer' }}>
+                🗑 この日の特別設定を消す（通常通り）
+              </button>
+              <button onClick={() => setEditingShift(null)} style={{ width: '100%', padding: '10px', background: 'none', color: '#94a3b8', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                キャンセル
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 🚀 🆕 追加ここまで */}
 
       {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>

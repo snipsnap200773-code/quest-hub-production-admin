@@ -39,6 +39,7 @@ const GeneralSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 s
   const [extraSlotsAfter, setExtraSlotsAfter] = useState(0);
   const [autoSalesMatching, setAutoSalesMatching] = useState(false); 
   const [allowBatchMatching, setAllowBatchMatching] = useState(false);
+  const [isTimelineDefault, setIsTimelineDefault] = useState(false); // 🚀 🆕 追加：タイムライン初期表示用State
 
   // 🚀 🆕 引っ越し：メール通知設定のState
   const [notifyMailEnabled, setNotifyMailEnabled] = useState(true);
@@ -132,6 +133,7 @@ const [initialDataStr, setInitialDataStr] = useState(null);
       setExtraSlotsAfter(data.extra_slots_after || 0);
       setAutoSalesMatching(data.auto_sales_matching || false);
       setAllowBatchMatching(data.allow_batch_matching || false);
+      setIsTimelineDefault(data.is_timeline_default || false); // 🚀 🆕 ここで読み込み
       // 🚀 🆕 取得処理に追加
       setNotifyMailEnabled(data.notify_mail_enabled ?? true);
       setNotifyMailRemindEnabled(data.notify_mail_remind_enabled ?? true);
@@ -143,6 +145,7 @@ const [initialDataStr, setInitialDataStr] = useState(null);
         extraSlotsAfter: data.extra_slots_after || 0,
         autoSalesMatching: data.auto_sales_matching || false,
         allowBatchMatching: data.allow_batch_matching || false,
+        isTimelineDefault: data.is_timeline_default || false, // 🚀 🆕 初期データにも追加
         notifyMailEnabled: data.notify_mail_enabled ?? true,
         notifyMailRemindEnabled: data.notify_mail_remind_enabled ?? true
       }));
@@ -169,7 +172,7 @@ const [initialDataStr, setInitialDataStr] = useState(null);
 
   // 🚀 🆕 追加：現在の入力状態を文字列化して、初期データと比較
   const currentDataStr = JSON.stringify({
-    themeColor, extraSlotsBefore, extraSlotsAfter, autoSalesMatching, allowBatchMatching, notifyMailEnabled, notifyMailRemindEnabled
+    themeColor, extraSlotsBefore, extraSlotsAfter, autoSalesMatching, allowBatchMatching, isTimelineDefault, notifyMailEnabled, notifyMailRemindEnabled // 🚀 🆕 isTimelineDefaultを追加
   });
   const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
 
@@ -180,8 +183,9 @@ const [initialDataStr, setInitialDataStr] = useState(null);
       extra_slots_after: extraSlotsAfter,
       auto_sales_matching: autoSalesMatching,
       allow_batch_matching: allowBatchMatching,
-      notify_mail_enabled: notifyMailEnabled,              // 🚀 🆕 保存処理に追加
-      notify_mail_remind_enabled: notifyMailRemindEnabled  // 🚀 🆕 保存処理に追加
+      is_timeline_default: isTimelineDefault,              // 🚀 🆕 保存処理に追加
+      notify_mail_enabled: notifyMailEnabled,              
+      notify_mail_remind_enabled: notifyMailRemindEnabled  
     }).eq('id', shopId);
 
     if (!error) {
@@ -235,6 +239,42 @@ return (
               ボタン表示サンプル
             </div>
           </div>
+        </div>
+      </section>
+
+      {/* 🕒 🆕 追加：ログイン初期画面設定 */}
+      <section style={{ ...cardStyle, borderLeft: `8px solid #4f46e5` }}>
+        <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#4f46e5', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
+          <Layout size={20} /> ログイン時の初期画面
+        </h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ flex: 1, paddingRight: '15px' }}>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>
+              ログイン直後に「タイムライン画面」を開く
+            </div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
+              ONにすると、ログイン後の最初の画面がカレンダーからタイムラインに変更されます。（複数スタッフで運用する店舗におすすめ）
+            </div>
+          </div>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={isTimelineDefault} 
+              onChange={(e) => setIsTimelineDefault(e.target.checked)} 
+              style={{ opacity: 0, width: 0, height: 0 }} 
+            />
+            <span style={{ 
+              position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, 
+              backgroundColor: isTimelineDefault ? themeColor : '#cbd5e1', 
+              transition: '.3s', borderRadius: '34px' 
+            }}>
+              <span style={{ 
+                position: 'absolute', content: '""', height: '18px', width: '18px', 
+                left: isTimelineDefault ? '28px' : '4px', bottom: '4px', 
+                backgroundColor: 'white', transition: '.3s', borderRadius: '50%' 
+              }}></span>
+            </span>
+          </label>
         </div>
       </section>
 

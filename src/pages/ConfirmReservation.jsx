@@ -331,29 +331,80 @@ const handleReserve = async () => {
     setIsSubmitting(true);
 
     try {
-      // 💡 🆕 追加：ファイナル・ガード（最終空き枠チェック）
+      // 💡 🆕 修正：ファイナル・ガード（動的キャパシティ対応版）
       // 管理者の「ねじ込み」でない場合のみ、本当に枠が空いているか再確認する
       if (!isAdminEntry) {
         const targetDate = adminDate || date;
         const targetTime = adminTime || time;
         const checkStartTime = new Date(`${targetDate}T${targetTime}:00`).toISOString();
 
-        // 同じ時間の予約が何件あるか、DBの最新情報を直接聞きに行く
-        const { count, error: checkError } = await supabase
-          .from('reservations')
-          .select('*', { count: 'exact', head: true })
-          .eq('shop_id', shopId)
-          .eq('start_time', checkStartTime)
-          .eq('res_type', 'normal');
+        // 1. 店舗の全スタッフの最新シフトを取得
+        const { data: allStaffs } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
+        if (allStaffs) {
+          const dObj = new Date(targetDate);
+          const dayIdx = dObj.getDay();
+          
+          // 2. その時間に出勤しているスタッフを厳選
+          const workingStaffs = allStaffs.filter(s => {
+            if (s.weekly_holidays?.includes(dayIdx)) return false;
+            const shift = s.custom_shifts?.[targetDate];
+            if (shift) {
+              if (shift.type === 'off') return false;
+              if (shift.type === 'time' && (targetTime < shift.start || targetTime >= shift.end)) return false;
+            }
+            return true;
+          });
 
-        if (checkError) throw checkError;
+          // 3. 役割ごとに分類し、お店全体の動的キャパシティを計算
+          const workingStylists = workingStaffs.filter(s => s.role_type === 'stylist' || !s.role_type);
+          const workingAssistants = workingStaffs.filter(s => s.role_type === 'assistant');
+          const hasAssistant = workingAssistants.length > 0;
+          const currentStoreMax = workingStylists.length + workingAssistants.reduce((sum, a) => sum + (a.concurrent_capacity || 1), 0);
 
-        // もしすでに最大数（マンツーマンなら1）に達していたら、ここで強制終了
-        if (count >= (shop.max_capacity || 1)) {
-          alert('申し訳ありません！タッチの差で他の予約が埋まってしまいました。もう一度時間を選び直してください。');
-          setIsSubmitting(false);
-          navigate(`/shop/${shopId}/reserve`); // 予約画面に戻す
-          return;
+          // 4. 【ガード1】指名スタッフがそもそも出勤しているか？
+          if (staffId) {
+            const targetStaff = workingStaffs.find(s => s.id === staffId);
+            if (!targetStaff) {
+              alert('申し訳ありません。選択された担当スタッフのシフト（お休み・時間外）と重なってしまいました。別の日時を選択してください。');
+              setIsSubmitting(false);
+              return;
+            }
+
+            // 5. 【ガード2】指名スタッフの「個人上限」に達していないか？
+            let staffMax = targetStaff.concurrent_capacity || 1;
+            if (!hasAssistant && shop?.restrict_stylist_without_assistant) {
+              staffMax = 1; // 🛡️ 平等モード：アシスタント不在時は強制的に1名に制限
+            }
+
+            const { count: staffCount } = await supabase
+              .from('reservations')
+              .select('*', { count: 'exact', head: true })
+              .eq('staff_id', staffId)
+              .eq('start_time', checkStartTime)
+              .eq('res_type', 'normal');
+
+            if (staffCount >= staffMax) {
+              alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
+              setIsSubmitting(false);
+              navigate(`/shop/${shopId}/reserve`);
+              return;
+            }
+          }
+
+          // 6. 【ガード3】お店全体の予約数が、動的キャパシティ（currentStoreMax）に達していないか？
+          const { count: globalCount } = await supabase
+            .from('reservations')
+            .select('*', { count: 'exact', head: true })
+            .eq('shop_id', shopId)
+            .eq('start_time', checkStartTime)
+            .eq('res_type', 'normal');
+
+          if (globalCount >= currentStoreMax) {
+            alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
+            setIsSubmitting(false);
+            navigate(`/shop/${shopId}/reserve`);
+            return;
+          }
         }
       }
 

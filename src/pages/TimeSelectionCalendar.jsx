@@ -239,8 +239,20 @@ function TimeSelectionCalendar() {
   };
 
   const isStaffOnHoliday = (date, staff) => {
-    if (!staff?.weekly_holidays) return false;
-    return staff.weekly_holidays.includes(date.getDay());
+    const dayIndex = date.getDay();
+    let isOff = staff?.weekly_holidays?.includes(dayIndex);
+    
+    // 🚀 🆕 カスタムシフト（シフト休・出勤）の判定を追加
+    const dateStr = date.toLocaleDateString('sv-SE');
+    const shift = staff?.custom_shifts?.[dateStr];
+    if (shift) {
+      if (shift.type === 'off') {
+        isOff = true; // 終日休みのシフトが入っている
+      } else if (shift.type === 'time') {
+        isOff = false; // 時間指定シフトが入っていれば、定休日でも「出勤扱い」にする！
+      }
+    }
+    return isOff;
   };
 
   const timeSlots = useMemo(() => {
@@ -384,19 +396,38 @@ const checkAvailability = (date, timeStr) => {
     if (dateStr === todayStr && targetDateTime < now) return { status: 'past', label: '－', remaining: 0 };
     if (new Date(dateStr) < limitDate) return { status: 'past', label: '－', remaining: 0 };
 
-    // スタッフ空き枠の集計
-    const storeMax = shop?.max_capacity || 1;
-    const activeStaffs = allStaffs.filter(s => {
-      if (targetStaff && s.id !== targetStaff.id) return false;
-      if (isStaffOnHoliday(date, s)) return false;
-      return true;
-    });
+    // 🚀 🆕 修正：固定の店舗上限を廃止し、毎時間ごとにリアルタイム計算する
+    let minRemaining = 999; 
 
-    let minRemaining = storeMax;
     for (let t = targetDateTime.getTime(); t < potentialEndTime.getTime(); t += interval * 60 * 1000) {
       const travelBufferMs = (travelTimeMinutes || 0) * 60 * 1000;
       const prepBufferMs = (shop.buffer_preparation_min || 0) * 60 * 1000;
+      const checkTStr = new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }).slice(0, 5);
   
+      // 💡 A. この「瞬間(t)」に出勤している全スタッフのリストを作る
+      const workingStaffs = allStaffs.filter(s => {
+        // 曜日休みや終日休みかチェック
+        if (isStaffOnHoliday(date, s)) return false;
+        // 時間指定のシフト休みの範囲外かチェック
+        const shift = s.custom_shifts?.[dateStr];
+        if (shift && shift.type === 'time') {
+          if (checkTStr < shift.start || checkTStr >= shift.end) return false;
+        }
+        return true;
+      });
+
+      // 💡 B. 役割（技術者 vs アシスタント）ごとに分ける
+      const workingStylists = workingStaffs.filter(s => s.role_type === 'stylist' || !s.role_type);
+      const workingAssistants = workingStaffs.filter(s => s.role_type === 'assistant');
+      const hasAssistant = workingAssistants.length > 0;
+
+      // 💡 C. 店舗全体のキャパシティ（フタ）を計算：「出勤技術者の人数 ＋ 出勤アシスタントのサポート力」
+      const currentStoreMax = workingStylists.length + workingAssistants.reduce((sum, a) => sum + (a.concurrent_capacity || 1), 0);
+
+      // ※技術者が1人も出勤していなければ即ブロック
+      if (workingStylists.length === 0) return { status: 'booked', label: '×', remaining: 0 };
+
+      // 💡 D. 店舗全体で予約枠が上限に達していないかチェック
       const globalCount = existingReservations.filter(res => {
         const resStart = new Date(res.start_time).getTime();
         const resEnd = new Date(res.end_time).getTime();
@@ -404,10 +435,19 @@ const checkAvailability = (date, timeStr) => {
         return t >= resStart && t < blockedUntil;
       }).length;
         
-      if (globalCount >= storeMax) return { status: 'booked', label: '×', remaining: 0 };
-      minRemaining = Math.min(minRemaining, storeMax - globalCount);
+      if (globalCount >= currentStoreMax) return { status: 'booked', label: '×', remaining: 0 };
+      minRemaining = Math.min(minRemaining, currentStoreMax - globalCount);
 
-      const anyStaffAvailable = activeStaffs.some(staff => {
+      // 💡 E. 個別の技術者が予約を受け入れられるか（指名またはフリー）をチェック
+      const anyStaffAvailable = workingStylists.some(staff => {
+        if (targetStaff && staff.id !== targetStaff.id) return false; // 指名がある場合はその人だけチェック
+
+        // 🚀 🆕 核心部：個人の上限をモードに合わせて決定する
+        let staffMax = staff.concurrent_capacity || 1;
+        if (!hasAssistant && shop?.restrict_stylist_without_assistant) {
+          staffMax = 1; // 🛡 平等モード：アシスタントがいない時間は強制的に「1名」に制限
+        }
+
         const staffCurrentLoad = existingReservations.filter(res => {
           if (res.staff_id !== staff.id) return false;
           const resStart = new Date(res.start_time).getTime();
@@ -415,8 +455,10 @@ const checkAvailability = (date, timeStr) => {
           const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
           return t >= resStart && t < blockedUntil;
         }).length;
-        return staffCurrentLoad < (staff.concurrent_capacity || 1);
+
+        return staffCurrentLoad < staffMax;
       });
+
       if (!anyStaffAvailable) return { status: 'booked', label: '×', remaining: 0 };
     }
 
@@ -755,7 +797,8 @@ const checkAvailability = (date, timeStr) => {
             }
 
                   const isSelected = selectedTime === time;
-                  const isSolo = (shop?.max_capacity || 1) === 1;
+                  // 🚀 🆕 修正：スタッフが1人で、かつ上限が1名の場合のみ「完全マンツーマン」として表示する
+                  const isSolo = allStaffs.length === 1 && (allStaffs[0].concurrent_capacity || 1) === 1;
 
                   return (
                     <button
