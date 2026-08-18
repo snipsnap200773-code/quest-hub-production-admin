@@ -7,7 +7,7 @@ import {
   Calendar, CheckCircle, AlertCircle,
   PlusCircle,
   Minus,
-  Building2, ClipboardCheck,
+  Building2, ClipboardCheck, ClipboardList, // 🚀 🆕 ClipboardList を追加
   ShoppingBag,
   X,
   Loader2,
@@ -209,8 +209,8 @@ const fetchMasterData = async () => {
 
   const fetchShopData = async () => {
     const { data } = await supabase.from('profiles')
-      // ✅ ここに allow_batch_matching を追加して取得するようにします
-      .select('theme_color, business_name, auto_sales_matching, allow_batch_matching') 
+      // 🚀 🆕 is_timeline_default に修正して取得する
+      .select('theme_color, business_name, auto_sales_matching, allow_batch_matching, is_timeline_default') 
       .eq('id', shopId).single();
     if (data) setShopData(data);
   };
@@ -997,8 +997,13 @@ const handleSaveMemo = async () => {
           </div>
 
           <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/reservations`)} style={navSwitchBtnStyle}><Calendar size={14} /> カレンダーへ</button>
-            <button onClick={() => navigate(`/admin/${shopId}/timeline`)} style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}><Clock size={14} /> タイムラインへ</button>
+            {/* 🚀 🆕 修正：カレンダーとタイムラインを統合して「予約台帳」ボタンに */}
+            <button 
+              onClick={() => navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`)} 
+              style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}
+            >
+              <ClipboardList size={14} /> 予約台帳へ
+            </button>
           </div>
         </div>
       )}

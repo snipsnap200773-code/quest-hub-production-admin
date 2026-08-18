@@ -553,8 +553,14 @@ const StaffSettings = () => {
       {/* 🚀 🆕 ここに追加：シフト時間設定ポップアップ */}
       {/* ======================================================= */}
       {editingShift && (
-        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}>
-          <div style={{ background: '#fff', width: '90%', maxWidth: '350px', borderRadius: '24px', padding: '25px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
+        <div 
+          onClick={() => setEditingShift(null)} // 🚀 🆕 追加：外側の背景をタップしたら閉じる
+          style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 3000, display: 'flex', alignItems: 'center', justifyContent: 'center', backdropFilter: 'blur(4px)' }}
+        >
+          <div 
+            onClick={(e) => e.stopPropagation()} // 🚀 🆕 追加：内側（白いパネル部分）をタップしても閉じないようにブロック
+            style={{ background: '#fff', width: '90%', maxWidth: '350px', borderRadius: '24px', padding: '25px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
+          >
             <h3 style={{ margin: '0 0 5px 0', fontSize: '1.2rem', color: '#1e293b' }}>
               {editingShift.dateStr.replace(/-/g, '/')} のシフト
             </h3>

@@ -186,9 +186,10 @@ const AdminDashboard = () => {
       <div style={gridStyle}>
         
         {/* 予約台帳 */}
+        {/* 🚀 🆕 修正：設定された「初期画面（カレンダー or タイムライン）」に飛ぶように変更 */}
         <NavCard 
           title="予約台帳" desc="最新予約の確認・手動登録" icon={<ClipboardList size={28} />} color="#10b981"
-          to={`/admin/${shopId}/reservations`}
+          to={`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`}
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 

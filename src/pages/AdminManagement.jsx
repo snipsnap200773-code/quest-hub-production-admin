@@ -1372,8 +1372,10 @@ return (
           </div>
           
           <div style={{ marginTop: 'auto', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            <button style={navBtnStyle(false, '#4285f4')} onClick={() => navigate(`/admin/${cleanShopId}/reservations`)}>カレンダー</button>
-            <button style={navBtnStyle(false, '#4b2c85')} onClick={() => navigate(`/admin/${cleanShopId}/timeline`)}>タイムライン</button>
+            {/* 🚀 🆕 修正：カレンダーとタイムラインを統合して「予約台帳」ボタンに */}
+            <button style={navBtnStyle(false, '#4b2c85')} onClick={() => navigate(`/admin/${cleanShopId}/${shop?.is_timeline_default ? 'timeline' : 'reservations'}`)}>
+              予約台帳へ
+            </button>
           </div>
         </div>
       )}
@@ -2978,7 +2980,8 @@ return (
           <button onClick={() => { closeAllPopups(); setActiveMenu('work'); }} style={mobileTabStyle(activeMenu === 'work', '#d34817')}><Clipboard size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>台帳</span></button>
           <button onClick={() => { closeAllPopups(); setActiveMenu('customers'); }} style={mobileTabStyle(activeMenu === 'customers', '#4285f4')}><Users size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>名簿</span></button>
           <button onClick={() => { closeAllPopups(); setActiveMenu('analytics'); }} style={mobileTabStyle(activeMenu === 'analytics', '#008000')}><BarChart3 size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>分析</span></button>
-          <button onClick={() => { closeAllPopups(); navigate(`/admin/${cleanShopId}/reservations`); }} style={mobileTabStyle(false, '#4b2c85')}><Calendar size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>戻る</span></button>
+          {/* 🚀 🆕 修正：戻るボタンを「予約台帳」に変更 */}
+          <button onClick={() => { closeAllPopups(); navigate(`/admin/${cleanShopId}/${shop?.is_timeline_default ? 'timeline' : 'reservations'}`); }} style={mobileTabStyle(false, '#4b2c85')}><Clipboard size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>予約台帳</span></button>
         </div>
       )}
 
