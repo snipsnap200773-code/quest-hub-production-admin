@@ -970,7 +970,7 @@ const timeSlots = useMemo(() => {
                 })()}
               </th>
               {timeSlots.map(time => (
-                <th key={time} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '0.75rem', background: '#e2e8f0', textAlign: 'center' }}>{time}</th>
+                <th key={time} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '1.3rem', background: '#e2e8f0', textAlign: 'center' }}>{time}</th>
               ))}
             </tr>
           </thead>
@@ -978,9 +978,13 @@ const timeSlots = useMemo(() => {
   {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => (
     <tr key={staff.id} style={{ height: '80px', background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
       <td style={{ 
-        position: 'sticky', left: 0, zIndex: 90, background: idx % 2 === 0 ? '#fff' : '#f8fafc', 
-        padding: '8px', borderRight: '3px solid #94a3b8', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold' 
-      }}><div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}><Users size={14} color={staff.id === 'free' ? '#94a3b8' : themeColor} /><span style={{ fontSize: '0.85rem', color: '#1e293b' }}>{staff.name}</span></div></td>{/* 👈 閉じタグの直後に中括弧を繋げる */}
+  position: 'sticky', left: 0, zIndex: 90, background: idx % 2 === 0 ? '#fff' : '#f8fafc', 
+  padding: '8px', borderRight: '3px solid #94a3b8', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold' 
+}}>
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}> {/* 👈 justifyContent を追加 */}
+    <span style={{ fontSize: '1.1rem', color: '#1e293b' }}>{staff.name}</span>
+  </div>
+</td>
 {timeSlots.map(time => {
         const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
         const staffIdVal = staff.id === 'free' ? null : staff.id;
