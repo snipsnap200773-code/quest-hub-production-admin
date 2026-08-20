@@ -25,6 +25,7 @@ import BookingScheduleSettings from './pages/admin/settings/BookingScheduleSetti
 import CheckoutSettings from './pages/admin/settings/CheckoutSettings'; // 👈 🆕 これを追加
 import TodayTasks from './pages/admin/settings/TodayTasks';
 import ShareLinks from './pages/admin/settings/ShareLinks';
+import BillingSettings from './pages/admin/settings/BillingSettings';
 
 // --- ✨ ガイド ---
 import BasicSettingsGuide from './pages/admin/settings/BasicSettingsGuide';
@@ -131,6 +132,9 @@ function App() {
         
         {/* 👇 🆕 追加：リンク・シェア用URL管理ページ */}
         <Route path="/admin/:shopId/settings/share-links" element={<ShareLinks />} />
+
+        {/* 👇 🌟 🆕 今回追加：プラン・お支払い設定ページ */}
+        <Route path="/admin/:shopId/settings/billing" element={<BillingSettings />} />
 
         <Route path="/admin/:shopId/settings/general" element={
           <SettingsPreviewLayout>

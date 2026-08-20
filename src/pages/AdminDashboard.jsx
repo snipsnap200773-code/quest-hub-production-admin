@@ -10,7 +10,8 @@ import {
   LogOut,
   Store,
   Share2, // 👈 🆕 これを追加
-  QrCode  // 👈 🆕 これを追加
+  QrCode, // 👈 🆕 これを追加
+  CreditCard // 👈 🌟 🆕 今回新しくこれを追加！（QrCode の後ろにカンマが必要です）
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -299,6 +300,17 @@ const AdminDashboard = () => {
           to={`/admin/${shopId}/settings/share-links`}
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
+
+        {/* 👇 🌟 🆕 今回ここから追加：プラン・お支払い設定 */}
+        <NavCard 
+          title="プラン・お支払い設定" 
+          desc="現在のプラン確認・アップグレード" 
+          icon={<CreditCard size={28} />} 
+          color="#8b5cf6" // 少し特別感のあるパープル
+          to={`/admin/${shopId}/settings/billing`}
+          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+        />
+        {/* 🌟 🆕 追加ここまで */}
 
       </div>
 
