@@ -418,6 +418,29 @@ const updateShopInfo = async (id) => {
     if (!error) fetchCreatedShops();
   };
 
+  // 👇 🌟 🆕 ここにテスター切り替え関数を追加
+  const toggleTester = async (shop) => {
+    const newStatus = !shop.is_tester;
+    const confirmMsg = newStatus
+      ? `「${shop.business_name}」を【テスター（全機能永久無料）】に設定しますか？`
+      : `「${shop.business_name}」のテスター設定を解除しますか？`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_tester: newStatus })
+      .eq('id', shop.id);
+
+    if (!error) {
+      fetchCreatedShops();
+      alert('テスター権限を更新しました。');
+    } else {
+      alert('更新に失敗しました: ' + error.message);
+    }
+  };
+  // 👆 🆕 追加ここまで
+
   // ✅ 🆕 差し替え：サービスプラン（1 or 2）を更新する関数
   const updateServicePlan = async (shopId, planValue) => {
     const { error } = await supabase
@@ -575,6 +598,7 @@ const updateShopInfo = async (id) => {
   onCopy={copyToClipboard} 
   categories={categoriesList} 
   onRepairAuth={repairShopAuth}
+  onToggleTester={toggleTester}
 />
       ))}
       {filteredShops.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#999'}}>該当する店舗はありません</div>}
@@ -924,7 +948,7 @@ const updateShopInfo = async (id) => {
 }
 
 // 店舗カード（1ミリも省略なし）
-function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onUpdate, onDelete, onToggleSuspension, onToggleManagement, onCopy, categories, onRepairAuth }) {
+function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onUpdate, onDelete, onToggleSuspension, onToggleManagement, onCopy, categories, onRepairAuth, onToggleTester }) {
   const isEditing = editingShopId === shop.id;
   const isSuspended = shop.is_suspended;
   const isMgmtEnabled = shop.is_management_enabled;
@@ -932,9 +956,16 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
   return (
     <div style={{ background: '#fff', padding: '15px', borderRadius: '16px', border: isSuspended ? '2px solid #ef4444' : (isMgmtEnabled ? '2px solid #7c3aed' : '1px solid #e2e8f0'), width: '100%', boxSizing: 'border-box' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           <span style={{ fontSize: '0.65rem', fontWeight: 'bold', color: '#94a3b8' }}>No.{index}</span>
           {isMgmtEnabled && <span style={{ fontSize: '0.6rem', background: '#7c3aed', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>管理機能:ON</span>}
+          
+          {/* 👇 🌟 🆕 テスターバッジを追加 */}
+          {shop.is_tester && (
+            <span style={{ fontSize: '0.65rem', background: '#1e293b', color: '#fbbf24', padding: '2px 8px', borderRadius: '4px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
+              👑 永久無料
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '15px' }}>
 <Edit2 size={16} color="#64748b" style={{cursor:'pointer'}} onClick={() => {
@@ -1033,14 +1064,27 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
           <button 
             onClick={() => onRepairAuth(shop)}
             style={{ 
-              width: '100%', marginBottom: '15px', padding: '10px', 
-              background: '#fef3c7', color: '#92400e', 
-              border: '1px solid #f59e0b', borderRadius: '10px', 
-              fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer',
-              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px'
+              /* 既存のスタイル */
             }}
           >
             <ShieldAlert size={14} /> 認証アカウントを復旧（強制同期）
+          </button>
+
+          {/* 👇 🌟 🆕 テスター切り替えボタンを追加 */}
+          <button 
+            onClick={() => onToggleTester(shop)}
+            style={{ 
+              width: '100%', marginBottom: '15px', padding: '10px', 
+              background: shop.is_tester ? '#1e293b' : '#f1f5f9', 
+              color: shop.is_tester ? '#fbbf24' : '#64748b', 
+              border: shop.is_tester ? '2px solid #fbbf24' : '1px solid #e2e8f0', 
+              borderRadius: '10px', 
+              fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer',
+              display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+              transition: '0.2s'
+            }}
+          >
+            {shop.is_tester ? '👑 テスター権限ON（タップで解除）' : '☆ テスター（永久無料）に設定する'}
           </button>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

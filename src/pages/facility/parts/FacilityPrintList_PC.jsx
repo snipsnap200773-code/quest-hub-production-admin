@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { Printer, Building2, ChevronRight, Loader2, Square, ArrowLeft, CheckCircle2 } from 'lucide-react';
+import { Printer, Building2, ChevronRight, Loader2, Square, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
 const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   const [shops, setShops] = useState([]);
@@ -17,10 +17,21 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   const fetchPartners = async () => {
     const { data } = await supabase
       .from('shop_facility_connections')
-      .select(`*, profiles (id, business_name, theme_color, business_type)`)
+      // 🚀 追加: subscription_plan も取得対象に含める
+      .select(`*, profiles (id, business_name, theme_color, business_type, subscription_plan)`)
       .eq('facility_user_id', facilityId)
       .eq('status', 'active');
-    setShops(data?.map(d => d.profiles) || []);
+
+    let shopsList = data?.map(d => d.profiles) || [];
+
+    // 🚀 無料プランの業者を一番下に並び替え
+    shopsList = shopsList.sort((a, b) => {
+      const isFreeA = a.subscription_plan === 'free' ? 1 : 0;
+      const isFreeB = b.subscription_plan === 'free' ? 1 : 0;
+      return isFreeA - isFreeB;
+    });
+
+    setShops(shopsList);
   };
 
   const handleSelectShop = async (shop) => {
@@ -71,10 +82,21 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
         </div>
         <div style={shopGrid(isMobile)}>
           {shops.map(shop => (
-            <button key={shop.id} onClick={() => handleSelectShop(shop)} style={shopCard}>
+            <button 
+              key={shop.id} 
+              onClick={() => handleSelectShop(shop)} 
+              // 🚀 無料版はグレーアウト＆操作不可
+              style={{ ...shopCard, opacity: shop.subscription_plan === 'free' ? 0.5 : 1, pointerEvents: shop.subscription_plan === 'free' ? 'none' : 'auto' }}
+            >
+              {/* 🚀 警告バッジを追加 */}
+              {shop.subscription_plan === 'free' && (
+                 <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                   <AlertCircle size={14} /> システム利用制限中
+                 </div>
+              )}
               <div style={shopIconCircle(shop.theme_color)}><Building2 size={32} color="#fff" /></div>
               <strong style={{marginTop:'15px', color:'#3d2b1f'}}>{shop.business_name}</strong>
-              <div style={selectBadge}>名簿を作成する ➔</div>
+              <div style={selectBadge}>{shop.subscription_plan === 'free' ? '利用不可' : '名簿を作成する ➔'}</div>
             </button>
           ))}
         </div>

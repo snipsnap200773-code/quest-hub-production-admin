@@ -176,6 +176,9 @@ const [initialDataStr, setInitialDataStr] = useState(null);
   });
   const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
 
+  // 👇 🌟 🆕 無料版の判定を追加
+  const isFreePlan = shopData && !shopData.is_tester && shopData.subscription_status !== 'active' && shopData.subscription_status !== 'trialing';
+
   const handleSave = async () => {
     const { error } = await supabase.from('profiles').update({
       theme_color: themeColor,
@@ -322,9 +325,17 @@ return (
       </section>
 
       {/* ✉️ 🆕 引っ越し：メール通知設定 */}
-      <section style={{ ...cardStyle, borderLeft: `8px solid #0369a1` }}>
+      {/* ✉️ 🆕 引っ越し：メール通知設定 */}
+      <section style={{ 
+        ...cardStyle, 
+        borderLeft: `8px solid #0369a1`,
+        background: isFreePlan ? '#f8fafc' : '#fff', // 👈 🌟 変更
+        opacity: isFreePlan ? 0.6 : 1,               // 👈 🌟 変更
+        pointerEvents: isFreePlan ? 'none' : 'auto'  // 👈 🌟 変更（操作不可に）
+      }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
           <Mail size={20} /> システムからの自動メール通知
+          {isFreePlan && <span style={{ fontSize: '0.7rem', background: '#e2e8f0', color: '#475569', padding: '2px 8px', borderRadius: '4px', marginLeft: 'auto' }}>有料プラン専用</span>}
         </h3>
 
         {/* 1. 店舗向け（新着予約） */}
@@ -333,10 +344,10 @@ return (
             <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>新着予約のメール通知を受け取る（店舗向け）</div>
             <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>店舗用メールアドレス宛に、予約が入った際にお知らせを送信します。</div>
           </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-            <input type="checkbox" checked={notifyMailEnabled} onChange={(e) => setNotifyMailEnabled(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyMailEnabled ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
-              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: notifyMailEnabled ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'default' }}>
+            <input type="checkbox" checked={isFreePlan ? false : notifyMailEnabled} readOnly style={{ opacity: 0, width: 0, height: 0 }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: (isFreePlan ? false : notifyMailEnabled) ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
+              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: (isFreePlan ? false : notifyMailEnabled) ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
             </span>
           </label>
         </div>
@@ -347,10 +358,10 @@ return (
             <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>リマインドメールを自動送信する（お客様向け）</div>
             <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ご予約の24時間前に、Web予約をされたお客様へ自動で確認メールを送信します。</div>
           </div>
-          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
-            <input type="checkbox" checked={notifyMailRemindEnabled} onChange={(e) => setNotifyMailRemindEnabled(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: notifyMailRemindEnabled ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
-              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: notifyMailRemindEnabled ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
+          <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'default' }}>
+            <input type="checkbox" checked={isFreePlan ? false : notifyMailRemindEnabled} readOnly style={{ opacity: 0, width: 0, height: 0 }} />
+            <span style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: (isFreePlan ? false : notifyMailRemindEnabled) ? themeColor : '#cbd5e1', transition: '.3s', borderRadius: '34px' }}>
+              <span style={{ position: 'absolute', content: '""', height: '18px', width: '18px', left: (isFreePlan ? false : notifyMailRemindEnabled) ? '28px' : '4px', bottom: '4px', backgroundColor: 'white', transition: '.3s', borderRadius: '50%' }}></span>
             </span>
           </label>
         </div>

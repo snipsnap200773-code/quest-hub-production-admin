@@ -20,6 +20,7 @@ const LineSettings = () => {
   const isPC = windowWidth > 900; 
   
 // --- 1. State 管理 (LINE通知の役割を細分化) ---
+  const [isLineBlocked, setIsLineBlocked] = useState(false); // 👈 🌟 🆕 LINE連携ブロック判定用
   const [message, setMessage] = useState('');
   // ① 店主様への通知（新着予約など）
   const [notifyLineEnabled, setNotifyLineEnabled] = useState(true);
@@ -39,6 +40,17 @@ const LineSettings = () => {
   const fetchLineData = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', shopId).single();
 if (data) {
+      // 👇 🌟 🆕 無料版（未契約）の判定を追加
+      const hasLineAccess = 
+        data.is_tester || 
+        data.subscription_status === 'active' || 
+        data.subscription_status === 'trialing';
+
+      if (!hasLineAccess) {
+        setIsLineBlocked(true); // 👈 🌟 無料版ならブロックをONにする
+        return; // これ以下の既存の設定読み込みをスキップ
+      }
+
       setNotifyLineEnabled(data.notify_line_enabled ?? true);
       // カラムが未作成の場合に備え、初期値を確実にセットします
       setCustomerLineBookingEnabled(data.customer_line_booking_enabled ?? true);
@@ -93,6 +105,31 @@ const handleTestNotify = async () => {
   const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #00b900', boxSizing: 'border-box', width: '100%', boxShadow: '0 4px 6px -1px rgba(0,185,0,0.05)' };
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
   const labelStyle = { fontSize: '0.8rem', fontWeight: 'bold', color: '#15803d', marginTop: '16px', display: 'block', marginBottom: '8px' };
+
+  // 👇 🌟 🆕 無料版の場合のブロック画面
+  if (isLineBlocked) {
+    return (
+      <div style={{ ...containerStyle, display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '60vh' }}>
+        <div style={{ background: '#fff', padding: '40px 30px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)', textAlign: 'center', maxWidth: '400px' }}>
+          <div style={{ width: '64px', height: '64px', background: '#f0fdf4', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <MessageCircle size={32} color="#00b900" />
+          </div>
+          <h2 style={{ fontSize: '1.2rem', color: '#1e293b', marginBottom: '15px' }}>LINE連携は有料プラン専用です</h2>
+          <p style={{ fontSize: '0.9rem', color: '#64748b', lineHeight: '1.6', marginBottom: '30px' }}>
+            自動通知やリマインドなどのLINE連携機能をご利用いただくには、プランのアップグレードが必要です。
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+            <button onClick={() => navigate(`/admin/${shopId}/settings/billing`)} style={{ background: '#00b900', color: '#fff', border: 'none', padding: '14px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+              プランをアップグレード
+            </button>
+            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '14px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+              ダッシュボードへ戻る
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={containerStyle}>

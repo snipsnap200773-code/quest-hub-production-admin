@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from 'react'; // 🚀 use
 import { supabase } from '../../../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Store, ArrowRight, Info, 
-  Clock, Users, CheckCircle2, Trash2, Calendar as CalIcon
+  Clock, Users, CheckCircle2, Trash2, Calendar as CalIcon, AlertCircle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -53,8 +53,20 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
   const fetchInitialData = async () => {
     const { data } = await supabase.from('shop_facility_connections').select(`*, profiles (*)`).eq('facility_user_id', facilityId).eq('status', 'active');
-    setShops(data || []);
-    if (data?.length > 0 && !selectedShop) setSelectedShop(data[0].profiles);
+    
+    // 🚀 無料プランの業者を一番下に並び替え
+    const sorted = (data || []).sort((a, b) => {
+      const isFreeA = a.profiles?.subscription_plan === 'free' ? 1 : 0;
+      const isFreeB = b.profiles?.subscription_plan === 'free' ? 1 : 0;
+      return isFreeA - isFreeB;
+    });
+
+    setShops(sorted);
+
+    // 🚀 有料プラン（先頭に来た業者）を優先して初期選択
+    if (sorted.length > 0 && !selectedShop) {
+      setSelectedShop(sorted[0].profiles);
+    }
 
     // 🚀 🆕 自分（施設）のテストモード設定を取得してStateに入れる
     const { data: fac } = await supabase.from('facility_users').select('is_test_mode').eq('id', facilityId).single();
@@ -407,6 +419,19 @@ if (regKeep && !isExcludedForThisShop) {
       <main style={{ flex: 1, width: '100%' }}>
         {!selectedShop ? (
           <div style={noShopStyle}>読み込み中...</div>
+        ) : selectedShop.subscription_plan === 'free' ? (
+          /* 🚀 追加: 無料プラン時のブロック画面 */
+          <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #fee2e2' }}>
+            <div style={{ background: '#fef2f2', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+              <AlertCircle size={32} color="#ef4444" />
+            </div>
+            <h2 style={{ color: '#1e293b', marginBottom: '15px' }}>システム経由での予約依頼ができません</h2>
+            <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: '1.6' }}>
+              現在、「<strong>{selectedShop.business_name}</strong>」様はシステム利用制限中のため、<br/>
+              カレンダーからの日程キープおよび予約送信がストップされています。<br/>
+              お急ぎの場合は、直接業者様へお電話等でお問い合わせください。
+            </p>
+          </div>
         ) : (
           <>
             <div style={calHeaderStyle}>

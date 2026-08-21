@@ -33,6 +33,7 @@ function ReservationForm() {
 
   // 基本データState
   const [shop, setShop] = useState(null);
+  const [isWebBookingBlocked, setIsWebBookingBlocked] = useState(false); // 👈 🌟 🆕 Web予約ブロック判定用
   const [categories, setCategories] = useState([]);
   const [services, setServices] = useState([]);
   const [options, setOptions] = useState([]);
@@ -106,15 +107,23 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
     const shopRes = await supabase.from('profiles').select('*').eq('id', shopId).single();
     
 if (shopRes.data) {
-      // ✅ 🆕 差し込み：プラン1 且つ 管理者モードでない場合はブロック
-      if (shopRes.data.service_plan === 1 && !isAdminMode) {
-        setShop(null); // shopを空にする
+      const shopData = shopRes.data;
+
+      // 👇 🌟 🆕 無料版（未契約）の判定を追加
+      const hasWebBookingAccess = 
+        shopData.is_tester || 
+        shopData.subscription_status === 'active' || 
+        shopData.subscription_status === 'trialing';
+
+      // 💡 管理者（Admin）のねじ込み予約の場合はブロックを突破できる
+      if (!hasWebBookingAccess && !isAdminMode) {
+        setShop(shopData);
+        setIsWebBookingBlocked(true); // 👈 🌟 ブロック状態をONにする
         setLoading(false);
         return; 
-        // 💡 これで、下の「店舗が見つかりません」または「予約受付停止」の画面になります
       }
 
-      setShop(shopRes.data);
+      setShop(shopData);
             
       // ✅ 1. キーワードが含まれているか判定（キーワード方式）
       const businessTypeName = shopRes.data.business_type || '';
@@ -523,6 +532,27 @@ const handleNextStep = (input = null) => {
   if (loading) return <div style={{ textAlign: 'center', padding: '100px', color: '#666' }}>読み込み中...</div>;
   if (shop?.is_suspended) return <div style={{ padding: '60px 20px', textAlign: 'center' }}><h2>現在、予約受付を停止しています</h2></div>;
   if (!shop) return <div style={{ textAlign: 'center', padding: '50px' }}>店舗が見つかりません</div>;
+
+  // 👇 🌟 🆕 Web予約ブロック用の専用画面
+  if (isWebBookingBlocked) {
+    return (
+      <div style={{ padding: '40px 20px', textAlign: 'center', maxWidth: '500px', margin: '0 auto', fontFamily: 'sans-serif' }}>
+        <div style={{ background: '#fff', padding: '40px 20px', borderRadius: '24px', border: '1px solid #e2e8f0', boxShadow: '0 10px 25px -5px rgba(0,0,0,0.05)' }}>
+          <div style={{ width: '64px', height: '64px', background: '#fef2f2', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <AlertCircle size={32} color="#ef4444" />
+          </div>
+          <h2 style={{ fontSize: '1.2rem', color: '#1e293b', marginBottom: '15px' }}>現在、Web予約の受付を停止しています</h2>
+          <p style={{ fontSize: '0.9rem', color: '#64748b', lineHeight: '1.6', marginBottom: '30px' }}>
+            申し訳ございません。こちらの店舗は現在、Webからのご予約受付を停止しております。<br />
+            ご予約・お問い合わせにつきましては、直接店舗までご連絡くださいますようお願いいたします。
+          </p>
+          <button onClick={() => navigate(-1)} style={{ background: '#f1f5f9', color: '#475569', border: 'none', padding: '12px 30px', borderRadius: '50px', fontWeight: 'bold', cursor: 'pointer' }}>
+            戻る
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   const themeColor = shop?.theme_color || '#2563eb';
 

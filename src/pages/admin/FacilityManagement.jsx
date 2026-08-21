@@ -834,6 +834,9 @@ facilities.forEach(conn => {
 
   const activeFacilities = facilities.filter(f => f.status === 'active');
 
+  // 👇 🌟 🆕 無料版の判定を追加
+  const isFreePlan = shopSettings && !shopSettings.is_tester && shopSettings.subscription_status !== 'active' && shopSettings.subscription_status !== 'trialing';
+
   const openEdit = (f) => {
     setEditingId(f.id);
     // 🚀 🆕 修正：既存の全プロフィール情報をセット（furigana含む）
@@ -887,8 +890,11 @@ facilities.forEach(conn => {
             📌 店舗側からキープを入れる
           </button>
           <button 
-            onClick={() => navigate(`/admin/${shopId}/facility-search`)} 
-            style={{...addBtnStyle, background: '#4f46e5', gap: '8px'}}
+            onClick={() => {
+              if (isFreePlan) return alert('「新しい提携先を探す」機能は有料プラン（パーティー/ギルド）専用です。');
+              navigate(`/admin/${shopId}/facility-search`);
+            }} 
+            style={{...addBtnStyle, background: isFreePlan ? '#cbd5e1' : '#4f46e5', gap: '8px', cursor: isFreePlan ? 'not-allowed' : 'pointer'}}
           >
             <Search size={18} /> 新しい提携先を探す
           </button>
@@ -911,14 +917,20 @@ facilities.forEach(conn => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
                <div style={settingRow}>
                  <div>
-                   <div style={{fontWeight:'bold', fontSize:'0.9rem'}}>施設検索への公開</div>
+                   <div style={{fontWeight:'bold', fontSize:'0.9rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                     施設検索への公開
+                     {isFreePlan && <span style={{ fontSize: '0.65rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px' }}>有料プラン専用</span>}
+                   </div>
                    <div style={{fontSize:'0.7rem', color:'#64748b'}}>施設側で検索・リクエストが可能になります</div>
                  </div>
                  <button 
-                   onClick={() => setShopSettings({...shopSettings, is_facility_searchable: !shopSettings.is_facility_searchable})}
-                   style={toggleBtnStyle(shopSettings.is_facility_searchable)}
+                   onClick={() => {
+                     if (isFreePlan) return alert('施設検索への公開は有料プラン専用です。');
+                     setShopSettings({...shopSettings, is_facility_searchable: !shopSettings.is_facility_searchable})
+                   }}
+                   style={toggleBtnStyle(isFreePlan ? false : shopSettings.is_facility_searchable)}
                  >
-                   {shopSettings.is_facility_searchable ? '公開中' : '非公開'}
+                   {isFreePlan ? '非公開 (制限中)' : (shopSettings.is_facility_searchable ? '公開中' : '非公開')}
                  </button>
                </div>
 

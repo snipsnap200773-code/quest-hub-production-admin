@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { 
   Store, User, MapPin, Phone, Mail, 
-  Globe, ExternalLink, Trash2, CheckCircle2 
+  Globe, ExternalLink, Trash2, CheckCircle2, AlertCircle 
 } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
@@ -24,7 +24,14 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
       .eq('facility_user_id', facilityId)
       .eq('status', 'active');
     
-    setPartners(data || []);
+    // 🚀 無料プランの業者を一番下に並び替え
+    const sorted = (data || []).sort((a, b) => {
+      const isFreeA = a.profiles?.subscription_plan === 'free' ? 1 : 0;
+      const isFreeB = b.profiles?.subscription_plan === 'free' ? 1 : 0;
+      return isFreeA - isFreeB;
+    });
+
+    setPartners(sorted);
     setLoading(false);
   };
 
@@ -54,19 +61,27 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
             const themeColor = shop.theme_color || '#c5a059';
             return (
               <motion.div key={conn.id} whileHover={{ y: -5 }} style={partnerCardStyle(themeColor)}>
-                <div style={cardHeader}>
+                {/* 🚀 追加: 無料プラン判定 */}
+                {shop.subscription_plan === 'free' && (
+                  <div style={{ background: '#fef2f2', color: '#ef4444', padding: '8px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <AlertCircle size={16} />
+                    現在、この業者はシステム利用制限中です
+                  </div>
+                )}
+
+                <div style={{ ...cardHeader, opacity: shop.subscription_plan === 'free' ? 0.5 : 1, pointerEvents: shop.subscription_plan === 'free' ? 'none' : 'auto' }}>
                   <div style={iconBadge(themeColor)}><Store size={20} color="#fff" /></div>
                   <div style={{ flex: 1, marginLeft: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                       <span style={typeTag(themeColor)}>{shop.business_type}</span>
-                      <button onClick={() => handleDisconnect(conn)} style={disconnectBtn}>提携解消</button>
+                      <button onClick={() => handleDisconnect(conn)} style={{ ...disconnectBtn, pointerEvents: 'auto' }}>提携解消</button>
                     </div>
                     <h3 style={shopName}>{shop.business_name}</h3>
                   </div>
                 </div>
 
                 {/* 🆕 リッチ情報ボックス（マップ・電話・メール） */}
-                <div style={richInfoBox}>
+                <div style={{ ...richInfoBox, opacity: shop.subscription_plan === 'free' ? 0.5 : 1, pointerEvents: shop.subscription_plan === 'free' ? 'none' : 'auto', userSelect: shop.subscription_plan === 'free' ? 'none' : 'auto' }}>
                   <div style={infoRow}>
                     <User size={16} color={themeColor} />
                     <span style={infoLabel}>代表：<strong>{shop.owner_name || '未登録'}</strong></span>

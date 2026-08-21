@@ -44,6 +44,9 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
   const [editingId, setEditingId] = useState(null);
   const [sortBy, setSortBy] = useState('room');
 
+  // 🚀 追加: 全業者無料プラン（ロック状態）判定のState
+  const [isAllShopsRestricted, setIsAllShopsRestricted] = useState(false);
+
   // --- 2. データ取得ロジック ---
   useEffect(() => { 
     const init = async () => {
@@ -51,6 +54,18 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
       if (fac) {
         setFacilityName(fac.facility_name);
         fetchResidents();
+        
+        // 🚀 追加: 提携業者のプラン状況を確認
+        const { data: conns } = await supabase.from('shop_facility_connections')
+          .select('profiles(subscription_plan)')
+          .eq('facility_user_id', facilityId)
+          .eq('status', 'active');
+        
+        // 提携業者が1件以上あり、かつ「全て」が無料プランの場合にロックをかける
+        if (conns && conns.length > 0) {
+          const allFree = conns.every(c => c.profiles?.subscription_plan === 'free');
+          setIsAllShopsRestricted(allFree);
+        }
       }
     };
     init();
@@ -447,7 +462,17 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
         <aside style={pcFormSide}>
           <div style={formHeader}><UserPlus size={22} color="#c5a059" /><h3 style={{margin:0}}>{editingId ? '情報の編集' : '新規登録'}</h3></div>
           <div style={{padding:'25px'}}>
-            <div style={formGroup}><label style={labelStyle}>階数</label><div style={floorBtnGroup}>{['1F','2F','3F','4F','5F'].map(f => <button key={f} onClick={() => setNewFloor(f)} style={floorBtn(newFloor === f)}>{f}</button>)}</div></div>
+            
+            {/* 🚀 追加: ロック警告バナー */}
+            {isAllShopsRestricted && (
+              <div style={{ background: '#fef2f2', color: '#ef4444', padding: '12px', borderRadius: '12px', fontSize: '0.8rem', fontWeight: 'bold', marginBottom: '15px', lineHeight: '1.4' }}>
+                <AlertCircle size={16} style={{ marginBottom: '4px' }} /><br />
+                現在、全ての提携業者がシステム利用制限中のため、名簿の追加・編集ができません。
+              </div>
+            )}
+
+            <div style={{ opacity: isAllShopsRestricted ? 0.5 : 1, pointerEvents: isAllShopsRestricted ? 'none' : 'auto' }}>
+              <div style={formGroup}><label style={labelStyle}>階数</label><div style={floorBtnGroup}>{['1F','2F','3F','4F','5F'].map(f => <button key={f} onClick={() => setNewFloor(f)} style={floorBtn(newFloor === f)}>{f}</button>)}</div></div>
             <div style={{display:'flex', gap:'15px', marginTop:'20px'}}>
               <div style={{flex:1}}>
   <label style={labelStyle}>部屋番号 (任意)</label> {/* 🚀 任意を追加 */}
@@ -458,8 +483,13 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
             <div style={{marginTop:'20px'}}><label style={labelStyle}>ふりがな</label><input style={pcInput} value={newKana} onChange={(e) => setNewKana(e.target.value)} placeholder="ふりがな" /></div>
             <div style={{marginTop:'20px'}}><label style={labelStyle}>ベッドカット</label><div style={toggleButtonGroup}><button onClick={() => setIsBedCut(false)} style={toggleBtn(!isBedCut)}>不要</button><button onClick={() => setIsBedCut(true)} style={toggleBtn(isBedCut)}>必要</button></div></div>
             <div style={{marginTop:'20px'}}><label style={labelStyle}>特記事項</label><textarea style={pcTextarea} value={newNotes} onChange={(e) => setNewNotes(e.target.value)} placeholder="メモ" /></div>
-            <button onClick={handleSubmit} style={pcSubmitBtn}>{editingId ? '変更を保存する' : '登録する'}</button>
-            {editingId && <button onClick={() => {setEditingId(null); resetForm();}} style={mCancelBtn}>編集をキャンセル</button>}
+              
+              {/* 🚀 修正: handleSubmitの無効化対応 */}
+              <button onClick={handleSubmit} disabled={isAllShopsRestricted} style={{ ...pcSubmitBtn, background: isAllShopsRestricted ? '#ccc' : '#3d2b1f', cursor: isAllShopsRestricted ? 'not-allowed' : 'pointer' }}>
+                {editingId ? '変更を保存する' : '登録する'}
+              </button>
+              {editingId && <button onClick={() => {setEditingId(null); resetForm();}} style={mCancelBtn}>編集をキャンセル</button>}
+            </div>
           </div>
         </aside>
 

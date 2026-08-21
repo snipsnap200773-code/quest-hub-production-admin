@@ -61,9 +61,14 @@ useEffect(() => {
         .single();
 
       if (!error && data) {
-        // ✅ 🆕 差し込み：プラン1（内部管理のみ）の場合は詳細ページを隠す
-        if (data.service_plan === 1) {
-          setShop(null); // shopを空にすることで、下の「店舗が見つかりませんでした」が表示されます
+        // 👇 🌟 🆕 プラン1ではなく、新プラン（有料・トライアル・テスター）の判定に変更
+        const hasPortalAccess = 
+          data.is_tester || 
+          data.subscription_status === 'active' || 
+          data.subscription_status === 'trialing';
+
+        if (!hasPortalAccess) {
+          setShop(null); // shopを空にすることで、下の「有効期限が切れています」が表示されます
           setLoading(false);
           return;
         }

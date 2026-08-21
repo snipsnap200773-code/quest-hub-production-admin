@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { ReceiptText, X, Printer, ChevronLeft, ChevronRight, Building2 } from 'lucide-react';
+import { ReceiptText, X, Printer, ChevronLeft, ChevronRight, Building2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const FacilityInvoice_PC = ({ facilityId }) => {
@@ -33,7 +33,15 @@ const FacilityInvoice_PC = ({ facilityId }) => {
           .eq('facility_user_id', facilityId)
           .eq('status', 'active');
         
-        const shops = connections?.map(c => c.profiles) || [];
+        let shops = connections?.map(c => c.profiles) || [];
+
+        // 🚀 無料プランの業者を一番下に並び替え
+        shops = shops.sort((a, b) => {
+          const isFreeA = a.subscription_plan === 'free' ? 1 : 0;
+          const isFreeB = b.subscription_plan === 'free' ? 1 : 0;
+          return isFreeA - isFreeB;
+        });
+
         setConnectedShops(shops);
 
         if (shops.length > 0) {
@@ -189,19 +197,38 @@ const FacilityInvoice_PC = ({ facilityId }) => {
           <div style={emptyCard}>提携中の業者はまだありません。</div>
         ) : (
           connectedShops.map(shop => (
-            <motion.div key={shop.id} whileHover={{y: -5}} style={shopCard}>
+            <motion.div 
+              key={shop.id} 
+              // 🚀 無料プラン時はホバーのアニメーションも無効化
+              whileHover={{ y: shop.subscription_plan === 'free' ? 0 : -5 }} 
+              style={{ ...shopCard, opacity: shop.subscription_plan === 'free' ? 0.5 : 1 }}
+            >
               <div style={shopHeader(shop.theme_color)}>
                 <Building2 size={24} />
                 <h3 style={shopNameText}>{shop.business_name}</h3>
               </div>
               <div style={shopBody}>
-                <p style={shopDesc}>この業者の利用明細を発行します。</p>
-                <button 
-                  onClick={() => { setSelectedShop(shop); setShowInvoiceModal(true); }} 
-                  style={shopBtn(shop.theme_color)}
-                >
-                  <ReceiptText size={18} /> 明細を発行する
-                </button>
+                {/* 🚀 追加: 無料プラン時の表示切り替え */}
+                {shop.subscription_plan === 'free' ? (
+                  <>
+                    <div style={{ color: '#ef4444', fontSize: '0.85rem', fontWeight: 'bold', marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                      <AlertCircle size={16} /> システム利用制限中
+                    </div>
+                    <button disabled style={{ ...shopBtn('#ccc'), cursor: 'not-allowed' }}>
+                      利用不可
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <p style={shopDesc}>この業者の利用明細を発行します。</p>
+                    <button 
+                      onClick={() => { setSelectedShop(shop); setShowInvoiceModal(true); }} 
+                      style={shopBtn(shop.theme_color)}
+                    >
+                      <ReceiptText size={18} /> 明細を発行する
+                    </button>
+                  </>
+                )}
               </div>
             </motion.div>
           ))

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
+import { useSubscription } from '../../../context/SubscriptionContext';
 import { 
   Users, Plus, Trash2, ArrowLeft, Save, 
   Calendar, Copy, QrCode, Check, Scissors,
@@ -19,8 +20,22 @@ const StaffSettings = () => {
   }, []);
   const isPC = windowWidth > 900; 
 
+  // 👈 🌟 🆕 契約状態とプランIDを取得
+  const { planId } = useSubscription();
+
+  // 👈 🌟 🆕 プランごとの上限設定
+  const PLAN_LIMITS = {
+    free: { stylist: Infinity, assistant: Infinity }, // 無料版はレジ利用想定で無制限
+    solopreneur: { stylist: 1, assistant: 1 },
+    party: { stylist: 5, assistant: Infinity },
+    guild: { stylist: Infinity, assistant: Infinity },
+  };
+  // 現在のプランの上限を取得（万が一不明な場合はfree扱い）
+  const currentLimit = PLAN_LIMITS[planId] || PLAN_LIMITS.free;
+
   const [staffs, setStaffs] = useState([]);
   const [newStaffName, setNewStaffName] = useState('');
+  const [newStaffRole, setNewStaffRole] = useState('stylist'); // 👈 🌟 🆕 新規追加用の役割State
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(null); 
   const [copiedId, setCopiedId] = useState(null); 
@@ -144,6 +159,22 @@ const StaffSettings = () => {
 
   const addStaff = async () => {
     if (!newStaffName) return;
+
+    // 👈 🌟 🆕 選ばれた役割（newStaffRole）に応じて上限をチェックする
+    if (newStaffRole === 'stylist') {
+      const currentStylistCount = staffs.filter(s => s.role_type === 'stylist').length;
+      if (currentStylistCount >= currentLimit.stylist) {
+        alert(`現在のプランでは、技術者（プレイヤー）の登録は最大 ${currentLimit.stylist} 名までです。\nこれ以上追加する場合は、プランのアップグレードをお願いいたします。`);
+        return; 
+      }
+    } else {
+      const currentAssistantCount = staffs.filter(s => s.role_type === 'assistant').length;
+      if (currentAssistantCount >= currentLimit.assistant) {
+        alert(`現在のプランでは、アシスタントの登録は最大 ${currentLimit.assistant} 名までです。\nこれ以上追加する場合は、プランのアップグレードをお願いいたします。`);
+        return; 
+      }
+    }
+
     const isFirstStaff = staffs.length === 0;
     const staffId = isFirstStaff ? shopId : crypto.randomUUID();
 
@@ -152,13 +183,14 @@ const StaffSettings = () => {
       shop_id: shopId,
       name: newStaffName,
       role: isFirstStaff ? 'owner' : 'staff',
-      role_type: 'stylist',
+      role_type: newStaffRole, // 👈 🌟 🆕 選択された役割をセットする
       weekly_holidays: [],
-      custom_shifts: {} // 🚀 🆕 JSONBの空データをセット
+      custom_shifts: {} 
     }]);
 
     if (!error) {
       setNewStaffName('');
+      // 必要であれば setNewStaffRole('stylist'); でリセットしてもOKです
       fetchStaffs();
     }
   };
@@ -244,6 +276,20 @@ const StaffSettings = () => {
             onChange={(e) => setNewStaffName(e.target.value)}
             style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
           />
+          
+          {/* 👈 🌟 🆕 追加：役割を選択するプルダウン */}
+          <select 
+            value={newStaffRole}
+            onChange={(e) => setNewStaffRole(e.target.value)}
+            style={{ 
+              padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+              outline: 'none', background: '#fff', color: '#1e293b', fontWeight: 'bold' 
+            }}
+          >
+            <option value="stylist">✂️ 技術者</option>
+            <option value="assistant">🧹 アシスト</option>
+          </select>
+
           <button onClick={addStaff} style={{ background: '#f43f5e', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
             <Plus size={20} />
           </button>
@@ -295,8 +341,28 @@ const StaffSettings = () => {
 
                       <select 
                         value={staff.role_type}
-                        onChange={(e) => setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, role_type: e.target.value } : s))}
-                        style={{ 
+                        onChange={(e) => {
+                          const newRole = e.target.value;
+                          
+                          // 👈 🌟 🆕 役割変更時の上限チェック
+                          if (newRole === 'stylist') {
+                            const currentStylistCount = staffs.filter(s => s.role_type === 'stylist').length;
+                            if (currentStylistCount >= currentLimit.stylist) {
+                              alert(`技術者（プレイヤー）の登録上限（${currentLimit.stylist}名）に達しているため、役割を変更できません。`);
+                              return; // 変更をキャンセル
+                            }
+                          } else if (newRole === 'assistant') {
+                            const currentAssistantCount = staffs.filter(s => s.role_type === 'assistant').length;
+                            if (currentAssistantCount >= currentLimit.assistant) {
+                              alert(`アシスタントの登録上限（${currentLimit.assistant}名）に達しているため、役割を変更できません。`);
+                              return; // 変更をキャンセル
+                            }
+                          }
+                          
+                          // 問題なければ変更を適用
+                          setStaffs(prev => prev.map(s => s.id === staff.id ? { ...s, role_type: newRole } : s));
+                        }}
+                        style={{
                           fontSize: '0.7rem', padding: '4px 8px', borderRadius: '6px', border: 'none', fontWeight: 'bold', cursor: 'pointer', outline: 'none', whiteSpace: 'nowrap',
                           background: isStylist ? '#f43f5e15' : '#f1f5f9',
                           color: isStylist ? '#f43f5e' : '#64748b'

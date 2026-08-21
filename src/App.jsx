@@ -46,6 +46,7 @@ import ShopSearch from './components/ShopSearch';
 import ScrollToTop from './components/ScrollToTop';
 import InquiryForm from "./components/InquiryForm";
 import SettingsPreviewLayout from './components/SettingsPreviewLayout'; // 👈 これを追加
+import { SubscriptionProvider } from './context/SubscriptionContext'; // 👈 🌟 🆕 これを追加
 
 // 🚀 🆕 【ねじ込み予約用に必須】ユーザーエリアの画面をインポート
 import ReservationForm from './pages/ReservationForm';
@@ -88,79 +89,76 @@ function App() {
         {/* 🔮 ゲームマスター専用シークレットルート */}
         <Route path="/game-master-secret-dashboard" element={<GameMasterDashboard />} />
 
-        {/* --- 📊 管理エリア --- */}
-        <Route path="/admin/:shopId/dashboard" element={<AdminDashboard />} />
-        <Route path="/admin/:shopId" element={<AdminDashboard />} />
-        <Route path="/admin/:shopId/management" element={<AdminManagement />} />
-        <Route path="/admin/:shopId/reservations" element={<AdminReservations />} />
-        <Route path="/admin/:shopId/timeline" element={<AdminTimeline />} />
-        <Route path="/admin/:shopId/today-tasks" element={<TodayTasks />} />
+        {/* 👇 🌟 🆕 追加：店舗向け（admin/:shopId）の画面を全て SubscriptionProvider で囲む */}
+        <Route element={<SubscriptionProvider />}>
+          {/* --- 📊 管理エリア --- */}
+          <Route path="/admin/:shopId/dashboard" element={<AdminDashboard />} />
+          <Route path="/admin/:shopId" element={<AdminDashboard />} />
+          <Route path="/admin/:shopId/management" element={<AdminManagement />} />
+          <Route path="/admin/:shopId/reservations" element={<AdminReservations />} />
+          <Route path="/admin/:shopId/timeline" element={<AdminTimeline />} />
+          <Route path="/admin/:shopId/today-tasks" element={<TodayTasks />} />
 
-        {/* --- ⚙️ 設定系 --- */}
-        <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />
+          {/* --- ⚙️ 設定系 --- */}
+          <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />
 
-        {/* 👇 修正：BasicSettings を SettingsPreviewLayout で囲む（古い記述を削除しました） */}
-        <Route path="/admin/:shopId/settings/basic" element={
-          <SettingsPreviewLayout>
-            <BasicSettings />
-          </SettingsPreviewLayout>
-        } />
-        
-        {/* 👇 修正：MenuSettings の代わりに BookingFormSettings を SettingsPreviewLayout で囲む */}
-        <Route path="/admin/:shopId/settings/menu" element={
-          <SettingsPreviewLayout>
-            <BookingFormSettings />  {/* 👈 🆕 ここを書き換え */}
-          </SettingsPreviewLayout>
-        } />
-        
-        {/* 👇 修正：ScheduleSettings を BookingScheduleSettings に差し替え、レイアウトで囲む */}
-        <Route path="/admin/:shopId/settings/schedule" element={
-          <SettingsPreviewLayout>
-            <BookingScheduleSettings />
-          </SettingsPreviewLayout>
-        } />
+          <Route path="/admin/:shopId/settings/basic" element={
+            <SettingsPreviewLayout>
+              <BasicSettings />
+            </SettingsPreviewLayout>
+          } />
+          
+          <Route path="/admin/:shopId/settings/menu" element={
+            <SettingsPreviewLayout>
+              <BookingFormSettings />
+            </SettingsPreviewLayout>
+          } />
+          
+          <Route path="/admin/:shopId/settings/schedule" element={
+            <SettingsPreviewLayout>
+              <BookingScheduleSettings />
+            </SettingsPreviewLayout>
+          } />
 
-        {/* 👇 🆕 追加：タスク・お会計設定（CheckoutSettings）をレイアウトで囲む */}
-        <Route path="/admin/:shopId/settings/checkout" element={
-          <SettingsPreviewLayout>
-            <CheckoutSettings />
-          </SettingsPreviewLayout>
-        } />
+          <Route path="/admin/:shopId/settings/checkout" element={
+            <SettingsPreviewLayout>
+              <CheckoutSettings />
+            </SettingsPreviewLayout>
+          } />
 
-        <Route path="/admin/:shopId/settings/email" element={<EmailSettings />} />
-        <Route path="/admin/:shopId/settings/line" element={<LineSettings />} />
-        
-        {/* 👇 🆕 追加：リンク・シェア用URL管理ページ */}
-        <Route path="/admin/:shopId/settings/share-links" element={<ShareLinks />} />
+          <Route path="/admin/:shopId/settings/email" element={<EmailSettings />} />
+          <Route path="/admin/:shopId/settings/line" element={<LineSettings />} />
+          
+          <Route path="/admin/:shopId/settings/share-links" element={<ShareLinks />} />
 
-        {/* 👇 🌟 🆕 今回追加：プラン・お支払い設定ページ */}
-        <Route path="/admin/:shopId/settings/billing" element={<BillingSettings />} />
+          <Route path="/admin/:shopId/settings/billing" element={<BillingSettings />} />
 
-        <Route path="/admin/:shopId/settings/general" element={
-          <SettingsPreviewLayout>
-            <GeneralSettings />
-          </SettingsPreviewLayout>
-        } />
-        
-        {/* 👇 修正：FormCustomizer を BookingDetailsSettings に変え、SettingsPreviewLayout で囲む */}
-        <Route path="/admin/:shopId/settings/form" element={
-          <SettingsPreviewLayout>
-            <BookingDetailsSettings />
-          </SettingsPreviewLayout>
-        } />
+          <Route path="/admin/:shopId/settings/general" element={
+            <SettingsPreviewLayout>
+              <GeneralSettings />
+            </SettingsPreviewLayout>
+          } />
+          
+          <Route path="/admin/:shopId/settings/form" element={
+            <SettingsPreviewLayout>
+              <BookingDetailsSettings />
+            </SettingsPreviewLayout>
+          } />
 
-        {/* ガイド */}
-        <Route path="/admin/:shopId/settings/basic-guide" element={<BasicSettingsGuide />} />
-        <Route path="/admin/:shopId/settings/menu-guide" element={<MenuSettingsGuide />} />
-        <Route path="/admin/:shopId/settings/schedule-guide" element={<ScheduleSettingsGuide />} />
+          {/* ガイド */}
+          <Route path="/admin/:shopId/settings/basic-guide" element={<BasicSettingsGuide />} />
+          <Route path="/admin/:shopId/settings/menu-guide" element={<MenuSettingsGuide />} />
+          <Route path="/admin/:shopId/settings/schedule-guide" element={<ScheduleSettingsGuide />} />
 
-        {/* --- 🏢 施設ポータル --- */}
-        <Route path="/admin/:shopId/facilities" element={<FacilityManagement />} />
+          {/* --- 🏢 施設ポータル連携機能（店舗側） --- */}
+          <Route path="/admin/:shopId/facilities" element={<FacilityManagement />} />
+          <Route path="/admin/:shopId/visit-requests/:visitId" element={<AdminFacilityVisit_PC />} />
+          <Route path="/admin/:shopId/facility-search" element={<FacilitySearch />} />
+        </Route>
+        {/* 👆 ここまでが SubscriptionProvider の適用範囲 */}
+
+        {/* --- 🏢 施設ポータル（施設側：shopIdを持たないルートは外に出す） --- */}
         <Route path="/facility-portal/:facilityId/residents" element={<FacilityPortal />} />
-        <Route path="/admin/:shopId/visit-requests/:visitId" element={<AdminFacilityVisit_PC />} />
-
-        {/* 検索系 */}
-        <Route path="/admin/:shopId/facility-search" element={<FacilitySearch />} />
         <Route path="/facility-portal/:facilityId/find-shops" element={<ShopSearch />} />
 
         {/* 🚀 お問い合わせ */}

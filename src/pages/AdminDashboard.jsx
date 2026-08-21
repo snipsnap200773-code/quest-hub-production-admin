@@ -11,7 +11,8 @@ import {
   Store,
   Share2, // 👈 🆕 これを追加
   QrCode, // 👈 🆕 これを追加
-  CreditCard // 👈 🌟 🆕 今回新しくこれを追加！（QrCode の後ろにカンマが必要です）
+  CreditCard, // 👈 🌟 🆕 今回新しくこれを追加！（QrCode の後ろにカンマが必要です）
+  Lock // 👈 🌟 🆕 鍵アイコンを追加
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -147,6 +148,9 @@ const AdminDashboard = () => {
   // ロード中、または未認証時は何も出さない（navigate で飛ばされるため）
   if (isLoading || !isAuthorized) return null;
 
+  // 👇 🌟 🆕 無料版の判定を追加
+  const isFreePlan = shopData && !shopData.is_tester && shopData.subscription_status !== 'active' && shopData.subscription_status !== 'trialing';
+
   // ✅ ログイン成功時のみ表示されるダッシュボード本体
   return (
     <div style={containerStyle}>
@@ -204,7 +208,8 @@ const AdminDashboard = () => {
             to={`/admin/${shopId}/facilities`}
             cardStyle={cardStyle} 
             iconBoxStyle={iconBoxStyle} 
-            pendingCount={pendingCount} // ✅ これを追加！
+            pendingCount={isFreePlan ? 0 : pendingCount} // 👈 🌟 🆕 ロック中はバッジを隠す
+            isLocked={isFreePlan} // 👈 🌟 🆕 ロック状態を渡す
           />
         )}
 
@@ -322,24 +327,49 @@ const AdminDashboard = () => {
 };
 
 // --- サブコンポーネント：NavCard ---
-const NavCard = ({ to, title, desc, icon, color, cardStyle, iconBoxStyle, pendingCount }) => { // ✅ pendingCount を追加
+const NavCard = ({ to, title, desc, icon, color, cardStyle, iconBoxStyle, pendingCount, isLocked }) => { // 👈 🌟 🆕 isLocked を追加
   return (
     <Link 
-      to={to}
-      style={{ ...cardStyle, position: 'relative' }} // ✅ 念のため position: 'relative' を保証
+      to={isLocked ? '#' : to} // 👈 🌟 🆕 ロック時は遷移先をなくす
+      onClick={(e) => {
+        if (isLocked) {
+          e.preventDefault();
+          alert('この機能は有料プラン（ソロプレナー以上）専用です。\n「プラン・お支払い設定」からアップグレードしてください。');
+        }
+      }}
+      style={{ 
+        ...cardStyle, 
+        position: 'relative',
+        background: isLocked ? '#f8fafc' : '#fff', // 👈 🌟 🆕 ロック時は背景を少しグレーに
+        cursor: isLocked ? 'not-allowed' : 'pointer' // 👈 🌟 🆕 カーソルを変更
+      }}
       onMouseOver={(e) => {
+        if (isLocked) return; // 👈 🌟 🆕 ロック時はホバーアニメーション無効
         e.currentTarget.style.transform = 'translateY(-8px)';
         e.currentTarget.style.borderColor = color;
         e.currentTarget.style.boxShadow = `0 12px 20px -5px ${color}22`;
       }}
       onMouseOut={(e) => {
+        if (isLocked) return; // 👈 🌟 🆕 ロック時はホバーアニメーション無効
         e.currentTarget.style.transform = 'translateY(0)';
         e.currentTarget.style.borderColor = '#e2e8f0';
         e.currentTarget.style.boxShadow = '0 4px 6px -1px rgba(0,0,0,0.05)';
       }}
     >
+      {/* 🌟 🆕 鍵マークバッジの追加 */}
+      {isLocked && (
+        <div style={{
+          position: 'absolute', top: '15px', right: '15px',
+          background: '#e2e8f0', color: '#64748b', padding: '4px 10px',
+          borderRadius: '8px', fontSize: '0.7rem', fontWeight: 'bold',
+          display: 'flex', alignItems: 'center', gap: '4px'
+        }}>
+          <Lock size={14} /> 有料プラン専用
+        </div>
+      )}
+
       {/* 🆕 通知バッジ：件数が1以上あるときだけ右上に表示 */}
-      {pendingCount > 0 && (
+      {!isLocked && pendingCount > 0 && ( // 👈 🌟 🆕 ロック時は通知を出さない
         <div style={{
           position: 'absolute',
           top: '15px',
@@ -362,9 +392,10 @@ const NavCard = ({ to, title, desc, icon, color, cardStyle, iconBoxStyle, pendin
         </div>
       )}
 
-      <div style={iconBoxStyle(color)}>{icon}</div>
-      <h3 style={{ margin: '0 0 8px', color: '#1e293b', fontSize: '1.2rem', fontWeight: 'bold' }}>{title}</h3>
-      <p style={{ margin: '0', color: '#64748b', fontSize: '0.85rem', lineHeight: '1.5' }}>{desc}</p>
+      {/* 👈 🌟 🆕 ロック時はアイコンや文字の色をグレーアウト */}
+      <div style={{ ...iconBoxStyle(isLocked ? '#94a3b8' : color), filter: isLocked ? 'grayscale(100%)' : 'none' }}>{icon}</div>
+      <h3 style={{ margin: '0 0 8px', color: isLocked ? '#64748b' : '#1e293b', fontSize: '1.2rem', fontWeight: 'bold' }}>{title}</h3>
+      <p style={{ margin: '0', color: '#94a3b8', fontSize: '0.85rem', lineHeight: '1.5' }}>{desc}</p>
       
       <div style={{ position: 'absolute', bottom: '20px', right: '20px', color: '#cbd5e1' }}>
         <ChevronRight size={20} />

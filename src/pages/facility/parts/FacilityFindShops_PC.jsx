@@ -35,7 +35,9 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
       .select('*')
       .eq('business_type', '訪問サービス')
       .eq('is_facility_searchable', true)
-      .not('business_name', 'is', null);
+      .not('business_name', 'is', null)
+      // 👇 🌟 🆕 有料プラン・トライアル中・テスターのいずれかの店舗だけに絞り込む（無料版を弾く）
+      .or('is_tester.eq.true,subscription_status.eq.active,subscription_status.eq.trialing');
 
     const { data: conns } = await supabase
       .from('shop_facility_connections')
