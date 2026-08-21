@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { redirectToCheckout } from '../../../stripeService';
-import { CreditCard, Check, ArrowLeft, AlertCircle, Sparkles, ShieldCheck, Zap } from 'lucide-react';
+import { CreditCard, Check, ArrowLeft, AlertCircle, Sparkles, ShieldCheck, Zap, Crown } from 'lucide-react';
 
 const BillingSettings = () => {
   const { shopId } = useParams();
@@ -144,6 +144,7 @@ const BillingSettings = () => {
 
   const isSubscribed = profile?.subscription_status === 'active';
   const isTrialing = profile?.subscription_status === 'trialing'; // 👈 🌟 🆕 トライアル中判定
+  const isTester = profile?.is_tester === true; // 👑 テスター判定
   const currentPlan = isSubscribed ? profile?.subscription_plan : null;
 
   // 👈 🌟 🆕 日付を「○月○日」にフォーマットする関数
@@ -177,12 +178,20 @@ const BillingSettings = () => {
 
       {/* 現在のステータス表示 */}
       <div style={{ 
-        background: isSubscribed ? '#f0fdf4' : (isTrialing ? '#eff6ff' : '#f8fafc'), 
-        border: `1px solid ${isSubscribed ? '#bbf7d0' : (isTrialing ? '#bfdbfe' : '#e2e8f0')}`,
+        background: isTester ? '#fffbeb' : isSubscribed ? '#f0fdf4' : (isTrialing ? '#eff6ff' : '#f8fafc'), 
+        border: `1px solid ${isTester ? '#fde68a' : isSubscribed ? '#bbf7d0' : (isTrialing ? '#bfdbfe' : '#e2e8f0')}`,
         borderRadius: '16px', padding: '20px', marginBottom: '30px',
         display: 'flex', alignItems: 'center', gap: '15px'
       }}>
-        {isSubscribed ? (
+        {isTester ? (
+          <>
+            <Crown size={32} color="#d97706" />
+            <div>
+              <h3 style={{ margin: 0, color: '#b45309', fontSize: '1.1rem' }}>👑 テスター特権 〝無制限〟</h3>
+              <p style={{ margin: '5px 0 0', color: '#d97706', fontSize: '0.9rem' }}>プラットフォーム内の全機能を無期限・無制限でご利用いただけます。</p>
+            </div>
+          </>
+        ) : isSubscribed ? (
           <>
             <Check size={32} color="#16a34a" />
             <div>

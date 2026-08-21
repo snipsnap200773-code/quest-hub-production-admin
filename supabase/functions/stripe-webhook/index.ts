@@ -57,30 +57,37 @@ serve(async (req) => {
       }
     }
 
-    // 2. サブスクリプション更新時
+    // 2. ⚠️ サブスクリプション更新時（カード決済失敗で past_due になった時やリカバリー成功時に走ります）
     if (event.type === 'customer.subscription.updated') {
       const subscription = event.data.object as Stripe.Subscription
-      const status = subscription.status // 'active', 'past_due', 'canceled' など
+      const status = subscription.status // 'active', 'past_due', 'canceled', 'unpaid' など
+
+      // 💡 追加: 状態をそのままDBに反映させつつ、もしキャンセルや未払いになればプランもfreeに落とす
+      const updateData: any = {
+        subscription_status: status,
+        updated_at: new Date().toISOString(),
+      }
+      if (status === 'canceled' || status === 'unpaid') {
+        updateData.subscription_plan = 'free'
+      }
 
       const { error } = await supabaseAdmin
         .from('profiles')
-        .update({
-          subscription_status: status === 'active' ? 'active' : status,
-          updated_at: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq('stripe_subscription_id', subscription.id)
 
       if (error) console.error('DB Update Error (customer.subscription.updated):', error)
     }
 
-    // 3. 解約・削除時
+    // 3. 🚨 最終ダウングレード処理：解約・削除時（フェーズ2の「すべてのリトライが失敗した場合」にここが走ります）
     if (event.type === 'customer.subscription.deleted') {
       const subscription = event.data.object as Stripe.Subscription
 
       const { error } = await supabaseAdmin
         .from('profiles')
         .update({
-          subscription_status: 'inactive',
+          subscription_status: 'canceled', // フロントの判定で確実に弾くために canceled にする
+          subscription_plan: 'free',       // 👑 確実に無料版（ゲート発動状態）へダウングレード
           updated_at: new Date().toISOString(),
         })
         .eq('stripe_subscription_id', subscription.id)

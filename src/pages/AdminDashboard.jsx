@@ -187,6 +187,52 @@ const AdminDashboard = () => {
         </div>
       </header>
 
+      {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
+      {(() => {
+        if (shopData?.subscription_status !== 'trialing' || !shopData?.trial_ends_at) return null;
+        const endsAt = new Date(shopData.trial_ends_at);
+        const now = new Date();
+        const diffTime = endsAt.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        // 残り7日以下で表示
+        if (diffDays <= 7 && diffDays >= 0) {
+          return (
+            <div style={{ 
+              marginBottom: '30px', padding: '18px 25px', background: '#fffbeb', border: '2px solid #fde68a', borderRadius: '16px',
+              display: 'flex', flexWrap: 'wrap', gap: '15px',
+              justifyContent: 'space-between', alignItems: 'center',
+              boxShadow: '0 10px 15px -3px rgba(217, 119, 6, 0.1)'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '15px' }}>
+                <span style={{ fontSize: '1.8rem', marginTop: '2px' }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: '1.1rem', fontWeight: '900', color: '#d97706' }}>
+                    無料トライアル終了まで あと <span style={{fontSize: '1.4rem', color: '#b45309'}}>{diffDays}</span> 日
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: '#92400e', marginTop: '6px', lineHeight: '1.5' }}>
+                    期限を過ぎると一部機能が制限されます。<br/>
+                    継続利用をご希望の場合はプランをアップグレードしてください。
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate(`/admin/${shopId}/settings/billing`)} 
+                style={{ 
+                  background: '#d97706', color: '#fff', border: 'none', padding: '14px 24px', 
+                  borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.95rem',
+                  textAlign: 'center', whiteSpace: 'nowrap', boxShadow: '0 4px 6px rgba(217,119,6,0.2)',
+                  flexShrink: 0
+                }}
+              >
+                プラン・お支払い設定へ
+              </button>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       {/* カードグリッド */}
       <div style={gridStyle}>
         

@@ -956,6 +956,49 @@ const timeSlots = useMemo(() => {
         )}
       </div>
 
+      {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
+      {(() => {
+        if (shop?.subscription_status !== 'trialing' || !shop?.trial_ends_at) return null;
+        const endsAt = new Date(shop.trial_ends_at);
+        const now = new Date();
+        const diffTime = endsAt.getTime() - now.getTime();
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+        if (diffDays <= 7 && diffDays >= 0) {
+          return (
+            <div style={{ 
+              zIndex: 105, padding: '12px 20px', background: '#fffbeb', borderBottom: '2px solid #fde68a', 
+              display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px',
+              justifyContent: 'space-between', alignItems: isPC ? 'center' : 'stretch',
+              flexShrink: 0
+            }}>
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                <span style={{ fontSize: '1.4rem', marginTop: '2px' }}>⚠️</span>
+                <div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#d97706' }}>
+                    無料トライアル終了まで あと <span style={{fontSize: '1.2rem', color: '#b45309'}}>{diffDays}</span> 日
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '4px', lineHeight: '1.4' }}>
+                    期限を過ぎると一部機能が制限されます。継続利用をご希望の場合はプランをアップグレードしてください。
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => navigate(`/admin/${shopId}/billing`)} 
+                style={{ 
+                  background: '#d97706', color: '#fff', border: 'none', padding: '10px 20px', 
+                  borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+                  textAlign: 'center', whiteSpace: 'nowrap'
+                }}
+              >
+                プラン・お支払い設定へ
+              </button>
+            </div>
+          );
+        }
+        return null;
+      })()}
+
       {/* タイムライン本体 */}
       <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none' }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>

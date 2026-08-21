@@ -2065,6 +2065,51 @@ return (
 )}
           </div>
 
+  {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
+  {(() => {
+    if (shop?.subscription_status !== 'trialing' || !shop?.trial_ends_at) return null;
+    const endsAt = new Date(shop.trial_ends_at);
+    const now = new Date();
+    const diffTime = endsAt.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+    // 💡 残り7日以下になったらバナーを表示する（日数は自由に変更可能）
+    if (diffDays <= 7 && diffDays >= 0) {
+      return (
+        <div style={{ 
+          zIndex: 100, padding: '12px 20px', background: '#fffbeb', borderBottom: '2px solid #fde68a', 
+          display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px',
+          justifyContent: 'space-between', alignItems: isPC ? 'center' : 'stretch',
+          boxShadow: '0 4px 6px -1px rgba(217, 119, 6, 0.1)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <span style={{ fontSize: '1.4rem', marginTop: '2px' }}>⚠️</span>
+            <div>
+              <div style={{ fontSize: '0.9rem', fontWeight: '900', color: '#d97706' }}>
+                無料トライアル終了まで あと <span style={{fontSize: '1.2rem', color: '#b45309'}}>{diffDays}</span> 日
+              </div>
+              <div style={{ fontSize: '0.75rem', color: '#92400e', marginTop: '4px', lineHeight: '1.4' }}>
+                期限を過ぎるとWeb予約やポータル掲載が制限されます。継続利用をご希望の場合はプランをアップグレードしてください。
+              </div>
+            </div>
+          </div>
+          <button
+            // 💡 BillingSettings.jsx へのパス（実際のルーティング設定に合わせて調整してください）
+            onClick={() => navigate(`/admin/${shopId}/billing`)} 
+            style={{ 
+              background: '#d97706', color: '#fff', border: 'none', padding: '10px 20px', 
+              borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem',
+              textAlign: 'center', whiteSpace: 'nowrap', boxShadow: '0 2px 4px rgba(217,119,6,0.3)'
+            }}
+          >
+            プラン・お支払い設定へ
+          </button>
+        </div>
+      );
+    }
+    return null;
+  })()}
+
   {/* 🚀 🆕 修正：ヘッダーを占領しないスッキリ1行の「まとめバナー」に変更！ */}
   {(() => {
     const hasUrgent = urgentKeeps.length > 0;
