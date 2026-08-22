@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-import-prefix
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.14.0?target=deno"
 
@@ -43,7 +44,8 @@ serve(async (req) => {
       status: 200,
     })
   } catch (error) {
-    return new Response(JSON.stringify({ error: error.message }), {
+    const errorMessage = error instanceof Error ? error.message : String(error)
+    return new Response(JSON.stringify({ error: errorMessage }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       status: 400,
     })

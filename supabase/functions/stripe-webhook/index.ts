@@ -1,3 +1,4 @@
+// deno-lint-ignore-file no-import-prefix
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts"
 import Stripe from "https://esm.sh/stripe@14.14.0?target=deno"
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.39.3"
@@ -63,10 +64,10 @@ serve(async (req) => {
       const status = subscription.status // 'active', 'past_due', 'canceled', 'unpaid' など
 
       // 💡 追加: 状態をそのままDBに反映させつつ、もしキャンセルや未払いになればプランもfreeに落とす
-      const updateData: any = {
-        subscription_status: status,
-        updated_at: new Date().toISOString(),
-      }
+      const updateData: { subscription_status: string; updated_at: string; subscription_plan?: string } = {
+  subscription_status: status,
+  updated_at: new Date().toISOString(),
+};
       if (status === 'canceled' || status === 'unpaid') {
         updateData.subscription_plan = 'free'
       }
@@ -100,7 +101,8 @@ serve(async (req) => {
       status: 200,
     })
   } catch (err) {
-    console.error(`Webhook Error: ${err.message}`)
-    return new Response(`Webhook Error: ${err.message}`, { status: 400 })
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    console.error(`Webhook Error: ${errorMessage}`)
+    return new Response(`Webhook Error: ${errorMessage}`, { status: 400 })
   }
 })

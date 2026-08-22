@@ -1,7 +1,8 @@
+// deno-lint-ignore-file no-import-prefix no-unversioned-import
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 // 🆕 プッシュ通知ライブラリを導入
-import webpush from "npm:web-push";
+import webpush from "npm:web-push@3.6.7";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -35,26 +36,27 @@ const PORTAL_URL = "https://questhub-portal.vercel.app";
 const ADMIN_URL  = "https://quest-hub-admin.vercel.app";
 
 // 💡 プレースホルダー置換用の共通関数（全項目対応版）
-function applyPlaceholders(template: string, data: any) {
+function applyPlaceholders(template: string, data: Record<string, unknown> = {}) {
   if (!template) return "";
+  const d = data as Record<string, string | undefined>;
   return template
-    .replace(/{name}/g, data.customerName || "")
-    .replace(/{furigana}/g, data.furigana || "")
-    .replace(/{shop_name}/g, data.shopName || "")
-    .replace(/{start_time}/g, data.startTime || "")
-    .replace(/{staff_name}/g, data.staffName || "担当者なし")
-    .replace(/{services}/g, data.services || "")
-    .replace(/{address}/g, data.address || "")
-    .replace(/{parking}/g, data.parking || "")
-    .replace(/{building_type}/g, data.buildingType || "")
-    .replace(/{care_notes}/g, data.careNotes || "")
-    .replace(/{company_name}/g, data.companyName || "")
-    .replace(/{symptoms}/g, data.symptoms || "")
-    .replace(/{request_details}/g, data.requestDetails || "")
-    .replace(/{notes}/g, data.notes || "")
-    .replace(/{details}/g, data.details || "")
-    .replace(/{cancel_url}/g, data.cancelUrl || "")
-    .replace(/{official_url}/g, data.officialUrl || "");
+    .replace(/{name}/g, d.customerName || "")
+    .replace(/{furigana}/g, d.furigana || "")
+    .replace(/{shop_name}/g, d.shopName || "")
+    .replace(/{start_time}/g, d.startTime || "")
+    .replace(/{staff_name}/g, d.staffName || "担当者なし")
+    .replace(/{services}/g, d.services || "")
+    .replace(/{address}/g, d.address || "")
+    .replace(/{parking}/g, d.parking || "")
+    .replace(/{building_type}/g, d.buildingType || "")
+    .replace(/{care_notes}/g, d.careNotes || "")
+    .replace(/{company_name}/g, d.companyName || "")
+    .replace(/{symptoms}/g, d.symptoms || "")
+    .replace(/{request_details}/g, d.requestDetails || "")
+    .replace(/{notes}/g, d.notes || "")
+    .replace(/{details}/g, d.details || "")
+    .replace(/{cancel_url}/g, d.cancelUrl || "")
+    .replace(/{official_url}/g, d.officialUrl || "");
 }
 // 💡 LINE送信用の共通関数（三土手さん本家ロジック）
 async function safePushToLine(to: string, text: string, token: string, targetName: string) {
@@ -73,15 +75,26 @@ async function safePushToLine(to: string, text: string, token: string, targetNam
 }
 
 // 🆕 プッシュ通知を送信する共通関数
-async function sendPushNotification(supabase: any, shopId: string, title: string, body: string, url: string) {
+async function sendPushNotification(supabase: unknown, shopId: string, title: string, body: string, url: string) {
   const VAPID_PUBLIC_KEY = Deno.env.get('VAPID_PUBLIC_KEY') || "";
   const VAPID_PRIVATE_KEY = Deno.env.get('VAPID_PRIVATE_KEY') || "";
 
   // 鍵の設定
   webpush.setVapidDetails('mailto:snipsnap.2007.7.3@gmail.com', VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY);
 
+  const client = supabase as { 
+    from: (table: string) => { 
+      select: (col: string) => { 
+        eq: (col: string, val: string) => Promise<{ data: Array<{ subscription: string | Record<string, unknown> }> | null }> 
+      }; 
+      delete: () => { 
+        eq: (col: string, val: unknown) => Promise<unknown> 
+      } 
+    } 
+  };
+
   // 1. そのお店の「通知用住所（Subscription）」をすべて取得
-  const { data: subs } = await supabase.from('push_subscriptions').select('subscription').eq('shop_id', shopId);
+  const { data: subs } = await client.from('push_subscriptions').select('subscription').eq('shop_id', shopId);
   if (!subs || subs.length === 0) return;
 
   // 2. 登録されている全端末（PC・スマホ等）に通知を飛ばす
@@ -90,9 +103,10 @@ async function sendPushNotification(supabase: any, shopId: string, title: string
       await webpush.sendNotification(row.subscription, JSON.stringify({ title, body, url }));
     } catch (err) {
       console.error('[PUSH_ERROR]', err);
+      const pushError = err as { statusCode?: number };
       // 無効になった古い住所（404/410エラー等）を自動削除する
-      if (err.statusCode === 404 || err.statusCode === 410) {
-        await supabase.from('push_subscriptions').delete().eq('subscription', row.subscription);
+      if (pushError.statusCode === 404 || pushError.statusCode === 410) {
+        await client.from('push_subscriptions').delete().eq('subscription', row.subscription);
       }
     }
   }
@@ -127,7 +141,7 @@ Deno.serve(async (req) => {
               shopId, customerEmail, customerName, shopName, 
               startTime, services, shopEmail, cancelUrl, lineUserId, 
               notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
-              reserve_url, password, ownerName, phone, businessType,
+              reserve_url, password, ownerName,
               staffName, furigana, address, parking, buildingType, careNotes, 
               companyName, symptoms, requestDetails, notes, allOptions, custom_answers
             } = payload;
@@ -161,12 +175,12 @@ Deno.serve(async (req) => {
       // メニュー名は services に入っているものを復元
       if (!services) {
         if (res.options?.people) {
-          services = res.options.people.map((p: any) => p.services.map((s: any) => s.name).join(', ')).join(' / ');
-        } else if (res.options?.services) {
-          services = res.options.services.map((s: any) => s.name).join(', ');
-        } else {
-          services = "メニューなし";
-        }
+      services = res.options.people.map((p: { services: Array<{ name: string }> }) => p.services.map((s: { name: string }) => s.name).join(', ')).join(' / ');
+    } else if (res.options?.services) {
+      services = res.options.services.map((s: { name: string }) => s.name).join(', ');
+    } else {
+      services = "メニューなし";
+    }
       }
     }
 
@@ -220,9 +234,9 @@ if (type === 'remind_all') {
 
     // メニュー名の組み立て
     const isMulti = res.options?.people && res.options.people.length > 1;
-    const menuDisplayText = isMulti 
-      ? res.options.people.map((p: any, i: number) => `${i + 1}人目: ${p.services.map((s: any) => s.name).join(', ')}`).join('\n')
-      : (res.options?.services?.map((s: any) => s.name).join(', ') || res.options?.people?.[0]?.services?.map((s: any) => s.name).join(', ') || "メニューなし");
+    const menuDisplayText = isMulti
+    ? res.options.people.map((p: { services: Array<{ name: string }> }, i: number) => `${i + 1}人目: ${p.services.map((s: { name: string }) => s.name).join(', ')}`).join('\n')
+    : (res.options?.services?.map((s: { name: string }) => s.name).join(', ') || res.options?.people?.[0]?.services?.map((s: { name: string }) => s.name).join(', ') || "メニューなし");
 
     const placeholderData = { 
       customerName: res.customer_name, 
@@ -238,7 +252,7 @@ if (type === 'remind_all') {
     };
 
     let mailOk = false;
-    let lineOk = false;
+    let lineOk: unknown = false;
 
     // ✅ LINE IDの有無による完全仕分け
 if (res.line_user_id) {
@@ -272,11 +286,11 @@ const mRes = await fetch('https://api.resend.com/emails', {
         }
 
 // 送信処理（LINEまたはメール）が終わった後に1回だけDBを更新
-        await supabaseAdmin.from('reservations').update({ remind_sent: true }).eq('id', res.id);
-        report.push({ id: res.id, email: mailOk, line: lineOk });
-      } // ここでループ終了
-      
-  return new Response(JSON.stringify({ report }), { status: 200, headers: corsHeaders });
+        await supabaseAdmin.from('reservations').update({ remind_sent: true }).eq('id', res.id);
+        report.push({ id: res.id, email: mailOk, line: lineOk });
+      } // ここでループ終了
+ 
+  return new Response(JSON.stringify({ report }), { status: 200, headers: corsHeaders });
 }
 
 // ==========================================
@@ -317,11 +331,11 @@ if (type === 'auto_sales_batch') {
 
     for (const task of tasks) {
       const opt = typeof task.options === 'string' ? JSON.parse(task.options) : (task.options || {});
-      const items = opt.services || (opt.people ? opt.people.flatMap((p: any) => p.services || []) : []);
-      const subItems = Object.values(opt.options || {}) as any[];
+      const items = opt.services || (opt.people ? opt.people.flatMap((p: { services?: Array<{ price?: number | string }> }) => p.services || []) : []);
+      const subItems = Object.values(opt.options || {}) as Array<{ additional_price?: number | string }>;
 
-      const basePrice = items.reduce((sum: number, i: any) => sum + (Number(i.price) || 0), 0);
-      const optPrice = subItems.reduce((sum: number, o: any) => sum + (Number(o.additional_price) || 0), 0);
+      const basePrice = items.reduce((sum: number, i: { price?: number | string }) => sum + (Number(i.price) || 0), 0);
+      const optPrice = subItems.reduce((sum: number, o: { additional_price?: number | string }) => sum + (Number(o.additional_price) || 0), 0);
       const finalPrice = basePrice + optPrice;
 
       // A. 売上テーブル(sales)へ追加
@@ -364,15 +378,15 @@ if (type === 'signup_otp') {
     </div>`;
 
 const otpRes = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-    body: JSON.stringify({ 
-      from: 'SOLO 運営事務局 <infec@snipsnap.biz>', 
-      to: [customerEmail], 
-      subject, 
-      html 
-    })
-  });
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+    body: JSON.stringify({ 
+    from: 'SOLO 運営事務局 <infec@snipsnap.biz>', 
+    to: [customerEmail], 
+    subject, 
+    html 
+    })
+  });
 
   // ResendからのレスポンスをJSONとして解析
   const resData = await otpRes.json();
@@ -550,7 +564,7 @@ if (type === 'facility_booking') {
 // 🚀 🆕 ここに差し込みます！！ ==========================================
 if (type === 'facility_booking_update') {
   const { 
-    shopName, shopEmail, facilityName, facilityFurigana, facilityEmail,
+    shopName, shopEmail, facilityName, facilityEmail,
     scheduledDates, residentCount, addedCount, residentListText, shopId, facilityId
   } = payload;
 
@@ -751,12 +765,12 @@ if (type === 'inquiry') {
   if (custom_answers && Object.keys(custom_answers).length > 0) {
     customAnswersText = Object.entries(custom_answers)
       .filter(([qid]) => {
-        const q = config.custom_questions?.find((item: any) => item.id === qid);
+        const q = config.custom_questions?.find((item: { id: string; inquiry_enabled?: boolean }) => item.id === qid);
         return q && q.inquiry_enabled === true;
       })
       .map(([qid, answer]) => {
-        const q = config.custom_questions?.find((item: any) => item.id === qid);
-        return `・${q?.label || '質問'}: ${answer}`;
+        const q = config.custom_questions?.find((item: { id: string; label?: string }) => item.id === qid);
+        return `${q?.label || '質問'}: ${answer}`;
       }).join('\n');
   }
 
@@ -901,7 +915,7 @@ if (type === 'inquiry') {
       console.log(`[REPAIR_AUTH] 復旧開始: ${email} (ID: ${shopId})`);
 
       // 💡 管理者権限（合鍵）を使って、IDを指定してAuthユーザーを作成
-      const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      const { data: _authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
         id: shopId,          // 👈 これが最重要！DB側のProfilesと同じIDで作成します
         email: email,
         password: password,
@@ -973,9 +987,9 @@ if (type === 'inquiry') {
     }
     // 🆕 ここまで追加！
 
-    // ==========================================
-    // 🚀 パターンA：店主様への歓迎メール ＆ 三土手さんへの通知送信 (本家ロジック完全維持)
-    // ==========================================
+    // ==========================================
+    // 🚀 パターンA：店主様への歓迎メール ＆ 三土手さんへの通知送信 (本家ロジック完全維持)
+    // ==========================================
     if (type === 'welcome') {
       const welcomeRes = await fetch('https://api.resend.com/emails', {
         method: 'POST',
@@ -983,7 +997,7 @@ if (type === 'inquiry') {
         body: JSON.stringify({
           from: 'SOLO 運営事務局 <infec@snipsnap.biz>',
           to: [owner_email],
-          subject: `【SOLO】ベータ版へのご登録ありがとうございます！`,
+          subject: `【SOLO】ベータ版へのご登録ありがとうございます!`,
           html: `
             <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 30px; border-radius: 12px;">
               <h1 style="color: #2563eb; font-size: 1.5rem; margin-top: 0;">${shopName} 様</h1>
@@ -1028,15 +1042,15 @@ if (type === 'inquiry') {
       shopEmail = shopEmail || profile.email_contact || profile.email;
     }
 
-    const currentToken = profile?.line_channel_access_token;
-    const currentAdminId = profile?.line_admin_user_id;
+    const currentToken = profile?.line_channel_access_token;
+    const currentAdminId = profile?.line_admin_user_id;
 
 const sendMail = async (to: string, isOwner: boolean) => {
       // 🚀 🆕 キャンセル時は payload.reservation からデータを補填する
       const resData = type === 'cancel' ? payload.reservation : {};
       const targetName = customerName || resData.customer_name;
       const targetTime = startTime || resData.start_time;
-      const targetServices = services || resData.options?.services?.map((s:any)=>s.name).join(', ') || "メニューなし";
+      const targetServices = services || resData.options?.services?.map((s: { name: string }) => s.name).join(', ')
 
       // ✅ 置換用データセット
       const placeholderData = { 
@@ -1156,7 +1170,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
           ? `<div style="margin-top: 10px; padding: 12px; background: #ffffff; border-radius: 8px; border: 1px solid #cbd5e1;">
                <p style="margin: 0 0 8px 0; font-size: 0.8rem; color: #64748b; font-weight: bold; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px;">枝メニュー（追加オプション）:</p>
                <ul style="margin: 0; padding-left: 18px; font-size: 0.9rem; color: #1e293b; line-height: 1.5;">
-                 ${allOptions.map((o: any) => `
+                 ${allOptions.map((o: { option_name: string; additional_price?: number }) => `
                    <li style="margin-bottom: 2px;">
                      ${o.option_name} 
                      <span style="color: #d34817; font-weight: bold; font-size: 0.85rem;">
@@ -1209,7 +1223,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
                   <div style="margin-top: 15px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                     <p style="margin: 0 0 8px 0; font-size: 0.8rem; color: #64748b; font-weight: bold;">🙋 カスタム質問への回答:</p>
                     ${Object.entries(custom_answers).map(([qid, answer]) => {
-                      const question = profile.form_config?.custom_questions?.find((q: any) => q.id === qid);
+                      const question = profile.form_config?.custom_questions?.find((q: { id: string; label?: string }) => q.id === qid);
                       return `<p style="margin: 4px 0; font-size: 0.9rem;">・<b>${question?.label || '質問'}:</b> ${answer}</p>`;
                     }).join('')}
                   </div>
@@ -1305,7 +1319,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
           ? `【キャンセル完了】\n${customerName} 様、キャンセル手続きが完了いたしました。`
           : `${customerName}様\n${isVisit ? 'ご指定の場所へお伺いいたします。' : 'ご予約ありがとうございます。'}\n\n🏨 店名：${shopName}\n👤 担当：${staffName || '店舗スタッフ'}\n📅 日時：${startTime}〜\n\n📋 内容：\n${services}${visitAddressText}${shopMapUrlText}\n\n■予約確認・キャンセル\n${cancelUrl}`;
         
-        customerLineSent = await safePushToLine(lineUserId, customerMsg, currentToken, "CUSTOMER");
+        customerLineSent = Boolean(await safePushToLine(lineUserId, customerMsg, currentToken, "CUSTOMER"));
       }
     } else if (customerEmail && customerEmail !== 'admin@example.com') {
       // 【ウェブ予約の場合】メール通知のみ送る
@@ -1315,7 +1329,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
 
     // --- 2. 店主様（三土手さん）への通知 ---
     let shopResData = null;
-    let shopLineSent = false;
+    let shopLineSent: unknown = false;
 
     // A. 【メール通知】予約経路に関わらず必ず送る（最重要）
     if (shopEmail && shopEmail !== 'admin@example.com') {
@@ -1358,9 +1372,10 @@ const sendMail = async (to: string, isOwner: boolean) => {
 
   } catch (error) {
     // エラーハンドリング
-    console.error('[ERROR]', error.message);
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error('[ERROR]', errorMessage);
     return new Response(
-      JSON.stringify({ error: error.message }), 
+      JSON.stringify({ error: errorMessage }),
       { status: 500, headers: corsHeaders }
     );
   }
