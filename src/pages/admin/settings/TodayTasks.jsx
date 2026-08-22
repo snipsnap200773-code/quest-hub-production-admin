@@ -630,6 +630,18 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
 
     if (saleError) throw saleError;
 
+    // 🚀 🌟 ステップE：店販商品の在庫連動（売れた分だけマイナス）を追加
+    if (selectedProducts.length > 0) {
+      const inventoryLogs = selectedProducts.map(prod => ({
+        shop_id: shopId,                      // 👈 🌟 自分のshopIdを追加！
+        product_id: prod.id,
+        change_amount: -(prod.quantity || 1), // 買った個数分だけマイナスにする
+        reason: '店販売上（レジ自動連動）'
+      }));
+      const { error: invError } = await supabase.from('inventory_logs').insert(inventoryLogs);
+      if (invError) console.error("在庫連動エラー:", invError.message);
+    }
+
     // 来店回数の更新
     if (finalCustomerId) {
       const { data: cData } = await supabase.from('customers').select('total_visits').eq('id', finalCustomerId).single();
@@ -1313,27 +1325,33 @@ const handleSaveMemo = async () => {
             )}
                                       </div>
 
-{/* 🆕 Step 1: 店販商品カテゴリを2列のスリムなタイルカードで表示 [cite: 2026-03-08] */}
+{/* 🆕 Step 1: 店販商品カテゴリを2列のスリムなタイルカードで表示 */}
             <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#008000', marginBottom: '12px' }}>店販商品</div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '25px' }}>
-              {productCategories.map(cat => (
-                <div 
-                  key={cat.id} 
-                  onClick={() => setOpenProdCatId(cat.id)}
-                  style={{ 
-                    height: '48px', background: '#fff', borderRadius: '12px', textAlign: 'center',
-                    border: '1px solid #e2e8f0', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px'
-                  }}
-                >
-                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                    {cat.name}
-                  </span>
-                </div>
-              ))}
+              {productCategories.map(cat => {
+                // 🚀 🌟 修正：「業務用」しか入っていないカテゴリはレジに表示させない
+                const hasRetailProducts = products.some(p => p.category === cat.name && p.usage_type !== '業務用');
+                if (!hasRetailProducts) return null;
+
+                return (
+                  <div 
+                    key={cat.id} 
+                    onClick={() => setOpenProdCatId(cat.id)}
+                    style={{ 
+                      height: '48px', background: '#fff', borderRadius: '12px', textAlign: 'center',
+                      border: '1px solid #e2e8f0', cursor: 'pointer', boxShadow: '0 2px 4px rgba(0,0,0,0.05)',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '0 10px'
+                    }}
+                  >
+                    <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {cat.name}
+                    </span>
+                  </div>
+                );
+              })}
             </div>
 
-            {/* 🆕 Step 2: 商品カテゴリ専用の選択ポップアップ [cite: 2026-03-08] */}
+            {/* 🆕 Step 2: 商品カテゴリ専用の選択ポップアップ */}
 {openProdCatId && (
               <div 
                 onClick={() => setOpenProdCatId(null)} // 💡 追加：外側タップで閉じる
@@ -1353,6 +1371,8 @@ const handleSaveMemo = async () => {
                   <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
                     {products
                       .filter(p => p.category === productCategories.find(c => c.id === openProdCatId)?.name)
+                      // 🚀 🌟 修正：レジの商品リストから「業務用」を完全に消去する
+                      .filter(p => p.usage_type !== '業務用')
                       .map(prod => {
                         const selected = selectedProducts.find(p => p.id === prod.id);
                         const qty = selected?.quantity || 0;

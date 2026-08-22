@@ -6,7 +6,8 @@ import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
-  ShoppingBag, Scissors, Settings, Search // 🚀 🆕 Search を追加
+  ShoppingBag, Scissors, Settings, Search, // 🚀 🆕 Search の後ろにカンマを追加
+  PackageOpen // 👈 🌟 🆕 追加：在庫管理アイコン
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -847,6 +848,15 @@ const timeSlots = useMemo(() => {
               style={{ ...headerBtnStylePC, background: '#13a11a', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
             >
               <span>タスク</span>
+            </button>
+
+            {/* 🌟 🆕 追加：在庫管理（ポチポチ）ボタン */}
+            <button 
+              onClick={() => navigate(`/admin/${shopId}/inventory`)}
+              style={{ ...headerBtnStylePC, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
+            >
+              <PackageOpen size={16} />
+              <span>在庫</span>
             </button>
 
             {/* 📊 顧客・売上管理ボタン */}

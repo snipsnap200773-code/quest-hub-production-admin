@@ -24,6 +24,7 @@ import BookingDetailsSettings from './pages/admin/settings/BookingDetailsSetting
 import BookingScheduleSettings from './pages/admin/settings/BookingScheduleSettings'; 
 import CheckoutSettings from './pages/admin/settings/CheckoutSettings'; // 👈 🆕 これを追加
 import TodayTasks from './pages/admin/settings/TodayTasks';
+import InventoryManager from './pages/admin/settings/InventoryManager'; // 👈 🌟 🆕 これを追加
 import ShareLinks from './pages/admin/settings/ShareLinks';
 import BillingSettings from './pages/admin/settings/BillingSettings';
 
@@ -98,6 +99,7 @@ function App() {
           <Route path="/admin/:shopId/reservations" element={<AdminReservations />} />
           <Route path="/admin/:shopId/timeline" element={<AdminTimeline />} />
           <Route path="/admin/:shopId/today-tasks" element={<TodayTasks />} />
+          <Route path="/admin/:shopId/inventory" element={<InventoryManager />} /> {/* 👈 🌟 🆕 これを追加 */}
 
           {/* --- ⚙️ 設定系 --- */}
           <Route path="/admin/:shopId/settings/staff" element={<StaffSettings />} />

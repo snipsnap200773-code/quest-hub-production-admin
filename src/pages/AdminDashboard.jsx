@@ -12,7 +12,8 @@ import {
   Share2, // 👈 🆕 これを追加
   QrCode, // 👈 🆕 これを追加
   CreditCard, // 👈 🌟 🆕 今回新しくこれを追加！（QrCode の後ろにカンマが必要です）
-  Lock // 👈 🌟 🆕 鍵アイコンを追加
+  Lock, // 👈 🌟 🆕 鍵アイコンを追加（カンマを忘れずに！）
+  PackageOpen // 👈 🌟 🆕 今回追加！在庫管理アイコン
 } from 'lucide-react';
 
 const AdminDashboard = () => {
@@ -316,6 +317,17 @@ const AdminDashboard = () => {
           icon={<ClipboardList size={28} />} 
           color="#10b981"
           to={`/admin/${shopId}/settings/checkout?preview=tasks`} 
+          cardStyle={cardStyle} 
+          iconBoxStyle={iconBoxStyle} 
+        />
+
+        {/* 🌟 🆕 追加：在庫管理ポチポチ画面 */}
+        <NavCard 
+          title="在庫管理" 
+          desc="業務用商材の開封と在庫状況の確認" 
+          icon={<PackageOpen size={28} />} 
+          color="#f59e0b" /* 少し目立つオレンジ色 */
+          to={`/admin/${shopId}/inventory`} 
           cardStyle={cardStyle} 
           iconBoxStyle={iconBoxStyle} 
         />

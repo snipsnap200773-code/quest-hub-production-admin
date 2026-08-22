@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User, PackageOpen } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => {
@@ -1969,6 +1969,15 @@ return (
                 <span>タスク</span>
               </button>
 
+              {/* 🌟 🆕 追加：在庫管理（ポチポチ）ボタン */}
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/inventory`)}
+                style={{ ...headerBtnStylePC, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
+              >
+                <PackageOpen size={16} />
+                <span>在庫</span>
+              </button>
+
               {/* 📊 顧客・売上管理ボタン */}
               <button 
                 onClick={() => isManagementEnabled && navigate(`/admin/${shopId}/management`)} 
@@ -2529,6 +2538,15 @@ else if (
           >
             <Clipboard size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>タスク</span>
+          </button>
+
+          {/* 🌟 🆕 追加：在庫管理ボタン */}
+          <button 
+            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/inventory`); }} 
+            style={mobileTabStyle(false, '#f59e0b')}
+          >
+            <PackageOpen size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>在庫</span>
           </button>
 
           {/* 3. 今日：関数 goToday の前にお掃除を実行 */}

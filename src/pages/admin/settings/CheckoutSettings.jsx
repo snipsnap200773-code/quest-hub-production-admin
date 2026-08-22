@@ -3,15 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   ArrowLeft, Save, Edit2, Trash2, ArrowUp, ArrowDown,
-  Layers, Plus, ShoppingBag, Settings2, RefreshCcw, CheckCircle2, Globe // 👈 Globe を追加
+  Layers, Plus, Settings2, RefreshCcw, CheckCircle2, Globe
 } from 'lucide-react';
 
-// 🚀 SettingsPreviewLayout から reloadPreview と setShowMobilePreview を受け取る
-const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 setShowMobilePreview を追加
+const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
   const adjFormRef = useRef(null);
-  const prodFormRef = useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
@@ -23,12 +21,11 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
 
   const [message, setMessage] = useState('');
   
-  // --- 1. 自動処理設定用 (GeneralSettingsから引っ越し) ---
+  // --- 1. 自動処理設定用 ---
   const [themeColor, setThemeColor] = useState('#2563eb');
   const [autoSalesMatching, setAutoSalesMatching] = useState(false);
   const [allowBatchMatching, setAllowBatchMatching] = useState(false);
 
-  // 🚀 🆕 変更検知用のStateとロジックを追加（フッターで保存する項目のみ）
   const [initialDataStr, setInitialDataStr] = useState(null);
   const [isDataReady, setIsDataReady] = useState(false);
 
@@ -44,7 +41,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
     }
   }, [isDataReady, currentDataStr]);
 
-  // --- 2. お会計調整マスター用 (MenuSettingsから引っ越し) ---
+  // --- 2. お会計調整マスター用 ---
   const [adjustments, setAdjustments] = useState([]);      
   const [adjCategories, setAdjCategories] = useState([]);   
   const [newAdjCatName, setNewAdjCatName] = useState('');   
@@ -55,16 +52,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
   const [adjValue, setAdjValue] = useState(0);              
   const [editingAdjId, setEditingAdjId] = useState(null);
 
-  // --- 3. 店販商品マスター用 (MenuSettingsから引っ越し) ---
-  const [products, setProducts] = useState([]);            
-  const [productCategories, setProductCategories] = useState([]); 
-  const [newProdCatName, setNewProdCatName] = useState('');
-  const [editingProdCatId, setEditingProdCatId] = useState(null);
-  const [selectedProdCat, setSelectedProdCat] = useState('');
-  const [newProdName, setNewProdName] = useState('');
-  const [newProdPrice, setNewProdPrice] = useState(0);
-  const [editingProdId, setEditingProdId] = useState(null);
-
   useEffect(() => {
     if (shopId) {
       fetchGeneralSettings();
@@ -72,29 +59,22 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
     }
   }, [shopId]);
 
-  // GeneralSettings由来のデータ取得
   const fetchGeneralSettings = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (data) {
       setThemeColor(data.theme_color || '#2563eb');
       setAutoSalesMatching(data.auto_sales_matching || false);
       setAllowBatchMatching(data.allow_batch_matching || false);
-
-      setIsDataReady(true); // 🚀 🆕 追加：データの読み込み完了を合図する
+      setIsDataReady(true);
     }
   };
 
-  // MenuSettings由来のデータ取得
   const fetchMasterDetails = async () => {
     const adjCatRes = await supabase.from('service_categories').select('*').eq('shop_id', shopId).eq('is_adjustment_cat', true).order('sort_order');
-    const prodCatRes = await supabase.from('service_categories').select('*').eq('shop_id', shopId).eq('is_product_cat', true).order('sort_order');
     const adjRes = await supabase.from('admin_adjustments').select('*').eq('shop_id', shopId).is('service_id', null).order('sort_order');
-    const prodRes = await supabase.from('products').select('*').eq('shop_id', shopId).order('sort_order');
 
     if (adjCatRes.data) setAdjCategories(adjCatRes.data);
-    if (prodCatRes.data) setProductCategories(prodCatRes.data);
     if (adjRes.data) setAdjustments(adjRes.data);
-    if (prodRes.data) setProducts(prodRes.data);
   };
 
   const showMsg = (txt) => { 
@@ -112,8 +92,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
 
     const itemA = list[idx];
     const itemB = list[targetIdx];
-    const tableMap = { category: 'service_categories', adjustment: 'admin_adjustments', product: 'products' };
-    const table = tableMap[type] || 'products';
+    const table = type === 'category' ? 'service_categories' : 'admin_adjustments';
 
     try {
       const updates = [{ ...itemA, sort_order: itemB.sort_order }, { ...itemB, sort_order: itemA.sort_order }];
@@ -125,9 +104,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
     }
   };
 
-  // --- 保存・登録ハンドラー ---
-
-  // 1. 自動処理設定の保存
   const handleSaveGeneral = async () => {
     const { error } = await supabase.from('profiles').update({
       auto_sales_matching: autoSalesMatching,
@@ -136,13 +112,12 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
 
     if (!error) {
       showMsg('自動処理・効率化設定を保存しました！');
-      setInitialDataStr(currentDataStr); // 🚀 🆕 追加：保存完了後に変更検知をリセット
+      setInitialDataStr(currentDataStr);
     } else {
       alert('保存に失敗しました。');
     }
   };
 
-  // 2. 調整マスターの保存
   const handleAdjCatSubmit = async (e) => {
     e.preventDefault();
     const payload = { name: newAdjCatName, shop_id: shopId, is_adjustment_cat: true };
@@ -172,34 +147,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
     setNewAdjName(''); setAdjValue(0); setEditingAdjId(null); fetchMasterDetails(); showMsg('調整項目を保存しました');
   };
 
-  // 3. 店販商品の保存
-  const handleProdCatSubmit = async (e) => {
-    e.preventDefault();
-    const payload = { name: newProdCatName, shop_id: shopId, is_product_cat: true };
-
-    if (editingProdCatId) {
-      const oldCat = productCategories.find(c => c.id === editingProdCatId);
-      await supabase.from('service_categories').update(payload).eq('id', editingProdCatId);
-      if (oldCat?.name && oldCat.name !== newProdCatName) {
-        await supabase.from('products').update({ category: newProdCatName }).eq('shop_id', shopId).eq('category', oldCat.name);
-      }
-    } else {
-      await supabase.from('service_categories').insert([{ ...payload, sort_order: productCategories.length }]);
-    }
-    setNewProdCatName(''); setEditingProdCatId(null); fetchMasterDetails(); showMsg('商品カテゴリを更新しました');
-  };
-  
-  const handleProductSubmit = async (e) => {
-    e.preventDefault();
-    const finalCat = selectedProdCat || (productCategories[0]?.name || '未分類');
-    const payload = { shop_id: shopId, category: finalCat, name: newProdName, price: Number(newProdPrice) };
-    
-    if (editingProdId) await supabase.from('products').update(payload).eq('id', editingProdId);
-    else await supabase.from('products').insert([{ ...payload, sort_order: products.length }]);
-    
-    setNewProdName(''); setNewProdPrice(0); setEditingProdId(null); fetchMasterDetails(); showMsg('商品を登録しました');
-  };
-
   const containerStyle = { fontFamily: 'sans-serif', width: '100%', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', position: 'relative', boxSizing: 'border-box' };
   const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
@@ -216,7 +163,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
         タスク・お会計設定
       </h2>
 
-      {/* 🚀 引っ越し：自動処理・効率化設定 */}
       <section style={{ ...cardStyle, borderLeft: `8px solid #3b82f6`, background: '#f8faff' }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#1d4ed8', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}>
           <RefreshCcw size={20} /> 自動処理・効率化設定
@@ -247,10 +193,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
         </div>
       </section>
 
-      {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
-        
-        {/* 🚀 🆕 点滅アニメーションの定義 */}
         <style>{`
           @keyframes pulse-btn {
             0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
@@ -258,7 +201,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
             100% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
           }
         `}</style>
-
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
             <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
@@ -266,11 +208,10 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
             </button>
             <button 
               onClick={handleSaveGeneral} 
-              disabled={!hasChanges} // 👈 変更がない時は押せない
+              disabled={!hasChanges} 
               style={{ 
                 flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
-                // 👈 変更があればテーマカラー＋点滅、なければグレー
                 background: hasChanges ? themeColor : '#cbd5e1', 
                 color: '#fff', 
                 cursor: hasChanges ? 'pointer' : 'not-allowed', 
@@ -288,11 +229,10 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
             </button>
             <button 
               onClick={handleSaveGeneral} 
-              disabled={!hasChanges} // 👈 変更がない時は押せない
+              disabled={!hasChanges} 
               style={{ 
                 flex: 1.8, padding: '10px 0', border: 'none', borderRadius: '12px', 
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
-                // 👈 変更があればテーマカラー＋点滅、なければグレー
                 background: hasChanges ? themeColor : '#cbd5e1', 
                 color: '#fff', 
                 cursor: hasChanges ? 'pointer' : 'not-allowed', 
@@ -316,75 +256,6 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 
         )}
       </div>
 
-      {/* 🚀 引っ越し：店販商品マスター管理 */}
-      <div style={{ marginTop: '50px', borderTop: '6px solid #008000', paddingTop: '30px' }}>
-        <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: '0 0 20px 0', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <ShoppingBag size={24} color="#008000" /> 店販商品マスター管理
-        </h2>
-
-        <section style={{ ...cardStyle, background: '#f0fdf4', border: '2px solid #bbf7d0' }}>
-          <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#008000', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}><Layers size={18} /> 商品カテゴリの作成</h3>
-          <form onSubmit={handleProdCatSubmit} style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-            <input placeholder="例：シャンプー, スタイリング剤" value={newProdCatName} onChange={(e) => setNewProdCatName(e.target.value)} style={inputStyle} required />
-            <button type="submit" style={{ padding: '0 25px', background: '#008000', color: 'white', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>{editingProdCatId ? '更新' : '＋作成'}</button>
-          </form>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {productCategories.map((c, idx) => (
-              <div key={c.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '10px 15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b' }}>{c.name}</span>
-                <div style={{ display: 'flex', gap: '6px' }}>
-                  <button onClick={() => moveItem('category', productCategories, c.id, 'up')} disabled={idx === 0} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === 0 ? 0.3 : 1 }}><ArrowUp size={16} /></button>
-                  <button onClick={() => moveItem('category', productCategories, c.id, 'down')} disabled={idx === productCategories.length - 1} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === productCategories.length - 1 ? 0.3 : 1 }}><ArrowDown size={16} /></button>
-                  <button onClick={() => { setEditingProdCatId(c.id); setNewProdCatName(c.name); }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6' }}><Edit2 size={16} /></button>
-                  <button onClick={async () => { if(window.confirm('削除しますか？')){ await supabase.from('products').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMasterDetails(); } }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section ref={prodFormRef} style={{ ...cardStyle, border: '2px solid #008000' }}>
-          <h3 style={{ marginTop: 0, fontSize: '1rem', color: '#008000', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '15px' }}><Plus size={20} /> 商品の新規登録</h3>
-          <form onSubmit={handleProductSubmit}>
-            <div style={{ marginBottom: '15px' }}>
-              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>所属カテゴリ</label>
-              <select value={selectedProdCat} onChange={(e) => setSelectedProdCat(e.target.value)} style={inputStyle} required>
-                <option value="">-- カテゴリを選択 --</option>
-                {productCategories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-            </div>
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '15px' }}>
-              <div style={{ flex: 2 }}><input placeholder="商品名" value={newProdName} onChange={(e) => setNewProdName(e.target.value)} style={inputStyle} required /></div>
-              <div style={{ flex: 1 }}><input type="number" placeholder="金額" value={newProdPrice} onChange={(e) => setNewProdPrice(e.target.value)} style={inputStyle} required /></div>
-            </div>
-            <button type="submit" style={{ width: '100%', padding: '16px', background: '#008000', color: 'white', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem' }}>
-              {editingProdId ? '商品を更新する' : '商品を新規登録'}
-            </button>
-          </form>
-        </section>
-
-        {productCategories.map(cat => (
-          <div key={cat.id} style={{ marginBottom: '30px' }}>
-            <h4 style={{ color: '#008000', fontSize: '0.9rem', marginBottom: '15px', borderLeft: '5px solid #008000', paddingLeft: '12px', fontWeight: 'bold' }}>{cat.name}</h4>
-            {products.filter(p => p.category === cat.name).map((p, idx, filteredList) => (
-              <div key={p.id} style={{ ...cardStyle, padding: '18px 25px', marginBottom: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #bbf7d0' }}>
-                <div>
-                  <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{p.name}</div>
-                  <div style={{ fontSize: '0.95rem', color: '#008000', fontWeight: 'bold', marginTop: '4px' }}>¥{(p.price || 0).toLocaleString()}</div>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  <button onClick={() => moveItem('product', filteredList, p.id, 'up')} disabled={idx === 0} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px', opacity: idx === 0 ? 0.3 : 1 }}><ArrowUp size={20} /></button>
-                  <button onClick={() => moveItem('product', filteredList, p.id, 'down')} disabled={idx === filteredList.length - 1} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px', opacity: idx === filteredList.length - 1 ? 0.3 : 1 }}><ArrowDown size={20} /></button>
-                  <button onClick={() => { setEditingProdId(p.id); setNewProdName(p.name); setNewProdPrice(p.price); setSelectedProdCat(p.category); prodFormRef.current?.scrollIntoView({ behavior: 'smooth' }); }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px', color: '#3b82f6' }}><Edit2 size={20} /></button>
-                  <button onClick={async () => { if(window.confirm('削除しますか？')){ await supabase.from('products').delete().eq('id', p.id); fetchMasterDetails(); } }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '6px', color: '#ef4444' }}><Trash2 size={20} /></button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {/* 🚀 引っ越し：お会計調整マスター管理 */}
       <div style={{ marginTop: '50px', borderTop: '6px solid #ef4444', paddingTop: '30px' }}>
         <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: '0 0 20px 0', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
           <Settings2 size={24} color="#ef4444" /> お会計調整マスター管理
