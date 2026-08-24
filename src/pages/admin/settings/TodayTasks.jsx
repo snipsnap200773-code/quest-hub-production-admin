@@ -730,6 +730,32 @@ const handleAutoBatchProcess = async () => {
     const isFacility = task.task_type === 'facility';
     
     try {
+      // 🌟 🆕 追加：差し戻す前に、その会計で「店販商品」が買われていたかチェックする
+      if (!isFacility) {
+        // 売上データ(sales)から、今回消そうとしているお会計の内訳を取得
+        const { data: saleData } = await supabase
+          .from('sales')
+          .select('details')
+          .eq('reservation_id', task.id)
+          .single();
+
+        const soldProducts = saleData?.details?.products || [];
+
+        // 商品が買われていた場合は、在庫を「プラス（返還）」するログを作る
+        if (soldProducts.length > 0) {
+          const inventoryLogs = soldProducts.map(prod => ({
+            shop_id: shopId,
+            product_id: prod.id,
+            change_amount: prod.quantity || 1, // 買った個数分だけプラス（戻す）
+            reason: 'レジ差し戻しによる在庫返還'
+          }));
+          
+          // 在庫返還を実行
+          const { error: invError } = await supabase.from('inventory_logs').insert(inventoryLogs);
+          if (invError) console.error("在庫返還エラー:", invError.message);
+        }
+      }
+
       // ステータスを戻す先を決定
       const targetTable = isFacility ? 'visit_requests' : 'reservations';
       const updatePayload = { status: isFacility ? 'confirmed' : 'pending' };
