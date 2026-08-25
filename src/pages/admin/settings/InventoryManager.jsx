@@ -3005,7 +3005,7 @@ const InventoryManager = () => {
       )}
       {/* ▲▲▲ ここまで ▲▲▲ */}
 
-      {/* ▼▼▼ 追加：使い方ガイド（ヘルプモーダル） ▼▼▼ */}
+      {/* ▼▼▼ 追加：使い方ガイド（ヘルプモーダル）完全版 ▼▼▼ */}
       {showHelpModal && (
         <div 
           onClick={() => setShowHelpModal(false)}
@@ -3013,59 +3013,94 @@ const InventoryManager = () => {
         >
           <div 
             onClick={e => e.stopPropagation()}
-            style={{ background: '#fff', width: '100%', maxWidth: '600px', borderRadius: '24px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
+            style={{ background: '#fff', width: '100%', maxWidth: '650px', borderRadius: '24px', maxHeight: '85vh', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}
           >
-            <div style={{ padding: '20px 25px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ padding: '20px 25px', borderBottom: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
               <h3 style={{ margin: 0, fontSize: '1.2rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <HelpCircle size={24} color="#0ea5e9" /> 在庫管理システム 使い方ガイド
               </h3>
               <button onClick={() => setShowHelpModal(false)} style={{ background: '#f1f5f9', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#64748b', fontSize: '1.2rem', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>✕</button>
             </div>
             
-            <div style={{ flex: 1, overflowY: 'auto', padding: '25px', color: '#334155', lineHeight: '1.6', fontSize: '0.95rem' }}>
-              <h4 style={{ color: '#0ea5e9', borderBottom: '2px solid #e0f2fe', paddingBottom: '8px', marginTop: 0 }}>1. 基本の流れ</h4>
-              <ol style={{ paddingLeft: '20px', marginBottom: '25px' }}>
-                <li style={{ marginBottom: '8px' }}><b>払出入力：</b>カラー剤などを使ったら、ここで「開封(-1)」を押します。</li>
-                <li style={{ marginBottom: '8px' }}><b>発注入力：</b>在庫が減ると自動計算されリストに並びます。確認して確定します。</li>
-                <li style={{ marginBottom: '8px' }}><b>仕入入力：</b>商品が届いたら、ここで「入庫する」を押して在庫にプラスします。</li>
-              </ol>
+            <div style={{ flex: 1, overflowY: 'auto', padding: isPC ? '25px 35px' : '20px', color: '#334155', lineHeight: '1.6', fontSize: '0.9rem' }}>
+              
+              <div style={{ background: '#f0f9ff', padding: '15px', borderRadius: '12px', borderLeft: '4px solid #0ea5e9', marginBottom: '25px' }}>
+                <strong style={{ color: '#0369a1', fontSize: '1rem' }}>📌 基本の3ステップ</strong>
+                <p style={{ margin: '8px 0 0 0', fontWeight: 'bold' }}>①払出(-1) ➔ ②発注(自動計算) ➔ ③仕入(+1)</p>
+                <p style={{ margin: '5px 0 0 0', fontSize: '0.8rem', color: '#475569' }}>日常業務はこれだけで完結します。在庫が足りないものはシステムが自動で検知します。</p>
+              </div>
 
-              <h4 style={{ color: '#0ea5e9', borderBottom: '2px solid #e0f2fe', paddingBottom: '8px' }}>💡 よくある質問・トラブル対応</h4>
+              <h4 style={{ color: '#1e293b', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', marginTop: 0, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <Layers size={18} color="#64748b"/> 各機能の詳しい使い方
+              </h4>
+              
+              <ul style={{ paddingLeft: '0', listStyle: 'none', margin: '0 0 30px 0', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#f59e0b', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><PackageMinus size={18}/> 払出 (消費)</b>
+                  <p style={{ margin: '5px 0 0 0' }}>カラー剤などを開けたり、店販が売れた時に「開封 (-1)」を押して在庫を減らします。「変更を確定する」を押すまで保存されません。</p>
+                </li>
+                
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#3b82f6', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><ShoppingCart size={18}/> 発注</b>
+                  <p style={{ margin: '5px 0 0 0' }}>在庫が減っている商品が<strong>自動計算されてリストアップ</strong>されます。<br/>【LINEコピー】でディーラーへテキストを送り、【PDF印刷】で店舗の控えや検品リストを作成できます。</p>
+                </li>
+
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#10b981', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Truck size={18}/> 仕入 (入庫) / 修正・履歴</b>
+                  <p style={{ margin: '5px 0 0 0' }}>発注した商品が届いたらここから在庫に追加します。<br/>過去の入庫履歴や、<strong>商品別の仕入金額ランキング（傾向と分析）</strong>も確認できます。</p>
+                </li>
+
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#ef4444', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Undo2 size={18}/> 返品</b>
+                  <p style={{ margin: '5px 0 0 0' }}>不良品や発注ミスで商品を返す場合に使います。在庫と仕入金額からマイナス処理されます。</p>
+                </li>
+
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#ec4899', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><ClipboardList size={18}/> 棚卸 (たなおろし)</b>
+                  <p style={{ margin: '5px 0 0 0' }}>月末の在庫チェック用です。実際の「実在庫数」を入力するだけで、システム上の在庫とのズレを自動で補正・記録します。</p>
+                </li>
+
+                <li style={{ background: '#fff', border: '1px solid #e2e8f0', padding: '15px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                  <b style={{ color: '#8b5cf6', fontSize: '1.05rem', display: 'flex', alignItems: 'center', gap: '6px' }}><Search size={18}/> 在庫照会</b>
+                  <p style={{ margin: '5px 0 0 0' }}>現在の全在庫一覧と、<strong>総棚卸資産額（仕入額の合計）</strong>を確認できます。発注点以下の商品だけを絞り込んで印刷することも可能です。</p>
+                </li>
+              </ul>
+
+              <h4 style={{ color: '#1e293b', borderBottom: '2px solid #e2e8f0', paddingBottom: '8px', marginTop: 0 }}>💡 よくある質問・トラブル対応</h4>
               
               <div style={{ marginBottom: '15px' }}>
-                <strong style={{ color: '#1e293b' }}>Q. 発注後に「間違えた！やり直したい！」という時は？</strong>
-                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #3b82f6' }}>
-                  A. 「仕入（入庫待ち）リスト」に行き、間違えた商品の<b>🗑️ゴミ箱ボタン</b>を押してください。<br/>
-                  その後「発注リスト」に戻ると、自動的に未発注の状態に復活しているので、そこで数を直して再度確定できます。
+                <strong style={{ color: '#1e293b', fontSize: '0.95rem' }}>Q. 発注後に「間違えた！やり直したい！」という時は？</strong>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #3b82f6', fontSize: '0.85rem' }}>
+                  A. 「仕入（入庫待ち）画面」に行き、間違えた商品の<b>🗑️ゴミ箱ボタン</b>、または<b>一括取消ボタン</b>を押してください。発注リストに未発注の状態として復活します[cite: 1, 9, 10]。
                 </div>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
-                <strong style={{ color: '#1e293b' }}>Q. ディーラーから「一部だけ欠品で後から届く」と言われたら？</strong>
-                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #10b981' }}>
-                  A. 「仕入リスト」で、<b>今回届いた数だけ</b>に「＋/－」で調整してから入庫ボタンを押してください。届かなかった分はリストに残り続けます（分納対応）。
+                <strong style={{ color: '#1e293b', fontSize: '0.95rem' }}>Q. 一部だけ欠品で後から届く（分納）と言われたら？</strong>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #10b981', fontSize: '0.85rem' }}>
+                  A. 「仕入画面」で、<b>今回届いた数だけ</b>に「＋/－」で調整してから確定を押してください。届かなかった分は「入庫待ちリスト」にそのまま残り続けます[cite: 1, 9, 10]。
                 </div>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
-                <strong style={{ color: '#1e293b' }}>Q. 廃盤になって今後も届かない商品はどうする？</strong>
-                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #f59e0b' }}>
-                  A. 最後の在庫を使い切るまでは、マスター設定で「デフォルト発注数」を<b>0</b>にしてください（発注リストに上がらなくなります）。<br/>
-                  在庫が完全に0になったら、マスターから削除してください。
+                <strong style={{ color: '#1e293b', fontSize: '0.95rem' }}>Q. 廃盤になって今後も届かない商品はどうする？</strong>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #f59e0b', fontSize: '0.85rem' }}>
+                  A. 最後の在庫を使い切るまでは、マスター設定で「デフォルト発注数」を<b>0</b>にしてください。発注リストに上がらなくなります[cite: 1, 9, 10]。完全に使い切ったらマスターから削除してください。
                 </div>
               </div>
 
               <div style={{ marginBottom: '15px' }}>
-                <strong style={{ color: '#1e293b' }}>Q. 入庫ボタンを間違えて押しちゃった！</strong>
-                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #ef4444' }}>
-                  A. 「仕入修正・履歴」画面に行き、間違えた履歴の<b>取消ボタン</b>を押せば、在庫が元に戻り、発注リストに自動で復活します。
+                <strong style={{ color: '#1e293b', fontSize: '0.95rem' }}>Q. 入庫ボタンを間違えて押しちゃった！</strong>
+                <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #ef4444', fontSize: '0.85rem' }}>
+                  A. 「仕入修正・履歴」画面に行き、間違えた履歴の<b>取消ボタン</b>を押してください。在庫が元に戻り、発注リストに自動で復活します[cite: 1, 9, 10]。
                 </div>
               </div>
+
             </div>
             
-            <div style={{ padding: '15px 25px', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
-              <button onClick={() => setShowHelpModal(false)} style={{ padding: '12px 30px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
-                閉じる
+            <div style={{ padding: '15px 25px', borderTop: '1px solid #f1f5f9', textAlign: 'center', flexShrink: 0 }}>
+              <button onClick={() => setShowHelpModal(false)} style={{ padding: '14px 30px', width: '100%', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                マニュアルを閉じる
               </button>
             </div>
           </div>
