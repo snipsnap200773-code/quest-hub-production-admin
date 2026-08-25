@@ -93,6 +93,19 @@ const InventoryManager = () => {
   const [showHelpModal, setShowHelpModal] = useState(false); // 🌟 追加：使い方ガイド用
   // ▲▲▲ ここまで ▲▲▲
 
+  // 🚀 🆕 追加：発注完了後の送信モーダル用State
+  const [completedOrderData, setCompletedOrderData] = useState(null);
+
+  // 🚀 🆕 追加：メイン画面のスクロール位置を管理するRef
+  const mainScrollRef = useRef(null);
+
+  // 🚀 🆕 追加：画面（activeView）が切り替わった時に、スクロールを一番上に戻す
+  useEffect(() => {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTop = 0;
+    }
+  }, [activeView]);
+
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
@@ -463,7 +476,6 @@ const InventoryManager = () => {
   };
 
   const handleFinalizeOrders = async () => {
-    // 🌟 'all'条件を削除
     const targetOrders = pendingOrders.filter(order => {
       if (activeOrderTab === 'unspecified') return !order.products?.dealer_id;
       return order.products?.dealer_id === activeOrderTab;
@@ -471,10 +483,10 @@ const InventoryManager = () => {
 
     if (targetOrders.length === 0) return;
 
-    const dealerName = activeOrderTab === 'unspecified' ? '指定なしの' : 
-                       dealers.find(d => d.id === activeOrderTab)?.name + '宛ての';
+    const dealerNameObj = activeOrderTab === 'unspecified' ? '指定なし' : dealers.find(d => d.id === activeOrderTab)?.name;
+    const displayDealerName = dealerNameObj === '指定なし' ? '指定なしの' : dealerNameObj + '宛ての';
 
-    if (!window.confirm(`${dealerName}発注（計 ${targetOrders.length} 件）を確定済みにしますか？`)) return;
+    if (!window.confirm(`${displayDealerName}発注（計 ${targetOrders.length} 件）を確定済みにしますか？`)) return;
 
     const idsToUpdate = targetOrders.map(o => o.id);
     const { error } = await supabase.from('orders')
@@ -483,10 +495,47 @@ const InventoryManager = () => {
       .eq('shop_id', shopId);
 
     if (!error) {
-      showMsg('発注を確定しました！✨');
-      fetchMasterData(); // リストを再取得して空にする
+      // 🚀 🆕 修正：確定した注文データを消す前に、送信用モーダルに保存する
+      setCompletedOrderData({
+        dealerId: activeOrderTab,
+        dealerName: dealerNameObj,
+        orders: targetOrders.map(o => {
+          const prod = originalProducts.find(p => p.id === o.product_id);
+          return { ...o, product: prod };
+        })
+      });
+      showMsg('発注を確定しました！続けてディーラーへ送信してください✨');
+      fetchMasterData(); // DBは最新化（背後の発注リストからは消える）
     } else {
       alert('エラーが発生しました。');
+    }
+  };
+
+  // 🚀 🆕 追加：確定済みモーダルからの「LINEコピー」用関数
+  const handleCopyCompletedOrder = async () => {
+    if (!completedOrderData) return;
+    const grouped = {};
+    completedOrderData.orders.forEach(({ product, quantity }) => {
+      const catName = product?.manufacturer_name || product?.category || '未分類';
+      if (!grouped[catName]) grouped[catName] = [];
+      grouped[catName].push({ name: product?.name || '不明な商品', qty: quantity });
+    });
+
+    let text = `お世話になっております。\n以下の発注をお願いいたします。\n\n【発注先：${completedOrderData.dealerName} 御中】\n\n`;
+    Object.keys(grouped).forEach(cat => {
+      text += `【${cat}】\n`;
+      grouped[cat].forEach(item => {
+        text += `・${item.name} × ${item.qty}\n`;
+      });
+      text += `\n`;
+    });
+    text += `よろしくお願いいたします。`;
+
+    try {
+      await navigator.clipboard.writeText(text);
+      showMsg('発注テキストをコピーしました！📋LINEに貼り付けてください。');
+    } catch (err) {
+      alert('コピーに失敗しました。');
     }
   };
 
@@ -895,7 +944,8 @@ const InventoryManager = () => {
         </button>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', paddingTop: isPC ? '30px' : '15px', paddingLeft: isPC ? '40px' : '15px', paddingRight: isPC ? '40px' : '15px', paddingBottom: '120px' }}>
+      {/* 🚀 🆕 修正：ref={mainScrollRef} を追加し、画面切り替え時にスクロールを戻せるようにする */}
+      <div ref={mainScrollRef} style={{ flex: 1, overflowY: 'auto', paddingTop: isPC ? '30px' : '15px', paddingLeft: isPC ? '40px' : '15px', paddingRight: isPC ? '40px' : '15px', paddingBottom: '120px' }}>
         
         {/* ==========================================
             🏠 ビュー1：総合ダッシュボード（トップ画面）
@@ -911,7 +961,7 @@ const InventoryManager = () => {
                 <div style={{ background: '#f59e0b', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>払 出 (消費)</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <button onClick={() => setActiveView('consume')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#f59e0b'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
-                    <PackageMinus size={20} color="#f59e0b" /> 払出入力 (ポチポチ)
+                    <PackageMinus size={20} color="#f59e0b" /> 払出入力 
                   </button>
                 </div>
               </div>
@@ -921,7 +971,7 @@ const InventoryManager = () => {
                 <div style={{ background: '#3b82f6', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>発 注</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <button onClick={handleGoToOrder} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#3b82f6'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
-                    <ShoppingCart size={20} color="#3b82f6" /> 発注入力・リスト確認
+                    <ShoppingCart size={20} color="#3b82f6" /> 発注入力
                   </button>
                 </div>
               </div>
@@ -981,7 +1031,7 @@ const InventoryManager = () => {
                 <div style={{ background: '#64748b', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>マスター設定</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   <button onClick={() => setActiveView('master')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#64748b'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
-                    <Settings size={20} color="#64748b" /> 商品マスター登録
+                    <Settings size={20} color="#64748b" /> 商品登録
                   </button>
                   <button onClick={() => setActiveView('dealers')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#64748b'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
                     <Building2 size={20} color="#64748b" /> 取引先(ディーラー)
@@ -1137,7 +1187,7 @@ const InventoryManager = () => {
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <ShoppingCart size={24} color="#3b82f6" /> 発注待ちリスト
+                <ShoppingCart size={24} color="#3b82f6" /> 発注リスト
               </h2>
               <div style={{ display: 'flex', gap: '10px' }} className="no-print">
                 {(() => {
@@ -1173,7 +1223,7 @@ const InventoryManager = () => {
                       </button>
                       
                       <button onClick={handleCopyOrderText} style={{ padding: '10px 16px', background: '#ecfdf5', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#059669' }}>
-                        <Copy size={18} /> LINE・メール用にコピー
+                        <Copy size={18} /> メール用コピー
                       </button>
                     </>
                   );
@@ -1225,16 +1275,7 @@ const InventoryManager = () => {
               </div>
             </div>
 
-            <div id="print-area" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-              <div style={{ padding: '20px', borderBottom: '2px solid #e2e8f0', display: 'none' }} className="print-header">
-                <h2 style={{ margin: '0 0 10px 0' }}>発注書</h2>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-                  <p style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>
-                    宛先: {activeOrderTab === 'all' ? '（全取引先）' : activeOrderTab === 'unspecified' ? '（指定なし）' : dealers.find(d => d.id === activeOrderTab)?.name || ''} 御中
-                  </p>
-                  <p style={{ margin: 0 }}>発注日: {new Date().toLocaleDateString('ja-JP')}</p>
-                </div>
-              </div>
+            <div className="screen-only-block" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
 
               {(() => {
                 // 🌟 'all'条件を削除
@@ -1279,22 +1320,117 @@ const InventoryManager = () => {
                 }
 
                 return (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.9rem' }}>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>商品名 / カテゴリ</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">在庫状況</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>発注数 / 金額</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
+                  <div style={{ overflowX: isPC ? 'auto' : 'hidden' }}>
+                    {isPC ? (
+                      /* =========================================================
+                         💻 PC用：既存のテーブル表示（横広で一覧性を重視）
+                         ========================================================= */
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.9rem' }}>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>商品名 / カテゴリ</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">在庫状況</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>発注数 / 金額</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {displayProducts.map(product => {
+                            const order = pendingOrders.find(o => o.product_id === product.id);
+                            const orderQty = order ? order.quantity : 0;
+                            
+                            const alreadyOrderedList = orderedItems.filter(o => o.product_id === product.id);
+                            const totalAlreadyOrderedQty = alreadyOrderedList.reduce((sum, o) => sum + o.quantity, 0);
+                            const hasAlreadyOrdered = totalAlreadyOrderedQty > 0;
+                            
+                            const isLowStock = product.stock <= product.reorder_point;
+                            const hasOrder = orderQty > 0;
+
+                            const getOrderedDate = (dateStr) => {
+                              if (!dateStr) return '';
+                              const d = new Date(dateStr);
+                              const days = ['日', '月', '火', '水', '木', '金', '土'];
+                              return `${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`;
+                            };
+
+                            const isPaddingNeeded = (product.default_order_quantity || 1) - (product.stock || 0) >= 1;
+                            
+                            let stockColor = '#1e293b'; 
+                            if (!hasAlreadyOrdered) {
+                              if (isLowStock) stockColor = '#ef4444'; 
+                              else if (isPaddingNeeded) stockColor = '#3b82f6'; 
+                            }
+
+                            return (
+                              <tr key={product.id} className={!hasOrder && !hasAlreadyOrdered ? 'no-print' : ''} style={{ borderBottom: '1px solid #e2e8f0', background: hasOrder ? '#f0f9ff' : hasAlreadyOrdered ? '#ecfdf5' : '#fff', transition: '0.2s' }}>
+                                <td style={{ padding: '16px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{product.name}</div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                    {product.manufacturer_name ? `${product.manufacturer_name} (${product.category})` : product.category}
+                                  </div>
+                                </td>
+                                
+                                <td style={{ padding: '16px' }} className="no-print">
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: stockColor }}>
+                                      現在庫: {product.stock || 0}
+                                      {isLowStock && !hasAlreadyOrdered && <AlertCircle size={14} style={{ display: 'inline', marginLeft: '4px', verticalAlign: 'middle' }} />}
+                                    </span>
+                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>発注点: {product.reorder_point || 0}</span>
+                                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>ﾃﾞﾌｫﾙﾄ発注数: {product.default_order_quantity || 1}</span>
+                                  </div>
+                                </td>
+
+                                <td style={{ padding: '16px' }}>
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                    {hasAlreadyOrdered && (
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#10b981', background: '#dcfce7', padding: '4px 8px', borderRadius: '8px' }}>
+                                          発注済: {totalAlreadyOrderedQty}個
+                                        </span>
+                                        <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>
+                                          {getOrderedDate(alreadyOrderedList[0].ordered_at)}
+                                        </span>
+                                      </div>
+                                    )}
+                                    
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                      <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: hasOrder ? '#3b82f6' : '#cbd5e1' }}>{orderQty}</span>
+                                      <div className="no-print" style={{ display: 'flex', gap: '4px' }}>
+                                        <button onClick={() => handleOrderQuantityChange(product.id, orderQty, -1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} disabled={!hasOrder} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: hasOrder ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: hasOrder ? '#64748b' : '#cbd5e1' }}><Minus size={16} /></button>
+                                        <button onClick={() => handleOrderQuantityChange(product.id, orderQty, 1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Plus size={16} /></button>
+                                      </div>
+                                    </div>
+                                    
+                                    {hasOrder && (
+                                      <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold', marginTop: '4px' }}>
+                                        ¥{(orderQty * (product.cost_price || 0)).toLocaleString()}
+                                      </div>
+                                    )}
+
+                                  </div>
+                                </td>
+                                <td style={{ padding: '16px' }} className="no-print">
+                                  {hasOrder && (
+                                    <button onClick={() => handleDeleteOrder(product.id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }} title="発注リストから除外">
+                                      <Trash2 size={18} />
+                                    </button>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    ) : (
+                      /* =========================================================
+                         📱 スマホ用：カード型のリスト表示（縦にスッキリ並べる）
+                         ========================================================= */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px' }}>
                         {displayProducts.map(product => {
                           const order = pendingOrders.find(o => o.product_id === product.id);
                           const orderQty = order ? order.quantity : 0;
                           
-                          // 🌟 修正：すでに発注済みのデータを「すべて」取得して合計する（複数回の追加注文に対応）
                           const alreadyOrderedList = orderedItems.filter(o => o.product_id === product.id);
                           const totalAlreadyOrderedQty = alreadyOrderedList.reduce((sum, o) => sum + o.quantity, 0);
                           const hasAlreadyOrdered = totalAlreadyOrderedQty > 0;
@@ -1309,84 +1445,145 @@ const InventoryManager = () => {
                             return `${d.getMonth() + 1}月${d.getDate()}日（${days[d.getDay()]}）`;
                           };
 
-                          // 🌟 追加：デフォルト発注数に足りていない（青文字対象）かの判定
                           const isPaddingNeeded = (product.default_order_quantity || 1) - (product.stock || 0) >= 1;
                           
-                          // 🌟 追加：文字色の決定ロジック
-                          let stockColor = '#1e293b'; // デフォルトは黒
+                          let stockColor = '#1e293b'; 
                           if (!hasAlreadyOrdered) {
-                            if (isLowStock) stockColor = '#ef4444'; // 発注点以下は赤
-                            else if (isPaddingNeeded) stockColor = '#3b82f6'; // デフォルトに足りていない場合は青
+                            if (isLowStock) stockColor = '#ef4444'; 
+                            else if (isPaddingNeeded) stockColor = '#3b82f6'; 
                           }
 
                           return (
-                            // 🌟 変更：発注待ち(hasOrder)か、発注済み(hasAlreadyOrdered)がある場合は行を表示
-                            <tr key={product.id} className={!hasOrder && !hasAlreadyOrdered ? 'no-print' : ''} style={{ borderBottom: '1px solid #e2e8f0', background: hasOrder ? '#f0f9ff' : hasAlreadyOrdered ? '#ecfdf5' : '#fff', transition: '0.2s' }}>
-                              <td style={{ padding: '16px' }}>
-                                <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{product.name}</div>
-                                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                                  {product.manufacturer_name ? `${product.manufacturer_name} (${product.category})` : product.category}
-                                </div>
-                              </td>
+                            <div key={product.id} className={!hasOrder && !hasAlreadyOrdered ? 'no-print' : ''} style={{ background: hasOrder ? '#f0f9ff' : hasAlreadyOrdered ? '#ecfdf5' : '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.02)', transition: '0.2s' }}>
                               
-                              <td style={{ padding: '16px' }} className="no-print">
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  {/* 🌟 変更：判定した stockColor を適用 */}
-                                  <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: stockColor }}>
-                                    現在庫: {product.stock || 0}
-                                    {isLowStock && !hasAlreadyOrdered && <AlertCircle size={14} style={{ display: 'inline', marginLeft: '4px', verticalAlign: 'middle' }} />}
-                                  </span>
-                                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>発注点: {product.reorder_point || 0}</span>
-                                  <span style={{ fontSize: '0.8rem', color: '#64748b' }}>ﾃﾞﾌｫﾙﾄ発注数: {product.default_order_quantity || 1}</span>
-                                </div>
-                              </td>
-
-                              <td style={{ padding: '16px' }}>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                  {/* 🌟 変更：発注済みのラベルを小さく表示しつつ、下の＋/－ボタンは残す */}
-                                  {hasAlreadyOrdered && (
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#10b981', background: '#dcfce7', padding: '4px 8px', borderRadius: '8px' }}>
-                                        発注済: {totalAlreadyOrderedQty}個
-                                      </span>
-                                      <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>
-                                        {getOrderedDate(alreadyOrderedList[0].ordered_at)}
-                                      </span>
-                                    </div>
-                                  )}
-                                  
-                                  {/* 🌟 変更：常に追加注文（＋/－）ができるようにボタンを表示 */}
-                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: hasOrder ? '#3b82f6' : '#cbd5e1' }}>{orderQty}</span>
-                                    <div className="no-print" style={{ display: 'flex', gap: '4px' }}>
-                                      {/* 🌟 賢いポイント：＋を押した時のスマート計算用に「現在庫＋すでに入庫待ちの数」を渡す */}
-                                      <button onClick={() => handleOrderQuantityChange(product.id, orderQty, -1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} disabled={!hasOrder} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: hasOrder ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: hasOrder ? '#64748b' : '#cbd5e1' }}><Minus size={16} /></button>
-                                      <button onClick={() => handleOrderQuantityChange(product.id, orderQty, 1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Plus size={16} /></button>
-                                    </div>
+                              {/* 上部：商品名と削除ボタン */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                <div style={{ flex: 1, paddingRight: '10px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem', lineHeight: '1.4' }}>{product.name}</div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                    {product.manufacturer_name ? `${product.manufacturer_name} (${product.category})` : product.category}
                                   </div>
-                                  
-                                  {/* 🌟 追加：小計金額の表示 */}
-                                  {hasOrder && (
-                                    <div style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 'bold', marginTop: '4px' }}>
-                                      ¥{(orderQty * (product.cost_price || 0)).toLocaleString()}
-                                    </div>
-                                  )}
-
                                 </div>
-                              </td>
-                              <td style={{ padding: '16px' }} className="no-print">
                                 {hasOrder && (
-                                  <button onClick={() => handleDeleteOrder(product.id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }} title="発注リストから除外">
+                                  <button onClick={() => handleDeleteOrder(product.id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '10px', color: '#ef4444', cursor: 'pointer', flexShrink: 0 }} title="除外">
                                     <Trash2 size={18} />
                                   </button>
                                 )}
-                              </td>
-                            </tr>
+                              </div>
+
+                              {/* 中央：在庫情報 */}
+                              <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '12px', fontSize: '0.85rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', color: stockColor }}>
+                                  現在庫: <span style={{ fontSize: '1.1rem' }}>{product.stock || 0}</span>
+                                  {isLowStock && !hasAlreadyOrdered && <AlertCircle size={16} />}
+                                </div>
+                                <div style={{ color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                                  発注点: {product.reorder_point || 0}
+                                </div>
+                                <div style={{ color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                                  ﾃﾞﾌｫﾙﾄ: {product.default_order_quantity || 1}
+                                </div>
+                              </div>
+
+                              {/* 発注済バッジ */}
+                              {hasAlreadyOrdered && (
+                                    <div className="no-print" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#10b981', background: '#dcfce7', padding: '4px 8px', borderRadius: '8px' }}>
+                                        発注済: {totalAlreadyOrderedQty}個
+                                      </span>
+                                  <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>
+                                    {getOrderedDate(alreadyOrderedList[0].ordered_at)}
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* 下部：発注コントローラーと金額 */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                                {hasOrder ? (
+                                  <div style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
+                                    小計: <br/>
+                                    <span style={{ color: '#d34817', fontSize: '1.2rem' }}>¥{(orderQty * (product.cost_price || 0)).toLocaleString()}</span>
+                                  </div>
+                                ) : <div></div>}
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                  <span style={{ fontSize: '1.6rem', fontWeight: '900', color: hasOrder ? '#3b82f6' : '#cbd5e1' }}>{orderQty}</span>
+                                  <div className="no-print" style={{ display: 'flex', gap: '6px' }}>
+                                    <button onClick={() => handleOrderQuantityChange(product.id, orderQty, -1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} disabled={!hasOrder} style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', cursor: hasOrder ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', color: hasOrder ? '#64748b' : '#cbd5e1', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}><Minus size={20} /></button>
+                                    <button onClick={() => handleOrderQuantityChange(product.id, orderQty, 1, product.default_order_quantity, (product.stock || 0) + totalAlreadyOrderedQty)} style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}><Plus size={20} /></button>
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div>
                           );
                         })}
-                      </tbody>
-                    </table>
+                      </div>
+                    )}
                   </div>
+                );
+              })()}
+            </div>
+
+            {/* 🚀 🆕 修正：発注リストの印刷用レイアウトを「検品リスト付きの表」に変更 */}
+            <div id="print-area" className="print-only-block" style={{ background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
+              <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '20px', fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <span>発注書 兼 検品リスト</span>
+                <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>出力日: {new Date().toLocaleDateString('ja-JP')}</span>
+              </h2>
+              
+              <p style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '20px' }}>
+                宛先：{activeOrderTab === 'unspecified' ? '指定なし' : dealers.find(d => d.id === activeOrderTab)?.name} 御中
+              </p>
+              
+              {(() => {
+                const displayProducts = originalProducts.filter(p => activeOrderTab === 'unspecified' ? !p.dealer_id : p.dealer_id === activeOrderTab);
+                const orderItems = displayProducts.map(p => {
+                  const order = pendingOrders.find(o => o.product_id === p.id);
+                  return { product: p, qty: order ? order.quantity : 0 };
+                }).filter(item => item.qty > 0);
+
+                if (orderItems.length === 0) return <p>発注する商品がありません。</p>;
+
+                let grandTotal = 0;
+
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', width: '40px', textAlign: 'center' }}>検品</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px' }}>商品名 / カテゴリ</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>単価</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>発注数</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>金額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {orderItems.map((item, i) => {
+                        const price = item.product.cost_price || 0;
+                        const subTotal = price * item.qty;
+                        grandTotal += subTotal;
+                        const catName = item.product.manufacturer_name ? `${item.product.manufacturer_name} (${item.product.category})` : item.product.category;
+                        
+                        return (
+                          <tr key={i}>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'center', fontSize: '1.2rem' }}>□</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px' }}>
+                              <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{item.product.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#666' }}>{catName}</div>
+                            </td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{price.toLocaleString()}</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>{item.qty}</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{subTotal.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr>
+                        <td colSpan="4" style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>発注合計：</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.2rem' }}>¥{grandTotal.toLocaleString()}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 );
               })()}
             </div>
@@ -1434,7 +1631,7 @@ const InventoryManager = () => {
         {activeView === 'master' && (
           <div style={{ animation: 'fadeIn 0.3s', maxWidth: '800px', margin: '0 auto' }}>
             <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: '0 0 20px 0', fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <Settings size={24} color="#64748b" /> 商品マスター管理
+              <Settings size={24} color="#64748b" /> 商品管理
             </h2>
 
             {/* カテゴリ作成 */}
@@ -1593,22 +1790,25 @@ const InventoryManager = () => {
           <div style={{ animation: 'fadeIn 0.3s', maxWidth: '900px', margin: '0 auto' }}>
             {/* 🌟 追加：印刷用のスタイル定義 */}
             <style>{`
+              @media screen {
+                .print-only-block { display: none !important; }
+              }
               @media print {
-                body * { visibility: hidden; }
-                #print-area, #print-area * { visibility: visible; }
-                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
-                .no-print { display: none !important; }
+                body * { visibility: hidden !important; }
+                #print-area, #print-area * { visibility: visible !important; }
+                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 30px; display: block !important; }
+                .screen-only-block { display: none !important; }
               }
             `}</style>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <Truck size={24} color="#10b981" /> 入庫待ち（発注済み）リスト
+                <Truck size={24} color="#10b981" /> 入庫待ちリスト
               </h2>
               {/* 🌟 変更：印刷ボタンを追加し、横並びに */}
               <div style={{ display: 'flex', gap: '10px' }} className="no-print">
                 <button onClick={handleCopyReceiveText} style={{ padding: '10px 16px', background: '#ecfdf5', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#059669' }}>
-                  <Copy size={18} /> LINE・メール用にコピー
+                  <Copy size={18} /> メール用コピー
                 </button>
                 <button onClick={() => window.print()} style={{ padding: '10px 16px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#64748b' }}>
                   <Printer size={18} /> PDF出力 / 印刷
@@ -1634,8 +1834,8 @@ const InventoryManager = () => {
               })}
             </div>
 
-            {/* 🌟 変更：印刷範囲を指定する id="print-area" を追加 */}
-            <div id="print-area" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            {/* 🌟 変更：画面用のブロックに変更 */}
+            <div className="screen-only-block" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
               {(() => {
                 const displayOrders = orderedItems.filter(order => {
                   // 🌟 'all'条件を削除
@@ -1668,27 +1868,28 @@ const InventoryManager = () => {
                 });
 
                 return (
-                  <div style={{ overflowX: 'auto' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                  <div style={{ overflowX: isPC ? 'auto' : 'hidden' }}>
+                    {isPC ? (
+                      /* =========================================================
+                         💻 PC用：既存のテーブル表示
+                         ========================================================= */
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
                         <thead>
                           <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.9rem' }}>
                             <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>商品名 / カテゴリ</th>
                             <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>最新発注日</th>
                             <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>入庫予定数 / 金額</th>
-                            {/* 🌟 変更：印刷時に不要な操作列を隠すため no-print を追加 */}
                             <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">今回入庫する数</th>
                             <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">操作</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {/* 🌟 変更：displayOrders ではなく groupedOrders をマップする */}
                           {groupedOrders.map(order => {
                             const product = originalProducts.find(p => p.id === order.product_id) || {};
-                            const maxQty = order.quantity; // 🌟 追加：もともとの発注数
-                            const currentQty = receiveInputs[order.product_id] !== undefined ? receiveInputs[order.product_id] : maxQty; // 🌟 追加：入力された数
+                            const maxQty = order.quantity; 
+                            const currentQty = receiveInputs[order.product_id] !== undefined ? receiveInputs[order.product_id] : maxQty; 
 
                             return (
-                              // 🌟 変更：keyを product_id に変更
                               <tr key={order.product_id} style={{ borderBottom: '1px solid #e2e8f0', background: '#fff' }}>
                                 <td style={{ padding: '16px' }}>
                                   <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{order.products?.name || '不明な商品'}</div>
@@ -1700,7 +1901,6 @@ const InventoryManager = () => {
                                   {order.ordered_at ? new Date(order.ordered_at).toLocaleDateString('ja-JP') : '-'}
                                 </td>
                                 <td style={{ padding: '16px' }}>
-                                  {/* 🌟 変更：元の数はグレー表示に変更 */}
                                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
                                     <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#94a3b8' }}>{maxQty}</span>
                                     <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
@@ -1708,8 +1908,6 @@ const InventoryManager = () => {
                                     </span>
                                   </div>
                                 </td>
-
-                                {/* 🌟 変更：印刷時に操作列を隠すため no-print を追加 */}
                                 <td style={{ padding: '16px' }} className="no-print">
                                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                                     <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: currentQty === maxQty ? '#10b981' : '#f59e0b' }}>{currentQty}</span>
@@ -1720,12 +1918,10 @@ const InventoryManager = () => {
                                   </div>
                                   {currentQty < maxQty && (
                                     <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold', marginTop: '4px' }}>
-                                      ※残り {maxQty - currentQty} 個は未入庫に残ります
+                                      ※残り {maxQty - currentQty} 個は未入庫
                                     </div>
                                   )}
                                 </td>
-
-                                {/* 🌟 変更：印刷時に操作列を隠すため no-print を追加 */}
                                 <td style={{ padding: '16px' }} className="no-print">
                                   <button onClick={() => handleCancelReceiveOrder(order.product_id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }} title="欠品・廃盤で発注を取り消す">
                                     <Trash2 size={18} />
@@ -1736,13 +1932,142 @@ const InventoryManager = () => {
                           })}
                         </tbody>
                       </table>
+                    ) : (
+                      /* =========================================================
+                         📱 スマホ用：カード型のリスト表示
+                         ========================================================= */
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '12px' }}>
+                        {groupedOrders.map(order => {
+                          const product = originalProducts.find(p => p.id === order.product_id) || {};
+                          const maxQty = order.quantity;
+                          const currentQty = receiveInputs[order.product_id] !== undefined ? receiveInputs[order.product_id] : maxQty;
+
+                          return (
+                            <div key={order.product_id} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '16px', position: 'relative', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
+                              {/* 上部：商品名とキャンセルボタン */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                <div style={{ flex: 1, paddingRight: '10px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem', lineHeight: '1.4' }}>{order.products?.name || '不明な商品'}</div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                    {product.manufacturer_name ? `${product.manufacturer_name} (${order.products?.category})` : order.products?.category}
+                                  </div>
+                                </div>
+                                <button onClick={() => handleCancelReceiveOrder(order.product_id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '10px', color: '#ef4444', cursor: 'pointer', flexShrink: 0 }} title="取消">
+                                  <Trash2 size={18} />
+                                </button>
+                              </div>
+
+                              {/* 中央：最新発注日と元の入庫予定 */}
+                              <div className="no-print" style={{ display: 'flex', flexWrap: 'wrap', gap: '12px', background: '#f8fafc', padding: '12px', borderRadius: '10px', marginBottom: '12px', fontSize: '0.85rem' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold', color: '#64748b' }}>
+                                  発注日: {order.ordered_at ? new Date(order.ordered_at).toLocaleDateString('ja-JP') : '-'}
+                                </div>
+                                <div style={{ color: '#64748b', display: 'flex', alignItems: 'center' }}>
+                                  入庫予定: <span style={{ fontWeight: 'bold', color: '#1e293b', marginLeft: '4px' }}>{maxQty}個</span>
+                                </div>
+                              </div>
+
+                              {/* 下部：今回入庫コントローラー */}
+                              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                                <div style={{ fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
+                                  今回入庫:<br/>
+                                  {currentQty < maxQty && (
+                                    <span style={{ fontSize: '0.7rem', color: '#f59e0b' }}>※残り{maxQty - currentQty}個は未入庫</span>
+                                  )}
+                                </div>
+                                
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                  <span style={{ fontSize: '1.6rem', fontWeight: '900', color: currentQty === maxQty ? '#10b981' : '#f59e0b' }}>{currentQty}</span>
+                                  <div className="no-print" style={{ display: 'flex', gap: '6px' }}>
+                                    <button onClick={() => handleReceiveQtyChange(order.product_id, -1, maxQty)} style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}><Minus size={20} /></button>
+                                    <button onClick={() => handleReceiveQtyChange(order.product_id, 1, maxQty)} style={{ width: '40px', height: '40px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#10b981', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}><Plus size={20} /></button>
+                                  </div>
+                                </div>
+                              </div>
+
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
+                );
+              })()}
+            </div>
+
+            {/* 🚀 🆕 修正：入庫待ちリストの印刷用レイアウトを「検品リスト付きの表」に変更 */}
+            <div id="print-area" className="print-only-block" style={{ background: '#fff', color: '#000', fontFamily: 'sans-serif' }}>
+              <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '20px', fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                <span>入庫待ち（発注済） 検品リスト</span>
+                <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>出力日: {new Date().toLocaleDateString('ja-JP')}</span>
+              </h2>
+              
+              <p style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '20px' }}>
+                仕入先：{activeReceiveTab === 'unspecified' ? '指定なし' : dealers.find(d => d.id === activeReceiveTab)?.name}
+              </p>
+              
+              {(() => {
+                const currentTabReceive = orderedItems.filter(order => {
+                  if (activeReceiveTab === 'unspecified') return !order.products?.dealer_id;
+                  return order.products?.dealer_id === activeReceiveTab;
+                });
+
+                if (currentTabReceive.length === 0) return <p>入庫待ちの商品はありません。</p>;
+
+                // 同一商品を合算
+                const groupedForTotal = {};
+                currentTabReceive.forEach(o => {
+                  if(!groupedForTotal[o.product_id]) groupedForTotal[o.product_id] = 0;
+                  groupedForTotal[o.product_id] += o.quantity;
+                });
+
+                let grandTotal = 0;
+
+                return (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                    <thead>
+                      <tr>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', width: '40px', textAlign: 'center' }}>検品</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px' }}>商品名 / カテゴリ</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>単価</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>入庫予定数</th>
+                        <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>金額</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.keys(groupedForTotal).map(pid => {
+                        const product = originalProducts.find(p => p.id === pid);
+                        if (!product) return null;
+                        const qty = groupedForTotal[pid];
+                        const price = product.cost_price || 0;
+                        const subTotal = price * qty;
+                        grandTotal += subTotal;
+                        const catName = product.manufacturer_name ? `${product.manufacturer_name} (${product.category})` : product.category;
+                        
+                        return (
+                          <tr key={pid}>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'center', fontSize: '1.2rem' }}>□</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px' }}>
+                              <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{product.name}</div>
+                              <div style={{ fontSize: '0.75rem', color: '#666' }}>{catName}</div>
+                            </td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{price.toLocaleString()}</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>{qty}</td>
+                            <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{subTotal.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                      <tr>
+                        <td colSpan="4" style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>入庫予定合計：</td>
+                        <td style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.2rem' }}>¥{grandTotal.toLocaleString()}</td>
+                      </tr>
+                    </tbody>
+                  </table>
                 );
               })()}
             </div>
           </div>
         )}
-        {/* ▲▲▲ ここまで ▲▲▲ */}
 
         {/* ▼▼▼ 追加：ビュー：仕入修正・履歴画面（超高機能版） ▼▼▼ */}
         {activeView === 'receive_history' && (
@@ -1971,11 +2296,14 @@ const InventoryManager = () => {
         {activeView === 'inventory_view' && (
           <div style={{ animation: 'fadeIn 0.3s', maxWidth: '1000px', margin: '0 auto' }}>
             <style>{`
+              @media screen {
+                .print-only-block { display: none !important; }
+              }
               @media print {
-                body * { visibility: hidden; }
-                #print-area, #print-area * { visibility: visible; }
-                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
-                .no-print { display: none !important; }
+                body * { visibility: hidden !important; }
+                #print-area, #print-area * { visibility: visible !important; }
+                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 30px; display: block !important; }
+                .screen-only-block { display: none !important; }
               }
             `}</style>
             
@@ -2744,6 +3072,112 @@ const InventoryManager = () => {
         </div>
       )}
       {/* ▲▲▲ ここまで ▲▲▲ */}
+
+      {/* 🚀 🆕 追加：発注完了 ＆ ディーラー送信用のモーダル */}
+      {completedOrderData && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.6)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 10000 }}>
+          
+          {/* 通常の画面用（送信用ボタン） */}
+          {/* 通常の画面用（送信用ボタン） */}
+          <div className="no-print" style={{ background: '#fff', borderRadius: '24px', width: '90%', maxWidth: '450px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)', textAlign: 'center', padding: '35px 25px' }} onClick={e => e.stopPropagation()}>
+            <h2 style={{ margin: '0 0 10px 0', color: '#1e293b', fontSize: '1.4rem', fontWeight: '900' }}>発注を記録しました</h2>
+            <p style={{ fontSize: '0.9rem', color: '#64748b', marginBottom: '30px', lineHeight: '1.5' }}>
+              システムへの記録が完了しました。<br/>
+              続けて、ディーラーへ発注書を送信してください。
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <button 
+                onClick={handleCopyCompletedOrder} 
+                style={{ padding: '18px', background: '#ecfdf5', color: '#059669', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer', boxShadow: '0 4px 6px rgba(5,150,105,0.1)' }}
+              >
+                <Copy size={22} /> LINE・メール用にテキストコピー
+              </button>
+              <button 
+                onClick={() => window.print()} 
+                style={{ padding: '18px', background: '#f8fafc', color: '#3b82f6', border: '2px solid #bfdbfe', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <Printer size={22} /> 発注書をPDF出力 / 印刷
+              </button>
+            </div>
+
+            <button 
+              onClick={() => setCompletedOrderData(null)} 
+              style={{ marginTop: '25px', padding: '12px', background: 'none', border: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer', width: '100%' }}
+            >
+              完了して閉じる
+            </button>
+          </div>
+
+          {/* 🚀 🆕 修正：モーダルの印刷用レイアウトを「検品リスト付きの表」に変更 */}
+          <div id="print-area" className="print-only-block" style={{ background: '#fff', color: '#000', padding: '20px', fontFamily: 'sans-serif' }}>
+            <h2 style={{ borderBottom: '2px solid #000', paddingBottom: '10px', marginBottom: '20px', fontSize: '1.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+              <span>発注書 兼 検品リスト</span>
+              <span style={{ fontSize: '1rem', fontWeight: 'normal' }}>発注日: {new Date().toLocaleDateString('ja-JP')}</span>
+            </h2>
+            
+            <p style={{ fontWeight: 'bold', fontSize: '1.2rem', marginBottom: '20px' }}>
+              宛先：{completedOrderData.dealerName} 御中
+            </p>
+            
+            {(() => {
+              let grandTotal = 0;
+
+              return (
+                <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '0.9rem' }}>
+                  <thead>
+                    <tr>
+                      <th style={{ borderBottom: '2px solid #000', padding: '10px', width: '40px', textAlign: 'center' }}>検品</th>
+                      <th style={{ borderBottom: '2px solid #000', padding: '10px' }}>商品名 / カテゴリ</th>
+                      <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>単価</th>
+                      <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>発注数</th>
+                      <th style={{ borderBottom: '2px solid #000', padding: '10px', textAlign: 'right' }}>金額</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {completedOrderData.orders.map(o => {
+                      const price = o.product?.cost_price || 0;
+                      const subTotal = price * o.quantity;
+                      grandTotal += subTotal;
+                      const catName = o.product?.manufacturer_name ? `${o.product.manufacturer_name} (${o.product.category})` : o.product?.category;
+
+                      return (
+                        <tr key={o.id}>
+                          <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'center', fontSize: '1.2rem' }}>□</td>
+                          <td style={{ borderBottom: '1px solid #ccc', padding: '10px' }}>
+                            <div style={{ fontWeight: 'bold', fontSize: '1rem' }}>{o.product?.name || '不明な商品'}</div>
+                            <div style={{ fontSize: '0.75rem', color: '#666' }}>{catName}</div>
+                          </td>
+                          <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{price.toLocaleString()}</td>
+                          <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>{o.quantity}</td>
+                          <td style={{ borderBottom: '1px solid #ccc', padding: '10px', textAlign: 'right' }}>¥{subTotal.toLocaleString()}</td>
+                        </tr>
+                      );
+                    })}
+                    <tr>
+                      <td colSpan="4" style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.1rem' }}>発注合計：</td>
+                      <td style={{ padding: '15px 10px', textAlign: 'right', fontWeight: 'bold', fontSize: '1.2rem' }}>¥{grandTotal.toLocaleString()}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+
+          {/* 🌟 印刷用の特別CSS */}
+          <style>{`
+            @media screen {
+              .print-only-block { display: none !important; }
+            }
+            @media print {
+              body * { visibility: hidden !important; }
+              #print-area, #print-area * { visibility: visible !important; }
+              #print-area { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
+              .no-print { display: none !important; }
+            }
+          `}</style>
+        </div>
+      )}
 
     </div>
   );
