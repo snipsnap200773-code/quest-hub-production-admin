@@ -2118,38 +2118,28 @@ return (
                 </div>
               </div>
 
-              {/* 🆕 月別カードグリッド */}
-              <div style={{ padding: '20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '15px' }}>
+              {/* 🚀 🆕 修正：月別のアコーディオンリスト（月自体を開閉する） */}
+              <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {analyticsData.map(m => {
                   const isExpanded = expandedMonths[m.month];
                   return (
-                    <div key={m.month} style={{ ...monthCardStyle, padding: '0', overflow: 'hidden' }}>
+                    <div key={m.month} style={{ ...monthCardStyle, padding: '0', overflow: 'hidden', border: isExpanded ? '2px solid #008000' : '1px solid #e2e8f0', transition: 'border 0.2s' }}>
                       
-                      {/* 上部ヘッダー部分はクリックで日別詳細を開く */}
-                      <div onClick={() => setSelectedMonthData(m)} style={{ padding: '20px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-                          <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#008000' }}>{m.month}月</span>
-                          <BarChart3 size={20} color="#94a3b8" />
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
-                          <span style={{ color: '#666', fontSize: '0.8rem' }}>来客数</span>
-                          <span style={{ fontWeight: 'bold' }}>{m.count} 名</span>
-                        </div>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', borderTop: '1px dashed #eee', paddingTop: '10px', marginTop: '10px' }}>
-                          <span style={{ color: '#1e293b', fontSize: '0.8rem', fontWeight: 'bold' }}>総合計</span>
-                          <span style={{ fontSize: '1.5rem', fontWeight: '900', color: '#d34817' }}>¥ {m.total.toLocaleString()}</span>
-                        </div>
-                      </div>
-
-                      {/* 🚀 🆕 修正：アコーディオン開閉ボタン */}
+                      {/* 1. アコーディオンのヘッダー（月名と総合計を常に表示） */}
                       <div 
                         onClick={() => setExpandedMonths(prev => ({ ...prev, [m.month]: !prev[m.month] }))}
-                        style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '10px 0', borderTop: '1px solid #f1f5f9', background: '#f8fafc', cursor: 'pointer', color: '#008000', fontSize: '0.75rem', fontWeight: 'bold' }}
+                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', cursor: 'pointer', background: isExpanded ? '#f0fdf4' : '#fff' }}
                       >
-                        {isExpanded ? <><ChevronUp size={16} style={{marginRight:'4px'}} /> 閉じる</> : <><ChevronDown size={16} style={{marginRight:'4px'}} /> 内訳を見る</>}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#008000' }}>{m.month}月</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#d34817' }}>¥{m.total.toLocaleString()}</span>
+                          {isExpanded ? <ChevronUp size={20} color="#008000" /> : <ChevronDown size={20} color="#94a3b8" />}
+                        </div>
                       </div>
 
-                      {/* アコーディオンの中身（内訳） */}
+                      {/* 2. アコーディオンの中身（内訳と日別詳細ボタン） */}
                       <AnimatePresence>
                         {isExpanded && (
                           <motion.div 
@@ -2158,30 +2148,43 @@ return (
                             exit={{ height: 0, opacity: 0 }}
                             style={{ overflow: 'hidden' }}
                           >
-                            <div style={{ padding: '0 20px 15px 20px' }}>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px' }}>
-                                <span style={{ color: '#64748b', fontWeight: 'bold' }}>✂️ 施術売上</span>
-                                <span style={{ fontWeight: 'bold' }}>¥{m.technical.toLocaleString()}</span>
-                              </div>
-                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '8px' }}>
-                                <span style={{ color: '#008000', fontWeight: 'bold' }}>🛍 店販売上</span>
-                                <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{m.product.toLocaleString()}</span>
-                              </div>
+                            <div style={{ padding: '0 20px 20px 20px' }}>
+                              <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '15px', marginTop: '5px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
+                                  <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>来客数</span>
+                                  <span style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{m.count} 名</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
+                                  <span style={{ color: '#64748b', fontWeight: 'bold' }}>✂️ 施術売上</span>
+                                  <span style={{ fontWeight: 'bold', color: '#475569' }}>¥{m.technical.toLocaleString()}</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '12px' }}>
+                                  <span style={{ color: '#008000', fontWeight: 'bold' }}>🛍 店販売上</span>
+                                  <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{m.product.toLocaleString()}</span>
+                                </div>
 
-                              <div style={{ background: '#f1f5f9', padding: '8px', borderRadius: '8px' }}>
-                                {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
-                                  <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.65rem', marginBottom: '2px', opacity: 0.8 }}>
-                                    <span style={{ color: '#64748b' }}>{name}</span>
-                                    <span>¥{price.toLocaleString()}</span>
-                                  </div>
-                                ))}
+                                {/* 事業（屋号）別の内訳 */}
+                                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', marginBottom: '15px' }}>
+                                  {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
+                                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px', color: '#64748b', fontWeight: 'bold' }}>
+                                      <span>{name}</span>
+                                      <span>¥{price.toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                </div>
+
+                                {/* 🚀 日別詳細・担当者実績を開くボタン（ここをタップでモーダルが開く） */}
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); setSelectedMonthData(m); }}
+                                  style={{ width: '100%', padding: '12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px rgba(0,128,0,0.2)' }}
+                                >
+                                  <Calendar size={18} /> 日別詳細・担当者実績を表示
+                                </button>
                               </div>
                             </div>
                           </motion.div>
                         )}
                       </AnimatePresence>
-                      
-                      <div onClick={() => setSelectedMonthData(m)} style={{ fontSize: '0.7rem', color: '#4285f4', textAlign: 'center', cursor: 'pointer', background: '#eff6ff', padding: '10px 0' }}>日別詳細・担当者実績を表示 →</div>
                     </div>
                   );
                 })}
