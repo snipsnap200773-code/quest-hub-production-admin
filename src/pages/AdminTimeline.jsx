@@ -6,8 +6,9 @@ import { supabase } from '../supabaseClient';
 import { 
   ChevronLeft, ChevronRight, Users, Calendar as CalendarIcon, 
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
-  ShoppingBag, Scissors, Settings, Search, // 🚀 🆕 Search の後ろにカンマを追加
-  PackageOpen // 👈 🌟 🆕 追加：在庫管理アイコン
+  ShoppingBag, Scissors, Settings, Search, 
+  PackageOpen, // 👈 🌟 🆕 追加：在庫管理アイコン
+  BarChart3, RotateCcw // 🚀 🆕 追加：ボトムナビ用と横画面案内用のアイコン
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -209,12 +210,31 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
   // ✅ 🆕 追加：この変数が抜けていたためエラーが出ていました
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  
+  // 🚀 🆕 追加：スマホの縦画面（Portrait）を検知するState
+  const [isPortrait, setIsPortrait] = useState(window.matchMedia("(orientation: portrait)").matches);
+
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+
+    // 🚀 🆕 追加：画面の向きが変わった時のイベントリスナー
+    const mql = window.matchMedia("(orientation: portrait)");
+    const handleOrientationChange = (e) => setIsPortrait(e.matches);
+    mql.addEventListener("change", handleOrientationChange);
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      mql.removeEventListener("change", handleOrientationChange); // クリーンアップ
+    };
   }, []);
-  const isPC = windowWidth > 1024; 
+  
+  // 🚀 🆕 追加：プレビューモードかどうかを判定 (AdminReservationsから移植)
+  const searchParams = new URLSearchParams(location.search);
+  const isPreviewMode = searchParams.get('mode') === 'preview';
+
+  // 🚀 🆕 修正：プレビューモードの場合はスマホ幅として扱う
+  const isPC = isPreviewMode ? false : windowWidth > 1024; 
 
   // 🚀 🆕 追加：日付移動の関数
   const goPrev = () => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toLocaleDateString('sv-SE')); };
@@ -1010,7 +1030,8 @@ const timeSlots = useMemo(() => {
       })()}
 
       {/* タイムライン本体 */}
-      <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none' }}>
+      {/* 🚀 🆕 修正：スマホの時はボトムナビの分だけ paddingBottom を空ける */}
+      <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none', paddingBottom: !isPC ? '85px' : '0' }}>
         <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
           <thead style={{ position: 'sticky', top: 0, zIndex: 100 }}>
             <tr>
@@ -1976,12 +1997,118 @@ const timeSlots = useMemo(() => {
         </div>
       )}
 
+      {/* 🚀 🆕 【追加】スマホ用：縦画面時に「横向きにしてね」とお願いするオーバーレイ */}
+      {!isPC && isPortrait && !isPreviewMode && (
+        <div style={{
+          position: 'fixed', inset: 0, background: 'rgba(30, 41, 59, 0.95)', zIndex: 9999,
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+          color: '#fff', padding: '30px', textAlign: 'center', backdropFilter: 'blur(5px)'
+        }}>
+          <RotateCcw size={64} color="#38bdf8" style={{ marginBottom: '20px', animation: 'pulse 2s infinite' }} />
+          <h2 style={{ fontSize: '1.4rem', fontWeight: '900', margin: '0 0 15px 0', letterSpacing: '1px' }}>スマホを横向きに<br/>してください</h2>
+          <p style={{ fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.6', margin: 0 }}>
+            タイムライン管理画面は横に長いため、<br/>
+            縦画面では正しく表示されません。<br/>
+            画面の回転ロックを解除し、<br/>
+            端末を横にしてご利用ください。
+          </p>
+        </div>
+      )}
+
+      {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション（AdminReservationsから完全移植） */}
+      {!isPC && !isPreviewMode && (
+        <div style={{
+          position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px',
+          background: '#fff', borderTop: '1px solid #e2e8f0', display: 'flex',
+          justifyContent: 'space-around', alignItems: 'center', zIndex: 2000,
+          paddingBottom: 'env(safe-area-inset-bottom)',
+          boxShadow: '0 -4px 15px rgba(0,0,0,0.05)'
+        }}>
+          {/* 1. 設定 */}
+          <button 
+            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/dashboard`); }} 
+            style={mobileTabStyle(false, '#64748b')}
+          >
+            <Settings size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
+          </button>
+
+          {/* 2. タスク */}
+          <button 
+            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/today-tasks`); }} 
+            style={mobileTabStyle(false, '#1e293b')}
+          >
+            <Clipboard size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>タスク</span>
+          </button>
+
+          {/* 3. 在庫 */}
+          <button 
+            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/inventory`); }} 
+            style={mobileTabStyle(false, '#f59e0b')}
+          >
+            <PackageOpen size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>在庫</span>
+          </button>
+
+          {/* 4. 今日（タイムラインでは現在時刻にスクロール） */}
+          <button 
+            onClick={() => { 
+              setShowMenuModal(false); 
+              goToday(); 
+              // 自動スクロール処理を再発火させるために少し待つ
+              setTimeout(() => {
+                const now = new Date();
+                const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+                const targetIdx = timeSlots.findIndex(slot => slot >= currentTimeStr);
+                if (targetIdx !== -1 && scrollRef.current) {
+                  const columnWidth = 120;
+                  scrollRef.current.scrollLeft = Math.max(0, (targetIdx - 1) * columnWidth);
+                }
+              }, 500);
+            }} 
+            style={{ 
+              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+              background: `${themeColor}15`, border: `1px solid ${themeColor}33`, 
+              color: themeColor, borderRadius: '15px', padding: '8px 15px', cursor: 'pointer' 
+            }}
+          >
+            <span style={{ fontSize: '0.85rem', fontWeight: '900' }}>今日</span>
+          </button>
+
+          {/* 5. 管理 */}
+          <button 
+            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/management`); }} 
+            style={mobileTabStyle(false, '#008000')}
+          >
+            <BarChart3 size={22} />
+            <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>管理</span>
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }
 
 // スタイル (省略なし)
 const switchBtnStyle = (active) => ({ padding: '5px 15px', borderRadius: '6px', border: 'none', background: active ? '#fff' : 'transparent', fontWeight: 'bold', fontSize: '0.75rem', cursor: 'pointer', boxShadow: active ? '0 2px 4px rgba(0,0,0,0.1)' : 'none', color: active ? '#1e293b' : '#64748b' });
+
+// 🚀 🆕 追加：ボトムナビゲーション用のスタイル
+const mobileTabStyle = (active, color) => ({
+  display: 'flex', 
+  flexDirection: 'column', 
+  alignItems: 'center', 
+  justifyContent: 'center', 
+  gap: '4px',
+  background: 'none', 
+  border: 'none', 
+  color: active ? color : '#94a3b8',
+  cursor: 'pointer', 
+  flex: 1, 
+  padding: '8px 0', 
+  transition: 'all 0.2s'
+});
 
 // 🆕 ここに差し込み：電話やマップの小さなボタン用スタイル
 const badgeStyle = (color) => ({

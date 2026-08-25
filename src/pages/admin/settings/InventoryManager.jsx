@@ -71,6 +71,25 @@ const InventoryManager = () => {
   // 🌟🌟🌟 追加：分納・一部入庫用のState
   const [receiveInputs, setReceiveInputs] = useState({}); // { product_id: 今回入庫する数 }
   
+  // ▼▼▼ 新規追加：棚卸用のState ▼▼▼
+  const [activeInventoryCheckTab, setActiveInventoryCheckTab] = useState('業務用');
+  const [inventoryInputs, setInventoryInputs] = useState({}); // { product_id: 実際の在庫数 }
+  const [expandedInvCats, setExpandedInvCats] = useState([]); // 🌟 変更：デフォルトで閉じるため、「開いているカテゴリ」を管理するStateに変更
+  const [expandedConsumeCats, setExpandedConsumeCats] = useState([]); // 🌟 追加：払出画面のアコーディオン開閉状態
+  
+  // ▼▼▼ 新規追加：在庫照会用のState ▼▼▼
+  const [invSearchQuery, setInvSearchQuery] = useState('');
+  const [invFilterGroup, setInvFilterGroup] = useState('all'); // 🌟 変更：業務用(カテゴリ) / 店販用(メーカー)の複合絞り込み
+  const [invFilterDealer, setInvFilterDealer] = useState('all');
+  const [invFilterAlertOnly, setInvFilterAlertOnly] = useState(false);
+  // ▲▲▲ ここまで ▲▲▲
+  
+  // ▼▼▼ 新規追加：返品用のState ▼▼▼
+  const [activeReturnTab, setActiveReturnTab] = useState('');
+  const [returnInputs, setReturnInputs] = useState({}); // { product_id: 返品する数 }
+  const [expandedReturnCats, setExpandedReturnCats] = useState([]); // 🌟 追加：返品用アコーディオン開閉状態
+  // ▲▲▲ ここまで ▲▲▲
+  
   const [showHelpModal, setShowHelpModal] = useState(false); // 🌟 追加：使い方ガイド用
   // ▲▲▲ ここまで ▲▲▲
 
@@ -117,6 +136,14 @@ const InventoryManager = () => {
 
       // 🌟 追加：入庫画面のタブも最初のディーラーで初期化
       setActiveReceiveTab(prevTab => {
+        if (prevTab === 'all' || prevTab === '') {
+          return dealersRes.data.length > 0 ? dealersRes.data[0].id : 'unspecified';
+        }
+        return prevTab;
+      });
+
+      // 🌟 追加：返品画面のタブ初期化
+      setActiveReturnTab(prevTab => {
         if (prevTab === 'all' || prevTab === '') {
           return dealersRes.data.length > 0 ? dealersRes.data[0].id : 'unspecified';
         }
@@ -671,7 +698,7 @@ const InventoryManager = () => {
       .from('inventory_logs')
       .select('*')
       .eq('shop_id', shopId)
-      .eq('reason', '仕入・入庫増')
+      .in('reason', ['仕入・入庫増', '返品']) // 🌟 変更：「返品」も含めて取得する
       .order('created_at', { ascending: false });
       // 🌟 修正：分析のために .limit(50) を外し、全期間を取得
 
@@ -689,7 +716,12 @@ const InventoryManager = () => {
     const product = originalProducts.find(p => p.id === log.product_id);
     const pName = product ? product.name : '不明な商品';
     
-    if (!window.confirm(`「${pName}」の入庫（${log.change_amount}個）を取り消し、在庫からマイナスしますか？\n※この操作は元に戻せません。`)) return;
+    // 🌟 追加：入庫の取消か、返品の取消かで文言を分岐
+    const isReturn = log.reason === '返品';
+    const actionName = isReturn ? '返品' : '入庫';
+    const changeText = isReturn ? `在庫に ${Math.abs(log.change_amount)} 個戻ります` : `在庫から ${log.change_amount} 個マイナスされます`;
+
+    if (!window.confirm(`「${pName}」の${actionName}履歴を取り消し、在庫数を補正しますか？\n（結果：${changeText}）\n※この操作は元に戻せません。`)) return;
 
     try {
       if (product) {
@@ -703,6 +735,115 @@ const InventoryManager = () => {
       showMsg('入庫を取り消し、在庫を修正しました♻️');
       fetchMasterData(); // マスター在庫を最新化
       fetchReceiveLogs(); // 履歴リストを最新化
+    } catch (err) {
+      alert('エラーが発生しました: ' + err.message);
+    }
+  };
+  // ▲▲▲ ここまで ▲▲▲
+
+  // ▼▼▼ 新規追加：棚卸確定ロジック ▼▼▼
+  const handleSaveInventoryCheck = async () => {
+    const logsToInsert = [];
+
+    // 入力された実在庫とシステム在庫の差分をチェック
+    Object.keys(inventoryInputs).forEach(productId => {
+      const realStock = inventoryInputs[productId];
+      const origP = originalProducts.find(p => p.id === productId);
+      
+      if (origP) {
+        const sysStock = origP.stock || 0;
+        const diff = realStock - sysStock;
+        
+        if (diff !== 0) {
+          logsToInsert.push({
+            shop_id: shopId,
+            product_id: productId,
+            change_amount: diff,
+            reason: diff > 0 ? '棚卸増' : '棚卸減'
+          });
+        }
+      }
+    });
+
+    if (logsToInsert.length === 0) {
+      alert('在庫の差異はありません。');
+      return;
+    }
+
+    if (!window.confirm(`${logsToInsert.length}件の在庫差異を補正して確定しますか？`)) return;
+
+    try {
+      // 🌟 修正：DB側の魔法トリガー（自動計算）に任せるため、productsテーブルの直接更新を削除しました。
+      // 差分ログを保存するだけで、自動的に正しく在庫が補正されます。
+      await supabase.from('inventory_logs').insert(logsToInsert);
+
+      showMsg('棚卸を完了し、在庫を補正しました✨');
+      setInventoryInputs({}); // 入力欄をリセットして次の作業へ
+      // 🌟 削除： setActiveView('dashboard'); を消すことでページに留まる
+      fetchMasterData(); // 最新の在庫数を再取得して画面を更新
+    } catch (err) {
+      alert('エラーが発生しました: ' + err.message);
+    }
+  };
+
+  // 棚卸の数調整（＋/－）
+  const handleInventoryQtyChange = (productId, delta, currentSystemStock) => {
+    setInventoryInputs(prev => {
+      const current = prev[productId] !== undefined ? prev[productId] : currentSystemStock;
+      const next = Math.max(0, current + delta);
+      return { ...prev, [productId]: next };
+    });
+  };
+
+  // 棚卸の直接入力
+  const handleInventoryInputChange = (productId, value, currentSystemStock) => {
+    const parsed = parseInt(value, 10);
+    const validValue = isNaN(parsed) || parsed < 0 ? 0 : parsed;
+    setInventoryInputs(prev => ({ ...prev, [productId]: validValue }));
+  };
+  // ▲▲▲ ここまで ▲▲▲
+
+  // ▼▼▼ 新規追加：返品処理ロジック ▼▼▼
+  const handleReturnQtyChange = (productId, delta, maxStock) => {
+    setReturnInputs(prev => {
+      const current = prev[productId] || 0;
+      const next = Math.max(0, Math.min(maxStock, current + delta)); // 在庫数以上は返品できないようにガード
+      return { ...prev, [productId]: next };
+    });
+  };
+
+  const handleFinalizeReturn = async () => {
+    const productIds = Object.keys(returnInputs).filter(id => returnInputs[id] > 0);
+    if (productIds.length === 0) return;
+
+    const dealerName = activeReturnTab === 'unspecified' ? '指定なしの' : dealers.find(d => d.id === activeReturnTab)?.name + 'への';
+    
+    // 合計金額の計算（アラート用）
+    let totalAmount = 0;
+    let totalQty = 0;
+    productIds.forEach(pid => {
+      const qty = returnInputs[pid];
+      const product = originalProducts.find(p => p.id === pid);
+      totalAmount += qty * (product?.cost_price || 0);
+      totalQty += qty;
+    });
+
+    if (!window.confirm(`${dealerName}返品（計 ${totalQty}個 / 返金額概算 ¥${totalAmount.toLocaleString()}）を確定しますか？\n※在庫がマイナスされ、仕入履歴上の買掛金から差し引かれます。`)) return;
+
+    try {
+      const logsToInsert = productIds.map(pid => ({
+        shop_id: shopId,
+        product_id: pid,
+        change_amount: -returnInputs[pid], // 🌟 ここがポイント：マイナスにして送信
+        reason: '返品'
+      }));
+
+      // DBトリガーに任せるため直接の在庫更新は不要
+      await supabase.from('inventory_logs').insert(logsToInsert);
+
+      showMsg('返品処理が完了し、在庫と仕入額からマイナスされました♻️');
+      setReturnInputs({});
+      fetchMasterData();
     } catch (err) {
       alert('エラーが発生しました: ' + err.message);
     }
@@ -779,12 +920,8 @@ const InventoryManager = () => {
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                 <div style={{ background: '#3b82f6', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>発 注</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  {/* ▼▼▼ 変更：onClickを handleGoToOrder に変更 ▼▼▼ */}
                   <button onClick={handleGoToOrder} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#3b82f6'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
-                    <ShoppingCart size={20} color="#3b82f6" /> 発注入力
-                  </button>
-                  <button onClick={() => alert('🚧 開発中')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }}>
-                    <ClipboardList size={20} color="#94a3b8" /> 発注リスト印刷
+                    <ShoppingCart size={20} color="#3b82f6" /> 発注入力・リスト確認
                   </button>
                 </div>
               </div>
@@ -808,7 +945,8 @@ const InventoryManager = () => {
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                 <div style={{ background: '#ef4444', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>返 品</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button onClick={() => alert('🚧 開発中')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#ef4444'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
+                  {/* 🌟 変更：onClickを返品画面に切り替えるように修正 */}
+                  <button onClick={() => { setReturnInputs({}); setActiveView('return'); }} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#ef4444'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
                     <Undo2 size={20} color="#ef4444" /> 返品入力
                   </button>
                 </div>
@@ -818,7 +956,7 @@ const InventoryManager = () => {
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                 <div style={{ background: '#ec4899', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>棚 卸</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button onClick={() => alert('🚧 開発中')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#ec4899'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
+                  <button onClick={() => { setInventoryInputs({}); setActiveView('inventory_check'); }} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#ec4899'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
                     <ClipboardList size={20} color="#ec4899" /> 月末棚卸処理
                   </button>
                 </div>
@@ -828,10 +966,11 @@ const InventoryManager = () => {
               <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
                 <div style={{ background: '#8b5cf6', color: '#fff', padding: '12px', textAlign: 'center', fontWeight: 'bold', fontSize: '1rem', letterSpacing: '2px' }}>在庫照会</div>
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
-                  <button onClick={() => alert('🚧 開発中')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#8b5cf6'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
+                  {/* 🌟 変更：setInvFilterGroup に修正 */}
+                  <button onClick={() => { setInvSearchQuery(''); setInvFilterGroup('all'); setInvFilterDealer('all'); setInvFilterAlertOnly(false); setActiveView('inventory_view'); }} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }} onMouseOver={e => e.currentTarget.style.borderColor = '#8b5cf6'} onMouseOut={e => e.currentTarget.style.borderColor = '#f1f5f9'}>
                     <Search size={20} color="#8b5cf6" /> 在庫照会
                   </button>
-                  <button onClick={() => alert('🚧 開発中')} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }}>
+                  <button onClick={() => { setInvSearchQuery(''); setInvFilterGroup('all'); setInvFilterDealer('all'); setInvFilterAlertOnly(false); setActiveView('inventory_view'); setTimeout(() => window.print(), 500); }} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px solid #f1f5f9', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', transition: '0.2s' }}>
                     <ClipboardList size={20} color="#94a3b8" /> 在庫リスト印刷
                   </button>
                 </div>
@@ -871,49 +1010,114 @@ const InventoryManager = () => {
               ))}
             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
-              {localProducts.filter(p => p.usage_type === activeTab).map(p => {
-                const origP = originalProducts.find(op => op.id === p.id);
-                const diff = (p.stock || 0) - (origP?.stock || 0);
-                const isLowStock = p.stock <= p.reorder_point; 
-                
+            {/* ▼▼▼ 追加：カテゴリ別アコーディオン＆リスト表示UI（払出用） ▼▼▼ */}
+            {(() => {
+              const tabProducts = localProducts.filter(p => p.usage_type === activeTab);
+              if (tabProducts.length === 0) {
                 return (
-                  <div key={p.id} style={{ background: '#fff', border: diff !== 0 ? `2px solid #f59e0b` : (isLowStock ? '2px solid #ef4444' : '1px solid #e2e8f0'), borderRadius: '16px', padding: '20px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', transition: '0.2s' }}>
-                    <div>
-                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '4px' }}>{p.category}</div>
-                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '10px' }}>{p.name}</div>
-                      
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <span style={{ fontSize: '0.9rem', color: '#64748b' }}>現在庫:</span>
-                          <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: isLowStock && diff === 0 ? '#ef4444' : '#1e293b' }}>{p.stock || 0}</span>
-                          {isLowStock && <AlertCircle size={18} color="#ef4444" title="発注点を下回っています" />}
-                        </div>
-                        {diff !== 0 && (
-                          <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: diff < 0 ? '#ef4444' : '#10b981', background: diff < 0 ? '#fee2e2' : '#dcfce7', padding: '4px 8px', borderRadius: '8px' }}>
-                            {diff > 0 ? '+' : ''}{diff}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <button onClick={() => adjustStock(p.id, -1)} style={{ flex: 1.5, padding: '14px', background: '#fffbeb', border: '2px solid #fde68a', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', color: '#b45309', fontWeight: 'bold', cursor: 'pointer' }}>
-                        <Minus size={20} /> 開封 (-1)
-                      </button>
-                      <button onClick={() => adjustStock(p.id, 1)} style={{ flex: 1, padding: '14px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>
-                        <Plus size={20} /> (+1)
-                      </button>
-                    </div>
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#fff', borderRadius: '16px' }}>
+                    登録されている{activeTab}商品がありません。<br/>マスター設定から追加してください。
                   </div>
                 );
-              })}
-              {localProducts.filter(p => p.usage_type === activeTab).length === 0 && (
-                <div style={{ gridColumn: '1 / -1', textAlign: 'center', padding: '40px', color: '#94a3b8' }}>
-                  登録されている{activeTab}商品がありません。<br/>マスター設定から追加してください。
+              }
+
+              // カテゴリごとに商品をグループ化
+              const catData = {};
+              tabProducts.forEach(p => {
+                if (!catData[p.category]) catData[p.category] = [];
+                catData[p.category].push(p);
+              });
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  {Object.entries(catData).map(([catName, products]) => {
+                    const isExpanded = expandedConsumeCats.includes(catName);
+                    
+                    // カテゴリ内でいくつ変更（消費）があったかをカウント
+                    const changedCount = products.filter(p => {
+                      const origP = originalProducts.find(op => op.id === p.id);
+                      return (p.stock || 0) - (origP?.stock || 0) !== 0;
+                    }).length;
+
+                    return (
+                      <div key={catName} style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                        
+                        {/* アコーディオンヘッダー */}
+                        <button 
+                          onClick={() => setExpandedConsumeCats(prev => prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName])}
+                          style={{ width: '100%', padding: '16px 20px', background: !isExpanded ? '#fff' : '#fffbeb', border: 'none', borderBottom: !isExpanded ? 'none' : '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: '0.2s' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.1rem' }}>{catName}</span>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>({products.length}件)</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            {changedCount > 0 && (
+                              <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#b45309', background: '#fef3c7', padding: '4px 10px', borderRadius: '12px' }}>
+                                {changedCount}件の入力あり
+                              </span>
+                            )}
+                            <span style={{ transform: !isExpanded ? 'rotate(0deg)' : 'rotate(180deg)', transition: '0.3s', color: '#94a3b8' }}>▼</span>
+                          </div>
+                        </button>
+                        
+                        {/* 🌟 商品リスト（あいうえお順＆横長1列） */}
+                        {isExpanded && (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            {[...products]
+                              .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja')) // 🌟 ここで「あいうえお順」にソート
+                              .map((p, idx, arr) => {
+                                const origP = originalProducts.find(op => op.id === p.id);
+                                const diff = (p.stock || 0) - (origP?.stock || 0);
+                                const isLowStock = p.stock <= p.reorder_point; 
+                                
+                                return (
+                                  <div key={p.id} style={{ padding: '15px 20px', borderBottom: idx === arr.length - 1 ? 'none' : '1px solid #f1f5f9', display: 'flex', flexDirection: isPC ? 'row' : 'column', justifyContent: 'space-between', alignItems: isPC ? 'center' : 'stretch', gap: '15px', background: diff !== 0 ? '#fef3c7' : (isLowStock ? '#fef2f2' : '#fff'), transition: '0.2s' }}>
+                                    
+                                    {/* 左側：商品情報 */}
+                                    <div style={{ flex: 1 }}>
+                                      {p.manufacturer_name && <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '4px' }}>{p.manufacturer_name}</div>}
+                                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>{p.name}</div>
+                                      <div style={{ display: 'flex', gap: '20px', fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          現在庫: <span style={{ color: isLowStock && diff === 0 ? '#ef4444' : '#1e293b', fontSize: '1.1rem' }}>{p.stock || 0}</span>
+                                          {isLowStock && <AlertCircle size={16} color="#ef4444" title="発注点を下回っています" />}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    
+                                    {/* 右側：ボタン群 */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isPC ? 'flex-end' : 'space-between' }}>
+                                      {diff !== 0 && (
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '40px' }}>
+                                          <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b' }}>変動</span>
+                                          <span style={{ fontSize: '1rem', fontWeight: '900', color: diff < 0 ? '#ef4444' : '#10b981' }}>
+                                            {diff > 0 ? '+' : ''}{diff}
+                                          </span>
+                                        </div>
+                                      )}
+                                      <div style={{ display: 'flex', gap: '10px' }}>
+                                        <button onClick={() => adjustStock(p.id, -1)} style={{ padding: '10px 20px', background: '#fffbeb', border: '2px solid #fde68a', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', color: '#b45309', fontWeight: 'bold', cursor: 'pointer' }}>
+                                          <Minus size={18} /> 開封 (-1)
+                                        </button>
+                                        <button onClick={() => adjustStock(p.id, 1)} style={{ padding: '10px 15px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '10px', display: 'flex', alignItems: 'center', gap: '6px', color: '#64748b', fontWeight: 'bold', cursor: 'pointer' }}>
+                                          <Plus size={18} /> (+1)
+                                        </button>
+                                      </div>
+                                    </div>
+                                    
+                                  </div>
+                                );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
+              );
+            })()}
+            {/* ▲▲▲ ここまで ▲▲▲ */}
           </div>
         )}
 
@@ -1273,7 +1477,7 @@ const InventoryManager = () => {
                   {/* 🌟 追加：店販用の時だけメーカー名入力を表示 */}
                   {newUsageType === '店販用' && (
                     <div style={{ flex: 1, animation: 'fadeIn 0.3s' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>ﾒｰｶｰ名(発注書用)</label>
+                      <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>発注書用カテゴリ</label>
                       <input placeholder="例: FIOLE" value={newManufacturerName} onChange={(e) => setNewManufacturerName(e.target.value)} style={inputStyle} />
                     </div>
                   )}
@@ -1387,20 +1591,33 @@ const InventoryManager = () => {
         {/* ▼▼▼ 追加：ビュー：仕入（入庫）画面 ▼▼▼ */}
         {activeView === 'receive' && (
           <div style={{ animation: 'fadeIn 0.3s', maxWidth: '900px', margin: '0 auto' }}>
+            {/* 🌟 追加：印刷用のスタイル定義 */}
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #print-area, #print-area * { visibility: visible; }
+                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+                .no-print { display: none !important; }
+              }
+            `}</style>
             
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
               <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <Truck size={24} color="#10b981" /> 入庫待ち（発注済み）リスト
               </h2>
-              {/* 🌟 追加：入庫待ちリスト用のコピーボタン */}
-              <div className="no-print">
+              {/* 🌟 変更：印刷ボタンを追加し、横並びに */}
+              <div style={{ display: 'flex', gap: '10px' }} className="no-print">
                 <button onClick={handleCopyReceiveText} style={{ padding: '10px 16px', background: '#ecfdf5', border: 'none', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#059669' }}>
                   <Copy size={18} /> LINE・メール用にコピー
+                </button>
+                <button onClick={() => window.print()} style={{ padding: '10px 16px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#64748b' }}>
+                  <Printer size={18} /> PDF出力 / 印刷
                 </button>
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+            {/* 🌟 変更：印刷時にタブを隠すため no-print を追加 */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }} className="no-print">
               {/* 🌟 「すべて」タブを削除 */}
               
               {dealers.map(d => {
@@ -1417,7 +1634,8 @@ const InventoryManager = () => {
               })}
             </div>
 
-            <div style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+            {/* 🌟 変更：印刷範囲を指定する id="print-area" を追加 */}
+            <div id="print-area" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
               {(() => {
                 const displayOrders = orderedItems.filter(order => {
                   // 🌟 'all'条件を削除
@@ -1452,71 +1670,72 @@ const InventoryManager = () => {
                 return (
                   <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
-                      <thead>
-                        <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.9rem' }}>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>商品名 / カテゴリ</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>最新発注日</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>入庫予定数 / 金額</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>今回入庫する数</th>
-                          <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>操作</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {/* 🌟 変更：displayOrders ではなく groupedOrders をマップする */}
-                        {groupedOrders.map(order => {
-                          const product = originalProducts.find(p => p.id === order.product_id) || {};
-                          const maxQty = order.quantity; // 🌟 追加：もともとの発注数
-                          const currentQty = receiveInputs[order.product_id] !== undefined ? receiveInputs[order.product_id] : maxQty; // 🌟 追加：入力された数
+                        <thead>
+                          <tr style={{ background: '#f8fafc', color: '#64748b', fontSize: '0.9rem' }}>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>商品名 / カテゴリ</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>最新発注日</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }}>入庫予定数 / 金額</th>
+                            {/* 🌟 変更：印刷時に不要な操作列を隠すため no-print を追加 */}
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">今回入庫する数</th>
+                            <th style={{ padding: '16px', borderBottom: '1px solid #e2e8f0' }} className="no-print">操作</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {/* 🌟 変更：displayOrders ではなく groupedOrders をマップする */}
+                          {groupedOrders.map(order => {
+                            const product = originalProducts.find(p => p.id === order.product_id) || {};
+                            const maxQty = order.quantity; // 🌟 追加：もともとの発注数
+                            const currentQty = receiveInputs[order.product_id] !== undefined ? receiveInputs[order.product_id] : maxQty; // 🌟 追加：入力された数
 
-                          return (
-                            // 🌟 変更：keyを product_id に変更
-                            <tr key={order.product_id} style={{ borderBottom: '1px solid #e2e8f0', background: '#fff' }}>
-                              <td style={{ padding: '16px' }}>
-                                <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{order.products?.name || '不明な商品'}</div>
-                                <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
-                                  {product.manufacturer_name ? `${product.manufacturer_name} (${order.products?.category})` : order.products?.category}
-                                </div>
-                              </td>
-                              <td style={{ padding: '16px', color: '#64748b', fontSize: '0.9rem' }}>
-                                {order.ordered_at ? new Date(order.ordered_at).toLocaleDateString('ja-JP') : '-'}
-                              </td>
-                              <td style={{ padding: '16px' }}>
-                                {/* 🌟 変更：元の数はグレー表示に変更 */}
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                  <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#94a3b8' }}>{maxQty}</span>
-                                  <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
-                                    ¥{(maxQty * (product.cost_price || 0)).toLocaleString()}
-                                  </span>
-                                </div>
-                              </td>
-
-                              {/* 🌟 追加：今回入庫する数コントローラー */}
-                              <td style={{ padding: '16px' }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                  <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: currentQty === maxQty ? '#10b981' : '#f59e0b' }}>{currentQty}</span>
-                                  <div style={{ display: 'flex', gap: '4px' }}>
-                                    <button onClick={() => handleReceiveQtyChange(order.product_id, -1, maxQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Minus size={16} /></button>
-                                    <button onClick={() => handleReceiveQtyChange(order.product_id, 1, maxQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Plus size={16} /></button>
+                            return (
+                              // 🌟 変更：keyを product_id に変更
+                              <tr key={order.product_id} style={{ borderBottom: '1px solid #e2e8f0', background: '#fff' }}>
+                                <td style={{ padding: '16px' }}>
+                                  <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{order.products?.name || '不明な商品'}</div>
+                                  <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                    {product.manufacturer_name ? `${product.manufacturer_name} (${order.products?.category})` : order.products?.category}
                                   </div>
-                                </div>
-                                {currentQty < maxQty && (
-                                  <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold', marginTop: '4px' }}>
-                                    ※残り {maxQty - currentQty} 個は未入庫に残ります
+                                </td>
+                                <td style={{ padding: '16px', color: '#64748b', fontSize: '0.9rem' }}>
+                                  {order.ordered_at ? new Date(order.ordered_at).toLocaleDateString('ja-JP') : '-'}
+                                </td>
+                                <td style={{ padding: '16px' }}>
+                                  {/* 🌟 変更：元の数はグレー表示に変更 */}
+                                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: '#94a3b8' }}>{maxQty}</span>
+                                    <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 'bold' }}>
+                                      ¥{(maxQty * (product.cost_price || 0)).toLocaleString()}
+                                    </span>
                                   </div>
-                                )}
-                              </td>
+                                </td>
 
-                              {/* 🌟 追加：ゴミ箱（完全キャンセル） */}
-                              <td style={{ padding: '16px' }}>
-                                <button onClick={() => handleCancelReceiveOrder(order.product_id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }} title="欠品・廃盤で発注を取り消す">
-                                  <Trash2 size={18} />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                                {/* 🌟 変更：印刷時に操作列を隠すため no-print を追加 */}
+                                <td style={{ padding: '16px' }} className="no-print">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <span style={{ fontSize: '1.4rem', fontWeight: 'bold', color: currentQty === maxQty ? '#10b981' : '#f59e0b' }}>{currentQty}</span>
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                      <button onClick={() => handleReceiveQtyChange(order.product_id, -1, maxQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Minus size={16} /></button>
+                                      <button onClick={() => handleReceiveQtyChange(order.product_id, 1, maxQty)} style={{ width: '32px', height: '32px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}><Plus size={16} /></button>
+                                    </div>
+                                  </div>
+                                  {currentQty < maxQty && (
+                                    <div style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 'bold', marginTop: '4px' }}>
+                                      ※残り {maxQty - currentQty} 個は未入庫に残ります
+                                    </div>
+                                  )}
+                                </td>
+
+                                {/* 🌟 変更：印刷時に操作列を隠すため no-print を追加 */}
+                                <td style={{ padding: '16px' }} className="no-print">
+                                  <button onClick={() => handleCancelReceiveOrder(order.product_id)} style={{ padding: '8px', background: '#fee2e2', border: 'none', borderRadius: '8px', color: '#ef4444', cursor: 'pointer' }} title="欠品・廃盤で発注を取り消す">
+                                    <Trash2 size={18} />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                   </div>
                 );
               })()}
@@ -1605,14 +1824,20 @@ const InventoryManager = () => {
                                   const dateStr = `${d.getDate()}日 ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
                                   
                                   return (
-                                    <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0' }}>
-                                      <td style={{ padding: '12px 16px', color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>{dateStr}</td>
+                                    // 🌟 変更：返品の場合は背景色を薄い赤に
+                                    <tr key={log.id} style={{ borderBottom: '1px solid #e2e8f0', background: log.reason === '返品' ? '#fef2f2' : '#fff' }}>
+                                      <td style={{ padding: '12px 16px' }}>
+                                        <div style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>{dateStr}</div>
+                                        <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: log.reason === '返品' ? '#ef4444' : '#10b981', marginTop: '4px' }}>{log.reason}</div>
+                                      </td>
                                       <td style={{ padding: '12px 16px' }}>
                                         <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '0.95rem' }}>{product.name || '削除された商品'}</div>
                                         <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>{product.category || '-'}</div>
                                       </td>
                                       <td style={{ padding: '12px 16px' }}>
-                                        <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#10b981' }}>+{log.change_amount}</span>
+                                        <span style={{ fontSize: '1.1rem', fontWeight: 'bold', color: log.reason === '返品' ? '#ef4444' : '#10b981' }}>
+                                          {log.change_amount > 0 ? '+' : ''}{log.change_amount}
+                                        </span>
                                       </td>
                                       <td style={{ padding: '12px 16px' }}>
                                         <button onClick={() => handleRevertReceive(log)} style={{ padding: '6px 10px', background: '#fee2e2', color: '#ef4444', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '0.8rem' }}>
@@ -1690,12 +1915,12 @@ const InventoryManager = () => {
                       {/* 期間の総合計パネル */}
                       <div style={{ display: 'flex', gap: '20px', marginBottom: '20px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', border: '1px solid #bbf7d0' }}>
                         <div>
-                          <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold' }}>期間合計 入庫数</div>
+                          <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold' }}>純入庫数 (返品差引後)</div>
                           <div style={{ fontSize: '1.4rem', color: '#15803d', fontWeight: '900' }}>{totalQty} 個</div>
                         </div>
                         <div style={{ width: '1px', background: '#bbf7d0' }} />
                         <div>
-                          <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold' }}>期間合計 仕入額 (概算)</div>
+                          <div style={{ fontSize: '0.8rem', color: '#166534', fontWeight: 'bold' }}>実質請求額 (仕入 - 返品)</div>
                           <div style={{ fontSize: '1.4rem', color: '#15803d', fontWeight: '900' }}>¥{totalAmount.toLocaleString()}</div>
                         </div>
                       </div>
@@ -1738,6 +1963,495 @@ const InventoryManager = () => {
                 })()}
               </div>
             )}
+          </div>
+        )}
+        {/* ▲▲▲ ここまで ▲▲▲ */}
+
+        {/* ▼▼▼ 新規追加：ビュー：在庫照会画面 ▼▼▼ */}
+        {activeView === 'inventory_view' && (
+          <div style={{ animation: 'fadeIn 0.3s', maxWidth: '1000px', margin: '0 auto' }}>
+            <style>{`
+              @media print {
+                body * { visibility: hidden; }
+                #print-area, #print-area * { visibility: visible; }
+                #print-area { position: absolute; left: 0; top: 0; width: 100%; padding: 20px; }
+                .no-print { display: none !important; }
+              }
+            `}</style>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Search size={24} color="#8b5cf6" /> 在庫照会
+              </h2>
+              <button onClick={() => window.print()} style={{ padding: '10px 16px', background: '#fff', border: '2px solid #e2e8f0', borderRadius: '10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold', color: '#64748b' }} className="no-print">
+                <Printer size={18} /> リスト印刷
+              </button>
+            </div>
+
+            {/* 検索・フィルターパネル */}
+            <div className="no-print" style={{ background: '#fff', padding: '20px', borderRadius: '16px', border: '1px solid #e2e8f0', marginBottom: '25px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', display: 'flex', flexDirection: 'column', gap: '15px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>フリーワード検索</label>
+                  <input 
+                    type="text" 
+                    placeholder="商品名やメーカー名" 
+                    value={invSearchQuery} 
+                    onChange={(e) => setInvSearchQuery(e.target.value)} 
+                    style={inputStyle} 
+                  />
+                </div>
+                <div>
+                  {/* 🌟 変更：業務用はカテゴリ、店販用はメーカー名で絞り込み */}
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>カテゴリ絞り込み</label>
+                  <select value={invFilterGroup} onChange={(e) => setInvFilterGroup(e.target.value)} style={inputStyle}>
+                    <option value="all">すべて</option>
+                    <option value="unspecified">メーカー未登録 (店販用)</option>
+                    <optgroup label="【業務用】カテゴリ">
+                      {Array.from(new Set(originalProducts.filter(p => p.usage_type === '業務用').map(p => p.category).filter(Boolean))).sort().map(c => (
+                        <option key={`biz-${c}`} value={c}>{c}</option>
+                      ))}
+                    </optgroup>
+                    <optgroup label="【店販用】メーカー">
+                      {Array.from(new Set(originalProducts.filter(p => p.usage_type === '店販用').map(p => p.manufacturer_name).filter(Boolean))).sort().map(m => (
+                        <option key={`ret-${m}`} value={m}>{m}</option>
+                      ))}
+                    </optgroup>
+                  </select>
+                </div>
+                <div>
+                  <label style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>取引先（ディーラー）</label>
+                  <select value={invFilterDealer} onChange={(e) => setInvFilterDealer(e.target.value)} style={inputStyle}>
+                    <option value="all">すべての取引先</option>
+                    <option value="unspecified">指定なし</option>
+                    {dealers.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input 
+                  type="checkbox" 
+                  id="alertCheck"
+                  checked={invFilterAlertOnly}
+                  onChange={(e) => setInvFilterAlertOnly(e.target.checked)}
+                  style={{ width: '18px', height: '18px', cursor: 'pointer' }}
+                />
+                <label htmlFor="alertCheck" style={{ fontSize: '0.95rem', fontWeight: 'bold', color: '#ef4444', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <AlertCircle size={18} /> 発注点以下の商品（在庫不足）のみ表示
+                </label>
+              </div>
+            </div>
+
+            {/* 結果リストと集計 */}
+            {(() => {
+              // フィルター処理
+              const filteredList = originalProducts.filter(p => {
+                const q = invSearchQuery.toLowerCase();
+                const matchSearch = !q || (p.name || '').toLowerCase().includes(q) || (p.manufacturer_name || '').toLowerCase().includes(q) || (p.category || '').toLowerCase().includes(q);
+                
+                // 🌟 変更：業務用はカテゴリ、店販用はメーカー名で判定
+                let matchGroup = false;
+                if (invFilterGroup === 'all') {
+                  matchGroup = true;
+                } else if (p.usage_type === '業務用') {
+                  matchGroup = p.category === invFilterGroup;
+                } else {
+                  // 店販用
+                  matchGroup = invFilterGroup === 'unspecified' ? !p.manufacturer_name : p.manufacturer_name === invFilterGroup;
+                }
+
+                const matchDealer = invFilterDealer === 'all' || (invFilterDealer === 'unspecified' ? !p.dealer_id : p.dealer_id === invFilterDealer);
+                const matchAlert = !invFilterAlertOnly || (p.stock <= p.reorder_point);
+                return matchSearch && matchGroup && matchDealer && matchAlert;
+              });
+
+              // 金額集計
+              const totalValue = filteredList.reduce((sum, p) => sum + ((p.stock || 0) * (p.cost_price || 0)), 0);
+
+              return (
+                <div id="print-area" style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+                  
+                  {/* 合計金額ヘッダー */}
+                  <div style={{ padding: '20px', background: '#f8fafc', borderBottom: '2px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#64748b' }}>表示中の商品数: {filteredList.length}件</div>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>棚卸資産額（仕入総額）</div>
+                    </div>
+                    <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#8b5cf6' }}>¥{totalValue.toLocaleString()}</span>
+                  </div>
+
+                  {/* リスト表示 */}
+                  {filteredList.length === 0 ? (
+                    <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8' }}>
+                      <Search size={48} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
+                      条件に一致する商品がありません。
+                    </div>
+                  ) : (
+                    <div style={{ overflowX: 'auto' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                        <thead>
+                          <tr style={{ background: '#f1f5f9', color: '#64748b', fontSize: '0.9rem' }}>
+                            <th style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0' }}>商品情報</th>
+                            <th style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>現在庫</th>
+                            <th style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>仕入単価</th>
+                            <th style={{ padding: '12px 16px', borderBottom: '1px solid #e2e8f0', textAlign: 'right' }}>資産額 (在庫×単価)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredList
+                            // 🌟 変更：用途(業務用/店販用)で分けた後、それぞれカテゴリ順/メーカー名順に並べ替え
+                            .sort((a, b) => {
+                              const typeCompare = (a.usage_type || '').localeCompare(b.usage_type || '', 'ja');
+                              if (typeCompare !== 0) return typeCompare; // まず「業務用」「店販用」でかたまりを分ける
+                              
+                              const groupA = a.usage_type === '業務用' ? (a.category || '') : (a.manufacturer_name || 'メーカー未登録');
+                              const groupB = b.usage_type === '業務用' ? (b.category || '') : (b.manufacturer_name || 'メーカー未登録');
+                              const groupCompare = groupA.localeCompare(groupB, 'ja');
+                              if (groupCompare !== 0) return groupCompare;
+                              
+                              return (a.name || '').localeCompare(b.name || '', 'ja');
+                            })
+                            .map(p => {
+                              const isLowStock = p.stock <= p.reorder_point;
+                              const assetValue = (p.stock || 0) * (p.cost_price || 0);
+
+                              return (
+                                <tr key={p.id} style={{ borderBottom: '1px solid #e2e8f0', background: isLowStock ? '#fef2f2' : '#fff' }}>
+                                  <td style={{ padding: '12px 16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                      <span style={{ fontSize: '0.7rem', background: p.usage_type === '業務用' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                        {p.usage_type || '店販用'}
+                                      </span>
+                                      <div style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem' }}>{p.name}</div>
+                                    </div>
+                                    {/* 🌟 変更：業務用はカテゴリ、店販用はメーカー名を表示 */}
+                                    <div style={{ fontSize: '0.8rem', color: '#64748b', marginTop: '4px' }}>
+                                      {p.usage_type === '業務用' ? p.category : (p.manufacturer_name || 'メーカー未登録')}
+                                    </div>
+                                  </td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'right' }}>
+                                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: isLowStock ? '#ef4444' : '#1e293b' }}>
+                                      {p.stock || 0}
+                                    </span>
+                                    {isLowStock && <AlertCircle size={14} color="#ef4444" style={{ verticalAlign: 'middle', marginLeft: '4px' }} title="在庫不足" />}
+                                  </td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'right', color: '#64748b', fontWeight: 'bold' }}>
+                                    ¥{(p.cost_price || 0).toLocaleString()}
+                                  </td>
+                                  <td style={{ padding: '12px 16px', textAlign: 'right', fontWeight: 'bold', color: '#8b5cf6', fontSize: '1.1rem' }}>
+                                    ¥{assetValue.toLocaleString()}
+                                  </td>
+                                </tr>
+                              );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+        {/* ▲▲▲ ここまで ▲▲▲ */}
+
+        {/* ▼▼▼ 新規追加：ビュー：棚卸（たなおろし）画面 ▼▼▼ */}
+        {activeView === 'inventory_check' && (
+          <div style={{ animation: 'fadeIn 0.3s', maxWidth: '800px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <ClipboardList size={24} color="#ec4899" /> 月末棚卸処理
+              </h2>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '25px' }}>
+              {['業務用', '店販用'].map(tab => (
+                <button
+                  key={tab}
+                  onClick={() => setActiveInventoryCheckTab(tab)}
+                  style={{ flex: 1, padding: '14px', borderRadius: '12px', fontWeight: 'bold', border: 'none', cursor: 'pointer', transition: '0.2s', background: activeInventoryCheckTab === tab ? '#ec4899' : '#fff', color: activeInventoryCheckTab === tab ? '#fff' : '#64748b', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}
+                >
+                  {tab}
+                </button>
+              ))}
+            </div>
+
+            {/* ▼▼▼ 追加：カテゴリ別集計＆リスト表示UI ▼▼▼ */}
+            {(() => {
+              const tabProducts = originalProducts.filter(p => p.usage_type === activeInventoryCheckTab);
+              if (tabProducts.length === 0) {
+                return (
+                  <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', background: '#fff', borderRadius: '16px' }}>
+                    登録されている{activeInventoryCheckTab}商品がありません。
+                  </div>
+                );
+              }
+
+              // 🌟 カテゴリごとに商品をグループ化し、金額を集計
+              const catData = {};
+              let grandTotal = 0;
+              
+              tabProducts.forEach(p => {
+                const sysStock = p.stock || 0;
+                // まだ入力されていなければシステム在庫を初期値とする
+                const realStock = inventoryInputs[p.id] !== undefined ? inventoryInputs[p.id] : sysStock;
+                const cost = p.cost_price || 0;
+                const subtotal = realStock * cost; // 実在庫 × 仕入価格
+                
+                if (!catData[p.category]) catData[p.category] = { products: [], totalAmount: 0 };
+                catData[p.category].products.push(p);
+                catData[p.category].totalAmount += subtotal;
+                grandTotal += subtotal;
+              });
+
+              return (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                  
+                  {/* 全体の総仕入れ価格（棚卸資産） */}
+                  <div style={{ padding: '20px', background: '#fdf2f8', border: '1px solid #fbcfe8', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' }}>
+                    <div>
+                      <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#be185d', marginBottom: '4px' }}>{activeInventoryCheckTab}</div>
+                      <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#831843' }}>総棚卸資産額（概算）</div>
+                    </div>
+                    <span style={{ fontSize: '1.8rem', fontWeight: '900', color: '#be185d' }}>¥{grandTotal.toLocaleString()}</span>
+                  </div>
+
+                  {/* カテゴリごとのアコーディオン */}
+                  {Object.entries(catData).map(([catName, data]) => {
+                    const isExpanded = expandedInvCats.includes(catName); // 🌟 変更：開いているかどうかの判定
+                    return (
+                      <div key={catName} style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                        
+                        {/* アコーディオンヘッダー */}
+                        <button 
+                          onClick={() => setExpandedInvCats(prev => prev.includes(catName) ? prev.filter(c => c !== catName) : [...prev, catName])}
+                          style={{ width: '100%', padding: '16px 20px', background: !isExpanded ? '#fff' : '#f8fafc', border: 'none', borderBottom: !isExpanded ? 'none' : '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: '0.2s' }}
+                        >
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.1rem' }}>{catName}</span>
+                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>({data.products.length}件)</span>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                            <span style={{ fontWeight: 'bold', color: '#ec4899', fontSize: '1.1rem' }}>¥{data.totalAmount.toLocaleString()}</span>
+                            <span style={{ transform: !isExpanded ? 'rotate(0deg)' : 'rotate(180deg)', transition: '0.3s', color: '#94a3b8' }}>▼</span>
+                          </div>
+                        </button>
+                        
+                        {/* 🌟 商品リスト（横長1列のリスト表示） */}
+                        {isExpanded && (
+                          <div style={{ display: 'flex', flexDirection: 'column' }}>
+                            {data.products
+                              .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja')) // 🌟 追加：あいうえお順ソート
+                              .map((p, idx) => {
+                              const sysStock = p.stock || 0;
+                              const realStock = inventoryInputs[p.id] !== undefined ? inventoryInputs[p.id] : sysStock;
+                              const diff = realStock - sysStock;
+                              const cost = p.cost_price || 0;
+                              
+                              return (
+                                <div key={p.id} style={{ padding: '15px 20px', borderBottom: idx === data.products.length - 1 ? 'none' : '1px solid #f1f5f9', display: 'flex', flexDirection: isPC ? 'row' : 'column', justifyContent: 'space-between', alignItems: isPC ? 'center' : 'stretch', gap: '15px', background: diff !== 0 ? '#fdf2f8' : '#fff', transition: '0.2s' }}>
+                                  
+                                  {/* 左側：商品情報 */}
+                                  <div style={{ flex: 1 }}>
+                                    {p.manufacturer_name && <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '4px' }}>{p.manufacturer_name}</div>}
+                                    <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '8px' }}>{p.name}</div>
+                                    <div style={{ display: 'flex', gap: '20px', fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold' }}>
+                                      <span>システム在庫: <span style={{ color: '#1e293b' }}>{sysStock}</span></span>
+                                      <span>仕入価格: <span style={{ color: '#10b981' }}>¥{cost.toLocaleString()}</span></span>
+                                    </div>
+                                  </div>
+                                  
+                                  {/* 右側：実在庫コントローラー */}
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isPC ? 'flex-end' : 'space-between', background: '#f8fafc', padding: '10px 15px', borderRadius: '12px', border: diff !== 0 ? '2px solid #fbcfe8' : '1px solid #e2e8f0' }}>
+                                    
+                                    {/* 差異の表示 */}
+                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '50px' }}>
+                                      <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>実在庫</span>
+                                      {diff !== 0 && (
+                                        <span style={{ fontSize: '0.85rem', fontWeight: '900', color: diff > 0 ? '#10b981' : '#ef4444' }}>
+                                          {diff > 0 ? '+' : ''}{diff}
+                                        </span>
+                                      )}
+                                    </div>
+                                    
+                                    {/* ＋/－ と入力欄 */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                      <button onClick={() => handleInventoryQtyChange(p.id, -1, sysStock)} style={{ width: '40px', height: '40px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 }}><Minus size={18} /></button>
+                                      <input 
+                                        type="number" 
+                                        value={realStock} 
+                                        onChange={(e) => handleInventoryInputChange(p.id, e.target.value, sysStock)}
+                                        style={{ width: '70px', height: '40px', boxSizing: 'border-box', padding: '8px', textAlign: 'center', fontSize: '1.2rem', fontWeight: '900', border: '1px solid #cbd5e1', borderRadius: '8px', background: '#fff', color: diff !== 0 ? '#ec4899' : '#1e293b' }}
+                                      />
+                                      <button onClick={() => handleInventoryQtyChange(p.id, 1, sysStock)} style={{ width: '40px', height: '40px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 }}><Plus size={18} /></button>
+                                    </div>
+                                    
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
+            {/* ▲▲▲ ここまで ▲▲▲ */}
+          </div>
+        )}
+        {/* ▲▲▲ ここまで ▲▲▲ */}
+
+        {/* ▼▼▼ 新規追加：ビュー：返品画面 ▼▼▼ */}
+        {activeView === 'return' && (
+          <div style={{ animation: 'fadeIn 0.3s', maxWidth: '900px', margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ fontSize: '1.4rem', color: '#1e293b', margin: 0, fontWeight: '900', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <Undo2 size={24} color="#ef4444" /> 返品入力
+              </h2>
+            </div>
+
+            {/* タブ切り替え（ディーラー別） */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', overflowX: 'auto', paddingBottom: '4px' }}>
+              {dealers.map(d => {
+                const hasProducts = originalProducts.some(p => p.dealer_id === d.id);
+                if (!hasProducts) return null; 
+                return (
+                  <button key={d.id} onClick={() => setActiveReturnTab(d.id)} style={{ flexShrink: 0, padding: '10px 20px', borderRadius: '12px', fontWeight: 'bold', border: 'none', cursor: 'pointer', transition: '0.2s', background: activeReturnTab === d.id ? '#ef4444' : '#fff', color: activeReturnTab === d.id ? '#fff' : '#64748b', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                    {d.name}
+                  </button>
+                );
+              })}
+              {originalProducts.some(p => !p.dealer_id) && (
+                <button onClick={() => setActiveReturnTab('unspecified')} style={{ flexShrink: 0, padding: '10px 20px', borderRadius: '12px', fontWeight: 'bold', border: 'none', cursor: 'pointer', transition: '0.2s', background: activeReturnTab === 'unspecified' ? '#ef4444' : '#fff', color: activeReturnTab === 'unspecified' ? '#fff' : '#64748b', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                  指定なし
+                </button>
+              )}
+            </div>
+
+            <div style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+              {(() => {
+                const displayProducts = originalProducts.filter(p => {
+                  if (activeReturnTab === 'unspecified') return !p.dealer_id;
+                  return p.dealer_id === activeReturnTab;
+                });
+
+                if (displayProducts.length === 0) {
+                  return (
+                    <div style={{ padding: '60px 20px', textAlign: 'center', color: '#94a3b8' }}>
+                      <Undo2 size={48} style={{ opacity: 0.5, marginBottom: '10px' }} /><br/>
+                      この取引先に紐づいている商品はありません。
+                    </div>
+                  );
+                }
+
+                // 🌟 カテゴリ（またはメーカー）ごとに商品をグループ化
+                const catData = {};
+                displayProducts.forEach(p => {
+                  const groupName = p.usage_type === '業務用' ? p.category : (p.manufacturer_name || 'メーカー未登録');
+                  if (!catData[groupName]) catData[groupName] = [];
+                  catData[groupName].push(p);
+                });
+
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '20px' }}>
+                    {Object.entries(catData)
+                      .sort(([keyA], [keyB]) => keyA.localeCompare(keyB, 'ja')) // グループ名もあいうえお順に
+                      .map(([groupName, products]) => {
+                      const isExpanded = expandedReturnCats.includes(groupName);
+
+                      // カテゴリ内で入力された返品数と返金額を集計
+                      let groupReturnQty = 0;
+                      let groupReturnAmount = 0;
+                      products.forEach(p => {
+                        const qty = returnInputs[p.id] || 0;
+                        if (qty > 0) {
+                          groupReturnQty += qty;
+                          groupReturnAmount += qty * (p.cost_price || 0);
+                        }
+                      });
+
+                      return (
+                        <div key={groupName} style={{ background: '#fff', borderRadius: '16px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+                          
+                          {/* アコーディオンヘッダー */}
+                          <button 
+                            onClick={() => setExpandedReturnCats(prev => prev.includes(groupName) ? prev.filter(c => c !== groupName) : [...prev, groupName])}
+                            style={{ width: '100%', padding: '16px 20px', background: !isExpanded ? '#fff' : '#fef2f2', border: 'none', borderBottom: !isExpanded ? 'none' : '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer', transition: '0.2s' }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                              <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.1rem' }}>{groupName}</span>
+                              <span style={{ fontSize: '0.85rem', color: '#64748b' }}>({products.length}件)</span>
+                            </div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                              {groupReturnQty > 0 && (
+                                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#ef4444', background: '#fee2e2', padding: '4px 10px', borderRadius: '12px' }}>
+                                  {groupReturnQty}件入力 (¥{groupReturnAmount.toLocaleString()})
+                                </span>
+                              )}
+                              <span style={{ transform: !isExpanded ? 'rotate(0deg)' : 'rotate(180deg)', transition: '0.3s', color: '#94a3b8' }}>▼</span>
+                            </div>
+                          </button>
+                          
+                          {/* 🌟 商品リスト（あいうえお順＆横長1列） */}
+                          {isExpanded && (
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                              {[...products]
+                                .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ja')) // あいうえお順にソート
+                                .map((product, idx, arr) => {
+                                  const currentStock = product.stock || 0;
+                                  const returnQty = returnInputs[product.id] || 0;
+                                  
+                                  return (
+                                    <div key={product.id} style={{ padding: '15px 20px', borderBottom: idx === arr.length - 1 ? 'none' : '1px solid #f1f5f9', display: 'flex', flexDirection: isPC ? 'row' : 'column', justifyContent: 'space-between', alignItems: isPC ? 'center' : 'stretch', gap: '15px', background: returnQty > 0 ? '#fef2f2' : '#fff', transition: '0.2s' }}>
+                                      
+                                      {/* 左側：商品情報 */}
+                                      <div style={{ flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                          <span style={{ fontSize: '0.7rem', background: product.usage_type === '業務用' ? '#f59e0b' : '#3b82f6', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>
+                                            {product.usage_type || '店販用'}
+                                          </span>
+                                          <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>{product.name}</div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '20px', fontSize: '0.9rem', color: '#64748b', fontWeight: 'bold', marginTop: '8px' }}>
+                                          <span>現在庫: <span style={{ color: currentStock === 0 ? '#ef4444' : '#1e293b', fontSize: '1.1rem' }}>{currentStock}</span></span>
+                                          <span>仕入価格: <span style={{ color: '#10b981' }}>¥{(product.cost_price || 0).toLocaleString()}</span></span>
+                                        </div>
+                                      </div>
+                                      
+                                      {/* 右側：返品コントローラー */}
+                                      <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: isPC ? 'flex-end' : 'space-between', background: '#f8fafc', padding: '10px 15px', borderRadius: '12px', border: returnQty > 0 ? '2px solid #fecaca' : '1px solid #e2e8f0' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '50px' }}>
+                                          <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b' }}>返品数</span>
+                                          {returnQty > 0 && (
+                                            <span style={{ fontSize: '0.9rem', fontWeight: '900', color: '#ef4444' }}>
+                                              {returnQty}
+                                            </span>
+                                          )}
+                                        </div>
+                                        
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                          <button onClick={() => handleReturnQtyChange(product.id, -1, currentStock)} style={{ width: '40px', height: '40px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b', flexShrink: 0 }}><Minus size={18} /></button>
+                                          <div style={{ width: '60px', textAlign: 'center', fontSize: '1.2rem', fontWeight: '900', color: returnQty > 0 ? '#ef4444' : '#cbd5e1' }}>
+                                            {returnQty}
+                                          </div>
+                                          <button onClick={() => handleReturnQtyChange(product.id, 1, currentStock)} disabled={currentStock === 0 || returnQty >= currentStock} style={{ width: '40px', height: '40px', borderRadius: '8px', border: '1px solid #e2e8f0', background: '#fff', cursor: (currentStock === 0 || returnQty >= currentStock) ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: (currentStock === 0 || returnQty >= currentStock) ? '#cbd5e1' : '#64748b', flexShrink: 0 }}><Plus size={18} /></button>
+                                        </div>
+                                      </div>
+                                      
+                                    </div>
+                                  );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
           </div>
         )}
         {/* ▲▲▲ ここまで ▲▲▲ */}
@@ -1861,6 +2575,105 @@ const InventoryManager = () => {
             
           </div>
         </div>
+      )}
+      {/* ▲▲▲ ここまで ▲▲▲ */}
+
+      {/* ▼▼▼ 新規追加：棚卸画面専用 フッター ▼▼▼ */}
+      {activeView === 'inventory_check' && (
+        <>
+          <style>{`@keyframes pulse-pink { 0% { box-shadow: 0 4px 15px rgba(236,72,153,0.4); } 50% { box-shadow: 0 4px 25px rgba(236,72,153,0.7); } 100% { box-shadow: 0 4px 15px rgba(236,72,153,0.4); } }`}</style>
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+            <div style={isPC ? { maxWidth: '800px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'space-between' } : { display: 'flex', flexDirection: 'column-reverse', gap: '10px', width: '100%' }}>
+              
+              {Object.keys(inventoryInputs).length > 0 && (
+                <button 
+                  onClick={() => {
+                    if (window.confirm('入力内容を破棄してリセットしますか？')) setInventoryInputs({});
+                  }}
+                  style={{ width: isPC ? 'auto' : '100%', padding: '12px 20px', border: 'none', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: '0.3s', background: '#fee2e2', color: '#ef4444', cursor: 'pointer', fontWeight: 'bold' }}
+                >
+                  <RotateCcw size={18} />
+                  <span style={{ fontSize: '0.9rem' }}>リセット</span>
+                </button>
+              )}
+
+              {(() => {
+                // 差分がある商品の数を数える
+                const diffCount = Object.keys(inventoryInputs).filter(id => {
+                  const origP = originalProducts.find(p => p.id === id);
+                  return origP && inventoryInputs[id] !== (origP.stock || 0);
+                }).length;
+
+                return (
+                  <button 
+                    onClick={handleSaveInventoryCheck} 
+                    disabled={diffCount === 0} 
+                    style={{ 
+                      flex: 1, padding: '15px', border: 'none', borderRadius: '12px', 
+                      display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
+                      background: diffCount > 0 ? '#ec4899' : '#cbd5e1', color: '#fff', cursor: diffCount > 0 ? 'pointer' : 'not-allowed', 
+                      animation: diffCount > 0 ? 'pulse-pink 2s infinite' : 'none' 
+                    }}
+                  >
+                    <ClipboardList size={20} />
+                    <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>
+                      {diffCount > 0 ? `${diffCount}件の在庫差異を補正して確定` : '在庫差異はありません'}
+                    </span>
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+        </>
+      )}
+      {/* ▲▲▲ ここまで ▲▲▲ */}
+
+      {/* ▼▼▼ 新規追加：返品画面専用 フッター ▼▼▼ */}
+      {activeView === 'return' && Object.keys(returnInputs).some(id => returnInputs[id] > 0) && (
+        <>
+          <style>{`@keyframes pulse-red { 0% { box-shadow: 0 4px 15px rgba(239,68,68,0.4); } 50% { box-shadow: 0 4px 25px rgba(239,68,68,0.7); } 100% { box-shadow: 0 4px 15px rgba(239,68,68,0.4); } }`}</style>
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+            <div style={isPC ? { maxWidth: '900px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'space-between' } : { display: 'flex', flexDirection: 'column-reverse', gap: '10px', width: '100%' }}>
+              
+              <button 
+                onClick={() => {
+                  if (window.confirm('入力内容を破棄してリセットしますか？')) setReturnInputs({});
+                }}
+                style={{ width: isPC ? 'auto' : '100%', padding: '12px 20px', border: 'none', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', transition: '0.3s', background: '#f1f5f9', color: '#64748b', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                <RotateCcw size={18} />
+                <span style={{ fontSize: '0.9rem' }}>リセット</span>
+              </button>
+
+              {(() => {
+                let totalAmount = 0;
+                let totalQty = 0;
+                Object.keys(returnInputs).forEach(pid => {
+                  const qty = returnInputs[pid];
+                  if (qty > 0) {
+                    const product = originalProducts.find(p => p.id === pid);
+                    totalAmount += qty * (product?.cost_price || 0);
+                    totalQty += qty;
+                  }
+                });
+
+                return (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '15px', justifyContent: 'flex-end', flexDirection: isPC ? 'row' : 'column', width: isPC ? 'auto' : '100%' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', paddingRight: isPC ? '10px' : '0', justifyContent: isPC ? 'flex-end' : 'space-between', width: isPC ? 'auto' : '100%' }}>
+                      <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#64748b' }}>返品に伴う返金額（概算）:</span>
+                      <span style={{ fontSize: '1.6rem', fontWeight: '900', color: '#ef4444' }}>¥{totalAmount.toLocaleString()}</span>
+                    </div>
+
+                    <button onClick={handleFinalizeReturn} style={{ width: isPC ? '300px' : '100%', padding: '15px', border: 'none', borderRadius: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s', background: '#ef4444', color: '#fff', cursor: 'pointer', animation: 'pulse-red 2s infinite' }}>
+                      <Undo2 size={20} />
+                      <span style={{ fontSize: '1rem', fontWeight: 'bold' }}>{totalQty}件の返品を確定する</span>
+                    </button>
+                  </div>
+                );
+              })()}
+            </div>
+          </div>
+        </>
       )}
       {/* ▲▲▲ ここまで ▲▲▲ */}
 
