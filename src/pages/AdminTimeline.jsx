@@ -8,7 +8,7 @@ import {
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
   ShoppingBag, Scissors, Settings, Search, 
   PackageOpen, // 👈 🌟 🆕 追加：在庫管理アイコン
-  BarChart3, RotateCcw // 🚀 🆕 追加：ボトムナビ用と横画面案内用のアイコン
+  BarChart3 // 🚀 🆕 追加：ボトムナビ用アイコン
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -210,30 +210,15 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
   // ✅ 🆕 追加：この変数が抜けていたためエラーが出ていました
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
-  
-  // 🚀 🆕 追加：スマホの縦画面（Portrait）を検知するState
-  const [isPortrait, setIsPortrait] = useState(window.matchMedia("(orientation: portrait)").matches);
-
   useEffect(() => {
     const handleResize = () => setWindowWidth(window.innerWidth);
     window.addEventListener('resize', handleResize);
-
-    // 🚀 🆕 追加：画面の向きが変わった時のイベントリスナー
-    const mql = window.matchMedia("(orientation: portrait)");
-    const handleOrientationChange = (e) => setIsPortrait(e.matches);
-    mql.addEventListener("change", handleOrientationChange);
-
-    return () => {
-      window.removeEventListener('resize', handleResize);
-      mql.removeEventListener("change", handleOrientationChange); // クリーンアップ
-    };
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
   
-  // 🚀 🆕 追加：プレビューモードかどうかを判定 (AdminReservationsから移植)
+  // 🚀 🆕 追加：プレビューモードかどうかを判定し、スマホ幅として扱う
   const searchParams = new URLSearchParams(location.search);
   const isPreviewMode = searchParams.get('mode') === 'preview';
-
-  // 🚀 🆕 修正：プレビューモードの場合はスマホ幅として扱う
   const isPC = isPreviewMode ? false : windowWidth > 1024; 
 
   // 🚀 🆕 追加：日付移動の関数
@@ -1030,171 +1015,223 @@ const timeSlots = useMemo(() => {
       })()}
 
       {/* タイムライン本体 */}
-      {/* 🚀 🆕 修正：スマホの時はボトムナビの分だけ paddingBottom を空ける */}
-      <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none', paddingBottom: !isPC ? '85px' : '0' }}>
-        <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
-          <thead style={{ position: 'sticky', top: 0, zIndex: 100 }}>
-            <tr>
-              {/* 🚀 🆕 修正：スタッフを日付（曜日）表示に変更 */}
-              <th style={{ position: 'sticky', left: 0, zIndex: 110, background: '#e2e8f0', padding: '10px', borderRight: '3px solid #94a3b8', borderBottom: '3px solid #94a3b8', width: '140px', color: '#1e293b', fontSize: '1.2rem', fontWeight: '900', textAlign: 'center' }}>
-                {(() => {
-                  const d = new Date(selectedDate);
-                  const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
-                  return `${d.getDate()}日(${dayNames[d.getDay()]})`;
-                })()}
-              </th>
-              {timeSlots.map(time => (
-                <th key={time} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '1.3rem', background: '#e2e8f0', textAlign: 'center' }}>{time}</th>
-              ))}
-            </tr>
-          </thead>
-<tbody>
-  {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => (
-    <tr key={staff.id} style={{ height: '80px', background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
-      <td style={{ 
-  position: 'sticky', left: 0, zIndex: 90, background: idx % 2 === 0 ? '#fff' : '#f8fafc', 
-  padding: '8px', borderRight: '3px solid #94a3b8', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold' 
-}}>
-  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}> {/* 👈 justifyContent を追加 */}
-    <span style={{ fontSize: '1.1rem', color: '#1e293b' }}>{staff.name}</span>
-  </div>
-</td>
-{timeSlots.map(time => {
-        const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
-        const staffIdVal = staff.id === 'free' ? null : staff.id;
-
-        // 🚀 🆕 修正：店舗全体の定休日と、スタッフ個別の定休日を追加で判定する！
-        const targetDate = new Date(selectedDate);
-        const dayIndex = targetDate.getDay();
-        const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex];
-        const hours = shop?.business_hours?.[dayName];
+      {/* 🚀 🆕 修正：スマホの時はボトムナビが被らないように paddingBottom を空ける */}
+      <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none', paddingBottom: !isPC && !isPreviewMode ? '85px' : '0' }}>
         
-        // 💡 1. 店舗の定休日判定
-        const isShopClosed = isShopHoliday(shop, targetDate);
-        
-        // 💡 2. 🚀 🆕 修正：スタッフ個別の定休日 ＆ シフト（時間指定）判定！
-        let isStaffHoliday = false;
-        let isOutsideShift = false;
+        {isPC ? (
+          /* =======================================================
+             💻 PC版タイムライン（横軸：時間 / 縦軸：スタッフ）
+             ======================================================= */
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: 'max-content', minWidth: '100%' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 100 }}>
+              <tr>
+                <th style={{ position: 'sticky', left: 0, zIndex: 110, background: '#e2e8f0', padding: '10px', borderRight: '3px solid #94a3b8', borderBottom: '3px solid #94a3b8', width: '140px', color: '#1e293b', fontSize: '1.2rem', fontWeight: '900', textAlign: 'center' }}>
+                  {(() => {
+                    const d = new Date(selectedDate);
+                    const dayNames = ['日', '月', '火', '水', '木', '金', '土'];
+                    return `${d.getDate()}日(${dayNames[d.getDay()]})`;
+                  })()}
+                </th>
+                {timeSlots.map(time => (
+                  <th key={time} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '1.3rem', background: '#e2e8f0', textAlign: 'center' }}>{time}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => (
+                <tr key={staff.id} style={{ height: '80px', background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                  <td style={{ position: 'sticky', left: 0, zIndex: 90, background: idx % 2 === 0 ? '#fff' : '#f8fafc', padding: '8px', borderRight: '3px solid #94a3b8', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <span style={{ fontSize: '1.1rem', color: '#1e293b' }}>{staff.name}</span>
+                    </div>
+                  </td>
+                  {timeSlots.map(time => {
+                    const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
+                    const staffIdVal = staff.id === 'free' ? null : staff.id;
 
-        if (staff.id !== 'free') {
-          // まず通常の曜日休みをチェック
-          if (staff.weekly_holidays?.includes(dayIndex)) {
-            isStaffHoliday = true;
-          }
-          // 次にカスタムシフト（優先）をチェック
-          const shift = staff.custom_shifts?.[selectedDate];
-          if (shift) {
-            if (shift.type === 'off') {
-              isStaffHoliday = true; // 終日休み
-            } else if (shift.type === 'time') {
-              isStaffHoliday = false; // 休みの日でもシフトがあれば「出勤扱い」に戻す
-              // シフトの出勤時間外なら「シフト外（グレー）」にする
-              if (time < shift.start || time >= shift.end) {
-                isOutsideShift = true; 
-              }
-            }
-          }
-        }
-
-        const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
-        const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
-        
-        // 1. この枠に重なっている全予約を取得
-        // 1. お客様の予約・ブロック
-        const resMatches = reservations.filter(r => (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
-        
-        // 2. 🆕 プライベート予定
-        const privMatches = privateTasks.filter(p => (p.staff_id === staffIdVal) && currentSlotStart >= new Date(p.start_time).getTime() && currentSlotStart < new Date(p.end_time).getTime())
-          .map(p => ({ ...p, res_type: 'private_task', customer_name: p.title }));
-
-        const matches = [...resMatches, ...privMatches];
-        const hasRes = matches.length > 0;
-
-        // ✅ 🆕 修正：toLocaleTimeString をやめて、数値(getTime)で厳密に判定
-        const startingHere = matches.filter(r => 
-          new Date(r.start_time).getTime() === currentSlotStart
-        );
-        const isStart = startingHere.length > 0;
-
-        const isMultiple = matches.length > 1;
-        const firstRes = matches[0];
-        const intervalMin = shop?.slot_interval_min || 15;
-        const isEnd = hasRes && matches.some(r => new Date(r.end_time).getTime() === (currentSlotStart + intervalMin * 60000));
-        const colors = getCustomerColor(firstRes?.customer_name);
-
-        return (
-          <td key={time} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ 
-            minWidth: '120px', 
-            borderRight: '1.5px solid #cbd5e1', 
-            borderBottom: '1.5px solid #cbd5e1', 
-            position: 'relative', 
-            // 🚀 🆕 修正：シフト時間外(isOutsideShift)もグレー表示の対象に追加！
-            background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'),
-            padding: 0, 
-            cursor: 'pointer' 
-          }}>
-            {hasRes && (
-              <div style={{ position: 'absolute', inset: '6px 0', background: isMultiple ? '#e0e7ff' : colors.bg, borderTop: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderBottom: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderLeft: isStart ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRight: isEnd ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRadius: `${isStart ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isStart ? '8px' : '0'}`, display: 'flex', alignItems: 'center', justifyContent: isStart ? 'flex-start' : 'center', padding: isStart ? '0 10px' : '0', zIndex: 5, overflow: 'hidden' }}>
-                
-                {isStart ? (
-                  /* 🚀 🆕 修正：屋号バッジ ＋ 名前 のセット表示に強化 */
-                  <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', width: '100%' }}>
+                    const targetDate = new Date(selectedDate);
+                    const dayIndex = targetDate.getDay();
+                    const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex];
+                    const hours = shop?.business_hours?.[dayName];
                     
-                    {/* 🆕 屋号バッジ（識別キーに対応する名前がある場合のみ表示） */}
-                    {categoryMap[firstRes?.biz_type] && (
-                      <span style={{ 
-                        fontSize: '0.55rem', 
-                        padding: '1px 4px', 
-                        borderRadius: '3px',
-                        // カレンダー側と色を合わせています（footは青、それ以外は朱色）
-                        background: firstRes.biz_type === 'foot' ? '#4285f4' : '#d34817', 
-                        color: '#fff', 
-                        fontWeight: '900', 
-                        whiteSpace: 'nowrap',
-                        transform: 'scale(0.9)', // 少し小さくしてスッキリさせる
-                        flexShrink: 0 // バッジが潰れないように固定
-                      }}>
-                        {categoryMap[firstRes.biz_type].slice(0, 4)}
-                      </span>
-                    )}
+                    const isShopClosed = isShopHoliday(shop, targetDate);
+                    let isStaffHoliday = false;
+                    let isOutsideShift = false;
 
-                    {/* 👤 予約者名の表示 */}
-                    <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: isMultiple ? themeColor : colors.text, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                      {(() => {
-                        // この枠で開始する人が1人だけなら名前を優先
-                        if (startingHere.length === 1) {
-                          const res = startingHere[0];
-                          const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
-                          const name = masterName?.split(/[\s　]+/)[0] || "名前なし";
-                          
-                          // 🚀 🆕 警告アイコン（🚫と‼️）を組み合せる
-                          const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
-                          const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
-                          const icons = `${blockedIcon}${cancelIcon}`;
-
-                          return isMultiple 
-                            ? `${name} (${matches.length}名)${icons}` 
-                            : `${name} 様${icons}`;
+                    if (staff.id !== 'free') {
+                      if (staff.weekly_holidays?.includes(dayIndex)) isStaffHoliday = true;
+                      const shift = staff.custom_shifts?.[selectedDate];
+                      if (shift) {
+                        if (shift.type === 'off') isStaffHoliday = true;
+                        else if (shift.type === 'time') {
+                          isStaffHoliday = false;
+                          if (time < shift.start || time >= shift.end) isOutsideShift = true;
                         }
-                        // 同時に2人以上が開始する場合は人数を表示
-                        return `👥 ${matches.length}名`;
-                      })()}
-                    </span>
-                  </div>
+                      }
+                    }
 
-                ) : (
-                  /* 続きの枠は中央ライン（既存どおり） */
-                  <div style={{ width: '100%', height: '3px', background: isMultiple ? themeColor : colors.line, opacity: 0.4 }} />
-                )}
-              </div>
-            )}
-          </td>
-        );
-      })}
-          </tr>
-  ))}
-</tbody>
-</table>
+                    const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
+                    const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
+                    
+                    const resMatches = reservations.filter(r => (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
+                    const privMatches = privateTasks.filter(p => (p.staff_id === staffIdVal) && currentSlotStart >= new Date(p.start_time).getTime() && currentSlotStart < new Date(p.end_time).getTime()).map(p => ({ ...p, res_type: 'private_task', customer_name: p.title }));
+                    const matches = [...resMatches, ...privMatches];
+                    const hasRes = matches.length > 0;
+                    const startingHere = matches.filter(r => new Date(r.start_time).getTime() === currentSlotStart);
+                    const isStart = startingHere.length > 0;
+                    const isMultiple = matches.length > 1;
+                    const firstRes = matches[0];
+                    const intervalMin = shop?.slot_interval_min || 15;
+                    const isEnd = hasRes && matches.some(r => new Date(r.end_time).getTime() === (currentSlotStart + intervalMin * 60000));
+                    const colors = getCustomerColor(firstRes?.customer_name);
+
+                    return (
+                      <td key={time} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ minWidth: '120px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1.5px solid #cbd5e1', position: 'relative', background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'), padding: 0, cursor: 'pointer' }}>
+                        {hasRes && (
+                          <div style={{ position: 'absolute', inset: '6px 0', background: isMultiple ? '#e0e7ff' : colors.bg, borderTop: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderBottom: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderLeft: isStart ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRight: isEnd ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRadius: `${isStart ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isEnd ? '8px' : '0'} ${isStart ? '8px' : '0'}`, display: 'flex', alignItems: 'center', justifyContent: isStart ? 'flex-start' : 'center', padding: isStart ? '0 10px' : '0', zIndex: 5, overflow: 'hidden' }}>
+                            {isStart ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '6px', overflow: 'hidden', width: '100%' }}>
+                                {categoryMap[firstRes?.biz_type] && (
+                                  <span style={{ fontSize: '0.55rem', padding: '1px 4px', borderRadius: '3px', background: firstRes.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap', transform: 'scale(0.9)', flexShrink: 0 }}>
+                                    {categoryMap[firstRes.biz_type].slice(0, 4)}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: isMultiple ? themeColor : colors.text, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                                  {(() => {
+                                    if (startingHere.length === 1) {
+                                      const res = startingHere[0];
+                                      const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
+                                      const name = masterName?.split(/[\s ]+/)[0] || "名前なし";
+                                      const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
+                                      const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
+                                      const icons = `${blockedIcon}${cancelIcon}`;
+                                      return isMultiple ? `${name} (${matches.length}名)${icons}` : `${name} 様${icons}`;
+                                    }
+                                    return `👥 ${matches.length}名`;
+                                  })()}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ width: '100%', height: '3px', background: isMultiple ? themeColor : colors.line, opacity: 0.4 }} />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          /* =======================================================
+             📱 スマホ版タイムライン（縦軸：時間 / 横軸：スタッフ）
+             ======================================================= */
+          <table style={{ borderCollapse: 'separate', borderSpacing: 0, width: '100%', tableLayout: 'fixed', minWidth: `${50 + (staffs.length + 1) * 70}px` }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 100 }}>
+              <tr>
+                {/* 左上の日付セル */}
+                <th style={{ position: 'sticky', left: 0, zIndex: 110, background: '#e2e8f0', padding: '10px 4px', borderRight: '1.5px solid #cbd5e1', borderBottom: '3px solid #94a3b8', width: '50px', color: '#1e293b', fontSize: '0.8rem', fontWeight: '900', textAlign: 'center' }}>
+                  {(() => {
+                    const d = new Date(selectedDate);
+                    return `${d.getDate()}日`;
+                  })()}
+                </th>
+                {/* 横軸にスタッフを展開 */}
+                {[...staffs, { id: 'free', name: 'フリー' }].map((staff, idx) => (
+                  // 🚀 🆕 修正：文字がはみ出さないように overflow: 'hidden' と textOverflow: 'ellipsis' を追加
+                  <th key={staff.id} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '0.9rem', background: idx % 2 === 0 ? '#fff' : '#f8fafc', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {staff.name}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {/* 縦軸に時間を展開 */}
+              {timeSlots.map(time => (
+                <tr key={time} style={{ height: '70px' }}>
+                  <td style={{ position: 'sticky', left: 0, zIndex: 90, background: '#f8fafc', padding: '0 4px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold', textAlign: 'center' }}>
+                    <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{time}</span>
+                  </td>
+                  
+                  {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => {
+                    const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
+                    const staffIdVal = staff.id === 'free' ? null : staff.id;
+
+                    const targetDate = new Date(selectedDate);
+                    const dayIndex = targetDate.getDay();
+                    const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][dayIndex];
+                    const hours = shop?.business_hours?.[dayName];
+                    
+                    const isShopClosed = isShopHoliday(shop, targetDate);
+                    let isStaffHoliday = false;
+                    let isOutsideShift = false;
+
+                    if (staff.id !== 'free') {
+                      if (staff.weekly_holidays?.includes(dayIndex)) isStaffHoliday = true;
+                      const shift = staff.custom_shifts?.[selectedDate];
+                      if (shift) {
+                        if (shift.type === 'off') isStaffHoliday = true;
+                        else if (shift.type === 'time') {
+                          isStaffHoliday = false;
+                          if (time < shift.start || time >= shift.end) isOutsideShift = true;
+                        }
+                      }
+                    }
+
+                    const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
+                    const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
+                    
+                    const resMatches = reservations.filter(r => (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
+                    const privMatches = privateTasks.filter(p => (p.staff_id === staffIdVal) && currentSlotStart >= new Date(p.start_time).getTime() && currentSlotStart < new Date(p.end_time).getTime()).map(p => ({ ...p, res_type: 'private_task', customer_name: p.title }));
+                    const matches = [...resMatches, ...privMatches];
+                    const hasRes = matches.length > 0;
+                    const startingHere = matches.filter(r => new Date(r.start_time).getTime() === currentSlotStart);
+                    const isStart = startingHere.length > 0;
+                    const isMultiple = matches.length > 1;
+                    const firstRes = matches[0];
+                    const intervalMin = shop?.slot_interval_min || 15;
+                    const isEnd = hasRes && matches.some(r => new Date(r.end_time).getTime() === (currentSlotStart + intervalMin * 60000));
+                    const colors = getCustomerColor(firstRes?.customer_name);
+
+                    return (
+                      <td key={staff.id} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ minWidth: '70px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1.5px solid #cbd5e1', position: 'relative', background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'), padding: 0, cursor: 'pointer' }}>
+                        {hasRes && (
+                          <div style={{ position: 'absolute', inset: '0 4px', background: isMultiple ? '#e0e7ff' : colors.bg, borderLeft: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderRight: `1.5px solid ${isMultiple ? themeColor : colors.border}`, borderTop: isStart ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderBottom: isEnd ? `1.5px solid ${isMultiple ? themeColor : colors.border}` : 'none', borderRadius: `${isStart ? '6px 6px' : '0 0'} ${isEnd ? '6px 6px' : '0 0'}`, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: isStart ? 'flex-start' : 'center', padding: isStart ? '4px' : '0', zIndex: 5, overflow: 'hidden' }}>
+                            {isStart ? (
+                              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '2px', overflow: 'hidden', width: '100%' }}>
+                                {categoryMap[firstRes?.biz_type] && (
+                                  <span style={{ fontSize: '0.55rem', padding: '1px 4px', borderRadius: '3px', background: firstRes.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900', whiteSpace: 'nowrap', transform: 'scale(0.8)', flexShrink: 0 }}>
+                                    {categoryMap[firstRes.biz_type].slice(0, 4)}
+                                  </span>
+                                )}
+                                <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: isMultiple ? themeColor : colors.text, textAlign: 'center', wordBreak: 'break-all', lineHeight: '1.1' }}>
+                                  {(() => {
+                                    if (startingHere.length === 1) {
+                                      const res = startingHere[0];
+                                      const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
+                                      const name = masterName?.split(/[\s ]+/)[0] || "名前なし";
+                                      const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
+                                      const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
+                                      return isMultiple ? `${name.slice(0,3)}(${matches.length})${blockedIcon}${cancelIcon}` : `${name.slice(0,4)}${blockedIcon}${cancelIcon}`;
+                                    }
+                                    return `👥 ${matches.length}名`;
+                                  })()}
+                                </span>
+                              </div>
+                            ) : (
+                              <div style={{ width: '3px', height: '100%', background: isMultiple ? themeColor : colors.line, opacity: 0.4 }} />
+                            )}
+                          </div>
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
 
       {/* 🆕 ここから追記：3択の名寄せ（マージ）確認モーダル */}
@@ -1997,25 +2034,7 @@ const timeSlots = useMemo(() => {
         </div>
       )}
 
-      {/* 🚀 🆕 【追加】スマホ用：縦画面時に「横向きにしてね」とお願いするオーバーレイ */}
-      {!isPC && isPortrait && !isPreviewMode && (
-        <div style={{
-          position: 'fixed', inset: 0, background: 'rgba(30, 41, 59, 0.95)', zIndex: 9999,
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-          color: '#fff', padding: '30px', textAlign: 'center', backdropFilter: 'blur(5px)'
-        }}>
-          <RotateCcw size={64} color="#38bdf8" style={{ marginBottom: '20px', animation: 'pulse 2s infinite' }} />
-          <h2 style={{ fontSize: '1.4rem', fontWeight: '900', margin: '0 0 15px 0', letterSpacing: '1px' }}>スマホを横向きに<br/>してください</h2>
-          <p style={{ fontSize: '0.9rem', color: '#cbd5e1', lineHeight: '1.6', margin: 0 }}>
-            タイムライン管理画面は横に長いため、<br/>
-            縦画面では正しく表示されません。<br/>
-            画面の回転ロックを解除し、<br/>
-            端末を横にしてご利用ください。
-          </p>
-        </div>
-      )}
-
-      {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション（AdminReservationsから完全移植） */}
+      {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション */}
       {!isPC && !isPreviewMode && (
         <div style={{
           position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px',
@@ -2024,63 +2043,26 @@ const timeSlots = useMemo(() => {
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxShadow: '0 -4px 15px rgba(0,0,0,0.05)'
         }}>
-          {/* 1. 設定 */}
-          <button 
-            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/dashboard`); }} 
-            style={mobileTabStyle(false, '#64748b')}
-          >
+          <button onClick={() => { navigate(`/admin/${shopId}/dashboard`); }} style={mobileTabStyle(false, '#64748b')}>
             <Settings size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
           </button>
 
-          {/* 2. タスク */}
-          <button 
-            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/today-tasks`); }} 
-            style={mobileTabStyle(false, '#1e293b')}
-          >
+          <button onClick={() => { navigate(`/admin/${shopId}/today-tasks`); }} style={mobileTabStyle(false, '#1e293b')}>
             <Clipboard size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>タスク</span>
           </button>
 
-          {/* 3. 在庫 */}
-          <button 
-            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/inventory`); }} 
-            style={mobileTabStyle(false, '#f59e0b')}
-          >
+          <button onClick={() => { navigate(`/admin/${shopId}/inventory`); }} style={mobileTabStyle(false, '#f59e0b')}>
             <PackageOpen size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>在庫</span>
           </button>
 
-          {/* 4. 今日（タイムラインでは現在時刻にスクロール） */}
-          <button 
-            onClick={() => { 
-              setShowMenuModal(false); 
-              goToday(); 
-              // 自動スクロール処理を再発火させるために少し待つ
-              setTimeout(() => {
-                const now = new Date();
-                const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-                const targetIdx = timeSlots.findIndex(slot => slot >= currentTimeStr);
-                if (targetIdx !== -1 && scrollRef.current) {
-                  const columnWidth = 120;
-                  scrollRef.current.scrollLeft = Math.max(0, (targetIdx - 1) * columnWidth);
-                }
-              }, 500);
-            }} 
-            style={{ 
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
-              background: `${themeColor}15`, border: `1px solid ${themeColor}33`, 
-              color: themeColor, borderRadius: '15px', padding: '8px 15px', cursor: 'pointer' 
-            }}
-          >
+          <button onClick={() => { goToday(); }} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', background: `${themeColor}15`, border: `1px solid ${themeColor}33`, color: themeColor, borderRadius: '15px', padding: '8px 15px', cursor: 'pointer' }}>
             <span style={{ fontSize: '0.85rem', fontWeight: '900' }}>今日</span>
           </button>
 
-          {/* 5. 管理 */}
-          <button 
-            onClick={() => { setShowMenuModal(false); navigate(`/admin/${shopId}/management`); }} 
-            style={mobileTabStyle(false, '#008000')}
-          >
+          <button onClick={() => { navigate(`/admin/${shopId}/management`); }} style={mobileTabStyle(false, '#008000')}>
             <BarChart3 size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>管理</span>
           </button>
