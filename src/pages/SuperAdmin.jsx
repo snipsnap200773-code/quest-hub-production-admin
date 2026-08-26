@@ -441,6 +441,33 @@ const updateShopInfo = async (id) => {
   };
   // 👆 🆕 追加ここまで
 
+  // ==========================================
+  // 👇 🌟 ここから追加：ブランド共有（マルチブランド）切り替え関数
+  // ==========================================
+  const toggleMultiBrand = async (shop) => {
+    const newStatus = !shop.is_multibrand_enabled;
+    const confirmMsg = newStatus
+      ? `「${shop.business_name}」の【専用屋号・識別キー機能】をONにしますか？`
+      : `「${shop.business_name}」の専用屋号・識別キー機能をOFFにしますか？`;
+
+    if (!window.confirm(confirmMsg)) return;
+
+    const { error } = await supabase
+      .from('profiles')
+      .update({ is_multibrand_enabled: newStatus })
+      .eq('id', shop.id);
+
+    if (!error) {
+      fetchCreatedShops();
+      alert('専用屋号・識別キーの権限を更新しました。');
+    } else {
+      alert('更新に失敗しました: ' + error.message);
+    }
+  };
+  // ==========================================
+  // 👆 追加ここまで
+  // ==========================================
+
   // ✅ 🆕 差し替え：サービスプラン（1 or 2）を更新する関数
   const updateServicePlan = async (shopId, planValue) => {
     const { error } = await supabase
@@ -599,6 +626,7 @@ const updateShopInfo = async (id) => {
   categories={categoriesList} 
   onRepairAuth={repairShopAuth}
   onToggleTester={toggleTester}
+  onToggleMultiBrand={toggleMultiBrand} // 👈 追加
 />
       ))}
       {filteredShops.length === 0 && <div style={{textAlign:'center', padding:'40px', color:'#999'}}>該当する店舗はありません</div>}
@@ -948,7 +976,7 @@ const updateShopInfo = async (id) => {
 }
 
 // 店舗カード（1ミリも省略なし）
-function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onUpdate, onDelete, onToggleSuspension, onToggleManagement, onCopy, categories, onRepairAuth, onToggleTester }) {
+function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onUpdate, onDelete, onToggleSuspension, onToggleManagement, onCopy, categories, onRepairAuth, onToggleTester, onToggleMultiBrand }) { // 👈 onToggleMultiBrandを追加
   const isEditing = editingShopId === shop.id;
   const isSuspended = shop.is_suspended;
   const isMgmtEnabled = shop.is_management_enabled;
@@ -1085,6 +1113,20 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
             }}
           >
             {shop.is_tester ? '👑 テスター権限ON（タップで解除）' : '☆ テスター（永久無料）に設定する'}
+          </button>
+
+          {/* 👇 🌟 追加：ブランド共有切り替えボタン */}
+          <button 
+            onClick={() => onToggleMultiBrand(shop)}
+            style={{ 
+              width: '100%', marginBottom: '15px', padding: '10px', 
+              background: shop.is_multibrand_enabled ? '#4f46e5' : '#f1f5f9', 
+              color: shop.is_multibrand_enabled ? '#fff' : '#64748b', 
+              border: shop.is_multibrand_enabled ? 'none' : '1px solid #e2e8f0', 
+              borderRadius: '10px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer'
+            }}
+          >
+            {shop.is_multibrand_enabled ? '🔗 専用屋号・識別キーON（タップで解除）' : '🔗 専用屋号・識別キー機能を追加する'}
           </button>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>

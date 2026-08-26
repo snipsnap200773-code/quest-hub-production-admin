@@ -13,6 +13,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const navigate = useNavigate();
   const BIZ_URL = "https://questhub-portal.vercel.app";
   const menuFormRef = useRef(null);
+  const categoryFormRef = useRef(null); // 👈 これを追加
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
@@ -405,30 +406,36 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       </div>
 
       {/* --- 以降は MenuSettings と同じカテゴリ・メニュー登録 --- */}
-      <section style={cardStyle}>
+      <section ref={categoryFormRef} style={cardStyle}> {/* 👈 ref={categoryFormRef} を追加 */}
         <h3 style={{ marginTop: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
           <Layers size={20} color="#64748b" /> カテゴリ設定
         </h3>
         <form onSubmit={handleCategorySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <input placeholder="カテゴリ名 (例: カット, カラー)" value={newCategoryName || ''} onChange={(e) => setNewCategoryName(e.target.value)} style={inputStyle} required />
           
-          {/* ラベル部分の復元 */}
-          <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px', alignItems: isPC ? 'center' : 'flex-start', marginBottom: '5px' }}>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: '#64748b' }}>識別キー</span>
-              <HelpTooltip themeColor={themeColor} text="英数字を入力すると、このカテゴリ専用の予約URLを作成できます（例：hair）。" />
-            </div>
-            <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-              <span style={{ fontSize: '0.7rem', color: '#64748b' }}>専用屋号</span>
-              <HelpTooltip themeColor={themeColor} text="このカテゴリの予約画面だけ、別の店名を表示したい場合に入力します。" />
-            </div>
-          </div>
+          {/* 👇 ここから追加：ONになっている店舗のみ入力欄を表示 */}
+          {shopData?.is_multibrand_enabled && (
+            <>
+              {/* ラベル部分の復元 */}
+              <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px', alignItems: isPC ? 'center' : 'flex-start', marginBottom: '5px' }}>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>識別キー</span>
+                  <HelpTooltip themeColor={themeColor} text="英数字を入力すると、このカテゴリ専用の予約URLを作成できます（例：hair）。" />
+                </div>
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>専用屋号</span>
+                  <HelpTooltip themeColor={themeColor} text="このカテゴリの予約画面だけ、別の店名を表示したい場合に入力します。" />
+                </div>
+              </div>
 
-          <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px' }}>
-            <input placeholder="例: yukado" value={newUrlKey} onChange={(e) => setNewUrlKey(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-            <input placeholder="例: 訪問カット 結美" value={newCustomShopName} onChange={(e) => setNewCustomShopName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
-          </div>
-          <textarea placeholder="専用サブタイトル・説明文 (任意)" value={newCustomDescription} onChange={(e) => setNewCustomDescription(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} />
+              <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px' }}>
+                <input placeholder="例: yukado" value={newUrlKey} onChange={(e) => setNewUrlKey(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+                <input placeholder="例: 訪問カット 結美" value={newCustomShopName} onChange={(e) => setNewCustomShopName(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              </div>
+              <textarea placeholder="専用サブタイトル・説明文 (任意)" value={newCustomDescription} onChange={(e) => setNewCustomDescription(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} />
+            </>
+          )}
+          {/* 👆 追加ここまで */}
           
           {/* 👇 修正：訪問系の場合のみ「施設予約専用」のチェックボックスを表示 */}
           {isVisit && (
@@ -460,7 +467,16 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                 <div style={{ display: 'flex', gap: '6px' }}>
                   <button onClick={() => moveItem('category', categories, c.id, 'up')} disabled={idx === 0} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px' }}><ArrowUp size={16} /></button>
                   <button onClick={() => moveItem('category', categories, c.id, 'down')} disabled={idx === categories.length - 1} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px' }}><ArrowDown size={16} /></button>
-                  <button onClick={() => { setEditingCategoryId(c.id); setNewCategoryName(c.name); setNewUrlKey(c.url_key || ''); setNewCustomShopName(c.custom_shop_name || ''); setNewCustomDescription(c.custom_description || ''); setIsFacilityOnlyCat(!!c.is_facility_only); }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6' }}><Edit2 size={16} /></button>
+                  <button onClick={() => { 
+  setEditingCategoryId(c.id); 
+  setNewCategoryName(c.name); 
+  setNewUrlKey(c.url_key || ''); 
+  setNewCustomShopName(c.custom_shop_name || ''); 
+  setNewCustomDescription(c.custom_description || ''); 
+  setIsFacilityOnlyCat(!!c.is_facility_only); 
+  // 👇 追加：入力フォームの位置まで自動でスクロールさせる
+  categoryFormRef.current?.scrollIntoView({ behavior: 'smooth' }); 
+}} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6', cursor: 'pointer' }}><Edit2 size={16} /></button>
                   <button onClick={async () => { if(window.confirm('削除しますか？')){ await supabase.from('services').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMenuDetails(); } }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
                 </div>
               </div>

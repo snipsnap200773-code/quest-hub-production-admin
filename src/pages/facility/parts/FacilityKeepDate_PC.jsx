@@ -263,7 +263,17 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const bizStart = new Date(`${dateStr}T${startStr}:00`).getTime();
       const bizEnd = new Date(`${dateStr}T${endStr}:00`).getTime();
       const hasOverlap = dayEvents.some(e => e.start < bizEnd && e.end > bizStart);
-      if (hasOverlap) return 'full';
+      
+      // 👇 🌟 修正：店舗が「厳格ブロック」をONにしているか確認する
+      if (selectedShop.is_strict_facility_block !== false) {
+        // ONの場合（従来通り）：1件でも被っていれば「✕」にする
+        if (hasOverlap) return 'full';
+      } else {
+        // OFFの場合：残りキャパシティ（人数）を計算して、0名以下なら「✕」にする
+        const remainingCap = calculateCapacity(dateStr, '09:00'); 
+        if (remainingCap <= 0) return 'full';
+      }
+      // 👆 修正ここまで
     }
 
     // 🚀 4. 定期キープ（ルール）を最後に判定

@@ -40,6 +40,7 @@ const FacilityManagement = () => {
   const [shopSettings, setShopSettings] = useState({ 
     email_notifications_enabled: true,
     is_facility_searchable: false,
+    is_strict_facility_block: true, // 👈 🆕 ここを追加！
     sub_business_type: '理美容',
     hourly_capacity_per_staff: 2.0,
     facility_staff_count: 1,
@@ -431,6 +432,7 @@ const handleSave = async (e) => {
         .from('profiles')
         .update({ 
           is_facility_searchable: shopSettings.is_facility_searchable,
+          is_strict_facility_block: shopSettings.is_strict_facility_block, // 👈 🆕 ここを追加！
           sub_business_type: shopSettings.sub_business_type,
           hourly_capacity_per_staff: shopSettings.hourly_capacity_per_staff,
           facility_staff_count: shopSettings.facility_staff_count,
@@ -933,6 +935,26 @@ facilities.forEach(conn => {
                    {isFreePlan ? '非公開 (制限中)' : (shopSettings.is_facility_searchable ? '公開中' : '非公開')}
                  </button>
                </div>
+
+               {/* 👇 🌟 🆕 ここから追加：施設予約の厳格ブロックのON/OFFスイッチ */}
+               <div style={settingRow}>
+                 <div>
+                   <div style={{fontWeight:'bold', fontSize:'0.9rem', display: 'flex', alignItems: 'center', gap: '8px'}}>
+                     施設予約の厳格ブロック（1日丸ごとブロック）
+                   </div>
+                   <div style={{fontSize:'0.7rem', color:'#64748b', marginTop:'4px'}}>
+                     ONの場合：店舗に1件でも予定があれば、施設側ではその日を「✕（満員）」としてブロックします。<br/>
+                     OFFの場合：予約可能なキャパシティ（人数）が残っていれば「△」として予約を受け付けます。
+                   </div>
+                 </div>
+                 <button 
+                   onClick={() => setShopSettings({...shopSettings, is_strict_facility_block: !shopSettings.is_strict_facility_block})}
+                   style={toggleBtnStyle(shopSettings.is_strict_facility_block !== false)}
+                 >
+                   {shopSettings.is_strict_facility_block !== false ? 'ON (1日ブロック)' : 'OFF (空き枠を計算)'}
+                 </button>
+               </div>
+               {/* 👆 追加ここまで */}
 
                <label style={labelStyle}>施設向け専門ジャンル
                   <select 
