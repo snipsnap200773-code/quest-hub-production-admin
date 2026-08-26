@@ -663,7 +663,9 @@ const handleReserve = async () => {
             custom_answers: customAnswers,
             buildingType: customerData.building_type, // 変数名の微調整
             careNotes: customerData.care_notes,
-            requestDetails: customerData.request_details
+            requestDetails: customerData.request_details,
+            // 👇 🌟 🆕 追加：今回の予約が来店か訪問かのモードを裏側に伝える！
+            serviceMode: location.state?.serviceMode || 'salon' 
           }
         });
       } else if (!isAdminEntry) {

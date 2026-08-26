@@ -143,7 +143,8 @@ Deno.serve(async (req) => {
               notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
               reserve_url, password, ownerName,
               staffName, furigana, address, parking, buildingType, careNotes, 
-              companyName, symptoms, requestDetails, notes, allOptions, custom_answers
+              companyName, symptoms, requestDetails, notes, allOptions, custom_answers,
+              serviceMode // 👈 🌟 🆕 追加：来店か訪問かのモードを受け取る
             } = payload;
 
     // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
@@ -1071,7 +1072,9 @@ const sendMail = async (to: string, isOwner: boolean) => {
         notes,
         officialUrl: profile.custom_official_url || "" 
       };      
-      const isVisit = VISIT_KEYWORDS.some(keyword => (profile.business_type || '').includes(keyword));
+      
+      // 👇 🌟 修正：店舗の業種全体ではなく「今回の予約のモード」で判定する！
+      const isVisit = serviceMode === 'visit';
       const defaults = isVisit ? VISIT_DEFAULTS : STORE_DEFAULTS;
 
       let finalSubject = "";
@@ -1295,7 +1298,8 @@ const sendMail = async (to: string, isOwner: boolean) => {
     // 🚀 通知実行エリア（三土手さん指定の条件版）
     // ==========================================
     const isLineBooking = !!lineUserId;
-    const isVisit = VISIT_KEYWORDS.some(keyword => (profile?.business_type || '').includes(keyword));
+    // 👇 🌟 修正：ここも「今回の予約モード」で判定
+    const isVisit = serviceMode === 'visit';
 
     // --- 1. お客様への通知（経路によってLINEかメールか出し分け） ---
     let customerResData = null;
@@ -1332,7 +1336,8 @@ const sendMail = async (to: string, isOwner: boolean) => {
     let shopLineSent: unknown = false;
 
     // A. 【メール通知】予約経路に関わらず必ず送る（最重要）
-    if (shopEmail && shopEmail !== 'admin@example.com') {
+    // 👇 🌟 修正：店舗設定(notify_mail_enabled)がOFFでないことを確認してから送る！
+    if (profile?.notify_mail_enabled !== false && shopEmail && shopEmail !== 'admin@example.com') {
       const shopRes = await sendMail(shopEmail, true);
       shopResData = await shopRes.json();
     }
