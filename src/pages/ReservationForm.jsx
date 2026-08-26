@@ -248,8 +248,8 @@ const optRes = await supabase.from('service_options').select('*');
           if (profile) {
             setAuthUserProfile(profile);
 
-            // 🆕 訪問型(isVisit) かつ マイページに住所がある場合、Stateにセットする [cite: 2025-12-01]
-            if (isVisit && profile.address) {
+            // 👇 🌟 修正：isVisit を vInds.length > 0（訪問サービスを提供しているか）に変更
+            if (vInds.length > 0 && profile.address) {
               setVisitorZip(profile.zip_code || '');
               setVisitorAddress(profile.address || '');
               setIsAddressFixed(true); // 👈 これで入力欄を閉じてメニュー選択へ進める

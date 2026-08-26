@@ -71,6 +71,10 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const [allowMultiPerson, setAllowMultiPerson] = useState(true);
   const [description, setDescription] = useState(''); // 👈 🆕 追加：Basicから引っ越し
 
+  // 👇 🌟 🆕 追加：店舗が持っている大業種のリストを保持する
+  const [shopIndustries, setShopIndustries] = useState([]);
+  const [newTargetIndustry, setNewTargetIndustry] = useState(''); // 👈 カテゴリ作成用の選択State
+
   // 🚀 🆕 変更検知用のStateとロジックを追加（フッターで保存する4項目のみ）
   const [initialDataStr, setInitialDataStr] = useState(null);
   const [isDataReady, setIsDataReady] = useState(false);
@@ -109,6 +113,15 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       setNotes(data.notes || ''); 
       setAllowMultiPerson(data.allow_multi_person_reservation ?? true); 
       setDescription(data.description || ''); // 👈 🆕 追加：Basicから引っ越し
+
+      // 👇 🌟 修正：文字列でも配列でも、全角カンマが混ざっていても確実に分割して読み取るように強化
+      let industries = [];
+      if (Array.isArray(data.business_type)) {
+        industries = data.business_type;
+      } else if (typeof data.business_type === 'string') {
+        industries = data.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+      }
+      setShopIndustries(industries);
 
       setIsDataReady(true); // 🚀 🆕 追加：データの読み込み完了を合図する
     }
@@ -186,7 +199,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     e.preventDefault();
     const payload = { 
       name: newCategoryName, url_key: newUrlKey, custom_shop_name: newCustomShopName,
-      custom_description: newCustomDescription, is_facility_only: isFacilityOnlyCat
+      custom_description: newCustomDescription, is_facility_only: isFacilityOnlyCat,
+      target_industry: newTargetIndustry || null // 👈 🌟 🆕 追加
     };
 
     if (editingCategoryId) {
@@ -198,7 +212,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     } else {
       await supabase.from('service_categories').insert([{ ...payload, shop_id: shopId, sort_order: categories.length }]);
     }
-    setEditingCategoryId(null); setNewCategoryName(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); 
+    setEditingCategoryId(null); setNewCategoryName(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); setNewTargetIndustry(''); // 👈 🌟 🆕 初期化を追加
     fetchMenuDetails(); showMsg('カテゴリを更新しました');
   };
 
@@ -413,6 +427,27 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
         <form onSubmit={handleCategorySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <input placeholder="カテゴリ名 (例: カット, カラー)" value={newCategoryName || ''} onChange={(e) => setNewCategoryName(e.target.value)} style={inputStyle} required />
           
+          {/* 👇 🌟 修正：店舗の業種数に関わらず常に表示するように変更（length > 0） */}
+          {shopIndustries.length > 0 && (
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
+                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold' }}>対象とする大業種（ハイブリッド用）</span>
+                <HelpTooltip themeColor={themeColor} text="お客様が予約画面で「店舗へ行く」「訪問してもらう」などを選んだ際、どのタブでこのカテゴリを表示させるか設定します。" />
+              </div>
+              <select 
+                value={newTargetIndustry} 
+                onChange={(e) => setNewTargetIndustry(e.target.value)} 
+                style={inputStyle}
+              >
+                <option value="">全業種で表示する（共通）</option>
+                {shopIndustries.map(ind => (
+                  <option key={ind} value={ind}>{ind} 専用</option>
+                ))}
+              </select>
+            </div>
+          )}
+          {/* 👆 追加ここまで */}
+
           {/* 👇 ここから追加：ONになっている店舗のみ入力欄を表示 */}
           {shopData?.is_multibrand_enabled && (
             <>
@@ -459,6 +494,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontWeight: 'bold', color: '#1e293b' }}>{c.name}</span>
+                  {/* 👇 🌟 🆕 追加：どの大業種用かバッジを表示する */}
+                  {c.target_industry && <span style={{ fontSize: '0.65rem', padding: '2px 8px', background: themeColor, color: '#fff', borderRadius: '4px' }}>{c.target_industry}</span>}
+
                   {c.url_key && <span style={{ fontSize: '0.65rem', padding: '2px 8px', background: '#f1f5f9', color: '#64748b', borderRadius: '4px', border: '1px solid #cbd5e1' }}>🔑 {c.url_key}</span>}
                   
                   {/* 👇 修正：訪問系の場合のみ、一覧の「施設専用」ラベルを表示 */}
@@ -474,6 +512,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   setNewCustomShopName(c.custom_shop_name || ''); 
   setNewCustomDescription(c.custom_description || ''); 
   setIsFacilityOnlyCat(!!c.is_facility_only); 
+  setNewTargetIndustry(c.target_industry || ''); // 👈 🌟 🆕 追加：設定済みの業種を読み込む
   // 👇 追加：入力フォームの位置まで自動でスクロールさせる
   categoryFormRef.current?.scrollIntoView({ behavior: 'smooth' }); 
 }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6', cursor: 'pointer' }}><Edit2 size={16} /></button>
