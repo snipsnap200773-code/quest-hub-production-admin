@@ -125,7 +125,8 @@ function TimeSelectionCalendar() {
       } else {
         // 設定がOFF、または来店型の場合はバッファを 0 にする
         setTravelTimeMinutes(0);
-        console.log(isVisit ? `🚗 訪問型ですが、移動時間の自動計算は「OFF」に設定されています` : `✂️ 来店予約を検知: 移動バッファ 0分`);
+        // 👇 🌟 修正：isVisit を passedServiceMode === 'visit' に変更
+        console.log(passedServiceMode === 'visit' ? `🚗 訪問型ですが、移動時間の自動計算は「OFF」に設定されています` : `✂️ 来店予約を検知: 移動バッファ 0分`);
       }
     } catch (error) {
       console.error("データ取得中にエラーが発生しました:", error);

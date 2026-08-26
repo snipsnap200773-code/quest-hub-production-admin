@@ -268,7 +268,8 @@ const optRes = await supabase.from('service_options').select('*');
   useEffect(() => {
     const fetchPreviousAddress = async () => {
       // 訪問型サービス かつ LINEユーザーが判明している かつ 住所がまだ空 の場合
-      if (isVisitService && lineUser?.userId && !visitorAddress) {
+      // 👇 🌟 修正：isVisitService を serviceMode === 'visit' に変更
+      if (serviceMode === 'visit' && lineUser?.userId && !visitorAddress) {
         const { data: cust } = await supabase
           .from('customers')
           .select('address')
@@ -284,7 +285,8 @@ const optRes = await supabase.from('service_options').select('*');
       }
     };
 fetchPreviousAddress();
-  }, [lineUser, isVisitService, shopId]);
+  // 👇 🌟 修正：依存配列の isVisitService も serviceMode に変更
+  }, [lineUser, serviceMode, visitorAddress, shopId]);
 
   // 🆕 【ここに追加！】郵便番号から住所を自動取得する関数
   const handleZipSearch = async () => {
@@ -809,7 +811,8 @@ const handleNextStep = (input = null) => {
       </div>
 
       {/* 🚀 🆕 【住所確定ガード】訪問型サービスで住所未確定ならメニューを隠す */}
-      {(!isVisitService || isAddressFixed || isAdminMode) ? (
+      {/* 👇 🌟 修正：isVisitService を serviceMode === 'visit' に変更 */}
+      {(!(serviceMode === 'visit') || isAddressFixed || isAdminMode) ? (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
           <h3 style={{ fontSize: '1rem', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', marginBottom: '20px' }}>
             {people.length === 0 ? "メニューを選択" : `${people.length + 1}人目のメニューを選択`}
@@ -956,27 +959,25 @@ const handleNextStep = (input = null) => {
       `}</style>
 
       {/* --- 固定フッター：予約ボタンエリア --- */}
-      {(selectedServices.length > 0 || people.length > 0 || (isVisitService && !isAddressFixed && !isAdminMode)) && (
+      {/* 👇 🌟 修正：ここから下の isVisitService を全て serviceMode === 'visit' に置換 */}
+      {(selectedServices.length > 0 || people.length > 0 || (serviceMode === 'visit' && !isAddressFixed && !isAdminMode)) && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(10px)', padding: '15px 20px', borderTop: '1px solid #e2e8f0', textAlign: 'center', zIndex: 1000, boxShadow: '0 -4px 12px rgba(0,0,0,0.05)' }}>
           <button 
-            // 🚀 🆕 管理者の時は住所チェックを完全にスルー！
             disabled={
               !allOptionsSelected || !isRequiredMet || !isTotalTimeOk || 
-              (isVisitService && !isAdminMode && (!isAddressFixed || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))))
+              (serviceMode === 'visit' && !isAdminMode && (!isAddressFixed || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))))
             } 
             onClick={() => handleNextStep()} 
             style={{ 
               width: '100%', maxWidth: '400px', padding: '16px', 
-              // 🚀 🆕 背景色も管理者の時は住所を無視！
-              background: (!allOptionsSelected || !isRequiredMet || !isTotalTimeOk || (isVisitService && !isAdminMode && (!isAddressFixed || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))))) ? '#cbd5e1' : themeColor, 
+              background: (!allOptionsSelected || !isRequiredMet || !isTotalTimeOk || (serviceMode === 'visit' && !isAdminMode && (!isAddressFixed || !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress))))) ? '#cbd5e1' : themeColor, 
               color: 'white', border: 'none', borderRadius: '14px', fontWeight: 'bold', fontSize: '1rem'
             }}
           >
-            {/* 🚀 🆕 メッセージの出し分け：管理者を最優先に */}
             {isAdminMode ? (
               (!allOptionsSelected || !isRequiredMet || !isTotalTimeOk) ? 'メニューを選択してください' : `予約内容を確定する (${totalSlotsNeeded * (shop?.slot_interval_min || 15)}分)`
             ) : (
-              isVisitService && !isAddressFixed ? (
+              serviceMode === 'visit' && !isAddressFixed ? (
                 !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? '番地（数字）を入力してください' : '1. 訪問先を確定してください'
               ) : !allOptionsSelected ? 'オプションを選択してください' 
                 : !isRequiredMet ? '必須メニューが未選択です' 
