@@ -31,7 +31,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const [businessNameKana, setBusinessNameKana] = useState('');
   const [ownerName, setOwnerName] = useState('');
   const [ownerNameKana, setOwnerNameKana] = useState('');
-  const [businessType, setBusinessType] = useState('');
+  // 👇 🌟 修正：文字列('')から配列([])に変更
+  const [businessType, setBusinessType] = useState([]);
   const [subBusinessType, setSubBusinessType] = useState('');
   const [phone, setPhone] = useState('');
   const [emailContact, setEmailContact] = useState('');
@@ -99,7 +100,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       setBusinessNameKana(data.business_name_kana || '');
       setOwnerName(data.owner_name || '');
       setOwnerNameKana(data.owner_name_kana || '');
-      setBusinessType(data.business_type || '');
+      // 👇 🌟 修正：カンマ区切りの文字列を配列に変換してセットする
+      setBusinessType(data.business_type ? data.business_type.split(',') : []);
       setSubBusinessType(data.sub_business_type || '');
       setPhone(data.phone || '');
       setEmailContact(data.email_contact || '');
@@ -321,9 +323,10 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       business_name_kana: businessNameKana,
       owner_name: ownerName, 
       owner_name_kana: ownerNameKana,
-      business_type: businessType, 
+      // 👇 🌟 修正：配列をカンマ区切りの文字列に合体させる
+      business_type: businessType.join(','), 
       sub_business_type: subBusinessType,
-      phone, 
+      phone,
       email_contact: emailContact, 
       zip_code: zipCode, 
       address,
@@ -369,7 +372,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const labelStyle = { fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#334155' };
 
   const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-  const isVisit = VISIT_KEYWORDS.some(keyword => (businessType || '').includes(keyword));
+  // 👇 🌟 修正：配列を一度カンマ区切りの文字列にしてからキーワード判定する
+  const isVisit = VISIT_KEYWORDS.some(keyword => (businessType.join(',') || '').includes(keyword));
 
   return (
     <div style={containerStyle}>
@@ -487,25 +491,41 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
         <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <div style={{ marginBottom: '10px' }}>
             <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-              大カテゴリ（業種）
-              <HelpTooltip themeColor={themeColor} text="お店のメインの業種を選択してください。" />
+              大カテゴリ（業種・複数選択可）
+              <HelpTooltip themeColor={themeColor} text="お店が提供している業種をすべて選択してください。複数選択可能です。" />
             </label>
-            <select 
-              value={businessType} 
-              onChange={(e) => {
-                setBusinessType(e.target.value);
-                setSubBusinessType('');
-              }} 
-              style={{ ...inputStyle, fontWeight: 'bold', color: themeColor }}
-            >
-              <option value="">-- 業種を選択してください --</option>
-              {INDUSTRY_LABELS.map(label => (
-                <option key={label} value={label}>{label}</option>
-              ))}
-            </select>
+            {/* 👇 🌟 修正：複数選択可能なボタングループに変更 */}
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginTop: '5px' }}>
+              {INDUSTRY_LABELS.map(label => {
+                const isActive = businessType.includes(label);
+                return (
+                  <button
+                    key={label}
+                    type="button"
+                    onClick={() => {
+                      setBusinessType(prev => {
+                        const newArr = isActive ? prev.filter(t => t !== label) : [...prev, label];
+                        setSubBusinessType(''); // 大カテゴリが変わったら小カテゴリを一旦リセット
+                        return newArr;
+                      });
+                    }}
+                    style={{
+                      padding: '8px 12px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer',
+                      background: isActive ? themeColor : '#fff',
+                      color: isActive ? '#fff' : '#64748b',
+                      border: isActive ? 'none' : '1px solid #cbd5e1',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
-          {businessType && getSubCategories(businessType).length > 0 && (
+          {/* 👇 🌟 修正：選択された全ての大カテゴリのサブカテゴリを合体させて表示 */}
+          {businessType.length > 0 && businessType.flatMap(type => getSubCategories(type)).length > 0 && (
             <div style={{ marginTop: '15px', paddingLeft: '15px', borderLeft: `3px solid ${themeColor}` }}>
               <label style={labelStyle}>詳細ジャンル（小カテゴリ）</label>
               <select 
@@ -514,7 +534,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 style={inputStyle}
               >
                 <option value="">-- 詳細を選択 --</option>
-                {getSubCategories(businessType).map(sub => (
+                {businessType.flatMap(type => getSubCategories(type)).map(sub => (
                   <option key={sub} value={sub}>{sub}</option>
                 ))}
               </select>

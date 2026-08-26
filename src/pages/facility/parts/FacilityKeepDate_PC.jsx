@@ -151,6 +151,23 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
     activeMinutes -= overlapMinutes;
 
+    // 👇 🌟 🆕 追加：その日に入っている個人予定の時間を「実働時間」から差し引く
+    const dayEvents = shopBlocks.filter(e => e.date === dateStr && !e.isAllDay);
+    dayEvents.forEach(e => {
+      const evStart = new Date(e.start);
+      const evEnd = new Date(e.end);
+      const evStartMin = evStart.getHours() * 60 + evStart.getMinutes();
+      const evEndMin = evEnd.getHours() * 60 + evEnd.getMinutes();
+      
+      // 今回の枠（startMin）〜終了（endMin）の間に被っている予定の長さを引く
+      const evOverlapStart = Math.max(startMin, evStartMin);
+      const evOverlapEnd = Math.min(endMin, evEndMin);
+      const evOverlap = Math.max(0, evOverlapEnd - evOverlapStart);
+      
+      activeMinutes -= evOverlap;
+    });
+    // 👆 追加ここまで
+
     if (activeMinutes <= 0) return 0;
 
     // 4. キャパシティ計算
@@ -269,11 +286,19 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
         // ONの場合（従来通り）：1件でも被っていれば「✕」にする
         if (hasOverlap) return 'full';
       } else {
-        // OFFの場合：残りキャパシティ（人数）を計算して、0名以下なら「✕」にする
-        const remainingCap = calculateCapacity(dateStr, '09:00'); 
-        if (remainingCap <= 0) return 'full';
+        // 👇 🌟 修正：提示された時間枠（09:00, 13:00など）の中で、1つでも空いている枠があるか確認する
+        const slots = selectedShop.facility_visit_slots || ['09:00', '13:00'];
+        const hasAnyAvailableSlot = slots.some(t => {
+           const slotStart = new Date(`${dateStr}T${t}:00`).getTime();
+           const slotEnd = slotStart + (60 * 60 * 1000); // 訪問には最低1時間はかかると仮定
+           const isConflict = dayEvents.some(e => !e.isAllDay && slotStart < e.end && slotEnd > e.start);
+           
+           // 被っていなくて、かつ残りキャパシティが1名以上あるか
+           return !isConflict && calculateCapacity(dateStr, t) > 0;
+        });
+
+        if (!hasAnyAvailableSlot) return 'full'; // すべての枠が被っていたら「✕（満員）」
       }
-      // 👆 修正ここまで
     }
 
     // 🚀 4. 定期キープ（ルール）を最後に判定
@@ -578,19 +603,36 @@ if (regKeep && !isExcludedForThisShop) {
               <div style={timeListScroll}>
                 {(selectedShop.facility_visit_slots || ['09:00', '13:00']).map(t => {
                   const cap = calculateCapacity(timeModal.dateStr, t);
+                  
+                  // 👇 🌟 🆕 追加：この時間枠が既存の個人予定とモロ被りしていないかチェックする
+                  const slotStart = new Date(`${timeModal.dateStr}T${t}:00`).getTime();
+                  const slotEnd = slotStart + (60 * 60 * 1000); // 1時間の幅で検証
+                  const dayEvents = shopBlocks.filter(e => e.date === timeModal.dateStr);
+                  const isConflict = dayEvents.some(e => e.isAllDay || (slotStart < e.end && slotEnd > e.start));
+                  
+                  const isDisabled = cap <= 0 || isConflict; // 枠がない、または重複している場合はボタンを無効化
+                  // 👆 追加ここまで
+
                   return (
                     <button 
                       key={t} 
+                      disabled={isDisabled} // 👈 🌟 追加：クリック不可にする
                       onClick={() => { 
                         // 🚀 🆕 時間変更：定期日でも上書きで keep_dates に保存されるため、これでOK
                         handleTimeChange(timeModal.dateStr, t); 
                         setTimeModal({ ...timeModal, show: false }); 
                       }} 
-                      style={{...timeCard(timeModal.currentTime.substring(0,5) === t), flexDirection: 'column', gap: '2px'}}
+                      style={{
+                        ...timeCard(timeModal.currentTime.substring(0,5) === t), 
+                        flexDirection: 'column', gap: '2px',
+                        opacity: isDisabled ? 0.5 : 1, // 👈 🌟 追加：見た目を半透明にする
+                        cursor: isDisabled ? 'not-allowed' : 'pointer' // 👈 🌟 追加：カーソルを変える
+                      }}
                     >
                       <div style={{display:'flex', alignItems:'center', gap:'4px'}}><Clock size={14} /> {t}</div>
-                      <div style={{fontSize: '0.65rem', color: cap > 0 ? '#10b981' : '#ef4444', fontWeight: 'bold'}}>
-                        {cap > 0 ? `最大 ${cap}名` : '時間外です'}
+                      <div style={{fontSize: '0.65rem', color: isDisabled ? '#ef4444' : '#10b981', fontWeight: 'bold'}}>
+                        {/* 👇 🌟 修正：被っている場合は「予定あり(重複)」と表示する */}
+                        {isConflict ? '予定あり(重複)' : (cap > 0 ? `最大 ${cap}名` : '時間外です')}
                       </div>
                     </button>
                   );

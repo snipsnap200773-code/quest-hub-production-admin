@@ -55,6 +55,19 @@ const FacilityManagement = () => {
   });
   const [isUpdating, setIsUpdating] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+
+  // 👇 🌟 🆕 追加：テーマカラーと変更検知用のState
+  const themeColor = shopSettings?.theme_color || '#2563eb';
+  const [initialSettingsStr, setInitialSettingsStr] = useState(null);
+
+  // ウィンドウ幅（PC/スマホ判定）
+  const [windowWidth, setWindowWidth] = useState(window.innerWidth);
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+  const isPC = windowWidth > 900;
   const [editingId, setEditingId] = useState(null);
   const visitingSubCategories = INDUSTRY_PRESETS.visiting.subCategories;
 
@@ -180,6 +193,8 @@ const FacilityManagement = () => {
     
     if (profile) {
       setShopSettings(profile);
+      // 👇 🌟 🆕 追加：初期状態の文字列化（変更検知用）
+      setInitialSettingsStr(JSON.stringify(profile));
     }
     
     // 🆕 提携ステータスが 'active'（承認済み）のものだけを取得するように修正
@@ -450,6 +465,26 @@ const handleSave = async (e) => {
         .eq('id', shopId);
 
       if (error) throw error;
+      // 👇 🌟 🆕 追加：保存成功後、現在の状態を「新しい初期値」として上書きする
+      setInitialSettingsStr(JSON.stringify({
+        ...shopSettings,
+        is_facility_searchable: shopSettings.is_facility_searchable,
+        is_strict_facility_block: shopSettings.is_strict_facility_block,
+        sub_business_type: shopSettings.sub_business_type,
+        hourly_capacity_per_staff: shopSettings.hourly_capacity_per_staff,
+        facility_staff_count: shopSettings.facility_staff_count,
+        facility_visit_start: shopSettings.facility_visit_start,
+        facility_visit_end: shopSettings.facility_visit_end,
+        facility_visit_slots: shopSettings.facility_visit_slots,
+        facility_lunch_start: shopSettings.facility_lunch_start,
+        facility_lunch_end: shopSettings.facility_lunch_end,
+        bank_name: shopSettings.bank_name,
+        bank_branch: shopSettings.bank_branch,
+        bank_account_type: shopSettings.bank_account_type,
+        bank_account_number: shopSettings.bank_account_number,
+        bank_account_holder: shopSettings.bank_account_holder
+      }));
+      
       alert('ショップ設定を更新しました！✨');
     } catch (err) {
       alert('失敗: ' + err.message);
@@ -1046,13 +1081,7 @@ facilities.forEach(conn => {
 
           </div>
           
-          <button 
-            onClick={saveShopGlobalSettings}
-            disabled={isUpdating}
-            style={{ ...addBtnStyle, width: '100%', marginTop: '20px', background: '#1e293b', justifyContent: 'center' }}
-          >
-            {isUpdating ? '保存中...' : '基本設定をすべて保存する'}
-          </button>
+          {/* 👇 🌟 修正：ここにあった保存ボタンは削除し、固定フッターにまとめました */}
         </div>
       )}
 
@@ -1765,6 +1794,70 @@ facilities.forEach(conn => {
           </div>
         </div>
       )}
+
+      {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
+      {(() => {
+        // 現在の状態を文字列化して比較
+        const currentSettingsStr = JSON.stringify(shopSettings);
+        const hasChanges = initialSettingsStr !== null && initialSettingsStr !== currentSettingsStr;
+
+        return (
+          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+            <style>{`
+              @keyframes pulse-btn {
+                0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+                50% { transform: scale(1.02); box-shadow: 0 4px 25px ${themeColor}99; }
+                100% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
+              }
+            `}</style>
+
+            {isPC ? (
+              <div style={{ maxWidth: '1000px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <ArrowLeft size={18} /> 戻る
+                </button>
+                <button 
+                  onClick={saveShopGlobalSettings} 
+                  disabled={!hasChanges || isUpdating}
+                  style={{ 
+                    flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
+                    background: hasChanges ? themeColor : '#cbd5e1', 
+                    color: '#fff', 
+                    cursor: (hasChanges && !isUpdating) ? 'pointer' : 'not-allowed', 
+                    animation: (hasChanges && !isUpdating) ? 'pulse-btn 2s infinite' : 'none' 
+                  }}
+                >
+                  <Save size={20} /> {isUpdating ? '保存中...' : (hasChanges ? '未保存の変更があります' : '変更はありません')}
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
+                <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+                  <ArrowLeft size={20} />
+                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
+                </button>
+                <button 
+                  onClick={saveShopGlobalSettings} 
+                  disabled={!hasChanges || isUpdating}
+                  style={{ 
+                    flex: 1.8, padding: '10px 0', border: 'none', borderRadius: '12px', 
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
+                    background: hasChanges ? themeColor : '#cbd5e1', 
+                    color: '#fff', 
+                    cursor: (hasChanges && !isUpdating) ? 'pointer' : 'not-allowed', 
+                    animation: (hasChanges && !isUpdating) ? 'pulse-btn 2s infinite' : 'none' 
+                  }}
+                >
+                  <Save size={20} />
+                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isUpdating ? '保存中...' : (hasChanges ? '保存する' : '変更なし')}</span>
+                </button>
+                <div style={{ flex: 1 }}></div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
     </div> // 👈 コンポーネント全体の最後の閉じタグ
   );

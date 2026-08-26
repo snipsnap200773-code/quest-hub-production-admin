@@ -835,6 +835,14 @@ return (
         <p style={{ margin: '0 0 12px 0', fontSize: '1.1rem', fontWeight: 'bold', color: themeColor }}>
           🏨 {customShopName || shop.business_name}
         </p>
+        
+        {/* 👇 🌟 🆕 追加：ご利用形式の表示 */}
+        {location.state?.serviceMode && (
+          <p style={{ margin: '0 0 12px 0' }}>
+            📍 <b>ご利用形式：</b> {location.state.serviceMode === 'visit' ? '🚗 訪問・出張' : '🏢 店舗へ行く（来店）'}
+          </p>
+        )}
+        
         <p style={{ margin: '0 0 12px 0' }}>📅 <b>日時：</b> {displayDate} {displayTime} 〜</p>
         
         {staffName && (

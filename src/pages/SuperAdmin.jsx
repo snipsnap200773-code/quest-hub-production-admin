@@ -67,7 +67,7 @@ function SuperAdmin() {
   const [newShopKana, setNewShopKana] = useState('');
   const [newOwnerName, setNewOwnerName] = useState('');
   const [newOwnerNameKana, setNewOwnerNameKana] = useState('');
-  const [newBusinessType, setNewBusinessType] = useState('');
+  const [newBusinessType, setNewBusinessType] = useState([]);
   // 🆕 新規作成時の小カテゴリStateを追加
   const [newSubBusinessType, setNewSubBusinessType] = useState('');
   const [newEmail, setNewEmail] = useState('');
@@ -182,7 +182,7 @@ function SuperAdmin() {
           ownerNameKana: newOwnerNameKana,
           email: newEmail,
           phone: newPhone,
-          businessType: newBusinessType,
+          businessType: newBusinessType.join(','), // 👈 🌟 修正：カンマ区切りにする
           subBusinessType: newSubBusinessType,
           originUrl: window.location.origin
         }
@@ -375,7 +375,7 @@ const updateShopInfo = async (id) => {
       business_name_kana: editKana, 
       owner_name: editOwnerName, 
       owner_name_kana: editOwnerNameKana, 
-      business_type: editBusinessType, 
+      business_type: Array.isArray(editBusinessType) ? editBusinessType.join(',') : editBusinessType, // 👈 🌟 修正：配列ならカンマ区切りに
       sub_business_type: editSubBusinessType,
       email_contact: editEmail,
       phone: editPhone, 
@@ -645,29 +645,38 @@ const updateShopInfo = async (id) => {
           <input value={newShopName} onChange={(e) => setNewShopName(e.target.value)} placeholder="店舗名" style={{...smallInput, flex:1}} />
           <input value={newShopKana} onChange={(e) => setNewShopKana(e.target.value)} placeholder="かな" style={{...smallInput, flex:1}} />
         </div>
-<select 
-          value={newBusinessType} 
-          onChange={(e) => {
-            setNewBusinessType(e.target.value);
-            setNewSubBusinessType(''); // 大カテゴリ変更で小カテゴリをリセット
-          }} 
-          style={smallInput}
-        >
-          <option value="">-- 大カテゴリ（業種）を選択 --</option>
-          {INDUSTRY_LABELS.map(opt => (
-            <option key={opt} value={opt}>{opt}</option>
-          ))}
-        </select>
+{/* 👇 🌟 修正：複数選択可能なボタングループに変更 */}
+        <div style={{ padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff' }}>
+          <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', marginBottom: '8px' }}>大カテゴリ（業種・複数選択可）</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+            {INDUSTRY_LABELS.map(opt => {
+              const isActive = newBusinessType.includes(opt);
+              return (
+                <button 
+                  key={opt} type="button"
+                  onClick={() => {
+                    setNewBusinessType(prev => isActive ? prev.filter(t => t !== opt) : [...prev, opt]);
+                    setNewSubBusinessType('');
+                  }}
+                  style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', border: isActive ? 'none' : '1px solid #cbd5e1', background: isActive ? '#1e293b' : '#f8fafc', color: isActive ? '#fff' : '#64748b' }}
+                >
+                  {opt}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         {/* 🆕 選択した業種に小カテゴリ（サブカテゴリ）がある場合のみ表示 */}
-        {newBusinessType && getSubCategories(newBusinessType).length > 0 && (
+        {newBusinessType.length > 0 && newBusinessType.flatMap(type => getSubCategories(type)).length > 0 && (
           <select 
             value={newSubBusinessType} 
             onChange={(e) => setNewSubBusinessType(e.target.value)} 
             style={{ ...smallInput, border: '2px solid #3b82f6' }} // 目立つように青枠
           >
             <option value="">-- 小カテゴリ（詳細ジャンル）を選択 --</option>
-            {getSubCategories(newBusinessType).map(sub => (
+            {/* 🌟 選択された複数の大カテゴリのサブカテゴリを全て合体させて表示 */}
+            {newBusinessType.flatMap(type => getSubCategories(type)).map(sub => (
               <option key={sub} value={sub}>{sub}</option>
             ))}
           </select>
@@ -1002,7 +1011,8 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
             editState.setEditKana(shop.business_name_kana || "");
             editState.setEditOwnerName(shop.owner_name || "");
             editState.setEditOwnerNameKana(shop.owner_name_kana || "");
-            editState.setEditBusinessType(shop.business_type || "");
+            // 👇 🌟 修正：文字列カンマ区切りデータを配列に戻してセット
+            editState.setEditBusinessType(shop.business_type ? shop.business_type.split(',') : []);
             // 🆕 既存の小カテゴリをセット
             editState.setEditSubBusinessType(shop.sub_business_type || "");
             editState.setEditEmail(shop.email_contact || "");
@@ -1023,33 +1033,44 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
             <input value={editState.editName} onChange={(e) => editState.setEditName(e.target.value)} style={smallInput} placeholder="店舗名" />
             <input value={editState.editKana} onChange={(e) => editState.setEditKana(e.target.value)} style={smallInput} placeholder="かな" />
           </div>
-<select 
-  value={editState.editBusinessType} 
-  onChange={(e) => {
-    editState.setEditBusinessType(e.target.value);
-    editState.setEditSubBusinessType(''); // 大カテゴリ変更で小カテゴリをリセット
-  }} 
-  style={smallInput}
->
-  <option value="">-- 業種を選択 --</option>
-  {INDUSTRY_LABELS.map(opt => (
-    <option key={opt} value={opt}>{opt}</option>
-  ))}
-</select>
+{/* 👇 🌟 修正：編集時も複数選択ボタンにする */}
+          <div style={{ padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', background: '#fff' }}>
+            <div style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#64748b', marginBottom: '8px' }}>大カテゴリ（業種・複数選択可）</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {INDUSTRY_LABELS.map(opt => {
+                const isActive = (Array.isArray(editState.editBusinessType) ? editState.editBusinessType : []).includes(opt);
+                return (
+                  <button 
+                    key={opt} type="button"
+                    onClick={() => {
+                      editState.setEditBusinessType(prev => {
+                        const arr = Array.isArray(prev) ? prev : [];
+                        return isActive ? arr.filter(t => t !== opt) : [...arr, opt];
+                      });
+                      editState.setEditSubBusinessType('');
+                    }}
+                    style={{ padding: '6px 12px', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer', border: isActive ? 'none' : '1px solid #cbd5e1', background: isActive ? '#10b981' : '#f8fafc', color: isActive ? '#fff' : '#64748b' }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-{/* 🆕 編集時も二段目の小カテゴリを表示 */}
-{editState.editBusinessType && getSubCategories(editState.editBusinessType).length > 0 && (
-  <select 
-    value={editState.editSubBusinessType} 
-    onChange={(e) => editState.setEditSubBusinessType(e.target.value)} 
-    style={{ ...smallInput, border: '1px solid #7c3aed' }} // 管理画面カラーに合わせる
-  >
-    <option value="">-- 詳細ジャンルを選択 --</option>
-    {getSubCategories(editState.editBusinessType).map(sub => (
-      <option key={sub} value={sub}>{sub}</option>
-    ))}
-  </select>
-)}          
+          {/* 🆕 編集時も二段目の小カテゴリを表示 */}
+          {Array.isArray(editState.editBusinessType) && editState.editBusinessType.length > 0 && editState.editBusinessType.flatMap(type => getSubCategories(type)).length > 0 && (
+            <select 
+              value={editState.editSubBusinessType} 
+              onChange={(e) => editState.setEditSubBusinessType(e.target.value)} 
+              style={{ ...smallInput, border: '1px solid #7c3aed' }}
+            >
+              <option value="">-- 詳細ジャンルを選択 --</option>
+              {editState.editBusinessType.flatMap(type => getSubCategories(type)).map(sub => (
+                <option key={sub} value={sub}>{sub}</option>
+              ))}
+            </select>
+          )}          
                     <input value={editState.editEmail} onChange={(e) => editState.setEditEmail(e.target.value)} style={smallInput} placeholder="メールアドレス" />
           <input value={editState.editPhone} onChange={(e) => editState.setEditPhone(e.target.value)} style={smallInput} placeholder="電話番号" />
           <input value={editState.editPassword} onChange={(e) => editState.setEditPassword(e.target.value)} style={smallInput} placeholder="PW" />
@@ -1063,7 +1084,7 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
         <div style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
           <h4 style={{ margin: '0 0 5px 0', fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>{shop.business_name}</h4>
           <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '5px' }}>{shop.owner_name} / PW: <strong>{shop.admin_password}</strong></div>
-          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '15px' }}>業種: {shop.business_type || "未設定"}</div>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '15px' }}>業種: {shop.business_type ? shop.business_type.replace(/,/g, ' / ') : "未設定"}</div>
           
           {/* ✅ 🆕 プラン選択スイッチへアップグレード */}
           <div style={{ marginBottom: '15px', padding: '12px', background: '#f5f3ff', borderRadius: '12px', border: '1px solid #7c3aed' }}>

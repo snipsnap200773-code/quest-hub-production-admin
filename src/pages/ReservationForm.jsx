@@ -49,8 +49,12 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
   const [visitorZip, setVisitorZip] = useState(''); // 🆕 追加：郵便番号用
   const [visitorAddress, setVisitorAddress] = useState('');
   const [isAddressFixed, setIsAddressFixed] = useState(false);
-  const [isVisitService, setIsVisitService] = useState(false);
   const [shouldSaveAddress, setShouldSaveAddress] = useState(true);
+
+  // 👇 🌟 🆕 追加：ハイブリッド用の状態管理
+  const [visitIndustries, setVisitIndustries] = useState([]);
+  const [salonIndustries, setSalonIndustries] = useState([]);
+  const [serviceMode, setServiceMode] = useState('salon'); // 'salon' または 'visit'
 
   // --- 複数名予約用のState ---
   // --- 複数名予約用のState ---
@@ -125,14 +129,26 @@ if (shopRes.data) {
 
       setShop(shopData);
             
-      // ✅ 1. キーワードが含まれているか判定（キーワード方式）
+      // 👇 🌟 修正：ハイブリッド判定（キーワードで訪問系と来店系を分ける）
       const businessTypeName = shopRes.data.business_type || '';
-      const isVisit = VISIT_KEYWORDS.some(keyword => businessTypeName.includes(keyword));
+      const vInds = businessTypeName.split(',').map(s=>s.trim()).filter(t => VISIT_KEYWORDS.some(k => t.includes(k)));
+      const sInds = businessTypeName.split(',').map(s=>s.trim()).filter(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
       
-      setIsVisitService(isVisit);
+      setVisitIndustries(vInds);
+      setSalonIndustries(sInds);
 
-      // 来店型（isVisitがfalse）なら、最初から住所入力をスキップ（確定状態）にする
-      if (!isVisit) {
+      const isHybrid = vInds.length > 0 && sInds.length > 0;
+      const isVisitOnly = vInds.length > 0 && sInds.length === 0;
+
+      // 初期モードの決定
+      if (isHybrid) {
+        setServiceMode('salon'); // 両方ある場合は一旦「来店」をデフォルトに
+        setIsAddressFixed(true);
+      } else if (isVisitOnly) {
+        setServiceMode('visit');
+        setIsAddressFixed(false);
+      } else {
+        setServiceMode('salon');
         setIsAddressFixed(true);
       }
 
@@ -446,14 +462,25 @@ fetchPreviousAddress();
     }
   };
 
+// 👇 🌟 🆕 追加：現在のモード（来店/訪問）に対応できるスタッフだけを抽出
+  const availableStylists = React.useMemo(() => {
+    const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
+    return stylists.filter(s => {
+      // 担当業種が1つも設定されていない人は「全対応」とみなす
+      if (!s.capable_categories || s.capable_categories.length === 0) return true;
+      // 設定されている場合は、今のモードの業種が含まれているかチェック
+      return targetInds.some(ind => s.capable_categories.includes(ind));
+    });
+  }, [stylists, serviceMode, visitIndustries, salonIndustries]);
+
 const handleNextStep = (input = null) => {
     // 🚀 🆕 引数が「クリックイベント」の場合は無視して null 扱いにする（エラー防止）
     const selectedStaffId = (typeof input === 'string') ? input : null;
-    // 🚀 🆕 【指名ステップの判定】
-    // 管理者ではなく、URL指名もなく、技術者が2人以上いて、まだスタッフを選んでいない場合
-    if (!isAdminMode && !staffIdFromUrl && stylists.length > 1 && !selectedStaffId) {
+    
+    // 👇 🌟 修正：全体の stylists ではなく、対応可能な availableStylists で判定する
+    if (!isAdminMode && !staffIdFromUrl && availableStylists.length > 1 && !selectedStaffId) {
       setShowStaffModal(true); // 指名画面（モーダル）を表示
-      return; // ここで処理を中断して指名を待つ
+      return; 
     }
 
     window.scrollTo(0, 0);
@@ -477,17 +504,25 @@ const handleNextStep = (input = null) => {
     );
 
     // 🚀 🆕 3. 最終的なスタッフIDを決定（直接選ばれたIDを最優先）
-    const finalStaffId = selectedStaffId === 'free' ? null : (selectedStaffId || adminStaffId || staffIdFromUrl || autoStaffId);
+    // 自動セット用のIDも、対応可能スタッフが1名になった場合に自動適用する
+    let currentAutoStaffId = autoStaffId;
+    if (availableStylists.length === 1 && !staffIdFromUrl && !isAdminMode) {
+      currentAutoStaffId = availableStylists[0].id;
+    }
+    const finalStaffId = selectedStaffId === 'free' ? null : (selectedStaffId || adminStaffId || staffIdFromUrl || currentAutoStaffId);
 
     // 4. 次のステップへ引き継ぐ共通データ一式
+    const targetIndustries = serviceMode === 'visit' ? visitIndustries : salonIndustries; // 👈 追加
     const commonState = { 
       people: finalPeople,
       isSalesExcluded: isExcluded,
       totalSlotsNeeded,
       lineUser,
       authUserProfile, 
-      visitorZip,
-      visitorAddress,
+      visitorZip: serviceMode === 'visit' ? visitorZip : '', // 来店なら住所は渡さない
+      visitorAddress: serviceMode === 'visit' ? visitorAddress : '',
+      serviceMode,      // 👈 🌟 🆕 追加
+      targetIndustries, // 👈 🌟 🆕 追加
       customShopName: displayBranding.name,
       bizType: entryType || location.state?.adminBizType,
       staffId: finalStaffId, // 👈 決定したIDを渡す
@@ -564,8 +599,28 @@ const handleNextStep = (input = null) => {
       <div style={{ marginTop: '30px', marginBottom: '30px', borderBottom: '1px solid #eee', paddingBottom: '20px' }}>
         <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem' }}>{displayBranding.name}</h2>
 
+        {/* 👇 🌟 🆕 ここから追加：ハイブリッド店舗専用のご利用モード切替トグル */}
+        {!isAdminMode && visitIndustries.length > 0 && salonIndustries.length > 0 && (
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: '#f1f5f9', padding: '6px', borderRadius: '16px' }}>
+            <button 
+              onClick={() => { setServiceMode('salon'); setIsAddressFixed(true); setVisitorZip(''); setVisitorAddress(''); }}
+              style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: serviceMode === 'salon' ? themeColor : 'transparent', color: serviceMode === 'salon' ? '#fff' : '#64748b', fontWeight: 'bold', transition: '0.2s', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              🏢 店舗へ行く
+            </button>
+            <button 
+              onClick={() => { setServiceMode('visit'); setIsAddressFixed(false); }}
+              style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: serviceMode === 'visit' ? themeColor : 'transparent', color: serviceMode === 'visit' ? '#fff' : '#64748b', fontWeight: 'bold', transition: '0.2s', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
+            >
+              🚗 訪問してもらう
+            </button>
+          </div>
+        )}
+        {/* 👆 追加ここまで */}
+
         {/* 🚗 訪問型住所入力エリア */}
-        {isVisitService && !isAdminMode && (
+        {/* 👇 🌟 修正：serviceMode が 'visit' の時だけ表示する */}
+        {serviceMode === 'visit' && !isAdminMode && (
           <div style={{ marginBottom: '25px', padding: '20px', background: isAddressFixed ? '#f8fafc' : '#fff', borderRadius: '16px', border: isAddressFixed ? '1px solid #e2e8f0' : `2px solid ${themeColor}`, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' }}>
             <h3 style={{ marginTop: 0, fontSize: '1rem', marginBottom: '15px', color: themeColor, display: 'flex', alignItems: 'center', gap: '8px' }}>
               <MapPin size={20} /> 1. 訪問先の住所を入力

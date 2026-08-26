@@ -113,14 +113,10 @@ function TimeSelectionCalendar() {
       ].filter(Boolean);
       setFacilitySchedules([...new Set(fDates)]);
 
-      // 5. 業種キーワードによる自動判定（三土手さんのロジックを完全維持）
-      const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-      const businessTypeName = profile.business_type || '';
-      const isVisit = VISIT_KEYWORDS.some(keyword => businessTypeName.includes(keyword));
+      // 👇 🌟 修正：前の画面から渡されたモードを受け取り、それに応じて移動時間を判定する
+      const passedServiceMode = location.state?.serviceMode || 'salon';
 
-      // ✅ 🆕 修正：店舗設定で「移動時間計算」がONの場合のみ、バッファを計算する
-      // ※既存データのために profile.use_travel_time_logic !== false とすることで、デフォルトONの状態を維持します
-      if (isVisit && profile.use_travel_time_logic !== false && profile.minutes_per_km) {
+      if (passedServiceMode === 'visit' && profile.use_travel_time_logic !== false && profile.minutes_per_km) {
         const speed = profile.minutes_per_km; 
         const averageDistance = 7; 
         const calculatedBuffer = averageDistance * speed; 
@@ -404,6 +400,9 @@ const checkAvailability = (date, timeStr) => {
       const prepBufferMs = (shop.buffer_preparation_min || 0) * 60 * 1000;
       const checkTStr = new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }).slice(0, 5);
   
+      // 👇 🌟 🆕 追加：前の画面から渡された「今回の予約の対象業種」を受け取る
+      const targetIndustries = location.state?.targetIndustries || [];
+
       // 💡 A. この「瞬間(t)」に出勤している全スタッフのリストを作る
       const workingStaffs = allStaffs.filter(s => {
         // 曜日休みや終日休みかチェック
@@ -413,6 +412,13 @@ const checkAvailability = (date, timeStr) => {
         if (shift && shift.type === 'time') {
           if (checkTStr < shift.start || checkTStr >= shift.end) return false;
         }
+
+        // 👇 🌟 🆕 追加：【ハイブリッド対応】このスタッフが今回の業種を担当できるかチェック
+        if (targetIndustries.length > 0 && s.capable_categories && s.capable_categories.length > 0) {
+          const canHandle = targetIndustries.some(ind => s.capable_categories.includes(ind));
+          if (!canHandle) return false; // 担当できないスタッフは空き枠計算から除外！
+        }
+
         return true;
       });
 

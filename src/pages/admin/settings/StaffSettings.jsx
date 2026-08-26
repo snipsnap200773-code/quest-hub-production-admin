@@ -2,10 +2,12 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { useSubscription } from '../../../context/SubscriptionContext';
+// 👇 🌟 🆕 追加：業種マスターデータを読み込む
+import { INDUSTRY_LABELS } from '../../../constants/industryMaster'; 
 import { 
   Users, Plus, Trash2, ArrowLeft, Save, 
   Calendar, Copy, QrCode, Check, Scissors,
-  ChevronLeft, ChevronRight, X, Clock // 🚀 🆕 Clock を追加！
+  ChevronLeft, ChevronRight, X, Clock 
 } from 'lucide-react';
 
 const StaffSettings = () => {
@@ -58,7 +60,8 @@ const StaffSettings = () => {
       concurrent_capacity: s.concurrent_capacity || 1,
       weekly_holidays: s.weekly_holidays || [],
       custom_shifts: s.custom_shifts || {}, // 🚀 🆕 specific_holidays を custom_shifts に変更！
-      is_default_for_admin: !!s.is_default_for_admin
+      is_default_for_admin: !!s.is_default_for_admin,
+      capable_categories: s.capable_categories || [] // 👈 🌟 🆕 追加
     })));
   };
 
@@ -113,15 +116,19 @@ const StaffSettings = () => {
   }, [shopId]);
 
   const [shopData, setShopData] = useState(null);
+  // ※ categories の useState は削除
 
   useEffect(() => {
     fetchStaffs();
-    fetchShopData(); // 👈 🆕 追加
+    fetchShopData(); 
+    // ※ fetchCategories() の呼び出しは削除
   }, [shopId]);
 
-  // 👇 🆕 追加：テーマカラーの取得
+  // ※ fetchCategories 関数自体も削除
+
+  // 👇 🌟 修正：テーマカラーと業種（business_type）を取得
   const fetchShopData = async () => {
-    const { data } = await supabase.from('profiles').select('theme_color').eq('id', shopId).single();
+    const { data } = await supabase.from('profiles').select('theme_color, business_type').eq('id', shopId).single();
     if (data) setShopData(data);
   };
 
@@ -142,7 +149,8 @@ const StaffSettings = () => {
         custom_shifts: s.custom_shifts || {}, // 🚀 🆕 JSONB用の初期化
         role_type: s.role_type || 'stylist',
         concurrent_capacity: s.concurrent_capacity || 1,
-        is_default_for_admin: !!s.is_default_for_admin
+        is_default_for_admin: !!s.is_default_for_admin,
+        capable_categories: s.capable_categories || [] // 👈 🌟 🆕 追加
       }));
       setStaffs(initialized);
       setInitialDataStr(getSimplifiedStaffsStr(initialized));
@@ -185,7 +193,8 @@ const StaffSettings = () => {
       role: isFirstStaff ? 'owner' : 'staff',
       role_type: newStaffRole, // 👈 🌟 🆕 選択された役割をセットする
       weekly_holidays: [],
-      custom_shifts: {} 
+      custom_shifts: {},
+      capable_categories: [] // 👈 🌟 🆕 追加
     }]);
 
     if (!error) {
@@ -221,6 +230,18 @@ const StaffSettings = () => {
     }));
   };
 
+  // 👇 🌟 🆕 ここから追加：担当業種のオンオフを切り替える関数
+  const toggleCategory = (staffId, categoryName) => {
+    setStaffs(prev => prev.map(s => {
+      if (s.id !== staffId) return s;
+      const current = s.capable_categories || [];
+      const updated = current.includes(categoryName)
+        ? current.filter(c => c !== categoryName)
+        : [...current, categoryName];
+      return { ...s, capable_categories: updated };
+    }));
+  };
+
   // 👇 修正：個別の保存を廃止し、一括で upsert（更新・追加）する関数に変更
   const handleSaveAll = async () => {
     setIsSaving('all');
@@ -234,7 +255,8 @@ const StaffSettings = () => {
         custom_shifts: staff.custom_shifts, // 🚀 🆕 保存対象を custom_shifts に！
         concurrent_capacity: staff.concurrent_capacity || 1,
         role_type: staff.role_type,
-        is_default_for_admin: staff.is_default_for_admin
+        is_default_for_admin: staff.is_default_for_admin,
+        capable_categories: staff.capable_categories // 👈 🌟 🆕 保存対象に追加
       }));
 
       const { error } = await supabase.from('staffs').upsert(updates);
@@ -462,6 +484,50 @@ const StaffSettings = () => {
                     </div>
                   </div>
                 </div>
+
+                {/* 👇 🌟 🆕 ここから追加：担当業種の設定パネル */}
+                {(() => {
+                  const shopBusinessTypes = shopData?.business_type ? shopData.business_type.split(',').map(s => s.trim()).filter(Boolean) : [];
+                  return (
+                    <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
+                      <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
+                        <Scissors size={14} /> 担当できる業種（プラットフォーム連携用）
+                      </div>
+                      {shopBusinessTypes.length > 0 ? (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                          {shopBusinessTypes.map((industryName) => {
+                            const isCapable = staff.capable_categories?.includes(industryName);
+                            return (
+                              <button
+                                key={industryName}
+                                type="button"
+                                onClick={() => toggleCategory(staff.id, industryName)}
+                                style={{
+                                  padding: '8px 12px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer',
+                                  background: isCapable ? '#1e293b' : '#fff',
+                                  color: isCapable ? '#fff' : '#64748b',
+                                  border: isCapable ? 'none' : '1px solid #cbd5e1',
+                                  transition: 'all 0.2s',
+                                  display: 'flex', alignItems: 'center', gap: '6px'
+                                }}
+                              >
+                                {isCapable && <Check size={14} />}
+                                {industryName}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '0.75rem', color: '#94a3b8' }}>※店舗の業種が設定されていません。</div>
+                      )}
+                      <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginTop: '10px', lineHeight: '1.4' }}>
+                        ※この店舗が複数の業種を兼任している場合、このスタッフが担当する業種を選択してください。<br/>
+                        ※一つも選択していない場合は、すべての業種の予約を受け付ける（制限なし）扱いになります。
+                      </div>
+                    </div>
+                  );
+                })()}
+                {/* 👆 追加ここまで */}
 
                 <div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
