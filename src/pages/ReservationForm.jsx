@@ -811,7 +811,6 @@ const handleNextStep = (input = null) => {
       </div>
 
       {/* 🚀 🆕 【住所確定ガード】訪問型サービスで住所未確定ならメニューを隠す */}
-      {/* 👇 🌟 修正：isVisitService を serviceMode === 'visit' に変更 */}
       {(!(serviceMode === 'visit') || isAddressFixed || isAdminMode) ? (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
           <h3 style={{ fontSize: '1rem', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', marginBottom: '20px' }}>
@@ -820,6 +819,12 @@ const handleNextStep = (input = null) => {
           
           {categories
             .filter(cat => {
+              // 👇 🌟 🆕 追加：このカテゴリが今のタブ（来店/訪問）の業種に合致しているかチェック
+              const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
+              if (cat.target_industry && !targetInds.includes(cat.target_industry)) {
+                return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
+              }
+
               // カテゴリ内に表示用メニューがあるかチェック
               return services.some(s => s.category === cat.name && !s.show_on_print);
             })
@@ -1011,7 +1016,8 @@ const handleNextStep = (input = null) => {
                 </button>
 
                 {/* 技術者（Stylists）のリスト表示 */}
-                {stylists.map(s => (
+                {/* 👇 🌟 修正：全体の stylists ではなく、現在のタブの業種に対応できる availableStylists だけを表示する */}
+                {availableStylists.map(s => (
                   <button key={s.id} onClick={() => handleNextStep(s.id)} style={staffCardStyle(true, themeColor)}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                       <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: `${themeColor}10`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold', color: themeColor }}>

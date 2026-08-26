@@ -115,10 +115,32 @@ function AdminReservations() {
   // --- 状態管理 ---
   const [shop, setShop] = useState(null);
   const [staffs, setStaffs] = useState([]);
+
+  // 👇 🌟 🆕 ここから追加：ハイブリッド店舗用のフィルターロジック
+  const [activeFilter, setActiveFilter] = useState('all'); 
+  
+  // 店舗が持っている業種を配列化
+  const shopIndustries = useMemo(() => {
+    if (!shop?.business_type) return [];
+    if (Array.isArray(shop.business_type)) return shop.business_type;
+    return shop.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+  }, [shop]);
+
+  const isVisitFilter = activeFilter.includes('訪問') || activeFilter.includes('出張');
+
+  // 選択されたタブに応じてスタッフを絞り込む
+  const validStaffIds = useMemo(() => {
+    if (activeFilter === 'all') return staffs.map(s => s.id);
+    return staffs.filter(s => !s.capable_categories || s.capable_categories.length === 0 || s.capable_categories.includes(activeFilter)).map(s => s.id);
+  }, [staffs, activeFilter]);
+  // 👆 追加ここまで
+
+  // 👇 🌟 修正：useState を全て先（上）に定義します！
   const [reservations, setReservations] = useState([]);
   const [visitRequests, setVisitRequests] = useState([]);
-const [salesRecords, setSalesRecords] = useState([]);
+  const [salesRecords, setSalesRecords] = useState([]);
   const [manualKeeps, setManualKeeps] = useState([]);
+  const [privateTasks, setPrivateTasks] = useState([]); // 👈 🌟 🆕 privateTasks もここで確実に定義する！
   const [loading, setLoading] = useState(true);
   const [exclusions, setExclusions] = useState([]);
   const [irregularKeeps, setIrregularKeeps] = useState([]);
@@ -133,9 +155,14 @@ const [salesRecords, setSalesRecords] = useState([]);
   const [categoryMap, setCategoryMap] = useState({});
   const [showAlertModal, setShowAlertModal] = useState(false);
   const [alertModalMode, setAlertModalMode] = useState(null);
-
   const [showFacilityMembersModal, setShowFacilityMembersModal] = useState(false);
   const [selectedFacilitySale, setSelectedFacilitySale] = useState(null);
+
+  // 👇 🌟 修正：useState が全て終わった「後」で、フィルター配列を生成する！
+  const filteredVisitRequests = useMemo(() => (activeFilter === 'all' || isVisitFilter) ? visitRequests : [], [visitRequests, activeFilter, isVisitFilter]);
+  const filteredManualKeeps = useMemo(() => (activeFilter === 'all' || isVisitFilter) ? manualKeeps : [], [manualKeeps, activeFilter, isVisitFilter]);
+  const filteredReservations = useMemo(() => reservations.filter(r => activeFilter === 'all' || validStaffIds.includes(r.staff_id) || r.staff_id === null), [reservations, activeFilter, validStaffIds]);
+  const filteredPrivateTasks = useMemo(() => privateTasks.filter(p => activeFilter === 'all' || validStaffIds.includes(p.staff_id) || p.staff_id === null), [privateTasks, activeFilter, validStaffIds]);
 
   const [startDate, setStartDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -199,7 +226,6 @@ const resIndexStyle = (color) => ({
   const [selectedHistory, setSelectedHistory] = useState(null);
 
 // 🆕 プライベート予定用のState
-  const [privateTasks, setPrivateTasks] = useState([]);
   const [showPrivateModal, setShowPrivateModal] = useState(false);
   const [privateTaskFields, setPrivateTaskFields] = useState({ title: '', note: '' });
   // --- ✨ 修正後：現在時刻保持用のStateを追加 ---
@@ -1413,6 +1439,9 @@ setSalesRecords(salesRes.data || []);
   
   // 🆕 定期キープ（施設とのお約束）の判定：エラー修正版
   const checkIsRegularKeep = (date, ignoreExclusion = false) => {
+    // 👇 🌟 🆕 追加：フィルターで訪問系が外されている場合は定期キープを無視する
+    if (activeFilter !== 'all' && !isVisitFilter) return null;
+
     const dStr = getJapanDateStr(date);
     
     // 🚀 修正：ignoreExclusion が false の時だけ除外リストをチェックする
@@ -1555,20 +1584,21 @@ setSalesRecords(salesRes.data || []);
     // その日の全予定をかき集める
     const dayEntries = [];
 
+    // 👇 🌟 修正：全て filtered〜 から始まる配列に置き換える
     // ① 一般予約・ねじ込み
-    reservations.forEach(r => {
+    filteredReservations.forEach(r => {
       if (r.start_time.startsWith(dStr) && r.res_type === 'normal' && r.status !== 'canceled') {
         dayEntries.push({ time: r.start_time, name: r.customer_name, type: 'normal' });
       }
     });
 
     // ② 施設（確定・手動キープ）
-    visitRequests.forEach(v => {
+    filteredVisitRequests.forEach(v => {
       if ((v.scheduled_date === dStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => (typeof d === 'string' ? d : d.date) === dStr))) && v.status !== 'canceled') {
         dayEntries.push({ time: `${dStr}T${v.start_time || '09:00'}`, name: v.facility_users?.facility_name || '施設', type: 'facility' });
       }
     });
-    manualKeeps.forEach(k => {
+    filteredManualKeeps.forEach(k => {
       if (k.date === dStr) {
         dayEntries.push({ time: `${dStr}T${k.start_time || '09:00'}`, name: k.facility_users?.facility_name || '施設予定', type: 'facility' });
       }
@@ -1581,7 +1611,7 @@ setSalesRecords(salesRes.data || []);
     }
 
     // ④ プライベート予定
-    privateTasks.forEach(p => {
+    filteredPrivateTasks.forEach(p => {
       if (p.start_time.startsWith(dStr)) {
         dayEntries.push({ time: p.start_time, name: p.title, type: 'private' });
       }
@@ -1663,8 +1693,9 @@ const getStatusAt = (dateStr, timeStr) => {
     const dateObj = new Date(dateStr);
     const currentSlotTime = timeStr; // "09:00"
 
+    // 👇 🌟 修正：全て filtered〜 から始まる配列に置き換える
     // --- 🏆 優先度1：確定した施設訪問（visit_requests） ---
-    const confirmedVisit = visitRequests.find(v => {
+    const confirmedVisit = filteredVisitRequests.find(v => {
       // 🚀 🆕 確定(confirmed) だけでなく 完了(completed) も対象に含める
       if (!['confirmed', 'completed'].includes(v.status)) return false;
       const vStart = v.start_time?.substring(0, 5) || "09:00";
@@ -1688,7 +1719,7 @@ const getStatusAt = (dateStr, timeStr) => {
     }
 
     // --- 🏆 優先度2：手動追加のキープ（★） ---
-    const mKeep = manualKeeps.find(k => {
+    const mKeep = filteredManualKeeps.find(k => {
       const kTime = (k.start_time || "09:00").substring(0, 5);
       return k.date === dateStr && kTime === currentSlotTime;
     });
@@ -1732,7 +1763,7 @@ const getStatusAt = (dateStr, timeStr) => {
     const currentSlotStart = new Date(`${dateStr}T${timeStr}:00+09:00`).getTime();
 
     // 1. お客様の予約（ねじ込み含む）
-    const resMatches = reservations.filter(r => {
+    const resMatches = filteredReservations.filter(r => {
       const start = new Date(r.start_time).getTime();
       const end = new Date(r.end_time).getTime();
       
@@ -1762,7 +1793,7 @@ const getStatusAt = (dateStr, timeStr) => {
     });
 
     // 2. プライベート予定
-    const privMatches = privateTasks.filter(p => {
+    const privMatches = filteredPrivateTasks.filter(p => {
       const start = new Date(p.start_time).getTime();
       const end = new Date(p.end_time).getTime();
       return currentSlotStart >= start && currentSlotStart < end;
@@ -1773,11 +1804,11 @@ const getStatusAt = (dateStr, timeStr) => {
 
     // --- 🏆 優先度4：予約がない枠だけ、施設訪問日の「ステルスブロック」をかける ---
     // status に 'completed' も含めることで、お会計後もブロックを維持します
-    const hasAnyConfirmedVisitThisDay = visitRequests.some(v => 
+    const hasAnyConfirmedVisitThisDay = filteredVisitRequests.some(v => 
       (v.status === 'confirmed' || v.status === 'completed') && 
       (v.scheduled_date === dateStr || (Array.isArray(v.visit_date_list) && v.visit_date_list.some(d => d.date === dateStr)))
     );
-    const hasAnyKeepThisDay = manualKeeps.some(k => k.date === dateStr) || checkIsRegularKeep(dateObj);
+    const hasAnyKeepThisDay = filteredManualKeeps.some(k => k.date === dateStr) || checkIsRegularKeep(dateObj);
 
     if (hasAnyConfirmedVisitThisDay || hasAnyKeepThisDay) {
       return [{ res_type: 'facility_day_stealth', customer_name: '', start_time: `${dateStr}T${timeStr}:00` }];
@@ -2054,25 +2085,61 @@ return (
       <h2 style={{ fontSize: '1.1rem', margin: 0, fontWeight: '900', color: '#1e293b' }}>{startDate.getFullYear()}年 {startDate.getMonth() + 1}月</h2>
       <button onClick={goNext} style={mobileArrowBtnStyle}>▶</button>
 
-      {/* 🔍 🚀 🆕 右：検索ポップアップ起動ボタン */}
-      <button 
-        onClick={() => {
-          fetchAllCustomersForSearch();
-          setShowMobileSearchModal(true);
-        }}
-        style={{ 
-          position: 'absolute', right: '0', background: themeColorLight, border: `1px solid ${themeColor}33`, 
-          color: themeColor, padding: '8px', borderRadius: '10px'
-        }}
-      >
-        <Search size={20} />
-      </button>
-    </div>
-    
-    {/* 💡 元々ここにあった検索バーは、不要であれば削除してOKです */}
-  </div>
-)}
+              {/* 🔍 🚀 🆕 右：検索ポップアップ起動ボタン */}
+              <button 
+                onClick={() => {
+                  fetchAllCustomersForSearch();
+                  setShowMobileSearchModal(true);
+                }}
+                style={{ 
+                  position: 'absolute', right: '0', background: themeColorLight, border: `1px solid ${themeColor}33`, 
+                  color: themeColor, padding: '8px', borderRadius: '10px'
+                }}
+              >
+                <Search size={20} />
+              </button>
+            </div>
           </div>
+        )}
+          </div>
+
+      {/* 👇 🌟 🆕 ここから追加：業種フィルタータブ（複数の業種がある場合のみ自動で出現） */}
+      {shopIndustries.length > 1 && (
+        <div style={{ background: '#f8fafc', padding: '10px 15px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '8px', overflowX: 'auto', flexShrink: 0 }}>
+          <button
+            onClick={() => setActiveFilter('all')}
+            style={{
+              padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+              background: activeFilter === 'all' ? themeColor : '#e2e8f0',
+              color: activeFilter === 'all' ? '#fff' : '#64748b',
+              transition: '0.2s', boxShadow: activeFilter === 'all' ? `0 4px 10px ${themeColor}44` : 'none'
+            }}
+          >
+            全体
+          </button>
+          {shopIndustries.map(ind => {
+            let displayInd = ind;
+            if (ind === '美容室・理容室') displayInd = '店舗';
+            else if (ind === '訪問サービス') displayInd = '訪問';
+
+            return (
+              <button
+                key={ind}
+                onClick={() => setActiveFilter(ind)}
+                style={{
+                  padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+                  background: activeFilter === ind ? themeColor : '#e2e8f0',
+                  color: activeFilter === ind ? '#fff' : '#64748b',
+                  transition: '0.2s', boxShadow: activeFilter === ind ? `0 4px 10px ${themeColor}44` : 'none'
+                }}
+              >
+                {displayInd}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* 👆 追加ここまで */}
 
   {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
   {(() => {
@@ -2121,6 +2188,9 @@ return (
 
   {/* 🚀 🆕 修正：ヘッダーを占領しないスッキリ1行の「まとめバナー」に変更！ */}
   {(() => {
+    // 👇 🌟 🆕 追加：訪問フィルターが外されている時はアラートを隠す
+    if (activeFilter !== 'all' && !isVisitFilter) return null;
+
     const hasUrgent = urgentKeeps.length > 0;
     const hasTimeChange = timeChangedKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0;
     if (!hasUrgent && !hasTimeChange) return null;
@@ -2147,6 +2217,9 @@ return (
 
   {/* 🚀 ❷ 【新設】3日前より前の「新着単発キープ専用」アラートバナー（青色） */}
   {(() => {
+    // 👇 🌟 🆕 追加：訪問フィルターが外されている時はアラートを隠す
+    if (activeFilter !== 'all' && !isVisitFilter) return null;
+
     const activeIrregulars = irregularKeeps.filter(k => !dismissedKeeps.includes(k.id));
     if (activeIrregulars.length === 0) return null;
 
@@ -2383,17 +2456,17 @@ else if (
     const trimmedName = rawName.trim();
     const spaceIndex = trimmedName.search(/[\s ]/);
     
-    if (res.res_type === 'private_task') {
-      // 🌟 プライベート予定は様を付けない
-      processedName = trimmedName.replace(/[\s ]+/g, '').slice(0, 3);
+    // 👇 🌟 修正：ブロック（✕や臨時休業）の時も様を付けない！
+    const isSystemTask = res.res_type === 'private_task' || res.res_type === 'blocked';
+    
+    if (isSystemTask) {
+      processedName = trimmedName.replace(/[\s ]+/g, '').slice(0, 4);
     } else {
-      // 施設や個人予約はスペースで苗字切り出し
       const baseName = spaceIndex !== -1 ? trimmedName.substring(0, spaceIndex) : trimmedName.replace(/様$/g, '');
-      
       if (isPC) {
-        processedName = baseName + ' 様'; // PC版は様付け
+        processedName = baseName + ' 様'; 
       } else {
-        processedName = baseName.slice(0, 3); // スマホ版は様なし
+        processedName = baseName.slice(0, 3);
       }
     }
 
@@ -2410,25 +2483,45 @@ else if (
         overflow: 'hidden'
       }}>
         
-        {/* アイコン・バッジ類 */}
-        {res.res_type === 'facility_visit' && (
-          <div style={{ color: '#4f46e5', marginBottom: '1px', flexShrink: 0 }}>
-          </div>
-        )}
-        
-        {categoryMap[res.biz_type] && (
-          <div style={{ 
-            fontSize: '9px', padding: '1px 3px', borderRadius: '4px', marginBottom: '1px',
-            background: res.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: 'bold', 
-            transform: 'scale(0.8)', whiteSpace: 'nowrap', flexShrink: 0
-          }}>
-            {categoryMap[res.biz_type].slice(0, 3)}
-          </div>
-        )}
+        {/* 👇 🌟 🆕 修正：業種バッジにアイコンを追加して見やすく */}
+        {(() => {
+          let badgeIcon = '';
+          let badgeBg = '#d34817'; // デフォルト（来店）のオレンジ
+          let badgeText = '';
+
+          if (res.res_type === 'facility_visit' || res.res_type.includes('facility_keep')) {
+            badgeIcon = '🚗';
+            badgeBg = '#0284c7'; // 訪問用の青
+            badgeText = '施設';
+          } else if (categoryMap[res.biz_type]) {
+            const catName = categoryMap[res.biz_type];
+            if (catName.includes('訪問') || catName.includes('出張')) {
+              badgeIcon = '🚗';
+              badgeBg = '#0284c7';
+            } else {
+              badgeIcon = '🏢';
+            }
+            badgeText = catName.slice(0, 4);
+          }
+
+          if (!badgeText) return null;
+
+          return (
+            <div style={{ 
+              fontSize: '9px', padding: '1px 3px', borderRadius: '4px', marginBottom: '1px',
+              background: badgeBg, color: '#fff', fontWeight: 'bold', 
+              transform: 'scale(0.8)', whiteSpace: 'nowrap', flexShrink: 0,
+              display: 'flex', alignItems: 'center', gap: '2px'
+            }}>
+              <span>{badgeIcon}</span> {badgeText}
+            </div>
+          );
+        })()}
+        {/* 👆 修正ここまで */}
 
         {/* 🚀 【細身・枠いっぱい自動フィット】 */}
         <div style={{
-          fontSize: isPC ? '150%' : '140%', 
+          fontSize: isPC ? '150%' : '140%',
           fontWeight: '500', 
           color: colors.text,
           whiteSpace: 'nowrap',

@@ -175,10 +175,31 @@ function AdminTimeline() {
 
   // 👤 顧客詳細用（ここがコメントアウトされていました）
 const [selectedCustomer, setSelectedCustomer] = useState(null); 
-  const [customerHistory, setCustomerHistory] = useState([]);
+  const [customerHistory, setCustomerHistory] = useState([]);
+
+  // 👇 🌟 🆕 ここから追加：ハイブリッド店舗用のフィルターロジック
+  const [activeFilter, setActiveFilter] = useState('all'); 
+  
+  // 店舗が持っている業種を配列化
+  const shopIndustries = useMemo(() => {
+    if (!shop?.business_type) return [];
+    return shop.business_type.split(',').map(s => s.trim()).filter(Boolean);
+  }, [shop]);
+
+  // 選択されたタブに応じてスタッフを絞り込む
+  const filteredStaffs = useMemo(() => {
+    if (activeFilter === 'all') return staffs;
+    return staffs.filter(s => {
+      // 担当業種が未設定のスタッフは「全対応」として常に表示
+      if (!s.capable_categories || s.capable_categories.length === 0) return true;
+      return s.capable_categories.includes(activeFilter);
+    });
+  }, [staffs, activeFilter]);
+  // 👆 追加ここまで
+
 // ✅ 🆕 修正：カレンダー版と同じフル項目セットに拡張
   const [editFields, setEditFields] = useState({ 
-    name: '', 
+    name: '',
     admin_name: '', 
     furigana: '', phone: '', email: '', 
     address: '', parking: '', symptoms: '', request_details: '', 
@@ -971,8 +992,47 @@ const timeSlots = useMemo(() => {
         )}
       </div>
 
-      {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
-      {(() => {
+      {/* 👇 🌟 🆕 ここから追加：業種フィルタータブ（複数の業種がある場合のみ自動で出現） */}
+      {shopIndustries.length > 1 && (
+        <div style={{ background: '#f8fafc', padding: '10px 15px', borderBottom: '1px solid #e2e8f0', display: 'flex', gap: '8px', overflowX: 'auto', flexShrink: 0 }}>
+          <button
+            onClick={() => setActiveFilter('all')}
+            style={{
+              padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+              background: activeFilter === 'all' ? themeColor : '#e2e8f0',
+              color: activeFilter === 'all' ? '#fff' : '#64748b',
+              transition: '0.2s', boxShadow: activeFilter === 'all' ? `0 4px 10px ${themeColor}44` : 'none'
+            }}
+          >
+            全体
+          </button>
+          {shopIndustries.map(ind => {
+            // 👇 🌟 🆕 追加：表示名をスッキリ短く変換する
+            let displayInd = ind;
+            if (ind === '美容室・理容室') displayInd = '店舗';
+            else if (ind === '訪問サービス') displayInd = '訪問';
+
+            return (
+              <button
+                key={ind}
+                onClick={() => setActiveFilter(ind)}
+                style={{
+                  padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+                  background: activeFilter === ind ? themeColor : '#e2e8f0',
+                  color: activeFilter === ind ? '#fff' : '#64748b',
+                  transition: '0.2s', boxShadow: activeFilter === ind ? `0 4px 10px ${themeColor}44` : 'none'
+                }}
+              >
+                {displayInd}
+              </button>
+            );
+          })}
+        </div>
+      )}
+      {/* 👆 追加ここまで */}
+
+  {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
+  {(() => {
         if (shop?.subscription_status !== 'trialing' || !shop?.trial_ends_at) return null;
         const endsAt = new Date(shop.trial_ends_at);
         const now = new Date();
@@ -1038,7 +1098,8 @@ const timeSlots = useMemo(() => {
               </tr>
             </thead>
             <tbody>
-              {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => (
+              {/* 👇 🌟 修正：staffs を filteredStaffs に変更 */}
+              {[...filteredStaffs, { id: 'free', name: '担当なし' }].map((staff, idx) => (
                 <tr key={staff.id} style={{ height: '80px', background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
                   <td style={{ position: 'sticky', left: 0, zIndex: 90, background: idx % 2 === 0 ? '#fff' : '#f8fafc', padding: '8px', borderRight: '3px solid #94a3b8', borderBottom: '1px solid #cbd5e1', fontWeight: 'bold' }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1105,7 +1166,12 @@ const timeSlots = useMemo(() => {
                                       const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
                                       const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
                                       const icons = `${blockedIcon}${cancelIcon}`;
-                                      return isMultiple ? `${name} (${matches.length}名)${icons}` : `${name} 様${icons}`;
+                                      
+                                      // 👇 🌟 修正：システムタスク（ブロックや休憩）の場合は「様」を付けない！
+                                      const isSystemTask = res.res_type === 'blocked' || res.res_type === 'private_task';
+                                      const suffix = isSystemTask ? '' : ' 様';
+                                      
+                                      return isMultiple ? `${name} (${matches.length}名)${icons}` : `${name}${suffix}${icons}`;
                                     }
                                     return `👥 ${matches.length}名`;
                                   })()}
@@ -1138,7 +1204,8 @@ const timeSlots = useMemo(() => {
                   })()}
                 </th>
                 {/* 横軸にスタッフを展開 */}
-                {[...staffs, { id: 'free', name: 'フリー' }].map((staff, idx) => (
+                {/* 👇 🌟 修正：staffs を filteredStaffs に変更 */}
+                {[...filteredStaffs, { id: 'free', name: 'フリー' }].map((staff, idx) => (
                   // 🚀 🆕 修正：文字がはみ出さないように overflow: 'hidden' と textOverflow: 'ellipsis' を追加
                   <th key={staff.id} style={{ padding: '8px 4px', minWidth: '70px', borderRight: '1px solid #cbd5e1', borderBottom: '3px solid #94a3b8', color: '#1e293b', fontSize: '0.9rem', background: idx % 2 === 0 ? '#fff' : '#f8fafc', textAlign: 'center', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                     {staff.name}
@@ -1154,7 +1221,8 @@ const timeSlots = useMemo(() => {
                     <span style={{ fontSize: '0.8rem', color: '#64748b' }}>{time}</span>
                   </td>
                   
-                  {[...staffs, { id: 'free', name: '担当なし' }].map((staff, idx) => {
+                  {/* 👇 🌟 修正：staffs を filteredStaffs に変更 */}
+                  {[...filteredStaffs, { id: 'free', name: '担当なし' }].map((staff, idx) => {
                     const currentSlotStart = new Date(`${selectedDate}T${time}:00`).getTime();
                     const staffIdVal = staff.id === 'free' ? null : staff.id;
 

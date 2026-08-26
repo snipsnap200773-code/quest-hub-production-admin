@@ -278,6 +278,15 @@ function TimeSelectionCalendar() {
 const checkAvailability = (date, timeStr) => {
     if (!shop?.business_hours) return { status: 'none', remaining: 0 };
 
+    // 👇 🌟 🆕 追加：今のモード（来店or訪問）で担当可能なスタッフのIDリストを作る
+    const targetIndustries = location.state?.targetIndustries || [];
+    const targetStaffIdsForMode = allStaffs.filter(s => {
+      if (targetIndustries.length > 0 && s.capable_categories && s.capable_categories.length > 0) {
+        return targetIndustries.some(ind => s.capable_categories.includes(ind));
+      }
+      return true;
+    }).map(s => s.id);
+
     // --- 🚀 1. 判定に必要な変数を最初にすべて定義する ---
     const dateStr = date.toLocaleDateString('sv-SE'); // YYYY-MM-DD
     const now = new Date();
@@ -297,6 +306,8 @@ const checkAvailability = (date, timeStr) => {
 
     // 🚀 🆕 追加：その日に「1日貸切」の予約が1件でも入っているかチェック
     const isFullDayReserved = existingReservations.some(r => {
+      if (r.staff_id && !targetStaffIdsForMode.includes(r.staff_id)) return false; // 👈 🌟 追加：関係ない業種の予約は無視
+
       // その日の予約かチェック
       if (r.start_time.startsWith(dateStr) && r.status !== 'canceled') {
         const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
@@ -330,6 +341,7 @@ const checkAvailability = (date, timeStr) => {
     const currentSlotTime = new Date(`${dateStr}T${timeStr}:00`).getTime();
     const isBlockedByAdmin = existingReservations.some(res => {
       if (res.is_block !== true) return false;
+      if (res.staff_id && !targetStaffIdsForMode.includes(res.staff_id)) return false; // 👈 🌟 追加
       const s = new Date(res.start_time).getTime();
       const e = new Date(res.end_time).getTime();
       return currentSlotTime >= s && currentSlotTime < e;
@@ -337,6 +349,7 @@ const checkAvailability = (date, timeStr) => {
 
     // 🚀 🆕 追加：プライベート予定もブロック対象にする
     const isPrivateBlocked = privateTasks.some(p => {
+      if (p.staff_id && !targetStaffIdsForMode.includes(p.staff_id)) return false; // 👈 🌟 追加
       const s = new Date(p.start_time).getTime();
       const e = new Date(p.end_time).getTime();
       return currentSlotTime >= s && currentSlotTime < e;
@@ -372,6 +385,7 @@ const checkAvailability = (date, timeStr) => {
       
       // 🚀 🆕 追加：予約の途中でプライベート予定にぶつからないかチェック
       const hitPrivate = privateTasks.some(p => {
+        if (p.staff_id && !targetStaffIdsForMode.includes(p.staff_id)) return false; // 👈 🌟 追加
         const s = new Date(p.start_time).getTime();
         const e = new Date(p.end_time).getTime();
         return t >= s && t < e;
@@ -436,6 +450,9 @@ const checkAvailability = (date, timeStr) => {
 
       // 💡 D. 店舗全体で予約枠が上限に達していないかチェック
       const globalCount = existingReservations.filter(res => {
+        // 👇 🌟 修正：今のモードで対応できないスタッフ（違う業種のスタッフ）の予約はカウントから除外！
+        if (res.staff_id && !workingStaffs.some(s => s.id === res.staff_id)) return false;
+
         const resStart = new Date(res.start_time).getTime();
         const resEnd = new Date(res.end_time).getTime();
         const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
@@ -476,6 +493,15 @@ const checkAvailability = (date, timeStr) => {
   const getUnavailabilityMessage = (date) => {
     const dateStr = date.toLocaleDateString('sv-SE');
 
+    // 👇 🌟 🆕 追加：メッセージ取得時も対象スタッフを絞り込む
+    const targetIndustries = location.state?.targetIndustries || [];
+    const targetStaffIdsForMode = allStaffs.filter(s => {
+      if (targetIndustries.length > 0 && s.capable_categories && s.capable_categories.length > 0) {
+        return targetIndustries.some(ind => s.capable_categories.includes(ind));
+      }
+      return true;
+    }).map(s => s.id);
+
     // 1. 長期休暇
     if (shop?.special_holidays && Array.isArray(shop.special_holidays)) {
       const specialHoliday = shop.special_holidays.find(h => dateStr >= h.start && dateStr <= h.end);
@@ -486,7 +512,12 @@ const checkAvailability = (date, timeStr) => {
     if (checkIsRegularHoliday(date)) return "定休日";
 
     // 3. 臨時休業
-    const isTempClosed = existingReservations.some(r => r.start_time.startsWith(dateStr) && r.res_type === 'blocked' && r.customer_name === '臨時休業');
+    const isTempClosed = existingReservations.some(r => 
+      r.start_time.startsWith(dateStr) && 
+      r.res_type === 'blocked' && 
+      r.customer_name === '臨時休業' &&
+      (!r.staff_id || targetStaffIdsForMode.includes(r.staff_id)) // 👈 🌟 追加
+    );
     if (isTempClosed) return "臨時休業";
 
     // 4. 直近の予約制限 (例: 当日予約不可)
@@ -503,6 +534,7 @@ const checkAvailability = (date, timeStr) => {
       const currentSlotStart = new Date(`${dateStr}T${time}:00`).getTime();
       const fullDayRes = existingReservations.find(r => {
         if (r.status === 'canceled') return false; // キャンセルは除外
+        if (r.staff_id && !targetStaffIdsForMode.includes(r.staff_id)) return false; // 👈 🌟 追加
         const rStart = new Date(r.start_time).getTime();
         const rEnd = new Date(r.end_time).getTime();
         // 予約時間内に重なっているか
@@ -702,9 +734,20 @@ const checkAvailability = (date, timeStr) => {
 
           // 🚀 🆕 A: その日の「忙しい時間（予約・ブロック・休憩・予定）」をリスト化
           const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
+
+          // 👇 🌟 🆕 追加：自動詰め判定でも対象スタッフを絞り込む
+          const targetIndustries = location.state?.targetIndustries || [];
+          const targetStaffIdsForMode = allStaffs.filter(s => {
+            if (targetIndustries.length > 0 && s.capable_categories && s.capable_categories.length > 0) {
+              return targetIndustries.some(ind => s.capable_categories.includes(ind));
+            }
+            return true;
+          }).map(s => s.id);
+
           const busyTimes = [
   ...existingReservations
     .filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled')
+    .filter(r => !r.staff_id || targetStaffIdsForMode.includes(r.staff_id)) // 👈 🌟 追加：関係ない予約は弾く！
     .map(r => ({ 
       s: new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
       e: new Date(r.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
@@ -712,6 +755,7 @@ const checkAvailability = (date, timeStr) => {
     })),
   ...privateTasks
     .filter(p => p.start_time.startsWith(dateStr))
+    .filter(p => !p.staff_id || targetStaffIdsForMode.includes(p.staff_id)) // 👈 🌟 追加：関係ない予定は弾く！
     .map(p => ({ 
       s: new Date(p.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
       e: new Date(p.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
@@ -754,26 +798,37 @@ const checkAvailability = (date, timeStr) => {
   const startMs = new Date(`${dateStr}T${time}:00+09:00`).getTime();
   const endMs = startMs + (myDuration * 60000);
 
-  // 2. 【前】との隙間チェック (busyTimes -> gapTasks)
+  // 1. 直前の予定（または開店時刻）と、直後の予定（または閉店時刻）を取得
   const prevTask = gapTasks
     .filter(b => b.e <= time)
     .sort((a, b) => b.e.localeCompare(a.e))[0];
 
-  const gapBefore = prevTask
-    ? (startMs - new Date(`${dateStr}T${prevTask.e}:00+09:00`).getTime()) / 60000
-    : (startMs - new Date(`${dateStr}T${openTime}:00+09:00`).getTime()) / 60000;
-
-  if (gapBefore > 0 && gapBefore < 60) return false;
-
-  // 3. 【後】との隙間チェック (busyTimes -> gapTasks)
   const nextTask = gapTasks
-    .filter(b => b.s >= new Date(endMs).toLocaleTimeString('ja-JP', {hour:'2-digit', minute:'2-digit', hour12:false, timeZone: 'Asia/Tokyo'}))
+    .filter(b => b.s >= time)
     .sort((a, b) => a.s.localeCompare(b.s))[0];
 
-  const gapAfter = nextTask
-    ? (new Date(`${dateStr}T${nextTask.s}:00+09:00`).getTime() - endMs) / 60000
-    : (new Date(`${dateStr}T${closeTime}:00+09:00`).getTime() - endMs) / 60000;
+  const prevEndTimeMs = prevTask 
+    ? new Date(`${dateStr}T${prevTask.e}:00+09:00`).getTime() 
+    : new Date(`${dateStr}T${openTime}:00+09:00`).getTime();
 
+  const nextStartTimeMs = nextTask 
+    ? new Date(`${dateStr}T${nextTask.s}:00+09:00`).getTime() 
+    : new Date(`${dateStr}T${closeTime}:00+09:00`).getTime();
+
+  // 💡 直前の終わり〜直後の始まりまでの「全体の空き時間（分）」を計算
+  const totalAvailablePocketMin = (nextStartTimeMs - prevEndTimeMs) / 60000;
+
+  // 🚨 救済判定：もし挟まれた全体の空き時間が「今回の施術(60分)〜60分×2(120分)未満」の場合、
+  // どう頑張っても死に時間が出る孤立枠なので、自動詰めの拒否ルールを免除して即OKにする！
+  if (totalAvailablePocketMin >= myDuration && totalAvailablePocketMin < (myDuration * 2)) {
+    return true; 
+  }
+
+  // --- 以下は広い空き時間がある場合のみチェック ---
+  const gapBefore = (startMs - prevEndTimeMs) / 60000;
+  if (gapBefore > 0 && gapBefore < 60) return false;
+
+  const gapAfter = (nextStartTimeMs - endMs) / 60000;
   if (gapAfter > 0 && gapAfter < 60) return false;
 
   return true;
