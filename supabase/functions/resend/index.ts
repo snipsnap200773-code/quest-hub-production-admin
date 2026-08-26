@@ -245,7 +245,7 @@ if (type === 'remind_all') {
       shopName: shop.business_name, 
       startTime: `${dateStr.replace(/-/g, '/')} ${resTime}〜`, 
       services: menuDisplayText, 
-      staffName: res.staffs?.name || "店舗スタッフ", // 🆕 ここを追加！
+      staffName: res.staffs?.name || "店舗スタッフ", 
       address: info.address || shop.address || "",
       parking: info.parking || "",
       cancelUrl: `${PORTAL_URL}/shop/${shop.id}/reserve?cancel=${res.id}`,
@@ -255,25 +255,33 @@ if (type === 'remind_all') {
     let mailOk = false;
     let lineOk: unknown = false;
 
+    // 👇 🌟 🆕 追加：この予約が「訪問」かどうかを判定して文面を切り替える
+    const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+    const isVisit = VISIT_KEYWORDS.some(k => (res.biz_type || shop.business_type || '').includes(k));
+    const actionText = isVisit ? "ご指定の場所へお伺いいたします" : "ご来店をお待ちしております";
+    const placeLabel = isVisit ? "📍 訪問先" : "🏨 場所";
+    const placeValue = isVisit ? (info.address || shop.address || "ご指定の場所") : shop.business_name;
+
     // ✅ LINE IDの有無による完全仕分け
 if (res.line_user_id) {
   if (shop.customer_line_remind_enabled !== false && shop.line_channel_access_token) {
-    // 🆕 担当者名を追加したメッセージに変更
-    const msg = `【${shop.business_name}】\n明日 ${resTime} よりご来店お待ちしております。\n\n👤 お名前：${res.customer_name} 様\n👤 担当：${res.staffs?.name || '店舗スタッフ'}\n📋 内容：\n${menuDisplayText}\n\nお気をつけてお越しください！`;
+    // 👇 🌟 修正：actionTextを使って文面を動的に変える
+    const msg = `【${shop.business_name}】\n明日 ${resTime} に${actionText}。\n\n👤 お名前：${res.customer_name} 様\n👤 担当：${res.staffs?.name || '店舗スタッフ'}\n📋 内容：\n${menuDisplayText}\n\nよろしくお願いいたします。`;
     lineOk = await safePushToLine(res.line_user_id, msg, shop.line_channel_access_token, "REMIND");
   }
 } else {
       // Web予約の場合（メールアドレスがあればメールを送る）
       if (shop.notify_mail_remind_enabled !== false && res.customer_email) {
-        const subject = applyPlaceholders(shop.mail_sub_customer_remind || `【リマインド】明日のお越しをお待ちしております（${shop.business_name}）`, placeholderData);
+        // 👇 🌟 修正：actionTextとplaceLabelを使って文面を動的に変える
+        const subject = applyPlaceholders(shop.mail_sub_customer_remind || `【リマインド】明日、${actionText}（${shop.business_name}）`, placeholderData);
         const html = `
           <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
-            <h2 style="color: #2563eb;">明日、ご来店をお待ちしております</h2>
+            <h2 style="color: #2563eb;">明日、${actionText}</h2>
             <p>${res.customer_name} 様</p>
             <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; margin: 20px 0;">
               <p style="margin: 5px 0;">📅 <strong>日時:</strong> ${dateStr.replace(/-/g, '/')} ${resTime}〜</p>
               <p style="margin: 5px 0;">📋 <strong>内容:</strong><br>${menuDisplayText}</p>
-              <p style="margin: 5px 0;">📍 <strong>場所:</strong> ${info.address || shop.address || '店舗'}</p>
+              <p style="margin: 5px 0;">${placeLabel}<strong>:</strong> ${placeValue}</p>
             </div>
           </div>`;
 
