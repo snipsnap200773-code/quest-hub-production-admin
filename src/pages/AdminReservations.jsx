@@ -209,7 +209,7 @@ const resIndexStyle = (color) => ({
   const [showSlotListModal, setShowSlotListModal] = useState(false);
   const [showBlockEndSelector, setShowBlockEndSelector] = useState(false);
   const [isTargetOutsideHours, setIsTargetOutsideHours] = useState(false);
-
+  
   // 🚀 🆕 追加：スマホ用ミニカレンダー表示フラグ
   const [showMobileCalendar, setShowMobileCalendar] = useState(false);
 
@@ -1332,15 +1332,18 @@ setSalesRecords(salesRes.data || []);
     try {
       const start = new Date(`${selectedDate}T${targetTime}:00`);
       const interval = shop.slot_interval_min || 15;
-      // 💡 選ばれたコマ数（slots）を掛けて終了時間を計算する
       const end = new Date(start.getTime() + (interval * slots) * 60000);
+
+      // 👇 🌟 修正：裏側で自動判定
+      const staffIdValue = staffs.length === 1 ? staffs[0].id : null;
 
       const { error } = await supabase.from('private_tasks').insert([{
         shop_id: shopId,
         title: privateTaskFields.title,
         note: privateTaskFields.note,
         start_time: start.toISOString(),
-        end_time: end.toISOString()
+        end_time: end.toISOString(),
+        staff_id: staffIdValue // 👈 自動判定したIDを紐付け
       }]);
 
       if (error) throw error;
@@ -1833,6 +1836,9 @@ const getStatusAt = (dateStr, timeStr) => {
     const start = new Date(`${selectedDate}T${targetTime}:00`);
     const end = new Date(start.getTime() + (interval * slots) * 60000);
     
+    // 👇 🌟 修正：UIから選ばせるのをやめ、裏側で「1人営業ならその人、複数なら全体(null)」と自動判定
+    const staffIdValue = staffs.length === 1 ? staffs[0].id : null;
+
     const insertData = {
       shop_id: shopId, 
       customer_name: '✕', 
@@ -1843,6 +1849,7 @@ const getStatusAt = (dateStr, timeStr) => {
       total_slots: slots, 
       customer_email: null, 
       customer_phone: '---', 
+      staff_id: staffIdValue, // 👈 自動判定したIDを紐付け
       options: { type: 'admin_block' }
     };
     
@@ -1858,22 +1865,31 @@ const getStatusAt = (dateStr, timeStr) => {
   };
 
   const handleBlockFullDay = async () => {
+    // 👇 🌟 修正：シンプルな確認メッセージに戻す
     if (!window.confirm(`${selectedDate.replace(/-/g, '/')} を終日「予約不可」にしますか？`)) return;
+    
     const interval = shop.slot_interval_min || 15;
     const dayName = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(selectedDate).getDay()];
     const hours = shop.business_hours?.[dayName];
     const openStr = (hours && !hours.is_closed && hours.open) ? hours.open : "09:00";
     const closeStr = (hours && !hours.is_closed && hours.close) ? hours.close : "18:00";
+    
     const start = new Date(`${selectedDate}T${openStr}:00`);
     const end = new Date(`${selectedDate}T${closeStr}:00`);
-    const [oh, om] = openStr.split(':').map(Number); const [ch, cm] = closeStr.split(':').map(Number);
+    
+    const [oh, om] = openStr.split(':').map(Number); 
+    const [ch, cm] = closeStr.split(':').map(Number);
     const totalMinutes = (ch * 60 + cm) - (oh * 60 + om);
-    const slotsCount = Math.ceil(totalMinutes / interval);
+    const slotsCount = Math.ceil(totalMinutes / interval); 
+    
+    // 👇 🌟 修正：裏側で「1人営業ならその人、複数なら全体(null)」と自動判定
+    const staffIdValue = staffs.length === 1 ? staffs[0].id : null;
+
     const insertData = {
       shop_id: shopId, 
       customer_name: '臨時休業', 
       res_type: 'blocked',
-      is_block: true, // 🚀 🆕 「これは予約枠のブロックです」という印を付ける
+      is_block: true, 
       start_at: start.toISOString(), 
       end_at: end.toISOString(),
       start_time: start.toISOString(), 
@@ -1881,10 +1897,13 @@ const getStatusAt = (dateStr, timeStr) => {
       total_slots: slotsCount, 
       customer_email: null, 
       customer_phone: '---',
+      staff_id: staffIdValue, // 👈 自動判定したIDを紐付け
       options: { services: [], isFullDay: true }
     };
+    
     const { error } = await supabase.from('reservations').insert([insertData]);
-    if (error) alert(`エラー: ${error.message}`); else { setShowMenuModal(false); fetchData(); }
+    if (error) alert(`エラー: ${error.message}`); 
+    else { setShowMenuModal(false); fetchData(); }
   };
 
   const miniCalendarDays = useMemo(() => {
@@ -2354,6 +2373,7 @@ return (
                         // 🚀 ここで「時間外か定休日か」を判定して記録
                         setIsTargetOutsideHours(!isStandardTime || firstItem?.isRegularHoliday);
                         // 🚀 どんな背景（定休日・施設日・時間外）でも、まずは2択/4択メニューを開く！
+                                                
                         setShowMenuModal(true);
                         return;
                       }
@@ -3286,10 +3306,10 @@ else if (
         <div onClick={() => setShowSlotListModal(false)} style={overlayStyle}>
           <div onClick={(e) => e.stopPropagation()} style={{ 
   ...modalContentStyle, 
-  maxWidth: '950px', 
-  width: '90vw',
-  maxHeight: '90vh', // 少し広げる
-  position: 'relative' 
+  maxWidth: '450px', 
+  textAlign: 'center', 
+  background: '#f8fafc', 
+  padding: '25px' 
 }}>
             
             {/* 🚀 🆕 単発キープの場合は専用の警告ヘッダーを表示 */}
@@ -3315,50 +3335,49 @@ else if (
               
               {/* 🚀 🆕 修正：「新しい予約をねじ込む」ボタンを削除しました */}
 
-              {selectedSlotReservations.map((res, idx) => (
+              {selectedSlotReservations.map((res, idx) => {
+                // 👇 🌟 🆕 追加：キープ枠かどうかを判定
+                const isKeep = res.res_type === 'facility_keep_single' || res.isKeep;
+
+                return (
                 <div key={res.id || idx} 
                   onClick={async () => { 
-                    setShowSlotListModal(false); 
-                    // 🚀 🆕 もし単発キープなら、ここで既読にする（念のためここでも実行）
                     if (res.res_type === 'facility_keep_single') markKeepAsDismissed(res.id);
 
-                    // 🚀 🆕 施設キープの場合は、最新の施設プロフィールを取得して詳細を開く
-                    if (res.isKeep) {
-                      const { data: fac } = await supabase.from('facility_users').select('*').eq('id', res.facility_user_id).single();
-                      if (fac) {
-                        // 施設側の最新住所・電話・ふりがなをセットして詳細画面へ
-                        finalizeOpenDetail(res, { ...fac, name: fac.facility_name, is_facility: true });
-                      } else {
-                        openDetail(res);
-                      }
-                    } else {
-                      openDetail(res); 
+                    // 👇 🌟 修正：キープ枠ならアラートを出して何もしない！
+                    if (isKeep) {
+                      alert("施設側で日程を検討中です。\n名簿が確定するまで詳細はありません。");
+                      return;
                     }
+                    
+                    setShowSlotListModal(false); 
+                    openDetail(res); 
                   }} 
                   style={{ 
                     background: '#fff', 
                     padding: '18px', 
                     borderRadius: '18px', 
-                    border: `2px solid ${res.res_type === 'facility_keep_single' ? '#f97316' : '#e2e8f0'}`, 
+                    border: `2px solid ${isKeep ? '#f97316' : '#e2e8f0'}`, 
                     display: 'flex', 
                     alignItems: 'center', 
                     justifyContent: 'space-between', 
-                    cursor: 'pointer' 
+                    cursor: isKeep ? 'default' : 'pointer' 
                   }}
                 >
                   <div style={{ textAlign: 'left', flex: 1 }}>
                     <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b', marginBottom: '4px' }}>
                       {(res.res_type === 'blocked' || res.res_type === 'private_task') 
                         ? `${res.res_type === 'blocked' ? '🚫' : '☕️'} ${res.customer_name}` 
-                        : (res.res_type === 'facility_keep_single' ? `🏢 ${res.customer_name} 様 (キープ中)` : `👤 ${res.customers?.admin_name || res.customer_name} 様`)}
+                        : (isKeep ? `🏢 ${res.customer_name} 様 (キープ中)` : `👤 ${res.customers?.admin_name || res.customer_name} 様`)}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                      {res.res_type === 'facility_keep_single' ? '施設側で日程確保されています' : (res.res_type === 'normal' ? '一般予約' : 'スケジュールブロック')}
+                      {isKeep ? '施設側で日程確保されています' : (res.res_type === 'normal' ? '一般予約' : 'スケジュールブロック')}
                     </div>
                   </div>
-                  <div style={{ color: res.res_type === 'facility_keep_single' ? '#f97316' : themeColor, fontSize: '1.2rem' }}>〉</div>
+                  {/* 👇 🌟 修正：キープ枠なら「〉」ではなく「⏳」を表示 */}
+                  <div style={{ color: isKeep ? '#f97316' : themeColor, fontSize: '1.2rem' }}>{isKeep ? '⏳' : '〉'}</div>
                 </div>
-              ))}
+              )})}
             </div>
             <button onClick={() => setShowSlotListModal(false)} style={{ marginTop: '25px', padding: '12px', border: 'none', background: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
 
@@ -3417,20 +3436,21 @@ else if (
                  ========================================== */
               <div style={{ animation: 'fadeIn 0.2s ease-out' }}>
                 <h3 style={{ margin: '0 0 10px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
-                <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 25px 0' }}>{targetTime}</p>
+                <p style={{ fontWeight: '900', color: themeColor, fontSize: '2.2rem', margin: '0 0 15px 0' }}>{targetTime}</p>
                 
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                   {/* 🟢 1. 予約を入れる */}
                   <button 
                     onClick={() => {
                       setShowBlockEndSelector(false);
+                      const finalStaffId = staffs.find(s => s.is_default_for_admin)?.id || (staffs.length === 1 ? staffs[0].id : null);
+
                       navigate(`/shop/${shopId}/reserve`, { 
                         state: { 
                           adminDate: selectedDate, adminTime: targetTime, 
                           fromView: 'calendar', isAdminMode: true,
-  // 🚀 🆕 優先順位：①デフォルトスタッフID ➔ ②1人しかいない場合はそのID ➔ ③null(フリー)
-  adminStaffId: staffs.find(s => s.is_default_for_admin)?.id || (staffs.length === 1 ? staffs[0].id : null)
-} 
+                          adminStaffId: finalStaffId
+                        }
                       });
                     }} 
                     style={{ padding: '20px', background: themeColor, color: '#fff', border: 'none', borderRadius: '20px', fontWeight: '900', fontSize: '1.2rem', cursor: 'pointer', boxShadow: `0 4px 10px ${themeColor}44` }}
@@ -3494,6 +3514,7 @@ else if (
             <p style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '15px' }}>開始: {selectedDate.replace(/-/g, '/')} {targetTime} 〜</p>
             
             <div style={{ textAlign: 'left', marginBottom: '15px', flexShrink: 0 }}>
+
               <label style={labelStyle}>予定の内容（必須）</label>
               <input 
                 type="text" 

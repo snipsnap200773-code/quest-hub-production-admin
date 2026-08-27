@@ -488,6 +488,10 @@ const StaffSettings = () => {
                 {/* 👇 🌟 🆕 ここから追加：担当業種の設定パネル */}
                 {(() => {
                   const shopBusinessTypes = shopData?.business_type ? shopData.business_type.split(',').map(s => s.trim()).filter(Boolean) : [];
+                  
+                  // 👇 🌟 修正：登録されている大カテゴリが1つ以下（単一業態）なら、この設定パネル自体を非表示にする
+                  if (shopBusinessTypes.length <= 1) return null;
+
                   return (
                     <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
                       <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>

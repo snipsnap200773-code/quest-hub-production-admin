@@ -154,21 +154,17 @@ const FacilityManagement = () => {
   const [salesRecords, setSalesRecords] = useState([]); 
   const [allCustomers, setAllCustomers] = useState([]); 
 
+  // 👇 🌟 🆕 追加：訪問対応スタッフのリストを保持する
+  const [visitStaffs, setVisitStaffs] = useState([]);
+
   // 🚀 🆕 【Refマーカーを移動】コンポーネント直下に置くことでエラーを100%解決します！
   const keepTimeRef = useRef(null);
 
   // フォームState（既存システムをベースに tenant_id を追加）
   const [formData, setFormData] = useState({ 
-    name: '',          // 💡 facility_name から name に統一（handleSaveの仕様に合わせる）
-    furigana: '',      // 👈 追加
-    email: '',         // 👈 追加（不足分）
-    tel: '',           // 👈 追加（不足分）
-    address: '',       // 👈 追加（不足分）
-    pw: '',            // 👈 追加（不足分）
-    login_id: '',      // 👈 追加（不足分）
-    regular_rules: [], 
-    advance_booking_days: 0,
-    tenant_id: shopId 
+    name: '', furigana: '', email: '', tel: '', address: '', pw: '', login_id: '', 
+    regular_rules: [], advance_booking_days: 0, tenant_id: shopId,
+    assigned_staff_id: '' // 👈 🌟 🆕 追加
   });
 
   const [selDay, setSelDay] = useState(1);
@@ -205,7 +201,7 @@ const FacilityManagement = () => {
         facility_users (*)
       `)
       .eq('shop_id', shopId)
-      .in('status', ['active', 'pending']) // 🆕 active か pending なら取得する
+      .in('status', ['active', 'pending']) 
       .order('created_at', { ascending: true });
     
     if (!error && data) {
@@ -216,7 +212,8 @@ const FacilityManagement = () => {
         created_by_type: item.created_by_type,
         regular_rules: item.regular_rules || [],
         advance_booking_days: item.advance_booking_days || 0,
-        connection_id: item.id
+        connection_id: item.id,
+        assigned_staff_id: item.assigned_staff_id // 👈 🌟 🆕 ここを1行追加して、保存したIDを拾い上げます！
       }));
       setFacilities(formatted);
 
@@ -229,22 +226,36 @@ const FacilityManagement = () => {
       const kStartStrT = kStartStr + "T00:00:00Z";
       const kEndStrT = kEndStr + "T23:59:59Z";
 
-      const [sRes, cRes, resData, privData, visitData, mData, exclData] = await Promise.all([
+      const [sRes, cRes, resData, privData, visitData, mData, exclData, staffsRes] = await Promise.all([
         supabase.from('sales').select('*').eq('shop_id', shopId),
         supabase.from('customers').select('id, name').eq('shop_id', shopId),
         supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
         supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
         supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
         supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
-        supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
+        supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId),
+        // 👇 🌟 修正：休み情報も含めて全て取得するため「*」に変更
+        supabase.from('staffs').select('*').eq('shop_id', shopId)
       ]);
+
+      // 👇 🌟 修正：訪問対応可能なスタッフの「データ丸ごと」と「IDリスト」を作る
+      const staffs = staffsRes.data || [];
+      const vStaffs = staffs.filter(s => {
+        if (s.capable_categories && s.capable_categories.length > 0) {
+          return s.capable_categories.some(c => c.includes('訪問') || c.includes('出張'));
+        }
+        return true;
+      });
+      setVisitStaffs(vStaffs); // 👈 🌟 抽出したスタッフ情報を保存
+      const visitStaffIds = vStaffs.map(s => s.id);
 
       setSalesRecords(sRes.data || []);
       setAllCustomers(cRes.data || []);
 
       // ○△✕判定用のデータをStateへガッチリ蓄積
-      setResList(resData.data || []);
-      setPrivList(privData.data || []);
+      // 👇 🌟 修正：訪問スタッフに関係ない予約・予定は弾いてStateに入れる！
+      setResList((resData.data || []).filter(r => !r.staff_id || visitStaffIds.includes(r.staff_id)));
+      setPrivList((privData.data || []).filter(p => !p.staff_id || visitStaffIds.includes(p.staff_id)));
       setVisitList(visitData.data || []);
       setKeepList(mData.data || []);
       setExclList(exclData.data?.map(e => e.excluded_date) || []);
@@ -306,7 +317,8 @@ const handleSave = async (e) => {
         .from('shop_facility_connections')
         .update({ 
           regular_rules: formData.regular_rules,
-          advance_booking_days: formData.advance_booking_days // 🚀 🆕 ここを追加！
+          advance_booking_days: formData.advance_booking_days,
+          assigned_staff_id: formData.assigned_staff_id || null // 👈 🌟 🆕 追加
         })
         .eq('facility_user_id', editingId)
         .eq('shop_id', shopId);
@@ -340,7 +352,8 @@ const handleSave = async (e) => {
           shop_id: shopId,
           facility_user_id: newUser.id,
           regular_rules: formData.regular_rules,
-          advance_booking_days: formData.advance_booking_days // 🚀 🆕 ここを追加！
+          advance_booking_days: formData.advance_booking_days,
+          assigned_staff_id: formData.assigned_staff_id || null // 👈 🌟 🆕 追加
         }]);
 
       if (connError) throw connError;
@@ -530,6 +543,36 @@ const handleSave = async (e) => {
     }
   };
 
+  // 👇 🌟 🆕 追加：その日（その時間）に出勤している訪問スタッフの人数をカウントする
+  const getWorkingStaffCount = (dateStr, targetFacilityId) => {
+    const conn = facilities.find(f => f.id === targetFacilityId);
+    const assignedStaffId = conn?.assigned_staff_id;
+
+    const d = new Date(dateStr);
+    const dayIndex = d.getDay();
+
+    if (assignedStaffId) {
+      // 専属担当スタッフ1人のシフトだけを見る
+      const staff = visitStaffs.find(s => s.id === assignedStaffId);
+      if (!staff) return 0;
+      if (staff.weekly_holidays?.includes(dayIndex)) return 0; // 定休日
+      const shift = staff.custom_shifts?.[dateStr];
+      if (shift && shift.type === 'off') return 0; // シフト休
+      return 1; // 出勤
+    } else {
+      // 担当なしの場合は店舗全体（今まで通り）
+      if (visitStaffs.length === 0) return shopSettings?.facility_staff_count || 1; 
+      let count = 0;
+      visitStaffs.forEach(staff => {
+        if (staff.weekly_holidays?.includes(dayIndex)) return;
+        const shift = staff.custom_shifts?.[dateStr];
+        if (shift && shift.type === 'off') return; 
+        count++; 
+      });
+      return count;
+    }
+  };
+
   // 🚀 🆕 究極版：予定名(3文字)+開始時間、複数件カウントに対応した○△✕判定ロジック
   const getKeepSlotStatus = (dateStr) => {
     const d = new Date(dateStr);
@@ -553,6 +596,11 @@ const handleSave = async (e) => {
       if (holidays[`${nthWeek}-${dayName}`] || (isLastWeek && holidays[`L1-${dayName}`]) || (isSecondToLastWeek && holidays[`L2-${dayName}`])) {
         return { status: 'ng', label: '✕', name: '定休日', time: '' };
       }
+    }
+
+    // 👇 🌟 修正：施設IDを渡して担当者の出勤を確認
+    if (getWorkingStaffCount(dateStr, keepTargetFacilityId) === 0) {
+      return { status: 'ng', label: '✕', name: '休業', time: '' };
     }
 
     // ✕長期休み ＆ 臨時休業チェック
@@ -876,28 +924,20 @@ facilities.forEach(conn => {
 
   const openEdit = (f) => {
     setEditingId(f.id);
-    // 🚀 🆕 修正：既存の全プロフィール情報をセット（furigana含む）
     setFormData({ 
-      name: f.facility_name || '', 
-      furigana: f.furigana || '',      // 👈 追加
-      email: f.email || '', 
-      tel: f.tel || '', 
-      address: f.address || '', 
-      pw: f.password || '', 
-      login_id: f.login_id || '',
-      regular_rules: f.regular_rules || [], 
-      advance_booking_days: f.advance_booking_days || 0,
-      tenant_id: shopId 
+      name: f.facility_name || '', furigana: f.furigana || '', email: f.email || '', tel: f.tel || '', address: f.address || '', pw: f.password || '', login_id: f.login_id || '',
+      regular_rules: f.regular_rules || [], advance_booking_days: f.advance_booking_days || 0, tenant_id: shopId,
+      assigned_staff_id: f.assigned_staff_id || '' // 👈 🌟 🆕 追加
     });
     setIsModalOpen(true);
   };
 
   const resetForm = () => {
     setEditingId(null);
-    // 🚀 🆕 修正：全項目を空でリセット（furigana含む）
     setFormData({ 
       name: '', furigana: '', email: '', tel: '', address: '', pw: '', login_id: '', 
-      regular_rules: [], advance_booking_days: 0, tenant_id: shopId // 🚀 🆕 ここに0を追加！
+      regular_rules: [], advance_booking_days: 0, tenant_id: shopId,
+      assigned_staff_id: '' // 👈 🌟 🆕 追加
     });
     setSelMonthType(0);
   };
@@ -1417,6 +1457,27 @@ facilities.forEach(conn => {
                       </div>
                     </div>
                     {/* 🚀 🆕 追加ここまで */}
+
+                    {/* 👇 🌟 🆕 ここから追加：担当スタッフ設定 */}
+                    <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', border: '1px solid #e2e8f0', marginBottom: '10px' }}>
+                      <label style={{ ...labelStyle, color: '#4f46e5' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                          <User size={16} /> この施設の専属担当スタッフ
+                        </div>
+                        <select 
+                          value={formData.assigned_staff_id}
+                          onChange={(e) => setFormData({ ...formData, assigned_staff_id: e.target.value })}
+                          style={{ ...inputStyle, background: '#fff', marginTop: '8px' }}
+                        >
+                          <option value="">担当なし（店舗全体の空きを見る）</option>
+                          {/* 訪問スタッフリスト（visitStaffs）から展開 */}
+                          {visitStaffs.map(s => (
+                            <option key={s.id} value={s.id}>{s.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    {/* 👆 追加ここまで */}
 
                     {/* 定期ルール設定（既存ロジックを維持） */}
                     <div style={ruleConfigBoxStyle}>

@@ -123,6 +123,65 @@ function AdminTimeline() {
   const [reservations, setReservations] = useState([]);
   const [loading, setLoading] = useState(true);
   
+  // 👇 🌟 🆕 ここから追加：アラート用のState（変数）と裏方関数たち
+  const [irregularKeeps, setIrregularKeeps] = useState([]);
+  const [urgentKeeps, setUrgentKeeps] = useState([]);
+  const [timeChangedKeeps, setTimeChangedKeeps] = useState([]);
+  const [dismissedKeeps, setDismissedIrregularIds] = useState(() => {
+    const saved = localStorage.getItem(`dismissed_keeps_${shopId}`);
+    return saved ? JSON.parse(saved) : [];
+  });
+  const [alertModalMode, setAlertModalMode] = useState(null);
+  const [message, setMessage] = useState('');
+
+  const showMsg = (txt) => { 
+    setMessage(txt); 
+    setTimeout(() => setMessage(''), 3000); 
+  };
+
+  const markKeepAsDismissed = (id) => {
+    if (!id || dismissedKeeps.includes(id)) return;
+    const newDismissed = [...dismissedKeeps, id];
+    setDismissedIrregularIds(newDismissed);
+    localStorage.setItem(`dismissed_keeps_${shopId}`, JSON.stringify(newDismissed));
+  };
+
+  const handleEmailNudge = async (keep) => {
+    if (!window.confirm(`${keep.facility_users?.facility_name} 様へ、名簿作成の催促メールを送信しますか？`)) return;
+    try {
+      showMsg("メールを送信中...");
+      const { error } = await supabase.functions.invoke('resend', {
+        body: { type: 'facility_nudge', shopId, facilityId: keep.facility_user_id, keepDate: keep.date, shopName: shop?.business_name, ownerName: shop?.owner_name }
+      });
+      if (error) throw error;
+      showMsg("催促メールを送信しました！📬");
+    } catch (err) {
+      alert("送信に失敗しました: " + err.message);
+    }
+  };
+
+  const handleForceDeleteKeep = async (keep) => {
+    const facilityName = keep.facility_users?.facility_name || "施設";
+    if (!window.confirm(`【強制キャンセル】\n${facilityName} 様の ${keep.date.replace(/-/g, '/')} のキープ枠を強制的に削除しますか？\nこの操作は取り消せません。`)) return;
+    setLoading(true);
+    try {
+      if (keep.isRegular) {
+        await supabase.from('regular_keep_exclusions').upsert([{ facility_user_id: keep.facility_user_id, shop_id: shopId, excluded_date: keep.date }]);
+        if (!String(keep.id).startsWith('reg-')) await supabase.from('keep_dates').delete().eq('id', keep.id);
+      } else {
+        const { error } = await supabase.from('keep_dates').delete().eq('id', keep.id);
+        if (error) throw error;
+      }
+      showMsg("キープ枠を強制的に解放しました。");
+      fetchData();
+    } catch (err) {
+      alert("解除に失敗しました: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+  // 👆 追加ここまで
+
   // 🚀 🆕 修正：URLパラメータに日付があればそれを優先して初期表示する
   const [selectedDate, setSelectedDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
@@ -180,6 +239,9 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   // 👇 🌟 🆕 ここから追加：ハイブリッド店舗用のフィルターロジック
   const [activeFilter, setActiveFilter] = useState('all'); 
   
+  // 👇 🌟 🆕 追加：訪問フィルターが選択されているかどうかの判定（これが抜けてエラーになっていました！）
+  const isVisitFilter = activeFilter.includes('訪問') || activeFilter.includes('出張');
+
   // 店舗が持っている業種を配列化
   const shopIndustries = useMemo(() => {
     if (!shop?.business_type) return [];
@@ -287,11 +349,11 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
 // 3. 予約データ取得（担当者名結合）
     const { data: resData } = await supabase
-      .from('reservations')
-      .select('*, staffs(name), customers(*)')
-      .eq('shop_id', shopId)
-      .gte('start_time', `${selectedDate}T00:00:00`)
-      .lte('start_time', `${selectedDate}T23:59:59`);
+      .from('reservations')
+      .select('*, staffs(name), customers(*)')
+      .eq('shop_id', shopId)
+      .gte('start_time', `${selectedDate}T00:00:00`)
+      .lte('start_time', `${selectedDate}T23:59:59`);
 
     // ✅ 🆕 追加：4. プライベート予定の取得
     const { data: privData } = await supabase
@@ -301,9 +363,107 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       .gte('start_time', `${selectedDate}T00:00:00`)
       .lte('start_time', `${selectedDate}T23:59:59`);
 
-    setReservations(resData || []);
-    setPrivateTasks(privData || []); // ✅ セット
-    setLoading(false);
+    // 👇 🌟 🆕 追加：5. 施設用のキープと確定予約を取得し、担当者を紐付ける
+    const [keepRes, visitRes, connRes] = await Promise.all([
+      supabase.from('keep_dates').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('date', selectedDate),
+      supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('scheduled_date', selectedDate).neq('status', 'canceled'),
+      // 🚀 アラート計算のために regular_rules と facility_users(*) を追加取得するように変更
+      supabase.from('shop_facility_connections').select('facility_user_id, assigned_staff_id, regular_rules, facility_users(*)').eq('shop_id', shopId)
+    ]);
+
+    const getAssignedStaffId = (facId) => {
+      const conn = connRes.data?.find(c => c.facility_user_id === facId);
+      return conn?.assigned_staff_id || null; // 担当がいなければフリー(null)になる
+    };
+
+    const formattedKeeps = (keepRes.data || []).map(k => {
+      // 👇 🌟 修正：秒数がついていても大丈夫なように先頭5文字だけを切り取り、日本時間（+09:00）を明記する
+      const timeStr = (k.start_time || '09:00').substring(0, 5);
+      const start = new Date(`${k.date}T${timeStr}:00+09:00`);
+      const end = new Date(start.getTime() + 60 * 60000); // タイムライン上は1時間幅で表示
+      
+      return {
+        id: `keep_${k.id}`,
+        res_type: 'keep',
+        customer_name: `[ｷｰﾌﾟ] ${k.facility_users?.facility_name || '施設'}`,
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        staff_id: getAssignedStaffId(k.facility_user_id),
+        biz_type: 'visit' 
+      };
+    });
+
+    const formattedVisits = (visitRes.data || []).map(v => {
+      // 👇 🌟 修正：秒数がついていても大丈夫なように先頭5文字だけを切り取り、日本時間（+09:00）を明記する
+      const timeStr = (v.start_time || '09:00').substring(0, 5);
+      const start = new Date(`${v.scheduled_date}T${timeStr}:00+09:00`);
+      const end = new Date(start.getTime() + 60 * 60000); 
+      
+      return {
+        id: `visit_${v.id}`,
+        res_type: 'visit',
+        customer_name: `[確定] ${v.facility_users?.facility_name || '施設'}`,
+        start_time: start.toISOString(),
+        end_time: end.toISOString(),
+        staff_id: getAssignedStaffId(v.facility_user_id),
+        biz_type: 'visit'
+      };
+    });
+
+    // 全部ガッチャンコしてReservationsに入れる
+    setReservations([...(resData || []), ...formattedKeeps, ...formattedVisits]);
+    setPrivateTasks(privData || []); 
+
+    // 👇 🌟 🆕 ここから追加：アラートバナー用の「未来の全データ」取得と集計ロジック
+    const today = new Date();
+    const todayStr = today.toLocaleDateString('sv-SE');
+    const [allKeepRes, allVisitRes, exclRes] = await Promise.all([
+      supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
+      supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
+      supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
+    ]);
+
+    const irregularList = []; const urgentList = []; const timeChangedList = []; const processedKeys = new Set();
+    (allKeepRes.data || []).forEach(k => {
+      processedKeys.add(`${k.facility_user_id}_${k.date}`);
+      const isBooked = (allVisitRes.data || []).some(v => (v.status === 'confirmed' || v.status === 'completed') && v.facility_user_id === k.facility_user_id && v.scheduled_date === k.date);
+      if (isBooked) return;
+      const dObj = new Date(k.date);
+      const diffDays = Math.round((dObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)); 
+      if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
+      else irregularList.push({ ...k });
+    });
+
+    (connRes.data || []).forEach(conn => {
+      if (!conn.regular_rules) return;
+      let scanDate = new Date(today);
+      for (let i = 0; i < 90; i++) {
+        const dStr = scanDate.toLocaleDateString('sv-SE');
+        const comboKey = `${conn.facility_user_id}_${dStr}`;
+        if (!processedKeys.has(comboKey)) {
+           const day = scanDate.getDay(); const dom = scanDate.getDate(); const m = scanDate.getMonth() + 1;
+           const nthWeek = Math.ceil(dom / 7);
+           const isLast = new Date(scanDate).getMonth() !== new Date(new Date(scanDate).setDate(dom + 7)).getMonth();
+           let isRegular = conn.regular_rules.some(r => (r.monthType===0 || (r.monthType===1 && m%2!==0) || (r.monthType===2 && m%2===0)) && r.day===day && (r.week===nthWeek || (r.week===-1 && isLast)));
+           if (isRegular && !exclRes.data?.some(e => e.excluded_date === dStr)) {
+              const isBooked = (allVisitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
+              if (!isBooked) {
+                 const fakeKeep = { id: `reg-${conn.facility_user_id}-${dStr}`, date: dStr, facility_user_id: conn.facility_user_id, facility_users: conn.facility_users, isRegular: true };
+                 const diffDays = Math.round((scanDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                 if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
+              }
+           }
+        }
+        scanDate.setDate(scanDate.getDate() + 1);
+      }
+    });
+
+    setIrregularKeeps(irregularList);
+    setUrgentKeeps(urgentList);
+    setTimeChangedKeeps(timeChangedList);
+    // 👆 アラート計算ここまで
+
+    setLoading(false);
   };
 
   // =========================================================
@@ -365,6 +525,12 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
 // 🆕 1. スカウター発動：予約をタップした瞬間に重複を検知
 const openDetail = async (res) => {
+  // 👇 🌟 🆕 追加：施設予約をタップした場合は案内を出してブロックする
+  if (res.res_type === 'keep' || res.res_type === 'visit') {
+    alert("施設訪問の詳細は「カレンダー画面」からご確認ください。");
+    return;
+  }
+
   setSelectedRes(res);
   setTargetStaffId(res.staff_id);
 
@@ -721,7 +887,8 @@ const handleCellClick = (slotMatches, time, staffId) => {
     setTargetStaffId(actualStaffId); 
 
     // 💡 1. DBに記録があるもの（予約、プライベート予定、ブロック）を探す
-    const dbRecords = slotMatches.filter(r => r.id && (r.res_type === 'normal' || r.res_type === 'private_task' || r.res_type === 'blocked'));
+    // 👇 🌟 修正：施設予約（keep, visit）もタップ対象に含める！
+    const dbRecords = slotMatches.filter(r => r.id && (r.res_type === 'normal' || r.res_type === 'private_task' || r.res_type === 'blocked' || r.res_type === 'keep' || r.res_type === 'visit'));
     const activeTask = dbRecords[0];
 
     // 💡 2. すでに予定（ブロック含む）がある場合は詳細を開く
@@ -729,7 +896,13 @@ const handleCellClick = (slotMatches, time, staffId) => {
       if (dbRecords.length > 1) {
         setSelectedSlotReservations(dbRecords); setShowSlotListModal(true);
       } else {
-        openDetail(activeTask);
+        // 👇 🌟 修正：キープ枠の場合は、詳細モーダルではなく警告モーダル(SlotListModal)を開く！
+        if (activeTask.res_type === 'keep') {
+          setSelectedSlotReservations([activeTask]); 
+          setShowSlotListModal(true);
+        } else {
+          openDetail(activeTask);
+        }
       }
       return;
     }
@@ -1074,6 +1247,59 @@ const timeSlots = useMemo(() => {
         return null;
       })()}
 
+      {/* 👇 🌟 🆕 ここから追加：確定期限間近・新着キープのアラートバナー（赤・青） */}
+      {(() => {
+        if (activeFilter !== 'all' && !isVisitFilter) return null;
+
+        const hasUrgent = urgentKeeps.length > 0;
+        const hasTimeChange = timeChangedKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0;
+        if (!hasUrgent && !hasTimeChange) return null;
+
+        return (
+          <div style={{ zIndex: 100, padding: '8px 20px', background: hasUrgent ? '#fef2f2' : '#fff7ed', borderBottom: hasUrgent ? '1px solid #fecdd3' : '1px solid #fed7aa', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>{hasUrgent ? '🚨' : '⚠️'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: '900', color: hasUrgent ? '#be123c' : '#c2410c' }}>
+                {hasUrgent 
+                  ? '未確定のキープ枠があります' 
+                  : '定期訪問の時間変更通知が届いています'}
+              </span>
+            </div>
+            <button
+              onClick={() => setAlertModalMode('urgent')}
+              style={{ background: hasUrgent ? '#be123c' : '#f97316', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', flexShrink: 0 }}
+            >
+              確認 
+            </button>
+          </div>
+        );
+      })()}
+
+      {(() => {
+        if (activeFilter !== 'all' && !isVisitFilter) return null;
+
+        const activeIrregulars = irregularKeeps.filter(k => !dismissedKeeps.includes(k.id));
+        if (activeIrregulars.length === 0) return null;
+
+        return (
+          <div style={{ zIndex: 100, padding: '8px 20px', background: '#f0f9ff', borderBottom: '1px solid #bae6fd', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              <span style={{ fontSize: '1.1rem' }}>ℹ️</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+                施設から新しい「単発キープ」が届いています（確認・枠タップで非表示になります）
+              </span>
+            </div>
+            <button
+              onClick={() => setAlertModalMode('single')}
+              style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', flexShrink: 0 }}
+            >
+              確認 
+            </button>
+          </div>
+        );
+      })()}
+      {/* 👆 アラートバナー追加ここまで */}
+
       {/* タイムライン本体 */}
       {/* 🚀 🆕 修正：スマホの時はボトムナビが被らないように paddingBottom を空ける */}
       <div ref={scrollRef} onMouseDown={handleMouseDown} onMouseMove={handleMouseMove} onMouseUp={() => setIsDragging(false)} onMouseLeave={() => setIsDragging(false)} style={{ flex: 1, overflow: 'auto', position: 'relative', background: '#fff', cursor: isDragging ? 'grabbing' : 'default', userSelect: 'none', paddingBottom: !isPC && !isPreviewMode ? '85px' : '0' }}>
@@ -1144,7 +1370,14 @@ const timeSlots = useMemo(() => {
                     const firstRes = matches[0];
                     const intervalMin = shop?.slot_interval_min || 15;
                     const isEnd = hasRes && matches.some(r => new Date(r.end_time).getTime() === (currentSlotStart + intervalMin * 60000));
-                    const colors = getCustomerColor(firstRes?.customer_name);
+                    
+                    // 👇 🌟 修正：施設予約の場合は専用の色にする
+                    let colors = getCustomerColor(firstRes?.customer_name);
+                    if (firstRes?.res_type === 'keep') {
+                      colors = { bg: '#e0f2fe', border: '#7dd3fc', line: '#38bdf8', text: '#0284c7' }; // 水色
+                    } else if (firstRes?.res_type === 'visit') {
+                      colors = { bg: '#dcfce7', border: '#86efac', line: '#4ade80', text: '#166534' }; // 緑
+                    }
 
                     return (
                       <td key={time} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ minWidth: '120px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1.5px solid #cbd5e1', position: 'relative', background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'), padding: 0, cursor: 'pointer' }}>
@@ -1162,14 +1395,22 @@ const timeSlots = useMemo(() => {
                                     if (startingHere.length === 1) {
                                       const res = startingHere[0];
                                       const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
-                                      const name = masterName?.split(/[\s ]+/)[0] || "名前なし";
+                                      
+                                      // 👇 🌟 修正：施設の場合は [ｷｰﾌﾟ] などのタグを消し、スペースで分割しない！
+                                      let name = masterName || "名前なし";
+                                      if (res.res_type === 'keep' || res.res_type === 'visit') {
+                                        name = name.replace(/\[ｷｰﾌﾟ\]\s*/, '').replace(/\[確定\]\s*/, '');
+                                      } else {
+                                        name = name.split(/[\s ]+/)[0];
+                                      }
+
                                       const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
                                       const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
                                       const icons = `${blockedIcon}${cancelIcon}`;
                                       
-                                      // 👇 🌟 修正：システムタスク（ブロックや休憩）の場合は「様」を付けない！
                                       const isSystemTask = res.res_type === 'blocked' || res.res_type === 'private_task';
-                                      const suffix = isSystemTask ? '' : ' 様';
+                                      const isFacility = res.res_type === 'keep' || res.res_type === 'visit';
+                                      const suffix = isSystemTask ? '' : (isFacility ? ' 様' : ' 様');
                                       
                                       return isMultiple ? `${name} (${matches.length}名)${icons}` : `${name}${suffix}${icons}`;
                                     }
@@ -1260,7 +1501,14 @@ const timeSlots = useMemo(() => {
                     const firstRes = matches[0];
                     const intervalMin = shop?.slot_interval_min || 15;
                     const isEnd = hasRes && matches.some(r => new Date(r.end_time).getTime() === (currentSlotStart + intervalMin * 60000));
-                    const colors = getCustomerColor(firstRes?.customer_name);
+                    
+                    // 👇 🌟 修正：施設予約の場合は専用の色にする
+                    let colors = getCustomerColor(firstRes?.customer_name);
+                    if (firstRes?.res_type === 'keep') {
+                      colors = { bg: '#e0f2fe', border: '#7dd3fc', line: '#38bdf8', text: '#0284c7' }; // 水色
+                    } else if (firstRes?.res_type === 'visit') {
+                      colors = { bg: '#dcfce7', border: '#86efac', line: '#4ade80', text: '#166534' }; // 緑
+                    }
 
                     return (
                       <td key={staff.id} onClick={() => handleCellClick(matches, time, staffIdVal)} style={{ minWidth: '70px', borderRight: '1.5px solid #cbd5e1', borderBottom: '1.5px solid #cbd5e1', position: 'relative', background: (isShopClosed || isStaffHoliday || isRestTime || isOutsideShift) ? '#f1f5f9' : (isStandardTime ? '#fff' : '#fffff3'), padding: 0, cursor: 'pointer' }}>
@@ -1278,9 +1526,21 @@ const timeSlots = useMemo(() => {
                                     if (startingHere.length === 1) {
                                       const res = startingHere[0];
                                       const masterName = res.customers?.admin_name || res.customers?.name || res.customer_name;
-                                      const name = masterName?.split(/[\s ]+/)[0] || "名前なし";
+                                      
+                                      // 👇 🌟 修正：施設の場合は [ｷｰﾌﾟ] 等のタグを消し、スペースで分割しない！
+                                      let name = masterName || "名前なし";
+                                      if (res.res_type === 'keep' || res.res_type === 'visit') {
+                                        name = name.replace(/\[ｷｰﾌﾟ\]\s*/, '').replace(/\[確定\]\s*/, '');
+                                      } else {
+                                        name = name.split(/[\s ]+/)[0];
+                                      }
+
                                       const blockedIcon = res.customers?.is_blocked ? '🚫' : '';
                                       const cancelIcon = res.customers?.cancel_count >= 3 ? '‼️' : '';
+                                      
+                                      // 👇 🌟 修正：施設枠の場合は5文字まで施設名を表示
+                                      if (res.res_type === 'keep' || res.res_type === 'visit') return `${name.slice(0,5)}様`;
+                                      
                                       return isMultiple ? `${name.slice(0,3)}(${matches.length})${blockedIcon}${cancelIcon}` : `${name.slice(0,4)}${blockedIcon}${cancelIcon}`;
                                     }
                                     return `👥 ${matches.length}名`;
@@ -1770,11 +2030,25 @@ const timeSlots = useMemo(() => {
       {showSlotListModal && (
         <div onClick={() => setShowSlotListModal(false)} style={overlayStyle}>
           <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '450px', textAlign: 'center', background: '#f8fafc', padding: '25px' }}>
-            <div style={{ marginBottom: '20px' }}>
-              <h3 style={{ margin: '0 0 5px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
-              <p style={{ fontWeight: '900', color: themeColor, fontSize: '1.8rem', margin: 0 }}>{targetTime} の予約</p>
-              <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '5px' }}>詳細を見たい方を選択してください</p>
-            </div>
+            
+            {/* 👇 🌟 🆕 追加：単発キープの場合は専用の警告ヘッダーを表示 */}
+            {selectedSlotReservations.length === 1 && selectedSlotReservations[0].res_type === 'keep' ? (
+              <div style={{ marginBottom: '20px', background: '#fff7ed', padding: '15px', borderRadius: '15px', border: '2px solid #fed7aa' }}>
+                <div style={{ fontSize: '2rem', marginBottom: '5px' }}>⚠️</div>
+                <h3 style={{ margin: '0 0 5px 0', color: '#c2410c', fontSize: '1.1rem', fontWeight: '900' }}>イレギュラーなキープ枠</h3>
+                <p style={{ fontWeight: 'bold', color: '#f97316', fontSize: '1.4rem', margin: 0 }}>{selectedDate.replace(/-/g, '/')} {targetTime}〜</p>
+                <p style={{ fontSize: '0.85rem', color: '#9a3412', marginTop: '8px', lineHeight: '1.5' }}>
+                  施設側がこの日時をキープ（検討中）しています。<br/>
+                  下のリストから詳細を確認し、確定させてください。
+                </p>
+              </div>
+            ) : (
+              <div style={{ marginBottom: '20px' }}>
+                <h3 style={{ margin: '0 0 5px 0', color: '#64748b', fontSize: '0.9rem' }}>{selectedDate.replace(/-/g, '/')}</h3>
+                <p style={{ fontWeight: '900', color: themeColor, fontSize: '1.8rem', margin: 0 }}>{targetTime} の予約</p>
+                <p style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '5px' }}>詳細を見たい方を選択してください</p>
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '55vh', overflowY: 'auto', padding: '5px' }}>
               {/* ねじ込みボタン */}
@@ -1790,22 +2064,48 @@ const timeSlots = useMemo(() => {
                 ➕ 新しい予約をねじ込む
               </div>
 
-              {selectedSlotReservations.map((res, idx) => (
-                <div key={res.id || idx} onClick={() => { setShowSlotListModal(false); openDetail(res); }} style={{ background: '#fff', padding: '18px', borderRadius: '18px', border: `1px solid #e2e8f0`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}>
+              {selectedSlotReservations.map((res, idx) => {
+                // 🚀 🆕 キープ枠かどうかを判定
+                const isKeep = res.res_type === 'keep';
+                // 表示用のお名前から [ｷｰﾌﾟ] という内部タグを掃除して綺麗にする
+                const displayName = res.customer_name.replace('[ｷｰﾌﾟ] ', '');
+
+                return (
+                <div 
+                  key={res.id || idx} 
+                  onClick={() => { 
+                    // 👇 🌟 修正：キープ枠ならアラートを出して何もしない！
+                    if (isKeep) {
+                      alert("施設側で日程を検討中です。\n名簿が確定するまで詳細はありません。");
+                      return;
+                    }
+                    setShowSlotListModal(false); 
+                    openDetail(res); 
+                  }} 
+                  style={{ background: '#fff', padding: '18px', borderRadius: '18px', border: `1px solid ${isKeep ? '#f97316' : '#e2e8f0'}`, display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: isKeep ? 'default' : 'pointer', boxShadow: '0 4px 6px rgba(0,0,0,0.02)' }}
+                >
                   <div style={{ textAlign: 'left', flex: 1 }}>
                     <div style={{ fontWeight: '900', fontSize: '1.1rem', color: '#1e293b', marginBottom: '4px' }}>
-                      {res.res_type === 'blocked' ? `🚫 ${res.customer_name}` : `👤 ${res.customer_name} 様`}
+                      {res.res_type === 'blocked' ? `🚫 ${displayName}` 
+                        : isKeep ? `🏢 ${displayName} 様 (キープ中)` 
+                        : `👤 ${displayName} 様`}
                     </div>
                     <div style={{ fontSize: '0.75rem', color: '#64748b' }}>
-                      <div style={{ color: themeColor, fontWeight: 'bold' }}>📋 {res.menu_name || 'メニュー未設定'}</div>
-                      <div style={{ marginTop: '2px' }}>👤 担当: {res.staffs?.name || '店舗スタッフ'}</div>
+                      {isKeep ? (
+                        <div style={{ color: '#f97316', fontWeight: 'bold' }}>施設側で日程確保されています</div>
+                      ) : (
+                        <>
+                          <div style={{ color: themeColor, fontWeight: 'bold' }}>📋 {res.menu_name || 'メニュー未設定'}</div>
+                          <div style={{ marginTop: '2px' }}>👤 担当: {res.staffs?.name || '店舗スタッフ'}</div>
+                        </>
+                      )}
                     </div>
                   </div>
-                  <div style={{ color: themeColor, fontSize: '1.2rem' }}>〉</div>
+                  {/* 👇 🌟 修正：キープ枠なら「〉」ではなく「⏳」を表示して詳細がないことをアピール */}
+                  <div style={{ color: isKeep ? '#f97316' : themeColor, fontSize: '1.2rem' }}>{isKeep ? '⏳' : '〉'}</div>
                 </div>
-              ))}
+              )})}
             </div>
-// --- [580行目付近] ---
             <button onClick={() => setShowSlotListModal(false)} style={{ marginTop: '25px', padding: '12px', border: 'none', background: 'none', color: '#94a3b8', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
           </div>
         </div>
@@ -2101,6 +2401,104 @@ const timeSlots = useMemo(() => {
           </div>
         </div>
       )}
+
+      {/* 👇 🌟 🆕 ここから追加：確定期限間近・新着キープのアラート詳細モーダル */}
+      {alertModalMode === 'urgent' && (
+        <div style={overlayStyle} onClick={() => setAlertModalMode(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '550px', padding: '0', overflow: 'hidden', borderRadius: '28px' }}>
+            <div style={{ background: urgentKeeps.length > 0 ? '#be123c' : '#f97316', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>🚨 確定期限間近・変更通知の内訳</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>訪問予定日の3日前を過ぎた未確定枠です（至急処理が必要です）</div>
+              </div>
+              <button onClick={() => setAlertModalMode(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff', fontWeight: 'bold' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '20px', maxHeight: '60vh', overflowY: 'auto', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {/* 🚨 確定期限間近（定期・単発問わず3日以内になったもの） */}
+              {urgentKeeps.map((keep) => (
+                <div key={`modal-urg-${keep.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                  <div style={{ textAlign: 'left' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                      🚨 名簿未確定({keep.isRegular ? '定期' : '単発'})：{keep.facility_users?.facility_name} 様
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                      予定日：<strong>{keep.date.replace(/-/g, '/')}</strong> （あと <span style={{color:'#ef4444', fontWeight:'bold'}}>{keep.diffDays}</span> 日）
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: '6px' }}>
+                    <button onClick={() => { setAlertModalMode(null); handleEmailNudge(keep); }} style={{ background: '#fff', color: '#be123c', border: '1px solid #be123c', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>📧 つつく</button>
+                    <button onClick={() => { setAlertModalMode(null); handleForceDeleteKeep(keep); }} style={{ background: '#be123c', color: '#fff', border: 'none', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>🗑 強制解放</button>
+                  </div>
+                </div>
+              ))}
+
+              {/* ℹ️ 定期訪問の時間変更通知 */}
+              {timeChangedKeeps
+                .filter(k => !dismissedKeeps.includes(k.id))
+                .map((keep) => (
+                  <div key={`modal-change-${keep.id}`} style={{ background: '#fff', border: '1px solid #bae6fd', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+                        ℹ️ 定期訪問の時間変更：{keep.facility_users?.facility_name} 様
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                        {keep.date.replace(/-/g, '/')} （本来 {keep.originalTime} ➔ <span style={{color:'#0ea5e9', fontWeight:'bold'}}>変更後 {keep.start_time.substring(0, 5)}</span>）
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => { setAlertModalMode(null); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                      <button onClick={() => { markKeepAsDismissed(keep.id); }} style={{ background: '#fff', color: '#64748b', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>既読にする</button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div style={{ padding: '15px 20px', background: '#fff', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+              <button onClick={() => setAlertModalMode(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}>一覧を閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🚀 【青専用ポップアップ】3日前より前の新着単発キープ（了解ボタンで消去できる） */}
+      {alertModalMode === 'single' && (
+        <div style={overlayStyle} onClick={() => setAlertModalMode(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '550px', padding: '0', overflow: 'hidden', borderRadius: '28px' }}>
+            <div style={{ background: '#0284c7', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>🔷 新着単発キープ（相談枠）の一覧</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>施設側から臨時に日程確保された、3日前より前の相談枠です</div>
+              </div>
+              <button onClick={() => setAlertModalMode(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff', fontWeight: 'bold' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '20px', maxHeight: '60vh', overflowY: 'auto', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {irregularKeeps
+                .filter(k => !dismissedKeeps.includes(k.id))
+                .map((keep) => (
+                  <div key={`modal-irreg-${keep.id}`} style={{ background: '#fff', border: '1px solid #bae6fd', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                    <div style={{ textAlign: 'left' }}>
+                      <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#0369a1' }}>
+                        🔷 新着単発キープ：{keep.facility_users?.facility_name} 様
+                      </div>
+                      <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                        希望日：<strong>{keep.date.replace(/-/g, '/')}</strong> （3日前より前の相談枠）
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '6px' }}>
+                      <button onClick={() => { setAlertModalMode(null); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                      <button onClick={() => { markKeepAsDismissed(keep.id); }} style={{ background: '#fff', color: '#0284c7', border: '1px solid #bae6fd', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>了解(非表示)</button>
+                    </div>
+                  </div>
+                ))}
+            </div>
+            <div style={{ padding: '15px 20px', background: '#fff', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+              <button onClick={() => setAlertModalMode(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}>一覧を閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 👆 アラート詳細モーダル追加ここまで */}
 
       {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション */}
       {!isPC && !isPreviewMode && (

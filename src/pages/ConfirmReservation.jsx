@@ -38,7 +38,8 @@ function ConfirmReservation() {
     travelTimeMinutes,
     authUserProfile,
     isSalesExcluded,
-    adminBizType
+    adminBizType,
+    serviceMode
   } = location.state || {};
   
 // 🚀 🆕 追加：URLの末尾にある ?type=○○ を読み取る処理
@@ -912,6 +913,11 @@ return (
           // 表示しない条件
           if (!isEnabled) return null;
           if (isAdminEntry && key !== 'name') return null;
+
+          // 👇 🌟 🆕 追加：設定画面で決めた「表示対象（salon / visit）」を判定して出し分ける！
+          const targetMode = config.target_mode || 'all';
+          if (targetMode === 'salon' && serviceMode === 'visit') return null;
+          if (targetMode === 'visit' && serviceMode === 'salon') return null;
           
           // ⚠️ ふりがな、備考欄、郵便番号はこのループ内では直接描画しない（位置を固定するため）
           if (key === 'furigana' || key === 'notes' || key === 'zip_code') return null;
@@ -970,11 +976,20 @@ return (
                     <option value="あり">あり</option>
                     <option value="なし">なし</option>
                   </select>
+                // 👇 🌟 🆕 追加：建物の種類も選択式（プルダウン）にする
+                ) : key === 'building_type' ? (
+                  <select name={key} value={customerData[key] || ''} onChange={handleInputChange} style={inputStyle} required={config.required}>
+                    <option value="">選択してください</option>
+                    <option value="戸建て">戸建て</option>
+                    <option value="集合住宅">集合住宅</option>
+                    <option value="介護施設">介護施設</option>
+                    <option value="病院">病院</option>
+                  </select>
                 ) : (
                   <input 
                     name={key}
                     type={key === 'email' ? 'email' : key === 'phone' ? 'tel' : 'text'} 
-                    value={customerData[key]} 
+                    value={customerData[key] || ''} 
                     onChange={handleInputChange} 
                     style={inputStyle} 
                     placeholder={`${config.label}を入力`}
@@ -1026,6 +1041,11 @@ return (
         {formConfig?.custom_questions?.map((q) => {
           const isEnabled = lineUser ? q.line_enabled : q.enabled;
           if (!isEnabled || isAdminEntry) return null; // 管理者ねじ込み時は表示しない
+
+          // 👇 🌟 🆕 追加：カスタム質問の「表示対象」もここで判定
+          const targetMode = q.target_mode || 'all';
+          if (targetMode === 'salon' && serviceMode === 'visit') return null;
+          if (targetMode === 'visit' && serviceMode === 'salon') return null;
 
           return (
             <div key={q.id} style={{ marginBottom: '20px', padding: '15px', background: '#fff', borderRadius: '12px', border: '1px solid #e2e8f0' }}>

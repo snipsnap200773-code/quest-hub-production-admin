@@ -29,11 +29,12 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
     const { data: fData } = await supabase.from('facility_users').select('facility_name, furigana, email').eq('id', facilityId).single();
     if (fData) setMyFacility(fData);
     
-    // 🚀 1. 大カテゴリが「訪問サービス」かつ「施設検索公開ON」の店舗のみ取得
+    // 🚀 1. 大カテゴリに「訪問」系が含まれていて、「施設検索公開ON」の店舗を取得
     const { data: profiles } = await supabase
       .from('profiles')
       .select('*')
-      .eq('business_type', '訪問サービス')
+      // 👇 🌟 修正：完全一致(.eq)から、部分一致(.ilike)に変更し、ハイブリッド店舗もヒットするようにする！
+      .ilike('business_type', '%訪問%')
       .eq('is_facility_searchable', true)
       .not('business_name', 'is', null)
       // 👇 🌟 🆕 有料プラン・トライアル中・テスターのいずれかの店舗だけに絞り込む（無料版を弾く）
@@ -68,23 +69,29 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
       if (error) throw error;
 
       // 🚀 2. 店舗さんへ通知メールを送信（★ここにふりがなを含める）
-      await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json', 
-          'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` 
-        },
-        body: JSON.stringify({
-          type: 'partnership_requested', // 新しい通知タイプ
-          shopName: targetShop?.business_name,
-          shopEmail: targetShop?.email_contact || targetShop?.email,
-          facilityName: myFacility?.facility_name,
-          facilityFurigana: myFacility?.furigana, // 💡 これが店舗側の名簿の「ふりがな」になります
-          facilityEmail: myFacility?.email,
-          shopId: shopId,
-          facilityId: facilityId
-        })
-      });
+      const targetEmail = targetShop?.email_contact || targetShop?.email;
+      
+      if (targetEmail) {
+        await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
+          method: 'POST',
+          headers: { 
+            'Content-Type': 'application/json', 
+            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` 
+          },
+          body: JSON.stringify({
+            type: 'partnership_requested', 
+            shopName: targetShop?.business_name,
+            shopEmail: targetEmail,
+            facilityName: myFacility?.facility_name,
+            facilityFurigana: myFacility?.furigana, 
+            facilityEmail: myFacility?.email,
+            shopId: shopId,
+            facilityId: facilityId
+          })
+        });
+      } else {
+        console.warn("⚠️ 店舗のメールアドレスが未登録のため、通知メールの送信をスキップしました。");
+      }
 
       alert("リクエストを送信しました！店舗さんからの返信をお待ちください。");
       fetchShops(); // 表示を更新（申請中に変わる）

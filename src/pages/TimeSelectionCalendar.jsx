@@ -774,6 +774,9 @@ const checkAvailability = (date, timeStr) => {
           const isFillingSlot = (time) => {
   if (!shop?.auto_fill_logic || shop?.max_capacity > 1) return true; 
 
+  // 👇 🌟 🆕 追加：訪問モードの場合は移動時間が挟まって隙間計算がおかしくなるため、自動詰めロジックを免除する！
+  if (location.state?.serviceMode === 'visit') return true;
+
   const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
   const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
   const closeTime = shop?.business_hours[dayOfWeek]?.close || "18:00";
@@ -859,8 +862,6 @@ const checkAvailability = (date, timeStr) => {
             }
 
                   const isSelected = selectedTime === time;
-                  // 🚀 🆕 修正：スタッフが1人で、かつ上限が1名の場合のみ「完全マンツーマン」として表示する
-                  const isSolo = allStaffs.length === 1 && (allStaffs[0].concurrent_capacity || 1) === 1;
 
                   return (
                     <button
@@ -875,13 +876,8 @@ const checkAvailability = (date, timeStr) => {
                       }}
                     >
                       <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: isSelected ? themeColor : '#1e293b' }}>{time}</div>
-                      {isSolo ? (
-                        <div style={{ fontSize: '0.7rem', color: themeColor, marginTop: '4px' }}>予約可能</div>
-                      ) : (
-                        <div style={{ fontSize: '0.7rem', color: res.remaining === 1 ? '#ef4444' : '#10b981', marginTop: '4px' }}>
-                          {res.remaining === 1 ? '残り1枠！' : `残り${res.remaining}枠`}
-                        </div>
-                      )}
+                      {/* 👇 🌟 修正：「残り〇枠」の計算・表示をやめて、常に「予約可能」とスタイリッシュに表示する */}
+                      <div style={{ fontSize: '0.7rem', color: themeColor, marginTop: '4px' }}>予約可能</div>
                     </button>
                   );
                 });

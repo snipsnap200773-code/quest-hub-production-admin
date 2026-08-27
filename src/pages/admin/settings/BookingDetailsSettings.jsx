@@ -5,11 +5,15 @@ import {
   ClipboardList, ArrowLeft, Save, CheckCircle2, 
   MapPin, Car, Building2, HeartPulse, MessageSquare, 
   ToggleLeft, ToggleRight,
-  User, Mail, Phone, Scissors, Sparkles, Plus, Trash2, Globe // 👈 Globe を追加
+  User, Mail, Phone, Scissors, Sparkles, Plus, Trash2, Globe 
 } from 'lucide-react';
 
-const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor, toggleField }) => {
+// 👇 🌟 🆕 修正：ハイブリッド判定(isHybrid)とモード更新関数を受け取る
+const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor, toggleField, isHybrid, updateFieldMode }) => {
   if (!formConfig || !formConfig[id]) return null;
+
+  // デフォルトは 'all'（共通）
+  const targetMode = formConfig[id].target_mode || 'all';
 
   return (
     <div style={{ marginBottom: '25px', paddingBottom: '20px', borderBottom: '1px solid #f1f5f9' }}>
@@ -21,6 +25,19 @@ const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor
           <div>
             <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{title}</div>
             <div style={{ fontSize: '0.75rem', color: '#64748b' }}>{description}</div>
+            
+            {/* 👇 🌟 🆕 追加：ハイブリッド店舗専用の「適用対象」切り替えピル */}
+            {isHybrid && (
+              <div style={{ marginTop: '10px', display: 'flex', alignItems: 'center', gap: '6px', background: '#f8fafc', padding: '4px 6px', borderRadius: '10px', width: 'fit-content', border: '1px solid #e2e8f0' }}>
+                <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold', paddingLeft: '4px' }}>表示対象:</span>
+                <div style={{ display: 'flex', gap: '4px' }}>
+                  <button type="button" onClick={() => updateFieldMode(id, 'all')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'all' ? themeColor : 'transparent', color: targetMode === 'all' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>共通</button>
+                  <button type="button" onClick={() => updateFieldMode(id, 'salon')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'salon' ? themeColor : 'transparent', color: targetMode === 'salon' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>🏢店舗</button>
+                  <button type="button" onClick={() => updateFieldMode(id, 'visit')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'visit' ? themeColor : 'transparent', color: targetMode === 'visit' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>🚗訪問</button>
+                </div>
+              </div>
+            )}
+            {/* 👆 追加ここまで */}
           </div>
         </div>
 
@@ -56,8 +73,11 @@ const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor
 };
 
 // 復元：カスタム質問用コンポーネント
-const CustomFieldItem = ({ field, themeColor, updateCustomField, deleteCustomField }) => {
+// 👇 🌟 🆕 修正：こちらも isHybrid を受け取る
+const CustomFieldItem = ({ field, themeColor, updateCustomField, deleteCustomField, isHybrid }) => {
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.9rem' };
+  const targetMode = field.target_mode || 'all';
+
   return (
     <div style={{ marginBottom: '20px', padding: '20px', background: '#f8fafc', borderRadius: '15px', border: '1px solid #e2e8f0' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
@@ -68,6 +88,20 @@ const CustomFieldItem = ({ field, themeColor, updateCustomField, deleteCustomFie
           <Trash2 size={18} />
         </button>
       </div>
+
+      {/* 👇 🌟 🆕 追加：カスタム質問用の「適用対象」切り替えピル */}
+      {isHybrid && (
+        <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '6px', background: '#e2e8f055', padding: '4px 6px', borderRadius: '10px', width: 'fit-content', border: '1px solid #e2e8f0' }}>
+          <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold', paddingLeft: '4px' }}>表示対象:</span>
+          <div style={{ display: 'flex', gap: '4px' }}>
+            <button type="button" onClick={() => updateCustomField(field.id, 'target_mode', 'all')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'all' ? themeColor : 'transparent', color: targetMode === 'all' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>共通</button>
+            <button type="button" onClick={() => updateCustomField(field.id, 'target_mode', 'salon')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'salon' ? themeColor : 'transparent', color: targetMode === 'salon' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>🏢店舗</button>
+            <button type="button" onClick={() => updateCustomField(field.id, 'target_mode', 'visit')} style={{ padding: '4px 10px', fontSize: '0.65rem', borderRadius: '6px', border: 'none', background: targetMode === 'visit' ? themeColor : 'transparent', color: targetMode === 'visit' ? '#fff' : '#64748b', fontWeight: 'bold', cursor: 'pointer', transition: '0.2s' }}>🚗訪問</button>
+          </div>
+        </div>
+      )}
+      {/* 👆 追加ここまで */}
+
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '15px' }}>
         <div>
           <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#64748b' }}>質問内容</label>
@@ -114,23 +148,26 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const [message, setMessage] = useState('');
   const [themeColor, setThemeColor] = useState('#2563eb');
   const [brandCategories, setBrandCategories] = useState([]);
-  const [customFields, setCustomFields] = useState([]); // 復元
+  const [customFields, setCustomFields] = useState([]); 
+
+  // 👇 🌟 🆕 追加：ハイブリッド店舗かどうかのフラグ
+  const [isHybrid, setIsHybrid] = useState(false);
 
   // すべての項目を初期値としてセット
   const [formConfig, setFormConfig] = useState({
-    name: { enabled: true, line_enabled: true, label: "お名前", required: true },
-    furigana: { enabled: false, line_enabled: false, label: "ふりがな", required: false },
-    email: { enabled: true, line_enabled: true, label: "メールアドレス", required: true },
-    phone: { enabled: true, line_enabled: true, label: "電話番号", required: true },
-    zip_code: { enabled: false, line_enabled: false, label: "郵便番号", required: false },
-    address: { enabled: false, line_enabled: false, label: "住所", required: false },
-    parking: { enabled: false, line_enabled: false, label: "駐車場", required: false },
-    building_type: { enabled: false, line_enabled: false, label: "建物", required: false },
-    care_notes: { enabled: false, line_enabled: false, label: "介助状況", required: false },
-    company_name: { enabled: false, line_enabled: false, label: "会社名", required: false },
-    symptoms: { enabled: false, line_enabled: false, label: "お悩み", required: false },
-    request_details: { enabled: false, line_enabled: false, label: "詳細要望", required: false },
-    notes: { enabled: true, line_enabled: true, label: "備考欄", required: false }
+    name: { enabled: true, line_enabled: true, label: "お名前", required: true, target_mode: 'all' },
+    furigana: { enabled: false, line_enabled: false, label: "ふりがな", required: false, target_mode: 'all' },
+    email: { enabled: true, line_enabled: true, label: "メールアドレス", required: true, target_mode: 'all' },
+    phone: { enabled: true, line_enabled: true, label: "電話番号", required: true, target_mode: 'all' },
+    zip_code: { enabled: false, line_enabled: false, label: "郵便番号", required: false, target_mode: 'visit' }, // デフォはvisit
+    address: { enabled: false, line_enabled: false, label: "住所", required: false, target_mode: 'visit' }, // デフォはvisit
+    parking: { enabled: false, line_enabled: false, label: "駐車場", required: false, target_mode: 'visit' },
+    building_type: { enabled: false, line_enabled: false, label: "建物", required: false, target_mode: 'visit' },
+    care_notes: { enabled: false, line_enabled: false, label: "介助状況", required: false, target_mode: 'visit' },
+    company_name: { enabled: false, line_enabled: false, label: "会社名", required: false, target_mode: 'all' },
+    symptoms: { enabled: false, line_enabled: false, label: "お悩み", required: false, target_mode: 'all' },
+    request_details: { enabled: false, line_enabled: false, label: "詳細要望", required: false, target_mode: 'all' },
+    notes: { enabled: true, line_enabled: true, label: "備考欄", required: false, target_mode: 'all' }
   });
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -141,17 +178,12 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
   }, []);
   const isPC = windowWidth > 900;
 
-  // 🚀 🆕 変更検知用のStateとロジックを追加
   const [initialDataStr, setInitialDataStr] = useState(null);
   const [isDataReady, setIsDataReady] = useState(false);
 
-  // 📝 現在の全入力状態を文字列（JSON）化してまとめる
   const currentDataStr = JSON.stringify({ formConfig, customFields });
-
-  // 💡 初期データと現在のデータに差分があるかを判定
   const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
 
-  // 💡 データ読み込み直後のみ、初期データとして記憶する
   useEffect(() => {
     if (isDataReady) {
       setInitialDataStr(currentDataStr);
@@ -162,9 +194,17 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
   useEffect(() => { if (shopId) fetchSettings(); }, [shopId]);
 
   const fetchSettings = async () => {
-    const { data } = await supabase.from('profiles').select('theme_color, form_config').eq('id', shopId).single();
+    const { data } = await supabase.from('profiles').select('theme_color, form_config, business_type').eq('id', shopId).single();
     if (data) {
       setThemeColor(data.theme_color || '#2563eb');
+
+      // 👇 🌟 🆕 追加：ハイブリッド判定（店舗と訪問の両方の業種があるか？）
+      const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+      const shopTypes = data.business_type ? data.business_type.split(',').map(s => s.trim()) : [];
+      const hasVisit = shopTypes.some(t => VISIT_KEYWORDS.some(k => t.includes(k)));
+      const hasSalon = shopTypes.some(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
+      setIsHybrid(hasVisit && hasSalon);
+
       if (data.form_config) {
         const { custom_questions, ...restConfig } = data.form_config;
         setFormConfig(prev => ({ ...prev, ...(restConfig || {}) }));
@@ -180,11 +220,9 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
       
       if (catData) setBrandCategories(catData);
       
-      setIsDataReady(true); // 🚀 🆕 追加：データの読み込み完了を合図する
+      setIsDataReady(true);
     }
   };
-
-  const inquiryUrl = `${window.location.origin}/shop/${shopId}/inquiry`;
 
   const showMsg = (txt) => { 
     setMessage(txt); 
@@ -199,7 +237,7 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
     const { error } = await supabase.from('profiles').update({ form_config: payload }).eq('id', shopId);
     if (!error) {
       showMsg('予約項目の設定を保存しました！');
-      setInitialDataStr(currentDataStr); // 🚀 🆕 追加：保存完了後に変更検知をリセット
+      setInitialDataStr(currentDataStr);
     } else {
       alert('保存に失敗しました。');
     }
@@ -217,9 +255,16 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
     }));
   };
 
-  // カスタム質問の操作関数復元
+  // 👇 🌟 🆕 追加：対象モードの切り替え関数
+  const updateFieldMode = (key, mode) => {
+    setFormConfig(prev => ({
+      ...prev,
+      [key]: { ...prev[key], target_mode: mode }
+    }));
+  };
+
   const addCustomField = () => {
-    const newField = { id: `custom_${Date.now()}`, label: '新しい質問', options: 'はい,いいえ', enabled: true, line_enabled: true, required: false };
+    const newField = { id: `custom_${Date.now()}`, label: '新しい質問', options: 'はい,いいえ', enabled: true, line_enabled: true, required: false, target_mode: 'all' };
     setCustomFields([...customFields, newField]);
   };
 
@@ -246,42 +291,49 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
         <ClipboardList size={28} style={{ verticalAlign: 'middle', marginRight: '10px' }} /> 予約時の入力項目設定
       </h2>
 
+      {/* 🚀 ハイブリッド店舗へのヒント表示 */}
+      {isHybrid && (
+        <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', marginBottom: '25px', border: '1px solid #e2e8f0' }}>
+          <p style={{ margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: '1.5' }}>
+            <span style={{ fontWeight: 'bold', color: themeColor }}>💡 ハイブリッド店舗モード：</span><br/>
+            「表示対象」を切り替えることで、来店のお客様と訪問のお客様で、表示する入力フォームを自動で出し分けることができます。
+          </p>
+        </div>
+      )}
+
       <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ 基本情報</h3>
       <section style={{ ...cardStyle, borderTop: `6px solid #94a3b8` }}>
-        <ConfigItem id="name" icon={User} title="お名前" description="必須項目です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="furigana" icon={User} title="ふりがな" description="読み仮名を有効にします。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="email" icon={Mail} title="メールアドレス" description="通知先になります。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="phone" icon={Phone} title="電話番号" description="緊急連絡先です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
+        <ConfigItem id="name" icon={User} title="お名前" description="必須項目です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="furigana" icon={User} title="ふりがな" description="読み仮名を有効にします。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="email" icon={Mail} title="メールアドレス" description="通知先になります。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="phone" icon={Phone} title="電話番号" description="緊急連絡先です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
       </section>
 
-      {/* 復元：業種別項目 */}
       <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ 業種別項目</h3>
       <section style={{ ...cardStyle, borderTop: `6px solid ${themeColor}` }}>
-        <ConfigItem id="zip_code" icon={MapPin} title="郵便番号" description="住所入力の補助。移動時間の計算に使用されます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="address" icon={MapPin} title="住所" description="訪問サービス用。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="parking" icon={Car} title="駐車場" description="駐車場の有無。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="building_type" icon={Building2} title="建物の種類" description="戸建・集合住宅など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="care_notes" icon={HeartPulse} title="お身体の状況" description="介助の有無など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="symptoms" icon={Sparkles} title="お悩み" description="状態やレベル。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="request_details" icon={Scissors} title="詳細要望" description="デザイン等。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
-        <ConfigItem id="notes" icon={MessageSquare} title="備考欄" description="末尾に固定されます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} />
+        <ConfigItem id="zip_code" icon={MapPin} title="郵便番号" description="住所入力の補助。移動時間の計算に使用されます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="address" icon={MapPin} title="住所" description="訪問サービス用。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="parking" icon={Car} title="駐車場" description="駐車場の有無。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="building_type" icon={Building2} title="建物の種類" description="戸建・集合住宅など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="care_notes" icon={HeartPulse} title="お身体の状況" description="介助の有無など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="symptoms" icon={Sparkles} title="お悩み" description="状態やレベル。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="request_details" icon={Scissors} title="詳細要望" description="デザイン等。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="notes" icon={MessageSquare} title="備考欄" description="末尾に固定されます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
       </section>
       
-      {/* 復元：カスタム質問 */}
       <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ カスタム質問（ラジオボタン）</h3>
       <section style={{ ...cardStyle, borderTop: `6px solid #fbbf24` }}>
         {customFields.map(field => (
-          <CustomFieldItem key={field.id} field={field} themeColor={themeColor} updateCustomField={updateCustomField} deleteCustomField={deleteCustomField} />
+          <CustomFieldItem key={field.id} field={field} themeColor={themeColor} updateCustomField={updateCustomField} deleteCustomField={deleteCustomField} isHybrid={isHybrid} />
         ))}
         <button onClick={addCustomField} style={{ width: '100%', padding: '15px', background: '#fff', border: '2px dashed #fbbf24', borderRadius: '12px', color: '#b45309', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
           <Plus size={20} /> 質問を追加
         </button>
       </section>
 
-      {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
+      {/* 固定フッター */}
       <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.9)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
         
-        {/* 🚀 🆕 点滅アニメーションの定義 */}
         <style>{`
           @keyframes pulse-btn {
             0% { transform: scale(1); box-shadow: 0 4px 15px ${themeColor}66; }
@@ -297,11 +349,10 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
             </button>
             <button 
               onClick={handleSave} 
-              disabled={!hasChanges} // 👈 変更がない時は押せない
+              disabled={!hasChanges} 
               style={{ 
                 flex: 1, padding: '15px', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', 
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', transition: '0.3s',
-                // 👈 変更があればテーマカラー＋点滅、なければグレー
                 background: hasChanges ? themeColor : '#cbd5e1', 
                 color: '#fff', 
                 cursor: hasChanges ? 'pointer' : 'not-allowed', 
@@ -319,11 +370,10 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
             </button>
             <button 
               onClick={handleSave} 
-              disabled={!hasChanges} // 👈 変更がない時は押せない
+              disabled={!hasChanges} 
               style={{ 
                 flex: 1.8, padding: '10px 0', border: 'none', borderRadius: '12px', 
                 display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', transition: '0.3s',
-                // 👈 変更があればテーマカラー＋点滅、なければグレー
                 background: hasChanges ? themeColor : '#cbd5e1', 
                 color: '#fff', 
                 cursor: hasChanges ? 'pointer' : 'not-allowed', 

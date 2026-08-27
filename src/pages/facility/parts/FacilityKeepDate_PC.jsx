@@ -18,6 +18,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const [timeModal, setTimeModal] = useState({ show: false, dateStr: '', currentTime: '' });
   const [advanceDays, setAdvanceDays] = useState(0);
 
+  // 👇 🌟 🆕 追加：訪問対応スタッフのリストを保持する
+  const [visitStaffs, setVisitStaffs] = useState([]);
+
   // 🚀 🆕 自動スクロール用のターゲット（ボタンの位置）
   const nextStepRef = useRef(null);
 
@@ -78,22 +81,48 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     setLoading(true);
     const shopId = selectedShop.id;
 
-    const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes] = await Promise.all([
+    const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes, staffsRes] = await Promise.all([
       // ① この施設の予約（🚀 修正：status を追加）
       supabase.from('visit_requests').select('scheduled_date, start_time, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
       // ② 全キープ日程
       supabase.from('keep_dates').select('*').eq('shop_id', shopId),
       // ③ 提携ルール
-      supabase.from('shop_facility_connections').select('facility_user_id, regular_rules').eq('shop_id', shopId),
+      supabase.from('shop_facility_connections').select('facility_user_id, regular_rules, assigned_staff_id').eq('shop_id', shopId),
       // ④ 定期除外
       supabase.from('regular_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId),
       // ⑤ 他施設の予約（他施設名義の visit_requests）
       supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled'),
       // ⑥ 個人予約（開始・終了時間を取得）
-      supabase.from('reservations').select('start_time, end_time').eq('shop_id', shopId).neq('status', 'canceled'),
+      supabase.from('reservations').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled'),
       // ⑦ プライベート予定（開始・終了時間を取得）
-      supabase.from('private_tasks').select('start_time, end_time').eq('shop_id', shopId)
+      supabase.from('private_tasks').select('start_time, end_time, staff_id').eq('shop_id', shopId),
+      // 👇 🌟 修正：休み情報（weekly_holidays, custom_shifts等）も含めて全て取得するため「*」に変更
+      supabase.from('staffs').select('*').eq('shop_id', shopId)
     ]);
+
+    // 👇 🌟 修正：訪問対応可能なスタッフの「データ丸ごと」と「IDリスト」を作る
+    const staffs = staffsRes.data || [];
+    const vStaffs = staffs.filter(s => {
+      if (s.capable_categories && s.capable_categories.length > 0) {
+        return s.capable_categories.some(c => c.includes('訪問') || c.includes('出張'));
+      }
+      return true; // 未設定のスタッフは全員対応可能とみなす
+    });
+    setVisitStaffs(vStaffs); // 👈 🌟 抽出したスタッフ情報を保存
+    const visitStaffIds = vStaffs.map(s => s.id);
+
+    // 👇 🌟 🆕 追加：関係ない業種（店舗専用）のスタッフの予定を弾く
+    const myConn = conns.data?.find(c => c.facility_user_id === facilityId);
+      const assignedStaffId = myConn?.assigned_staff_id;
+
+      const validPersonalRes = (personalRes.data || []).filter(r => {
+        if (assignedStaffId) return r.staff_id === assignedStaffId;
+        return !r.staff_id || visitStaffIds.includes(r.staff_id);
+      });
+      const validPrivateTasks = (privateTasksRes.data || []).filter(p => {
+        if (assignedStaffId) return p.staff_id === assignedStaffId;
+        return !p.staff_id || visitStaffIds.includes(p.staff_id);
+      });
 
     setConfirmedVisits(thisFacRes.data || []);
     setKeepDates(keeps.data || []);
@@ -104,23 +133,65 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     // ※ 他施設訪問（visit_requests）は丸1日潰れる前提なので時間なし（日付だけ）で扱う
     const busyEvents = [
   ...(otherFacRes.data || []).map(v => ({ date: v.scheduled_date, isAllDay: true })),
-      ...(personalRes.data || []).filter(r => r.start_time).map(r => ({
+      // 👇 🌟 修正：抽出した validPersonalRes を使う
+      ...validPersonalRes.filter(r => r.start_time).map(r => ({
         date: r.start_time.split('T')[0].split(' ')[0],
         start: new Date(r.start_time).getTime(),
         end: r.end_time ? new Date(r.end_time).getTime() : new Date(new Date(r.start_time).getTime() + 60 * 60000).getTime() // 終了未定なら1時間後と仮定
       })),
-      ...(privateTasksRes.data || []).filter(p => p.start_time).map(p => ({
+      // 👇 🌟 修正：抽出した validPrivateTasks を使う
+      ...validPrivateTasks.filter(p => p.start_time).map(p => ({
         date: p.start_time.split('T')[0].split(' ')[0],
         start: new Date(p.start_time).getTime(),
         end: p.end_time ? new Date(p.end_time).getTime() : new Date(new Date(p.start_time).getTime() + 60 * 60000).getTime()
       }))
     ];
-    setShopBlocks(busyEvents); 
+    setShopBlocks(busyEvents);
 
     setLoading(false);
   };
 
-  // 🚀 🆕 ここに追加！：施術可能人数の計算ロジック
+  // 👇 🌟 🆕 追加：その日（その時間）に出勤している訪問スタッフの人数をカウントする
+  const getWorkingStaffCount = (dateStr, timeStr = null) => {
+    const myConn = regularRules.find(r => r.facility_user_id === facilityId);
+    const assignedStaffId = myConn?.assigned_staff_id;
+
+    const d = new Date(dateStr);
+    const dayIndex = d.getDay();
+
+    if (assignedStaffId) {
+      // 専属担当スタッフを探す
+      const staff = visitStaffs.find(s => s.id === assignedStaffId);
+      if (!staff) return 0;
+      if (staff.weekly_holidays?.includes(dayIndex)) return 0;
+      const shift = staff.custom_shifts?.[dateStr];
+      if (shift) {
+        if (shift.type === 'off') return 0;
+        if (shift.type === 'time' && timeStr) {
+          if (timeStr < shift.start || timeStr >= shift.end) return 0; 
+        }
+      }
+      return 1;
+    } else {
+      // まだデータがない、または担当なしの場合は店舗全体の設定人数
+      if (visitStaffs.length === 0) return selectedShop?.facility_staff_count || 1; 
+      let count = 0;
+      visitStaffs.forEach(staff => {
+        if (staff.weekly_holidays?.includes(dayIndex)) return;
+        const shift = staff.custom_shifts?.[dateStr];
+        if (shift) {
+          if (shift.type === 'off') return; 
+          if (shift.type === 'time' && timeStr) {
+            if (timeStr < shift.start || timeStr >= shift.end) return; 
+          }
+        }
+        count++; 
+      });
+      return count;
+    }
+  };
+
+  // 🚀 🆕 修正：施術可能人数の計算ロジック
   const calculateCapacity = (dateStr, startTimeStr) => {
     if (!selectedShop || !startTimeStr) return 0;
     
@@ -129,7 +200,6 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const dayKey = dayNames[d.getDay()];
     const bHours = selectedShop?.business_hours || {};
 
-    // 1. 各種設定時間を分単位に変換するヘルパー
     const toMin = (t) => {
       const [h, m] = t.split(':').map(Number);
       return h * 60 + m;
@@ -140,18 +210,14 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const lunchStartMin = toMin(selectedShop.facility_lunch_start || '12:00');
     const lunchEndMin = toMin(selectedShop.facility_lunch_end || '13:00');
 
-    // 2. 総活動時間を計算
     let activeMinutes = endMin - startMin;
 
-    // 3. 🚀 🆕 休憩時間との重複を計算して差し引く
-    // 「活動時間（Start〜End）」と「休憩時間（LunchStart〜LunchEnd）」が重なっている分を出す
     const overlapStart = Math.max(startMin, lunchStartMin);
     const overlapEnd = Math.min(endMin, lunchEndMin);
     const overlapMinutes = Math.max(0, overlapEnd - overlapStart);
 
     activeMinutes -= overlapMinutes;
 
-    // 👇 🌟 🆕 追加：その日に入っている個人予定の時間を「実働時間」から差し引く
     const dayEvents = shopBlocks.filter(e => e.date === dateStr && !e.isAllDay);
     dayEvents.forEach(e => {
       const evStart = new Date(e.start);
@@ -159,23 +225,25 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const evStartMin = evStart.getHours() * 60 + evStart.getMinutes();
       const evEndMin = evEnd.getHours() * 60 + evEnd.getMinutes();
       
-      // 今回の枠（startMin）〜終了（endMin）の間に被っている予定の長さを引く
       const evOverlapStart = Math.max(startMin, evStartMin);
       const evOverlapEnd = Math.min(endMin, evEndMin);
       const evOverlap = Math.max(0, evOverlapEnd - evOverlapStart);
       
       activeMinutes -= evOverlap;
     });
-    // 👆 追加ここまで
 
     if (activeMinutes <= 0) return 0;
 
-    // 4. キャパシティ計算
     const capacityPerStaff = selectedShop.hourly_capacity_per_staff || 2.0;
-    const staffCount = selectedShop.facility_staff_count || 1;
     
-    // (実働分 / 60分) × スタッフ数 × 1時間あたりの人数
-    return Math.floor((activeMinutes / 60) * staffCount * capacityPerStaff);
+    // 👇 🌟 修正：実際の出勤スタッフ数をベースにする（設定値と比べて少ない方を採用）
+    const actualWorkingCount = getWorkingStaffCount(dateStr, startTimeStr);
+    if (actualWorkingCount === 0) return 0; // 出勤スタッフがいなければキャパ0
+    
+    const settingStaffCount = selectedShop.facility_staff_count || 1;
+    const finalStaffCount = Math.min(actualWorkingCount, settingStaffCount);
+
+    return Math.floor((activeMinutes / 60) * finalStaffCount * capacityPerStaff);
   };
 
   // --- 2. 判定補助：営業時間に重なっているかチェックする関数 ---
@@ -270,6 +338,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const isRegularHoliday = holidays[`${nthWeek}-${dayKey}`] || (isL1 && holidays[`L1-${dayKey}`]) || (isL2 && holidays[`L2-${dayKey}`]);
     
     if (isRegularHoliday) return 'ng';
+
+    // 👇 🌟 🆕 追加：訪問対応スタッフがその日「全員休み（シフト休・曜日休）」なら「✕」にする
+    if (getWorkingStaffCount(dateStr) === 0) return 'ng';
 
     const dayEvents = shopBlocks.filter(e => e.date === dateStr);
     if (dayEvents.length > 0) {
