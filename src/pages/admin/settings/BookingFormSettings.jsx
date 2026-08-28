@@ -134,11 +134,18 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       .or('is_product_cat.is.null,is_product_cat.eq.false')
       .order('sort_order');
     const servRes = await supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order');
-    const optRes = await supabase.from('service_options').select('*'); 
+    
+    // 🚀 1000件バグ回避：自店舗のメニューIDに紐づく枝分かれオプションのみを安全に取得
+    const serviceIds = (servRes.data || []).map(s => s.id);
+    let optData = [];
+    if (serviceIds.length > 0) {
+      const { data: optRes } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+      optData = optRes || [];
+    }
 
     if (catRes.data) setCategories(catRes.data);
     if (servRes.data) setServices(servRes.data);
-    if (optRes.data) setOptions(optRes.data);
+    if (optData) setOptions(optData); // 👈 optRes.data ではなく optData をセット
   };
 
   const showMsg = (txt) => { 

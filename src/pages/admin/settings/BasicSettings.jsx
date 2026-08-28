@@ -100,8 +100,16 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       setBusinessNameKana(data.business_name_kana || '');
       setOwnerName(data.owner_name || '');
       setOwnerNameKana(data.owner_name_kana || '');
-      // 👇 🌟 修正：カンマ区切りの文字列を配列に変換してセットする
-      setBusinessType(data.business_type ? data.business_type.split(',') : []);
+      
+      // 🚀 🆕 修正：配列で保存されていても、文字列で保存されていても安全に読み込んでクラッシュを防ぐ
+      let parsedBusinessTypes = [];
+      if (Array.isArray(data.business_type)) {
+        parsedBusinessTypes = data.business_type;
+      } else if (typeof data.business_type === 'string') {
+        parsedBusinessTypes = data.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+      }
+      setBusinessType(parsedBusinessTypes);
+
       setSubBusinessType(data.sub_business_type || '');
       setPhone(data.phone || '');
       setEmailContact(data.email_contact || '');

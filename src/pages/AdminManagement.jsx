@@ -200,10 +200,9 @@ function AdminManagement() {
       const facilityIds = [...new Set(visitsData.map(v => v.facility_user_id))].filter(Boolean);
 
       // --- 3. 売上・顧客名簿・マスターを取得（常に自店のみ） ---
-      const [catRes, servRes, optRes, adjRes, prodRes, sDataRes, custAllRes, membersRes, staffsRes] = await Promise.all([
+      const [catRes, servRes, adjRes, prodRes, sDataRes, custAllRes, membersRes, staffsRes] = await Promise.all([
         supabase.from('service_categories').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         supabase.from('services').select('*').eq('shop_id', cleanShopId).order('sort_order'),
-        supabase.from('service_options').select('*'),
         supabase.from('admin_adjustments').select('*').eq('shop_id', cleanShopId),
         supabase.from('products').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         
@@ -226,6 +225,15 @@ function AdminManagement() {
         
         supabase.from('staffs').select('*').eq('shop_id', cleanShopId)
       ]);
+
+      // --- 4. データの整形とセット（以下、既存ロジックと同じ） ---
+      const fetchedServices = servRes.data || [];
+      const serviceIds = fetchedServices.map(s => s.id);
+      let optData = [];
+      if (serviceIds.length > 0) {
+        const { data } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+        optData = data || [];
+      }
 
       // --- 4. データの整形とセット（以下、既存ロジックと同じ） ---
       const fetchedStaffs = staffsRes.data || [];
@@ -1658,8 +1666,10 @@ return (
                               {!isFacility && categoryMap[res.biz_type] && (
                                 <span style={{ 
                                   fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px',
-                                  background: res.biz_type === 'foot' ? '#4285f4' : '#d34817',
-                                  color: '#fff', fontWeight: '900', marginBottom: '2px'
+                                  background: '#e0d7f7', // 👈 どんな業種でも馴染む紫の淡い背景に統一
+                                  color: '#4b2c85', // 文字色をテーマカラーの濃い紫に
+                                  border: '1px solid #4b2c85',
+                                  fontWeight: '900', marginBottom: '2px'
                                 }}>
                                   {categoryMap[res.biz_type].slice(0, 4)}
                                 </span>
@@ -1852,7 +1862,8 @@ return (
                   )}
                   {Object.entries(salesBreakdown.byBiz).map(([name, amount]) => (
                     <div key={name} style={{ fontSize: '0.8rem' }}>
-                      <span style={{ padding: '1px 6px', borderRadius: '4px', marginRight: '5px', background: name.includes('フット') ? '#4285f4' : '#d34817', fontSize: '0.6rem', fontWeight: 'bold' }}>{name.slice(0,4)}</span>
+                      {/* 🚀 🆕 修正：特定の文字（フット等）に依存せず、ハイブリッド店舗で綺麗に色分けされるように統一 */}
+                      <span style={{ padding: '1px 6px', borderRadius: '4px', marginRight: '5px', background: '#e0d7f7', color: '#4b2c85', border: '1px solid #4b2c85', fontSize: '0.6rem', fontWeight: 'bold' }}>{name.slice(0,4)}</span>
                       <span style={{ fontWeight: 'bold' }}>¥{amount.toLocaleString()}</span>
                     </div>
                   ))}

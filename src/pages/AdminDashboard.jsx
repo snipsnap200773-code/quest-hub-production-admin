@@ -152,6 +152,20 @@ const AdminDashboard = () => {
   // 👇 🌟 🆕 無料版の判定を追加
   const isFreePlan = shopData && !shopData.is_tester && shopData.subscription_status !== 'active' && shopData.subscription_status !== 'trialing';
 
+  // 🚀 🆕 ハイブリッド対応：「訪問」系のカテゴリが含まれているか、文字列でも配列でも確実に見つけるロジック
+  const isVisitShop = (() => {
+    if (!shopData) return false;
+    if (shopData.sub_business_type === '施設訪問') return true;
+    
+    // 文字列ならカンマで分割して配列にし、配列ならそのまま使う
+    const types = Array.isArray(shopData.business_type) 
+      ? shopData.business_type 
+      : (shopData.business_type || '').split(/,|、/);
+      
+    // 配列の各要素の中に「訪問」が含まれているかチェック
+    return types.some(type => typeof type === 'string' && type.includes('訪問'));
+  })();
+
   // ✅ ログイン成功時のみ表示されるダッシュボード本体
   return (
     <div style={containerStyle}>
@@ -246,7 +260,8 @@ const AdminDashboard = () => {
         />
 
         {/* 🆕 施設管理カード（条件付き表示） */}
-        {(shopData?.business_type?.includes('訪問') || shopData?.sub_business_type === '施設訪問') && (
+        {/* 🚀 🆕 修正：上で作成した isVisitShop で安全に判定する */}
+        {isVisitShop && (
           <NavCard 
             title="施設管理" 
             desc="訪問先施設の登録・入居者名簿の管理" 
@@ -255,8 +270,8 @@ const AdminDashboard = () => {
             to={`/admin/${shopId}/facilities`}
             cardStyle={cardStyle} 
             iconBoxStyle={iconBoxStyle} 
-            pendingCount={isFreePlan ? 0 : pendingCount} // 👈 🌟 🆕 ロック中はバッジを隠す
-            isLocked={isFreePlan} // 👈 🌟 🆕 ロック状態を渡す
+            pendingCount={isFreePlan ? 0 : pendingCount} 
+            isLocked={isFreePlan} 
           />
         )}
 

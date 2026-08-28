@@ -487,7 +487,13 @@ const StaffSettings = () => {
 
                 {/* 👇 🌟 🆕 ここから追加：担当業種の設定パネル */}
                 {(() => {
-                  const shopBusinessTypes = shopData?.business_type ? shopData.business_type.split(',').map(s => s.trim()).filter(Boolean) : [];
+                  // 🚀 🆕 修正：配列でもカンマ区切りの文字列でも安全にパースしてクラッシュを防ぐ
+                  let shopBusinessTypes = [];
+                  if (Array.isArray(shopData?.business_type)) {
+                    shopBusinessTypes = shopData.business_type;
+                  } else if (typeof shopData?.business_type === 'string') {
+                    shopBusinessTypes = shopData.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+                  }
                   
                   // 👇 🌟 修正：登録されている大カテゴリが1つ以下（単一業態）なら、この設定パネル自体を非表示にする
                   if (shopBusinessTypes.length <= 1) return null;
@@ -662,20 +668,7 @@ const StaffSettings = () => {
                       ))}
                     </div>
                   )}
-
-                  {/* 選択されている日付のバッジ表示（カレンダーを閉じても見える） */}
-                  {staff.specific_holidays?.length > 0 && (
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginTop: '10px' }}>
-                      {staff.specific_holidays.sort().map(d => (
-                        <span key={d} style={{ fontSize: '0.7rem', background: '#fff1f2', color: '#e11d48', padding: '4px 8px', borderRadius: '6px', border: '1px solid #fecdd3', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                          {d.replace(/-/g, '/')}
-                          <button onClick={() => toggleSpecificHoliday(staff.id, d)} style={{ background: 'none', border: 'none', color: '#e11d48', cursor: 'pointer', padding: 0, display: 'flex' }}>
-                            <X size={12}/>
-                          </button>
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  {/* 🚀 🆕 古い specific_holidays の残骸ブロックは削除しました */}
                 </div>
                 {/* 🚀 🆕 追加ここまで */}
 

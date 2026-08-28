@@ -200,7 +200,15 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
 
       // 👇 🌟 🆕 追加：ハイブリッド判定（店舗と訪問の両方の業種があるか？）
       const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-      const shopTypes = data.business_type ? data.business_type.split(',').map(s => s.trim()) : [];
+      
+      // 🚀 🆕 修正：配列でもカンマ区切りの文字列でも安全にパースしてクラッシュを防ぐ
+      let shopTypes = [];
+      if (Array.isArray(data.business_type)) {
+        shopTypes = data.business_type;
+      } else if (typeof data.business_type === 'string') {
+        shopTypes = data.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+      }
+      
       const hasVisit = shopTypes.some(t => VISIT_KEYWORDS.some(k => t.includes(k)));
       const hasSalon = shopTypes.some(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
       setIsHybrid(hasVisit && hasSalon);

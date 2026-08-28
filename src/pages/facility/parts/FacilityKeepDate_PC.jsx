@@ -124,11 +124,18 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const assignedStaffId = myConn?.assigned_staff_id;
 
       const validPersonalRes = (personalRes.data || []).filter(r => {
-        if (assignedStaffId) return r.staff_id === assignedStaffId;
+        // 🚀 修正：専属担当がいる場合でも、店舗全体ブロック(staff_id === null)は必ず拾うようにする！
+        if (assignedStaffId) return r.staff_id === assignedStaffId || r.staff_id === null;
+        
+        // 担当なし（店舗全体の空きを見る）の場合：
+        // 全体ブロック(!r.staff_id) もしくは 訪問スタッフ全員の予定 を拾う
         return !r.staff_id || visitStaffIds.includes(r.staff_id);
       });
+      
       const validPrivateTasks = (privateTasksRes.data || []).filter(p => {
-        if (assignedStaffId) return p.staff_id === assignedStaffId;
+        // 🚀 修正：同上
+        if (assignedStaffId) return p.staff_id === assignedStaffId || p.staff_id === null;
+        
         return !p.staff_id || visitStaffIds.includes(p.staff_id);
       });
 

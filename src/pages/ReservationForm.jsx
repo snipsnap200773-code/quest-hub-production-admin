@@ -188,10 +188,10 @@ let catQuery = supabase.from('service_categories')
           // ✅ 修正：施設専用（is_facility_only）フラグをチェックする
           const filteredCats = catRes.data.filter(c => {
             // 1. 施設専用フラグが TRUE のものは、一般予約フォームでは常に非表示にする
-            if (c.is_facility_only) return false;
-
-            // 2. 既存の入り口識別キー（url_key）による絞り込み
-            return entryType ? c.url_key === entryType : !c.url_key;
+            const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
+if (cat.target_industry && !targetInds.includes(cat.target_industry)) {
+  return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
+}
           });
           
           setCategories(filteredCats);
@@ -819,10 +819,15 @@ const handleNextStep = (input = null) => {
           
           {categories
             .filter(cat => {
-              // 👇 🌟 🆕 追加：このカテゴリが今のタブ（来店/訪問）の業種に合致しているかチェック
+              // 🚀 🆕 修正：配列の完全一致だけでなく、文字列が含まれているかの部分一致（some + includes）を使って安全に判定する
               const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
-              if (cat.target_industry && !targetInds.includes(cat.target_industry)) {
-                return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
+              
+              if (cat.target_industry) {
+                // targetInds（現在のモードの業種リスト）のいずれかに、このカテゴリの指定業種が含まれていればOK
+                const isMatch = targetInds.some(ind => 
+                  ind.includes(cat.target_industry) || cat.target_industry.includes(ind)
+                );
+                if (!isMatch) return false; // モードが違う場合は非表示
               }
 
               // カテゴリ内に表示用メニューがあるかチェック

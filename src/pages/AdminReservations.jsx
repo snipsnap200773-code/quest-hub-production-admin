@@ -1879,9 +1879,6 @@ const getStatusAt = (dateStr, timeStr) => {
     const interval = shop.slot_interval_min || 15;
     const start = new Date(`${selectedDate}T${targetTime}:00`);
     const end = new Date(start.getTime() + (interval * slots) * 60000);
-    
-    // 👇 🌟 修正：UIから選ばせるのをやめ、裏側で「1人営業ならその人、複数なら全体(null)」と自動判定
-    const staffIdValue = staffs.length === 1 ? staffs[0].id : null;
 
     const insertData = {
       shop_id: shopId, 
@@ -1893,7 +1890,7 @@ const getStatusAt = (dateStr, timeStr) => {
       total_slots: slots, 
       customer_email: null, 
       customer_phone: '---', 
-      staff_id: staffIdValue, // 👈 自動判定したIDを紐付け
+      staff_id: null, // 👈 全ての店舗タイプ（1人・複数）で「指名なし(null)」として登録
       options: { type: 'admin_block' }
     };
     
@@ -1925,9 +1922,6 @@ const getStatusAt = (dateStr, timeStr) => {
     const [ch, cm] = closeStr.split(':').map(Number);
     const totalMinutes = (ch * 60 + cm) - (oh * 60 + om);
     const slotsCount = Math.ceil(totalMinutes / interval); 
-    
-    // 👇 🌟 修正：裏側で「1人営業ならその人、複数なら全体(null)」と自動判定
-    const staffIdValue = staffs.length === 1 ? staffs[0].id : null;
 
     const insertData = {
       shop_id: shopId, 
@@ -1941,7 +1935,7 @@ const getStatusAt = (dateStr, timeStr) => {
       total_slots: slotsCount, 
       customer_email: null, 
       customer_phone: '---',
-      staff_id: staffIdValue, // 👈 自動判定したIDを紐付け
+      staff_id: null, // 👈 全ての店舗タイプ（1人・複数）で「指名なし(null)」として登録
       options: { services: [], isFullDay: true }
     };
     

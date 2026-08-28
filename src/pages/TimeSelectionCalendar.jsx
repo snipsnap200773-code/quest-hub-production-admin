@@ -89,16 +89,19 @@ function TimeSelectionCalendar() {
       }
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
+      const todayStr = new Date().toLocaleDateString('sv-SE');
+
+      // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
-        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds),
-        supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled'),
-        supabase.from('keep_dates').select('date').in('shop_id', targetShopIds),
+        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds).gte('start_time', todayStr), // 👈 🚀 追加
+        supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 🚀 追加
+        supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 🚀 追加
         // 定期ルール
         supabase.from('shop_facility_connections').select('regular_rules').in('shop_id', targetShopIds).eq('status', 'active'),
         // ルール除外日
-        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds),
+        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 🚀 追加
         // 🚀 🆕 追加：プライベート予定もデータベースから取ってくる
-        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds)
+        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds).gte('start_time', todayStr) // 👈 🚀 追加
       ]);
         
       setExistingReservations(resRes.data || []);
