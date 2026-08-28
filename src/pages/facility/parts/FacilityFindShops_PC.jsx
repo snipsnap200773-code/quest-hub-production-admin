@@ -153,7 +153,16 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
               <div style={cardHeaderStyle}>
                 <div style={iconBadgeStyle(themeColor)}><Store size={22} color="#fff" /></div>
                 <div style={{ flex: 1, marginLeft: '15px' }}>
-                   <span style={typeTagStyle(themeColor)}>{shop.sub_business_type || '訪問サービス'}</span>
+                   
+                   {/* 🚀 🆕 修正：ハイブリッド店舗向けに、複数の業種を「 / 」区切りで綺麗に表示する */}
+                   <span style={typeTagStyle(themeColor)}>
+                     {shop.sub_business_type
+                       ? (Array.isArray(shop.sub_business_type) 
+                           ? shop.sub_business_type.join(' / ') 
+                           : String(shop.sub_business_type).replace(/,|、/g, ' / '))
+                       : '訪問サービス'}
+                   </span>
+
                    <h3 style={shopNameStyle}>{shop.business_name}</h3>
                 </div>
               </div>

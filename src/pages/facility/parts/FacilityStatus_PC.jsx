@@ -23,7 +23,7 @@ const getKanaGroup = (kana) => {
   return "その他";
 };
 
-const FacilityStatus_PC = ({ facilityId, isMobile }) => {
+const FacilityStatus_PC = ({ facilityId, isMobile, selectedShopId }) => {
   const [visits, setVisits] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -63,7 +63,12 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
     return allMonthResidents.filter(r => r.status === 'pending').length;
   }, [allMonthResidents]);
 
-  useEffect(() => { fetchVisits(); }, [facilityId]);
+  // 🚀 🆕 依存配列に selectedShopId を追加（業者が切り替わったら再取得する）
+  useEffect(() => { 
+    if (selectedShopId) {
+      fetchVisits(); 
+    }
+  }, [facilityId, selectedShopId]);
 
   const fetchVisits = async () => {
     setLoading(true);
@@ -78,6 +83,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile }) => {
       .from('visit_requests')
       .select(`id, scheduled_date, start_time, status, parent_id, profiles (business_name, theme_color)`)
       .eq('facility_user_id', facilityId)
+      .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！親画面で選んだ業者だけに絞り込む
       // 🚀 🆕 【超重要】訪問予定日自体がキャンセル（削除）された日程はここで完全に弾きます！
       .neq('status', 'canceled') 
       .gte('scheduled_date', startOfMonth)

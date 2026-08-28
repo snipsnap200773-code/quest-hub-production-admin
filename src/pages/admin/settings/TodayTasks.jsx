@@ -156,15 +156,12 @@ const TodayTasks = () => {
 
 // 🆕 調整項目とカテゴリを並び順通りに取得（NULL/falseの揺れに強い版）
 const fetchMasterData = async () => {
-    // 1. カテゴリ、調整、店販、メニュー、オプションを並列で取得
-    const [allCatsRes, adjRes, prodRes, servRes, optRes] = await Promise.all([
-      // 全カテゴリをまとめて取得（並び順通り）
+    // 1. カテゴリ、調整、店販、メニューを並列で取得
+    const [allCatsRes, adjRes, prodRes, servRes] = await Promise.all([
       supabase.from('service_categories').select('*').eq('shop_id', shopId).order('sort_order'),
-      // 調整・店販・サービスも取得
       supabase.from('admin_adjustments').select('*').eq('shop_id', shopId).is('service_id', null).order('sort_order'),
       supabase.from('products').select('*').eq('shop_id', shopId).order('sort_order'),
-      supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order'),
-      supabase.from('service_options').select('*')
+      supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order')
     ]);
 
     const allCats = allCatsRes.data || [];
@@ -186,10 +183,19 @@ const fetchMasterData = async () => {
     });
     setCategoryMap(shopNameMap);
 
+    const fetchedServices = servRes.data || [];
+    setServices(fetchedServices);
     setAdjustments(adjRes.data || []);
     setProducts(prodRes.data || []);
-    setServices(servRes.data || []);
-    setServiceOptions(optRes.data || []);
+
+    // 🚀 🆕 修正：取得した自店舗のサービスIDリストを使って枝分かれメニューを安全に取得
+    const serviceIds = fetchedServices.map(s => s.id);
+    let optData = [];
+    if (serviceIds.length > 0) {
+      const { data } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+      optData = data || [];
+    }
+    setServiceOptions(optData);
 };
   // 画面サイズ管理
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -219,16 +225,22 @@ const fetchTodayTasks = async () => {
   setLoading(true);
   const dateStr = targetDate;
   try {
-    const [allCatsRes, adjRes, prodRes, servRes, optRes, staffRes] = await Promise.all([
-  // ...既存の5つ...
-  supabase.from('service_categories').select('*').eq('shop_id', shopId).order('sort_order'),
-  supabase.from('admin_adjustments').select('*').eq('shop_id', shopId).is('service_id', null).order('sort_order'),
-  supabase.from('products').select('*').eq('shop_id', shopId).order('sort_order'),
-  supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order'),
-  supabase.from('service_options').select('*'),
-  // 🚀 🆕 スタッフ一覧（技術者のみ）を取得して人数を数える
-  supabase.from('staffs').select('id').eq('shop_id', shopId).eq('role_type', 'stylist')
-]);
+    const [allCatsRes, adjRes, prodRes, servRes, staffRes] = await Promise.all([
+      supabase.from('service_categories').select('*').eq('shop_id', shopId).order('sort_order'),
+      supabase.from('admin_adjustments').select('*').eq('shop_id', shopId).is('service_id', null).order('sort_order'),
+      supabase.from('products').select('*').eq('shop_id', shopId).order('sort_order'),
+      supabase.from('services').select('*').eq('shop_id', shopId).order('sort_order'),
+      supabase.from('staffs').select('id').eq('shop_id', shopId).eq('role_type', 'stylist')
+    ]);
+
+    setStaffCount(staffRes.data?.length || 0);
+
+    // 🚀 🆕 修正：自店舗のサービスIDで絞り込んでオプションを取得（リミットエラー回避）
+    const serviceIds = (servRes.data || []).map(s => s.id);
+    if (serviceIds.length > 0) {
+      const { data: optData } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+      // （※TodayTasks内では、必要に応じて state を更新するか、fetchMasterData側に任せるかで調整してください）
+    }
 
 // 🚀 🆕 技術者の人数を保持する（Stateを後述の通り追加してください）
 setStaffCount(staffRes.data?.length || 0);

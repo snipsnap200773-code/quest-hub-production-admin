@@ -722,7 +722,19 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                     </div>
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <button onClick={() => setActiveServiceForOptions(activeServiceForOptions?.id === s.id ? null : s)} style={{ padding: '6px 12px', background: activeServiceForOptions?.id === s.id ? themeColor : '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: activeServiceForOptions?.id === s.id ? '#fff' : '#475569', cursor: 'pointer' }}>枝</button>
+                    <button onClick={() => {
+                      const isClosing = activeServiceForOptions?.id === s.id;
+                      setActiveServiceForOptions(isClosing ? null : s);
+                      // 👇 🚀 修正：別のメニューの枝パネルを開閉する際、前のメニューで入力していたフォーム内容が
+                      // 残ってしまい「全部が管理者専用に見える」等の誤表示・誤登録を防ぐため、必ず初期化する
+                      setEditingOptionId(null);
+                      setOptGroupName('');
+                      setOptName('');
+                      setOptSlots(0);
+                      setOptPrice(0);
+                      setOptIsMultiple(false);
+                      setOptIsAdminOnly(false);
+                    }} style={{ padding: '6px 12px', background: activeServiceForOptions?.id === s.id ? themeColor : '#f1f5f9', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.8rem', fontWeight: 'bold', color: activeServiceForOptions?.id === s.id ? '#fff' : '#475569', cursor: 'pointer' }}>枝</button>
                     
                     {/* 👇 復活：並び替えボタン（上） */}
                     <button 

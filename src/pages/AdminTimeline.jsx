@@ -115,6 +115,7 @@ function AdminTimeline() {
   const { shopId } = useParams();
   const navigate = useNavigate();
   const scrollRef = useRef(null);
+  const scrolledForReserveRef = useRef(false);
 
   // --- 状態管理 ---
   const location = useLocation(); // 🚀 🆕 追加
@@ -134,14 +135,23 @@ function AdminTimeline() {
   const [alertModalMode, setAlertModalMode] = useState(null);
   const [message, setMessage] = useState('');
 
-  const showMsg = (txt) => { 
+  // 👇 🌟 🆕 追加：施設予約キャンセル専用のState
+  const [showFacCancelModal, setShowFacCancelModal] = useState(false);
+  const [facCancelTarget, setFacCancelTarget] = useState(null); 
+  const [facCancelPass, setFacCancelPass] = useState('');
+
+  const showMsg = (txt) => {
     setMessage(txt); 
     setTimeout(() => setMessage(''), 3000); 
   };
 
-  const markKeepAsDismissed = (id) => {
-    if (!id || dismissedKeeps.includes(id)) return;
-    const newDismissed = [...dismissedKeeps, id];
+  const markKeepAsDismissed = (rawId) => {
+    if (!rawId) return;
+    // 🚀 🆕 「keep_」という文字が付いていたら取り除き、確実に文字列(String)にする
+    const cleanId = String(rawId).replace(/^keep_/, ''); 
+
+    if (dismissedKeeps.includes(cleanId)) return;
+    const newDismissed = [...dismissedKeeps, cleanId];
     setDismissedIrregularIds(newDismissed);
     localStorage.setItem(`dismissed_keeps_${shopId}`, JSON.stringify(newDismissed));
   };
@@ -178,6 +188,125 @@ function AdminTimeline() {
       alert("解除に失敗しました: " + err.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // 👇 🌟 🆕 修正：施設ID（facility_user_id）も引き継ぐように機能強化！
+  const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
+    setLoading(true);
+    try {
+      const rawVisitId = String(visitId).replace(/^visit_/, '');
+      const { data: visit } = await supabase.from('visit_requests').select('*').eq('id', rawVisitId).maybeSingle();
+      const masterId = visit?.parent_id || rawVisitId;
+
+      const { data: allResidents } = await supabase 
+        .from('visit_request_residents')
+        .select('members(name), menu_name, status')
+        .eq('visit_request_id', masterId);
+
+      setFacCancelTarget({ 
+        id: rawVisitId, 
+        date: dateStr, 
+        name: facilityName, 
+        type: 'visit',
+        residents: allResidents || [],
+        totalCount: allResidents?.length || 0,
+        // 🚀 🆕 単発キープを一緒に消すために、施設IDを取得しておく
+        facility_user_id: visit?.facility_user_id 
+      });
+
+      setFacCancelPass('');
+      setShowFacCancelModal(true);
+    } catch (err) {
+      alert("名簿取得エラー: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelKeep = (facilityId, dateStr, facilityName) => {
+    setFacCancelTarget({ id: facilityId, date: dateStr, name: facilityName, type: 'keep' });
+    setFacCancelPass('');
+    setShowFacCancelModal(true);
+  };
+
+  // 👇 🌟 🆕 修正：「単発なら一発消去、定期ならワンクッション」を実現する究極のキャンセル処理！
+  const executeFacCancel = async () => {
+    if (facCancelPass !== '1234') {
+      alert("パスワードが正しくありません。");
+      return;
+    }
+
+    try {
+      // 🚀 🆕 facility_user_id を引っ張り出す
+      const { id, date, name, type, facility_user_id } = facCancelTarget;
+
+      // 🆕 追加：必須項目が欠けたまま削除を投げて400になるのを防ぐガード
+      if (!shopId || !date) {
+        console.error('executeFacCancel: shopId または date が未定義です', { shopId, date, facCancelTarget });
+        alert("キャンセル処理に必要な情報が不足しています（shopId/date）。画面を再読み込みしてお試しください。");
+        return;
+      }
+
+      if (type === 'visit') {
+        const { error } = await supabase
+          .from('visit_requests')
+          .update({ status: 'canceled' })
+          .eq('id', id);
+        if (error) throw error;
+        
+        // 🚀 🆕 【ここが目玉！】単発（個別）キープ由来の予定だった場合は、キープ枠ごと一気に消去する！
+        // 定期キープの場合は keep_dates にデータがないためここをすり抜け、ワンクッション置いて「キープ枠」として残ります。
+        if (facility_user_id) {
+          const { error: keepDeleteError } = await supabase.from('keep_dates').delete().match({ 
+            facility_user_id: facility_user_id, 
+            shop_id: shopId, 
+            date: date 
+          });
+          // 🆕 追加：削除失敗を握りつぶさずログ＆通知に出す
+          if (keepDeleteError) {
+            console.error('keep_dates 削除エラー(visit分岐):', keepDeleteError);
+            throw keepDeleteError;
+          }
+        }
+        
+        // カレンダー画面(AdminReservations)用の即時非表示処理（エラー防止付き）
+        if (typeof setVisitRequests === 'function') {
+          setVisitRequests(prev => prev.filter(v => v.id !== id));
+        }
+
+      } else {
+        // 🆕 追加：facility_user_id（id）が無いのに削除を投げると400になるためガード
+        if (!id) {
+          console.error('executeFacCancel: facility_user_id(id) が未定義です', facCancelTarget);
+          alert("施設情報が取得できませんでした。画面を再読み込みしてお試しください。");
+          return;
+        }
+
+        const { error: exclusionError } = await supabase.from('regular_keep_exclusions').upsert([{ 
+          facility_user_id: id, shop_id: shopId, excluded_date: date 
+        }]);
+        // 🆕 追加：upsertのエラーもチェック
+        if (exclusionError) {
+          console.error('regular_keep_exclusions upsertエラー:', exclusionError);
+          throw exclusionError;
+        }
+
+        const { error: keepDeleteError } = await supabase.from('keep_dates').delete().match({ 
+          facility_user_id: id, shop_id: shopId, date: date 
+        });
+        // 🆕 追加：削除失敗を握りつぶさずログ＆通知に出す
+        if (keepDeleteError) {
+          console.error('keep_dates 削除エラー(keep分岐):', keepDeleteError);
+          throw keepDeleteError;
+        }
+      }
+
+      setShowFacCancelModal(false);
+      showMsg(`${name} 様の予定をキャンセルしました。`);
+      fetchData(); 
+    } catch (err) {
+      alert("実行エラー: " + err.message);
     }
   };
   // 👆 追加ここまで
@@ -305,9 +434,26 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   const isPC = isPreviewMode ? false : windowWidth > 1024; 
 
   // 🚀 🆕 追加：日付移動の関数
-  const goPrev = () => { const d = new Date(selectedDate); d.setDate(d.getDate() - 1); setSelectedDate(d.toLocaleDateString('sv-SE')); };
-  const goNext = () => { const d = new Date(selectedDate); d.setDate(d.getDate() + 1); setSelectedDate(d.toLocaleDateString('sv-SE')); };
-  const goToday = () => setSelectedDate(new Date().toLocaleDateString('sv-SE'));
+  const goPrev = () => { 
+    scrolledForReserveRef.current = false; // 🌟 スイッチを解除
+    const d = new Date(selectedDate); d.setDate(d.getDate() - 1); 
+    const dStr = d.toLocaleDateString('sv-SE');
+    setSelectedDate(dStr);
+    navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
+  };
+  const goNext = () => { 
+    scrolledForReserveRef.current = false; // 🌟 スイッチを解除
+    const d = new Date(selectedDate); d.setDate(d.getDate() + 1); 
+    const dStr = d.toLocaleDateString('sv-SE');
+    setSelectedDate(dStr);
+    navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
+  };
+  const goToday = () => { 
+    scrolledForReserveRef.current = false; // 🌟 スイッチを解除
+    const dStr = new Date().toLocaleDateString('sv-SE');
+    setSelectedDate(dStr);
+    navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
+  };
 
   // 🚀 🆕 追加：ヘッダーボタンのスタイル
   const headerBtnStylePC = { padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' };
@@ -364,11 +510,13 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       .lte('start_time', `${selectedDate}T23:59:59`);
 
     // 👇 🌟 🆕 追加：5. 施設用のキープと確定予約を取得し、担当者を紐付ける
-    const [keepRes, visitRes, connRes] = await Promise.all([
+    const [keepRes, visitRes, connRes, exclResToday] = await Promise.all([
       supabase.from('keep_dates').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('date', selectedDate),
       supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('scheduled_date', selectedDate).neq('status', 'canceled'),
       // 🚀 アラート計算のために regular_rules と facility_users(*) を追加取得するように変更
-      supabase.from('shop_facility_connections').select('facility_user_id, assigned_staff_id, regular_rules, facility_users(*)').eq('shop_id', shopId)
+      supabase.from('shop_facility_connections').select('facility_user_id, assigned_staff_id, regular_rules, facility_users(*)').eq('shop_id', shopId),
+      // 🚀 🆕 修正：表示日の除外設定（定期キープ強制キャンセル分）も取得する
+      supabase.from('regular_keep_exclusions').select('excluded_date, facility_user_id').eq('shop_id', shopId).eq('excluded_date', selectedDate)
     ]);
 
     const getAssignedStaffId = (facId) => {
@@ -376,8 +524,12 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       return conn?.assigned_staff_id || null; // 担当がいなければフリー(null)になる
     };
 
-    const formattedKeeps = (keepRes.data || []).map(k => {
-      // 👇 🌟 修正：秒数がついていても大丈夫なように先頭5文字だけを切り取り、日本時間（+09:00）を明記する
+    // 👇 🌟 修正：すでに確定予約(visit)が存在する施設のキープは、重複を防ぐため除外する！
+    const activeVisits = visitRes.data || [];
+    const formattedKeeps = (keepRes.data || [])
+      .filter(k => !activeVisits.some(v => v.facility_user_id === k.facility_user_id))
+      .map(k => {
+      // 秒数がついていても大丈夫なように先頭5文字だけを切り取り、日本時間（+09:00）を明記する
       const timeStr = (k.start_time || '09:00').substring(0, 5);
       const start = new Date(`${k.date}T${timeStr}:00+09:00`);
       const end = new Date(start.getTime() + 60 * 60000); // タイムライン上は1時間幅で表示
@@ -410,9 +562,52 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       };
     });
 
-    // 全部ガッチャンコしてReservationsに入れる
-    setReservations([...(resData || []), ...formattedKeeps, ...formattedVisits]);
-    setPrivateTasks(privData || []); 
+    // 👇 🌟 🆕 修正：タイムラインにも「定期キープ」を動的に計算して描画するロジックを追加
+    const regularKeepsForToday = [];
+    const dateObj = new Date(selectedDate);
+    const day = dateObj.getDay();
+    const dom = dateObj.getDate();
+    const m = dateObj.getMonth() + 1;
+    const nthWeek = Math.ceil(dom / 7);
+    const isLast = new Date(selectedDate).getMonth() !== new Date(new Date(selectedDate).setDate(dom + 7)).getMonth();
+
+    (connRes.data || []).forEach(conn => {
+      if (!conn.regular_rules) return;
+      
+      const matchedRule = conn.regular_rules.find(r => 
+        (r.monthType === 0 || (r.monthType === 1 && m % 2 !== 0) || (r.monthType === 2 && m % 2 === 0)) && 
+        r.day === day && 
+        (r.week === nthWeek || (r.week === -1 && isLast))
+      );
+
+      if (matchedRule) {
+        // キャンセル済みの除外日か、すでに手動キープ/確定枠がある場合は表示しない
+        const isExcluded = exclResToday.data?.some(e => e.facility_user_id === conn.facility_user_id);
+        const hasManualKeep = keepRes.data?.some(k => k.facility_user_id === conn.facility_user_id);
+        const hasVisit = visitRes.data?.some(v => v.facility_user_id === conn.facility_user_id);
+
+        if (!isExcluded && !hasManualKeep && !hasVisit) {
+          const timeStr = (matchedRule.time || '09:00').substring(0, 5);
+          const start = new Date(`${selectedDate}T${timeStr}:00+09:00`);
+          const end = new Date(start.getTime() + 60 * 60000); 
+
+          regularKeepsForToday.push({
+            id: `reg_${conn.facility_user_id}_${selectedDate}`,
+            res_type: 'keep',
+            customer_name: `[ｷｰﾌﾟ] ${conn.facility_users?.facility_name || '施設'}`,
+            start_time: start.toISOString(),
+            end_time: end.toISOString(),
+            staff_id: getAssignedStaffId(conn.facility_user_id),
+            biz_type: 'visit',
+            isRegular: true // 定期キープの目印
+          });
+        }
+      }
+    });
+
+    // 全部ガッチャンコしてReservationsに入れる（regularKeepsForToday も追加！）
+    setReservations([...(resData || []), ...formattedKeeps, ...formattedVisits, ...regularKeepsForToday]);
+    setPrivateTasks(privData || []);
 
     // 👇 🌟 🆕 ここから追加：アラートバナー用の「未来の全データ」取得と集計ロジック
     const today = new Date();
@@ -893,16 +1088,38 @@ const handleCellClick = (slotMatches, time, staffId) => {
 
     // 💡 2. すでに予定（ブロック含む）がある場合は詳細を開く
     if (activeTask) {
+      // 🚀 🆕 キープ枠の既読処理
+      dbRecords.forEach(record => {
+        if (record.res_type === 'keep') markKeepAsDismissed(record.id);
+      });
+
+      // 👇 🌟 修正：確定した施設訪問（visit）が単独である場合は、画像①のキャンセルモーダルを直接開く！
+      if (dbRecords.length === 1) {
+        if (activeTask.res_type === 'visit') {
+          const facName = activeTask.customer_name.replace(/\[確定\]\s*/, '');
+          handleDeleteVisit(activeTask.id, selectedDate, facName);
+          return;
+        }
+        if (activeTask.res_type === 'keep') {
+          // 🆕 修正：定期パターンと一致しない「本当の単発（イレギュラー）キープ」は、
+          // AdminReservationsと同じ「検討中」の確認モーダル（画像①）をまず表示する！
+          if (!activeTask.isRegular) {
+            setSelectedSlotReservations([activeTask]);
+            setShowSlotListModal(true);
+            return;
+          }
+          // 🚀 🆕 定期キープ（または定期パターンに一致する手動キープ）は、これまで通り邪魔な文字を綺麗に掃除して、直接パスワードキャンセルのモーダル（画像②）へ渡す！
+          const facName = activeTask.customer_name.replace(/\[ｷｰﾌﾟ\]\s*/, '').replace(' 予定', '');
+          handleCancelKeep(activeTask.facility_user_id, selectedDate, facName);
+          return;
+        }
+      }
+
       if (dbRecords.length > 1) {
         setSelectedSlotReservations(dbRecords); setShowSlotListModal(true);
       } else {
-        // 👇 🌟 修正：キープ枠の場合は、詳細モーダルではなく警告モーダル(SlotListModal)を開く！
-        if (activeTask.res_type === 'keep') {
-          setSelectedSlotReservations([activeTask]); 
-          setShowSlotListModal(true);
-        } else {
-          openDetail(activeTask);
-        }
+        // 🚀 通常の予約やブロック枠の場合は詳細を開く
+        openDetail(activeTask);
       }
       return;
     }
@@ -976,21 +1193,42 @@ const timeSlots = useMemo(() => {
   // ✅ 🆕 【Step B：自動スクロール実行ロジック】ここから差し込み
   useEffect(() => {
     if (!loading && timeSlots.length > 0 && scrollRef.current) {
-      const now = new Date();
-      const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-      
-      // 今の時間帯がタイムラインのどこにあるか探す
-      const targetIdx = timeSlots.findIndex(slot => slot >= currentTimeStr);
-      
-      if (targetIdx !== -1) {
-        const columnWidth = 120; // <td> で設定している minWidth
-        // 今の時間が左端に来るようにスクロール（1列分だけ余裕を持たせる）
-        const scrollOffset = Math.max(0, (targetIdx - 1) * columnWidth);
+      const state = location.state;
+
+      // 🚀 🆕 修正①：ねじ込み予約から戻ってきた直後の場合、その時間へスクロールして留まる！
+      // 🌟 ここに !scrolledForReserveRef.current （まだスクロールしてないか）の条件を追加
+      if (state && state.fromReserve && state.targetTime && !scrolledForReserveRef.current) {
+        const targetIdx = timeSlots.indexOf(state.targetTime);
+        if (targetIdx !== -1) {
+          const columnWidth = 120; 
+          const scrollOffset = Math.max(0, (targetIdx - 1) * columnWidth);
+          scrollRef.current.scrollLeft = scrollOffset;
+        }
         
-        scrollRef.current.scrollLeft = scrollOffset;
+        showMsg('予約をねじ込みました！✨');
+        scrolledForReserveRef.current = true; // 🌟 1回スクロールしたのでスイッチをONにする
+        window.history.replaceState({}, document.title);
+        return; // 👇 ここで終了し、その場に留まる
+      }
+
+      // 👇 🌟 修正②：通常の画面移動時（ねじ込み直後以外）
+      const now = new Date();
+      const todayStr = now.toLocaleDateString('sv-SE');
+      
+      if (selectedDate === todayStr) {
+        const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+        const targetIdx = timeSlots.findIndex(slot => slot >= currentTimeStr);
+        
+        if (targetIdx !== -1) {
+          const columnWidth = 120; 
+          const scrollOffset = Math.max(0, (targetIdx - 1) * columnWidth);
+          scrollRef.current.scrollLeft = scrollOffset;
+        }
+      } else {
+        scrollRef.current.scrollLeft = 0;
       }
     }
-  }, [loading, timeSlots]);
+  }, [loading, timeSlots, selectedDate, location.state]); // 👈 🌟 修正：location.state も監視対象に追加
   // ✅ 🆕 差し込みここまで
   
   const themeColor = shop?.theme_color || '#4b2c85';
@@ -1252,7 +1490,8 @@ const timeSlots = useMemo(() => {
         if (activeFilter !== 'all' && !isVisitFilter) return null;
 
         const hasUrgent = urgentKeeps.length > 0;
-        const hasTimeChange = timeChangedKeeps.filter(k => !dismissedKeeps.includes(k.id)).length > 0;
+        // 🚀 🆕 k.id を確実に String 化して比較する
+        const hasTimeChange = timeChangedKeeps.filter(k => !dismissedKeeps.includes(String(k.id))).length > 0; 
         if (!hasUrgent && !hasTimeChange) return null;
 
         return (
@@ -1278,7 +1517,8 @@ const timeSlots = useMemo(() => {
       {(() => {
         if (activeFilter !== 'all' && !isVisitFilter) return null;
 
-        const activeIrregulars = irregularKeeps.filter(k => !dismissedKeeps.includes(k.id));
+        // 🚀 🆕 k.id を確実に String 化して比較する
+        const activeIrregulars = irregularKeeps.filter(k => !dismissedKeeps.includes(String(k.id)));
         if (activeIrregulars.length === 0) return null;
 
         return (
@@ -2051,34 +2291,33 @@ const timeSlots = useMemo(() => {
             )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '55vh', overflowY: 'auto', padding: '5px' }}>
-              {/* ねじ込みボタン */}
-              <div 
-                onClick={() => {
-                  setShowSlotListModal(false);
-                  navigate(`/shop/${shopId}/reserve`, { 
-                    state: { adminDate: selectedDate, adminTime: targetTime, isAdminMode: true, adminStaffId: targetStaffId, fromView: 'timeline' } 
-                  });
-                }}
-                style={{ background: themeColor, padding: '18px', borderRadius: '18px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', color: '#fff', fontWeight: 'bold', boxShadow: `0 4px 12px ${themeColor}44`, marginBottom: '10px' }}
-              >
-                ➕ 新しい予約をねじ込む
-              </div>
+              {/* 🚀 🆕 修正：「新しい予約をねじ込む」ボタンを削除しました（AdminReservationsに合わせて統一） */}
 
               {selectedSlotReservations.map((res, idx) => {
-                // 🚀 🆕 キープ枠かどうかを判定
-                const isKeep = res.res_type === 'keep';
-                // 表示用のお名前から [ｷｰﾌﾟ] という内部タグを掃除して綺麗にする
-                const displayName = res.customer_name.replace('[ｷｰﾌﾟ] ', '');
+                // 👇 🌟 修正：'keep' も判定に追加し、名前のタグを綺麗に掃除する
+                const isKeep = res.res_type === 'facility_keep_single' || res.res_type === 'keep' || res.isKeep;
+                const displayName = res.customer_name.replace(/\[ｷｰﾌﾟ\]\s*/, '').replace(/\[確定\]\s*/, '');
 
                 return (
-                <div 
-                  key={res.id || idx} 
-                  onClick={() => { 
-                    // 👇 🌟 修正：キープ枠ならアラートを出して何もしない！
+                <div key={res.id || idx} 
+                  onClick={async () => { 
+                    // キープ枠の既読処理
+                    if (res.res_type === 'facility_keep_single' || res.res_type === 'keep') {
+                      markKeepAsDismissed(res.id);
+                    }
+
                     if (isKeep) {
                       alert("施設側で日程を検討中です。\n名簿が確定するまで詳細はありません。");
                       return;
                     }
+
+                    // 👇 🌟 🆕 追加：リストから「確定枠」を選んだ場合も、直接キャンセルモーダルへ！
+                    if (res.res_type === 'visit') {
+                      setShowSlotListModal(false);
+                      handleDeleteVisit(res.id, selectedDate, displayName);
+                      return;
+                    }
+                    
                     setShowSlotListModal(false); 
                     openDetail(res); 
                   }} 
@@ -2323,8 +2562,10 @@ const timeSlots = useMemo(() => {
                   <div 
                     key={i} 
                     onClick={() => {
+                      scrolledForReserveRef.current = false; // 🌟 スイッチを解除
                       setSelectedDate(dStr);
                       setShowMobileCalendar(false);
+                      navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
                     }}
                     style={{ 
                       padding: '6px 0', cursor: 'pointer', borderRadius: '16px',
@@ -2435,7 +2676,7 @@ const timeSlots = useMemo(() => {
 
               {/* ℹ️ 定期訪問の時間変更通知 */}
               {timeChangedKeeps
-                .filter(k => !dismissedKeeps.includes(k.id))
+                .filter(k => !dismissedKeeps.includes(String(k.id))) // 🚀 🆕 Stringを追加
                 .map((keep) => (
                   <div key={`modal-change-${keep.id}`} style={{ background: '#fff', border: '1px solid #bae6fd', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
                     <div style={{ textAlign: 'left' }}>
@@ -2447,7 +2688,8 @@ const timeSlots = useMemo(() => {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => { setAlertModalMode(null); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                      {/* 👇 🌟 修正：タイムラインには不要な setStartDate() を削除して setSelectedDate() だけ残す */}
+                      <button onClick={() => { setAlertModalMode(null); setSelectedDate(keep.date); }} style={{ background: '#0ea5e9', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
                       <button onClick={() => { markKeepAsDismissed(keep.id); }} style={{ background: '#fff', color: '#64748b', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>既読にする</button>
                     </div>
                   </div>
@@ -2474,7 +2716,7 @@ const timeSlots = useMemo(() => {
 
             <div style={{ padding: '20px', maxHeight: '60vh', overflowY: 'auto', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
               {irregularKeeps
-                .filter(k => !dismissedKeeps.includes(k.id))
+                .filter(k => !dismissedKeeps.includes(String(k.id))) // 🚀 🆕 Stringを追加
                 .map((keep) => (
                   <div key={`modal-irreg-${keep.id}`} style={{ background: '#fff', border: '1px solid #bae6fd', padding: '12px 15px', borderRadius: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
                     <div style={{ textAlign: 'left' }}>
@@ -2486,7 +2728,8 @@ const timeSlots = useMemo(() => {
                       </div>
                     </div>
                     <div style={{ display: 'flex', gap: '6px' }}>
-                      <button onClick={() => { setAlertModalMode(null); setStartDate(new Date(keep.date)); setSelectedDate(keep.date); }} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
+                      {/* 👇 🌟 修正：こちらも setStartDate() を削除して setSelectedDate() だけ残す */}
+                      <button onClick={() => { setAlertModalMode(null); setSelectedDate(keep.date); }} style={{ background: '#0284c7', color: '#fff', border: 'none', padding: '6px 14px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>枠を確認</button>
                       <button onClick={() => { markKeepAsDismissed(keep.id); }} style={{ background: '#fff', color: '#0284c7', border: '1px solid #bae6fd', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem' }}>了解(非表示)</button>
                     </div>
                   </div>
@@ -2499,6 +2742,113 @@ const timeSlots = useMemo(() => {
         </div>
       )}
       {/* 👆 アラート詳細モーダル追加ここまで */}
+
+      {/* 👇 🌟 🆕 ここから追加：施設予約キャンセル確認モーダル（画像①の完全再現） */}
+      {showFacCancelModal && facCancelTarget && (
+        <div style={overlayStyle} onClick={() => setShowFacCancelModal(false)}>
+          <div 
+            onClick={(e) => e.stopPropagation()} 
+            style={{ ...modalContentStyle, maxWidth: '600px', width: '95%', textAlign: 'center', padding: '35px' }}
+          >
+            <div style={{ fontSize: '2.5rem', marginBottom: '15px' }}>⚠️</div>
+            <h3 style={{ margin: '0 0 10px 0', color: '#1e293b', fontWeight: '900', fontSize: '1.3rem' }}>予定のキャンセル・削除</h3>
+            
+            <div style={{ background: '#fff1f2', padding: '20px', borderRadius: '20px', border: '1px solid #fecdd3', marginBottom: '25px' }}>
+              <p style={{ fontSize: '1rem', color: '#e11d48', margin: '0 0 15px 0', fontWeight: 'bold' }}>
+                {facCancelTarget.date.replace(/-/g, '/')} の訪問予定を消去しますか？
+              </p>
+              
+              {/* メニュー別集計 */}
+              {facCancelTarget.residents?.length > 0 && (
+                <div style={{ background: 'rgba(255,255,255,0.6)', padding: '15px', borderRadius: '15px', marginBottom: '15px', textAlign: 'left' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', fontWeight: 'bold', marginBottom: '8px', borderBottom: '1px solid #fecdd3', paddingBottom: '5px' }}>📋 メニュー別集計</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
+                    {(() => {
+                      const counts = facCancelTarget.residents.reduce((acc, r) => {
+                        const m = r.menu_name || '未設定';
+                        acc[m] = (acc[m] || 0) + 1;
+                        return acc;
+                      }, {});
+                      return Object.entries(counts).map(([name, count]) => (
+                        <div key={name} style={{ background: '#fff', padding: '4px 10px', borderRadius: '8px', fontSize: '0.85rem', fontWeight: '900', color: '#be123c', border: '1px solid #fecdd3' }}>
+                          {name}：{count}名
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              )}
+
+              {/* 名簿プレビュー */}
+              <div style={{ background: '#fff', padding: '15px', borderRadius: '15px', border: '1px solid rgba(225,29,72,0.1)', textAlign: 'left' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                  <span style={{ fontSize: '0.8rem', color: '#64748b', fontWeight: 'bold' }}>名簿プレビュー</span>
+                  <span style={{ fontSize: '0.9rem', color: '#b91c1c', fontWeight: '900' }}>合計 {facCancelTarget.totalCount || 0} 名</span>
+                </div>
+                
+                <div style={{ maxHeight: '350px', overflowY: 'auto', fontSize: '0.9rem', color: '#3d2b1f' }}>
+                  {facCancelTarget.residents?.length > 0 ? (
+                    facCancelTarget.residents.map((res, idx) => (
+                      <div key={idx} style={{ borderBottom: '1px solid #fff5f5', padding: '10px 5px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontWeight: 'bold' }}>{res.members?.name} 様</span>
+                        <span style={{ fontSize: '0.75rem', color: '#94a3b8', background: '#f8fafc', padding: '2px 8px', borderRadius: '4px' }}>{res.menu_name}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div style={{ color: '#94a3b8', textAlign: 'center', padding: '20px' }}>（名簿データがありません）</div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ textAlign: 'left', marginBottom: '25px', maxWidth: '300px', margin: '0 auto 25px' }}>
+              <label style={labelStyle}>解除パスワード（1234）</label>
+              <input 
+                type="text"
+                inputMode="numeric"
+                pattern="\d{4}"
+                placeholder="数字4桁を入力"
+                value={facCancelPass}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/[^0-9]/g, '').slice(0, 4);
+                  setFacCancelPass(val);
+                }}
+                autoComplete="off"
+                autoCorrect="off"
+                autoCapitalize="off"
+                spellCheck="false"
+                name="otp_pin_input"
+                style={{ 
+                  ...inputStyle, 
+                  textAlign: 'center', 
+                  fontSize: '1.4rem', 
+                  letterSpacing: '0.3em', 
+                  borderRadius: '15px', 
+                  border: `2px solid ${themeColor}44`,
+                  WebkitTextSecurity: 'disc', 
+                  textSecurity: 'disc'
+                }}
+              />
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', maxWidth: '400px', margin: '0 auto' }}>
+              <button 
+                onClick={executeFacCancel}
+                style={{ width: '100%', padding: '18px', background: '#e11d48', color: '#fff', border: 'none', borderRadius: '18px', fontWeight: '900', fontSize: '1.1rem', cursor: 'pointer', boxShadow: '0 8px 20px rgba(225,29,72,0.2)' }}
+              >
+                パスワードを確認して削除
+              </button>
+              <button 
+                onClick={() => setShowFacCancelModal(false)} 
+                style={{ padding: '12px', border: 'none', background: 'none', color: '#94a3b8', cursor: 'pointer', fontWeight: 'bold' }}
+              >
+                戻る（何もしない）
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 👆 施設キャンセルモーダル追加ここまで */}
 
       {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション */}
       {!isPC && !isPreviewMode && (

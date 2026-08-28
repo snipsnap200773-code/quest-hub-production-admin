@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate }) => {
+const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedShopId }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedShopId, setExpandedShopId] = useState(null); // 🚀 🆕 業者IDで開閉管理
@@ -16,7 +16,10 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate }) => {
   const year = sharedDate.getFullYear();
   const month = sharedDate.getMonth();
 
-  useEffect(() => { fetchHistory(); }, [facilityId, sharedDate]);
+  // 🚀 🆕 依存配列に selectedShopId を追加し、存在する場合のみ取得を実行
+  useEffect(() => { 
+    if (selectedShopId) fetchHistory(); 
+  }, [facilityId, sharedDate, selectedShopId]);
 
   const fetchHistory = async () => {
     setLoading(true);
@@ -30,6 +33,7 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate }) => {
         profiles (id, business_name, theme_color, business_type)
       `)
       .eq('facility_user_id', facilityId)
+      .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！選択中の業者のみを取得
       .eq('status', 'completed')
       .gte('scheduled_date', startOfMonth)
       .lte('scheduled_date', endOfMonth)

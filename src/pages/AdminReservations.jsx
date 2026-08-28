@@ -295,15 +295,47 @@ const [finalizedSale, setFinalizedSale] = useState(null); // 🆕 売上実績�
     setLoading(false);
   };
 
-// 🆕 施設予約のキャンセル実行
-const handleCancelKeep = (facilityId, dateStr, facilityName) => {
-    // 🚀 type: 'keep' を追加して、実行時に処理を分岐できるようにします
+
+// 👇 🌟 🆕 修正：施設ID（facility_user_id）も引き継ぐように機能強化！
+  const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
+    setLoading(true);
+    try {
+      const rawVisitId = String(visitId).replace(/^visit_/, '');
+      const { data: visit } = await supabase.from('visit_requests').select('*').eq('id', rawVisitId).maybeSingle();
+      const masterId = visit?.parent_id || rawVisitId;
+
+      const { data: allResidents } = await supabase 
+        .from('visit_request_residents')
+        .select('members(name), menu_name, status')
+        .eq('visit_request_id', masterId);
+
+      setFacCancelTarget({ 
+        id: rawVisitId, 
+        date: dateStr, 
+        name: facilityName, 
+        type: 'visit',
+        residents: allResidents || [],
+        totalCount: allResidents?.length || 0,
+        // 🚀 🆕 単発キープを一緒に消すために、施設IDを取得しておく
+        facility_user_id: visit?.facility_user_id 
+      });
+
+      setFacCancelPass('');
+      setShowFacCancelModal(true);
+    } catch (err) {
+      alert("名簿取得エラー: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancelKeep = (facilityId, dateStr, facilityName) => {
     setFacCancelTarget({ id: facilityId, date: dateStr, name: facilityName, type: 'keep' });
     setFacCancelPass('');
     setShowFacCancelModal(true);
   };
 
-  // 🚀 🆕 追加：パスワード確認後に実行される本当のキャンセル処理
+  // 👇 🌟 🆕 修正：「単発なら一発消去、定期ならワンクッション」を実現する究極のキャンセル処理！
   const executeFacCancel = async () => {
     if (facCancelPass !== '1234') {
       alert("パスワードが正しくありません。");
@@ -311,21 +343,33 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
     }
 
     try {
-      const { id, date, name, type } = facCancelTarget;
+      // 🚀 🆕 facility_user_id を引っ張り出す
+      const { id, date, name, type, facility_user_id } = facCancelTarget;
 
       if (type === 'visit') {
-        // ❌ delete() ではなく ⭕️ update() に変更します
-        // これにより、関連データ（引き継ぎ先など）とのリンクを壊さずに済みます
         const { error } = await supabase
           .from('visit_requests')
-          .update({ status: 'canceled' }) // ステータスを「キャンセル」に変更
+          .update({ status: 'canceled' })
           .eq('id', id);
-
         if (error) throw error;
-      } else {
-        // 🚀 B: キープ（定期・手動）の解除ロジック（こちらは既存のままでOK）
-        await supabase.from('regular_keep_exclusions').upsert([{ 
         
+        // 🚀 🆕 【ここが目玉！】単発（個別）キープ由来の予定だった場合は、キープ枠ごと一気に消去する！
+        // 定期キープの場合は keep_dates にデータがないためここをすり抜け、ワンクッション置いて「キープ枠」として残ります。
+        if (facility_user_id) {
+          await supabase.from('keep_dates').delete().match({ 
+            facility_user_id: facility_user_id, 
+            shop_id: shopId, 
+            date: date 
+          });
+        }
+        
+        // カレンダー画面(AdminReservations)用の即時非表示処理（エラー防止付き）
+        if (typeof setVisitRequests === 'function') {
+          setVisitRequests(prev => prev.filter(v => v.id !== id));
+        }
+
+      } else {
+        await supabase.from('regular_keep_exclusions').upsert([{ 
           facility_user_id: id, shop_id: shopId, excluded_date: date 
         }]);
         await supabase.from('keep_dates').delete().match({ 
@@ -333,44 +377,13 @@ const handleCancelKeep = (facilityId, dateStr, facilityName) => {
         });
       }
 
-      setVisitRequests(prev => prev.filter(v => v.id !== id));
-
-      setShowFacCancelModal(false);
       showMsg(`${name} 様の予定をキャンセルしました。`);
-      fetchData(); // 🔄 バックグラウンドで最新データを同期
+      setShowFacCancelModal(false);
+      reloadStayingOnThisDate(); // 🆕 修正：中途半端な部分更新をやめ、確実に反映されるハードリロードに統一
     } catch (err) {
       alert("実行エラー: " + err.message);
     }
   };
-
-// 🚀 修正：単発の日程キャンセルを許容する
-const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
-  setLoading(true);
-  
-  // 表示中の予約データを特定
-  const visit = visitRequests.find(v => v.id === visitId);
-  // 名簿の親玉（Master ID）を特定
-  const masterId = visit?.parent_id || visitId;
-
-  // 確認画面用に、その「月」の全名簿を取得（これは表示用）
-  const { data: allResidents } = await supabase 
-    .from('visit_request_residents')
-    .select('members(name), menu_name, status')
-    .eq('visit_request_id', masterId);
-
-  setFacCancelTarget({ 
-    id: visitId, // 🚩 消すのは「この日（visitId）」だけ！
-    date: dateStr, 
-    name: facilityName, 
-    type: 'visit',
-    residents: allResidents || [],
-    totalCount: allResidents?.length || 0
-  });
-
-  setFacCancelPass('');
-  setShowFacCancelModal(true);
-  setLoading(false);
-};
 
   // 🚀 🆕 追加：未完了者を別日に引き継ぐ（延長予約）
   const handleCarryoverVisit = async () => {
@@ -623,25 +636,43 @@ setSalesRecords(salesRes.data || []);
     setExclusions(exclRes.data?.map(e => e.excluded_date) || []);
     
     // 4. アラート用集計ロジック
-    const todayStr = getJapanDateStr(realToday);
+    const today = new Date();
+    const todayStr = getJapanDateStr(today);
+    
+    // アラート用に「今日以降のキープ・確定枠」を確実に全件取得
+    const [allKeepRes, allVisitRes, allExclRes] = await Promise.all([
+      supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
+      supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
+      // 🚀 修正：他施設の除外日に巻き込まれないよう facility_user_id も取得しておく
+      supabase.from('regular_keep_exclusions').select('excluded_date, facility_user_id').eq('shop_id', shopId)
+    ]);
+
     const irregularList = []; const urgentList = []; const timeChangedList = []; const processedKeys = new Set();
 
-    (keepRes.data || []).forEach(k => {
-      if (k.date < todayStr) return;
+    // 🚀 🆕 確実な日数計算ロジック（時間帯のズレによる -1日判定バグを完全に防止！）
+    const getSafeDiffDays = (dStr) => {
+      const t = new Date();
+      const todayZero = new Date(t.getFullYear(), t.getMonth(), t.getDate()); // 今日の0時
+      const [y, m, d] = dStr.split('-').map(Number);
+      const targetZero = new Date(y, m - 1, d); // 対象日の0時
+      return Math.round((targetZero.getTime() - todayZero.getTime()) / 86400000);
+    };
+
+    (allKeepRes.data || []).forEach(k => {
       processedKeys.add(`${k.facility_user_id}_${k.date}`);
-      const isBooked = (visitRes.data || []).some(v => (v.status === 'confirmed' || v.status === 'completed') && v.facility_user_id === k.facility_user_id && v.scheduled_date === k.date);
+      const isBooked = (allVisitRes.data || []).some(v => (v.status === 'confirmed' || v.status === 'completed') && v.facility_user_id === k.facility_user_id && v.scheduled_date === k.date);
       if (isBooked) return;
-      const [y, mon, d] = k.date.split('-').map(Number);
-      const dObj = new Date(y, mon - 1, d);
-      const diffDays = Math.round((dObj.getTime() - realToday.getTime()) / (1000 * 60 * 60 * 24)); 
+      
+      // 🚀 安全な関数で日数を計算
+      const diffDays = getSafeDiffDays(k.date);
+      
       if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
       else irregularList.push({ ...k });
     });
 
-    // B: 定期キープの自動スキャン
     (connRes.data || []).forEach(conn => {
       if (!conn.regular_rules) return;
-      let scanDate = new Date(realToday);
+      let scanDate = new Date(today);
       for (let i = 0; i < 90; i++) {
         const dStr = getJapanDateStr(scanDate);
         if (dStr < todayStr) { scanDate.setDate(scanDate.getDate() + 1); continue; }
@@ -651,11 +682,14 @@ setSalesRecords(salesRes.data || []);
            const nthWeek = Math.ceil(dom / 7);
            const isLast = new Date(scanDate).getMonth() !== new Date(new Date(scanDate).setDate(dom + 7)).getMonth();
            let isRegular = conn.regular_rules.some(r => (r.monthType===0 || (r.monthType===1 && m%2!==0) || (r.monthType===2 && m%2===0)) && r.day===day && (r.week===nthWeek || (r.week===-1 && isLast)));
-           if (isRegular && !exclRes.data?.some(e => e.excluded_date === dStr)) {
-              const isBooked = (visitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
+           
+           // 🚀 修正：facility_user_id まで判定に入れて、他施設の除外に巻き込まれないようにする
+           if (isRegular && !allExclRes.data?.some(e => e.excluded_date === dStr && e.facility_user_id === conn.facility_user_id)) {
+              const isBooked = (allVisitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
               if (!isBooked) {
                  const fakeKeep = { id: `reg-${conn.facility_user_id}-${dStr}`, date: dStr, facility_user_id: conn.facility_user_id, facility_users: conn.facility_users, isRegular: true };
-                 const diffDays = Math.round((scanDate.getTime() - realToday.getTime()) / (1000 * 60 * 60 * 24));
+                 // 🚀 安全な関数で日数を計算
+                 const diffDays = getSafeDiffDays(dStr);
                  if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
               }
            }
@@ -1084,6 +1118,16 @@ setSalesRecords(salesRes.data || []);
   // 🆕 追加：画面に通知を出す関数 [cite: 2026-03-08]
   const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
 
+  // 🆕 追加：削除・強制解放など「確実に反映されてほしい操作」の後に使う、
+  // 今見ている日付(selectedDate)はそのままに、ページ全体をハードリロードする関数。
+  // fetchData()のマージ処理に頼らず、ブラウザに新規リクエストさせることで「消えたはずなのに残る」を根本的に防ぐ。
+  const reloadStayingOnThisDate = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('date', selectedDate);
+    window.history.replaceState({}, '', url); // 🌟 履歴を汚さずURLだけ更新
+    setTimeout(() => window.location.reload(), 400); // 🌟 完了メッセージが一瞬見えるよう少し待ってからリロード
+  };
+
   // 🚀 🆕 追加：特定の単発キープを既読（非表示）にする共通関数
   const markKeepAsDismissed = (id) => {
     if (!id || dismissedKeeps.includes(id)) return;
@@ -1145,7 +1189,7 @@ setSalesRecords(salesRes.data || []);
       }
 
       showMsg("キープ枠を強制的に解放しました。");
-      fetchData();
+      reloadStayingOnThisDate(); // 🆕 修正：中途半端な部分更新をやめ、確実に反映されるハードリロードに統一
     } catch (err) {
       console.error("Force Delete Error:", err);
       alert("解除に失敗しました: " + err.message);

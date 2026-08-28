@@ -73,7 +73,14 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
                   <div style={iconBadge(themeColor)}><Store size={20} color="#fff" /></div>
                   <div style={{ flex: 1, marginLeft: '12px' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                      <span style={typeTag(themeColor)}>{shop.business_type}</span>
+                      
+                      {/* 🚀 🆕 修正：ハイブリッド店舗向けに、複数の業種を「 / 」区切りで綺麗に表示する */}
+                      <span style={typeTag(themeColor)}>
+                        {Array.isArray(shop.business_type) 
+                          ? shop.business_type.join(' / ') 
+                          : String(shop.business_type || '').replace(/,|、/g, ' / ')}
+                      </span>
+                      
                       <button onClick={() => handleDisconnect(conn)} style={{ ...disconnectBtn, pointerEvents: 'auto' }}>提携解消</button>
                     </div>
                     <h3 style={shopName}>{shop.business_name}</h3>

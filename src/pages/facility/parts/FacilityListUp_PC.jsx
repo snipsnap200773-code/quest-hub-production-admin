@@ -10,7 +10,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 
 const FacilityListUp_PC = ({ 
   facilityId, isMobile, setActiveTab, sharedDate: viewDate, setSharedDate: setViewDate, 
-  setIsOverCapacity // 🚀 🆕 親から受け取る関数を追加
+  setIsOverCapacity, selectedShopId
 }) => {
   const [residents, setResidents] = useState([]);
   const [draftList, setDraftList] = useState([]);
@@ -164,22 +164,31 @@ const FacilityListUp_PC = ({
         .from('visit_list_drafts')
         .select('*, members(*)')
         .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！親画面で選んだ業者のドラフトだけ取得
         .eq('scheduled_month', currentMonthKey); // 💡 月情報でフィルター
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
       const [resData, connData, visitResidentsRes, visitDatesRes, otherVisits, personalRes, privateTasksRes] = await Promise.all([
         supabase
-    .from('members')
-    .select('*')
-    .eq('facility', targetFacilityName)
-    .eq('is_active', true) // 👈 これを追加！
-    .order('room'),
-        supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').limit(1).maybeSingle(),
+          .from('members')
+          .select('*')
+          .eq('facility', targetFacilityName)
+          .eq('is_active', true) // 👈 これを追加！
+          .order('room'),
+        
+        // 🚀 🆕 修正：limit(1)をやめて、親画面から渡された selectedShopId でピンポイント検索！
+        supabase.from('shop_facility_connections')
+          .select('shop_id, regular_rules, profiles(*)')
+          .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
+          .eq('status', 'active')
+          .maybeSingle(),
         
         // ① この施設の予約メンバー（🚀 🆕 他のテスト施設のデータが混ざらないようにインナージョインで厳格化！）
         supabase.from('visit_request_residents')
           .select('*, members!inner(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
+          .eq('visit_requests.shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者のメンバーが混ざるのを防ぐ
           .eq('members.facility', targetFacilityName)
           .eq('members.is_active', true) // 🌟【超重要】これがFALSEの幽霊データを完全に成仏させるお札です！
           .neq('visit_requests.status', 'canceled') 
@@ -187,7 +196,13 @@ const FacilityListUp_PC = ({
           .lte('visit_requests.scheduled_date', endOfMonth),
         
         // ② この施設の予約日程
-        supabase.from('visit_requests').select('scheduled_date, status, start_time').eq('facility_user_id', facilityId).gte('scheduled_date', startOfMonth).lte('scheduled_date', endOfMonth).neq('status', 'canceled'),
+        supabase.from('visit_requests')
+          .select('scheduled_date, status, start_time')
+          .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者の日程が混ざるのを防ぐ
+          .gte('scheduled_date', startOfMonth)
+          .lte('scheduled_date', endOfMonth)
+          .neq('status', 'canceled'),
 
         // ③ 🆕 ショップ側の「他の予定」を取得（ availability 判定用）
         supabase.from('visit_requests').select('scheduled_date').neq('facility_user_id', facilityId).neq('status', 'canceled'),
@@ -232,11 +247,15 @@ const FacilityListUp_PC = ({
         // 1. まず、その店舗の「施設専用(is_facility_only: true)」カテゴリを特定する
         const { data: catList } = await supabase
           .from('service_categories')
-          .select('name')
-          .eq('shop_id', sid)
-          .eq('is_facility_only', true);
+          .select('name, is_facility_only, target_industry')
+          .eq('shop_id', sid);
 
-        const targetCatNames = catList?.map(c => c.name) || [];
+        const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+        const targetCatNames = catList?.filter(c => 
+          c.is_facility_only || 
+          !c.target_industry || 
+          VISIT_KEYWORDS.some(kw => (c.target_industry || '').includes(kw))
+        ).map(c => c.name) || [];
 
         if (targetCatNames.length > 0) {
           // 2. 特定したカテゴリに属するメニューだけを拾う
@@ -365,8 +384,12 @@ const FacilityListUp_PC = ({
   const addToList = async (resident) => {
     if (!shopId) return alert("提携業者が未設定です");
     
-    // 💡 すでにリストにいるかチェック
-    if (draftList.some(d => d.member_id === resident.id)) return;
+    // 🚀 🆕 【修正】すでにリスト（下書き＋確定済み）にいるか厳密にチェックする！
+    // sortedDraftList は「現在右側に表示されている全員（下書き＋確定）」のリストです
+    if (sortedDraftList.some(item => item.member_id === resident.id)) {
+      console.warn("⚠️ 既にリストに追加されているメンバーです");
+      return; 
+    }
     
     // ✨ 🆕 【超重要】すでに今月「キャンセル」扱いでDBに眠っている同じ人がいるか探す
     const existingCanceledResident = dbReservedResidents.find(

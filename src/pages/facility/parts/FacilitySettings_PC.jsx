@@ -125,7 +125,14 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div>
                     <h4 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold', color: '#3d2b1f' }}>{req.profiles?.business_name}</h4>
-                    <span style={{ fontSize: '0.7rem', color: '#c5a059', fontWeight: 'bold' }}>{req.profiles?.business_type}</span>
+                    
+                    {/* 🚀 🆕 修正：ハイブリッド店舗向けに、複数の業種を「 / 」区切りで綺麗に表示する */}
+                    <span style={{ fontSize: '0.7rem', color: '#c5a059', fontWeight: 'bold' }}>
+                      {Array.isArray(req.profiles?.business_type) 
+                        ? req.profiles.business_type.join(' / ') 
+                        : String(req.profiles?.business_type || '').replace(/,|、/g, ' / ')}
+                    </span>
+                    
                   </div>
                   <div style={{ fontSize: '0.6rem', padding: '4px 8px', borderRadius: '6px', background: '#fef3c7', color: '#d97706', fontWeight: 'bold' }}>
                     相手から申請

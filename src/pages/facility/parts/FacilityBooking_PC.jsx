@@ -3,7 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import { CheckCircle2, Calendar, Users, ArrowLeft, Send, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
+// 🚀 🆕 引数に selectedShopId を追加
+const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShopId }) => {
   // 🚀 1. まず全ての useState（箱作り）を一番上にまとめます
   const [loading, setLoading] = useState(false);
   const [drafts, setDrafts] = useState([]);
@@ -75,15 +76,18 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         .from('visit_list_drafts')
         .select('*, members(*)')
         .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
         .eq('scheduled_month', currentMonthKey);
 
-      // 2. 提携情報の取得（single を maybeSingle に変更して 406 エラーを回避）
-      const { data: connData } = await supabase
+      // 2. 提携情報の取得（今回の予約対象の店舗に絞り込む！）
+      // 🚀 🆕 修正： targetShopIdの推測をやめて直接指定！
+      const { data: connData } = await supabase 
         .from('shop_facility_connections')
         .select('shop_id, regular_rules, profiles(*)')
         .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
         .eq('status', 'active')
-        .maybeSingle(); // 👈 ここが重要！
+        .maybeSingle();
 
       // 3. 施設自身の情報を取得
       const { data: facData } = await supabase
@@ -103,6 +107,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         .from('visit_requests')
         .select('id, scheduled_date, status, start_time, parent_id')
         .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！
         .gte('scheduled_date', startOfMonth)
         .lte('scheduled_date', endOfMonth)
         .neq('status', 'canceled');
@@ -112,6 +117,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
         .from('visit_request_residents')
         .select('*, members(*), visit_requests!inner(id, scheduled_date, status, parent_id)')
         .eq('visit_requests.facility_user_id', facilityId)
+        .eq('visit_requests.shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！
         .neq('visit_requests.status', 'canceled') // ✅ 【ここを追加！】キャンセルされた日程のメンバーはカウントから除外します
         .gte('visit_requests.scheduled_date', startOfMonth)
         .lte('visit_requests.scheduled_date', endOfMonth);
@@ -249,6 +255,12 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
   const handleFinalSubmit = async () => {
     if (allDisplayVisits.length === 0) return alert("訪問予定日が設定されていません。");
     if (sortedDrafts.length === 0) return alert("施術希望者が選択されていません。");
+    
+    // 👇 🌟 🆕 修正：店舗情報がない場合は、安全に処理を止めてクラッシュを防ぐ！
+    if (!shopInfo || !shopInfo.id) {
+      alert("提携先の店舗情報が読み込めませんでした。一度画面を更新して再度お試しください。");
+      return;
+    }
 
     setLoading(true);
     try {
@@ -348,14 +360,23 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate }) => {
       const targetDate = (sharedDate && !isNaN(new Date(sharedDate).getTime())) ? new Date(sharedDate) : new Date();
       const targetMonthKey = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, '0')}`;
 
-      // ① 今月の名簿下書きをお掃除
-      await supabase.from('visit_list_drafts').delete().eq('facility_user_id', facilityId).eq('scheduled_month', targetMonthKey);
+      // ① 今月の名簿下書きをお掃除（対象がある時だけ実行）
+      if (drafts.length > 0) {
+        await supabase.from('visit_list_drafts')
+          .delete()
+          .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者の下書きを消さないように守る
+          .eq('scheduled_month', targetMonthKey);
+      }
       
-      // ✨ 🛠️ 修正後：未来の単発キープを巻き添えにしないよう、今確定させた「その月」のキープ日だけを前方一致で狙い撃ちしてお掃除する
-      await supabase.from('keep_dates')
-        .delete()
-        .eq('facility_user_id', facilityId)
-        .like('date', `${targetMonthKey}%`); // 例: "2026-07%" で始まるキープ枠だけを安全に消す
+      // ✨ 🛠️ 修正後：キープ枠のお掃除も、対象が存在する時だけ実行する（404エラー防止）
+      const hasKeepsThisMonth = manualKeeps.some(k => k.date.startsWith(targetMonthKey));
+      if (hasKeepsThisMonth) {
+        await supabase.from('keep_dates')
+          .delete()
+          .eq('facility_user_id', facilityId)
+          .like('date', `${targetMonthKey}%`);
+      }
 
       alert(`予約の送信が完了しました！✨`);
       

@@ -151,26 +151,39 @@ const AdminFacilityVisit_PC = () => {
         }
         // 🏢 ここまで ======================================================
 
-        // 💡 3. サービスマスター（単価）を取得
+        // 💡 3. サービスマスター（カテゴリ）を取得
+        // 🚀 修正：target_industry も取得して、ハイブリッド店舗の業種を判定できるようにする
         const { data: cData } = await supabase
           .from('service_categories')
-          .select('name, is_facility_only')
+          .select('name, is_facility_only, target_industry')
           .eq('shop_id', shopId);
-        const facilityCatNames = cData?.filter(c => c.is_facility_only).map(c => c.name) || [];
+        
+        // 🚀 修正：【施設専用】チェックだけでなく、「共通(指定なし)」や「訪問系業種」のカテゴリも許容する！
+        const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+        const facilityCatNames = cData?.filter(c => 
+          c.is_facility_only || 
+          !c.target_industry || 
+          VISIT_KEYWORDS.some(kw => (c.target_industry || '').includes(kw))
+        ).map(c => c.name) || [];
 
-        // 💡 4. サービスマスターを取得し、施設用メニューのみに絞り込む
+        // 💡 4. サービスマスターを取得
         const { data: sData } = await supabase
           .from('services')
           .select('*')
           .eq('shop_id', shopId);
         
-        // 施設訪問画面なので、施設専用カテゴリに属するメニューだけに限定する
+        // 施設訪問で使えるメニューリストを生成（共通メニューも無事に含まれるようになります）
         const facilityServices = sData?.filter(s => facilityCatNames.includes(s.category)) || [];
         setServices(facilityServices);
 
-        // 🆕 枝メニューも一緒に取得しておく
-        const { data: oData } = await supabase.from('service_options').select('*');
-        setOptions(oData || []);
+        // 🚀 修正：自店舗の施設用メニューIDに紐づくオプションだけを安全に取得（エラー回避）
+        const serviceIds = facilityServices.map(s => s.id);
+        let oData = [];
+        if (serviceIds.length > 0) {
+          const { data } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+          oData = data || [];
+        }
+        setOptions(oData);
       }
     } catch (err) {
       console.error(err);
@@ -192,8 +205,12 @@ const AdminFacilityVisit_PC = () => {
 
     // 🚀 2. 【重要】「完了(completed)」にする時だけ、枝メニュー選択を挟む
     if (nextStatus === 'completed') {
+      // 🚀 修正：includesの誤爆を防ぐため、親メニュー名だけを正確に抽出して完全一致で判定
+      const match = res.menu_name?.match(/^(.+?)（(.+?)）$/);
+      const parentName = match ? match[1].trim() : res.menu_name?.trim();
+
       const serviceWithAdminOptions = services.find(s => 
-        res.menu_name?.includes(s.name) && 
+        s.name?.trim() === parentName && 
         options.some(opt => opt.service_id === s.id && opt.is_admin_only === true)
       );
       

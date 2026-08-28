@@ -2,8 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Printer, Building2, ChevronRight, Loader2, Square, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
-const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
-  const [shops, setShops] = useState([]);
+const FacilityPrintList_PC = ({ facilityId, isMobile, selectedShopId }) => {
   const [selectedShop, setSelectedShop] = useState(null);
   const [members, setMembers] = useState([]);
   const [services, setServices] = useState([]);
@@ -12,41 +11,45 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   const [printLayout, setPrintLayout] = useState('portrait'); 
   const [sortBy, setSortBy] = useState('room');
 
-  useEffect(() => { fetchPartners(); }, [facilityId]);
+  // 🚀 🆕 依存配列に selectedShopId を追加し、切り替わるたびにデータを取得
+  useEffect(() => { 
+    if (selectedShopId) fetchPrintData(); 
+  }, [facilityId, selectedShopId]);
 
-  const fetchPartners = async () => {
-    const { data } = await supabase
-      .from('shop_facility_connections')
-      // 🚀 追加: subscription_plan も取得対象に含める
-      .select(`*, profiles (id, business_name, theme_color, business_type, subscription_plan)`)
-      .eq('facility_user_id', facilityId)
-      .eq('status', 'active');
-
-    let shopsList = data?.map(d => d.profiles) || [];
-
-    // 🚀 無料プランの業者を一番下に並び替え
-    shopsList = shopsList.sort((a, b) => {
-      const isFreeA = a.subscription_plan === 'free' ? 1 : 0;
-      const isFreeB = b.subscription_plan === 'free' ? 1 : 0;
-      return isFreeA - isFreeB;
-    });
-
-    setShops(shopsList);
-  };
-
-  const handleSelectShop = async (shop) => {
+  const fetchPrintData = async () => {
     setLoading(true);
+
+    // 1. まず選ばれている業者の情報（プロファイル）を取得
+    const { data: connData } = await supabase
+      .from('shop_facility_connections')
+      .select(`profiles (id, business_name, theme_color, business_type, subscription_plan)`)
+      .eq('facility_user_id', facilityId)
+      .eq('shop_id', selectedShopId)
+      .single();
+
+    const shop = connData?.profiles;
+    if (!shop) {
+      setLoading(false);
+      return;
+    }
     setSelectedShop(shop);
+
+    // 2. メンバー、印刷対象メニュー、訪問履歴を並列取得
     const [memRes, servRes, histRes] = await Promise.all([
       supabase.from('members').select('*').eq('facility_user_id', facilityId).order('floor', { ascending: true }).order('room', { ascending: true }),
-      supabase.from('services').select('*').eq('shop_id', shop.id).eq('show_on_print', true),
-      supabase.from('visit_request_residents').select('member_id, completed_at, visit_requests!inner(shop_id)').eq('status', 'completed').eq('visit_requests.shop_id', shop.id).order('completed_at', { ascending: false })
+      supabase.from('services').select('*').eq('shop_id', selectedShopId).eq('show_on_print', true), // 👈 🚀 🆕 親からの selectedShopId で絞り込み
+      supabase.from('visit_request_residents').select('member_id, completed_at, visit_requests!inner(shop_id)').eq('status', 'completed').eq('visit_requests.shop_id', selectedShopId).order('completed_at', { ascending: false })
     ]);
+
     setServices(servRes.data || []);
     setMembers(memRes.data || []);
+
     const visitMap = {};
-    histRes.data?.forEach(h => { if (!visitMap[h.member_id]) visitMap[h.member_id] = h.completed_at.split('T')[0].slice(5).replace('-', '/'); });
+    histRes.data?.forEach(h => { 
+      if (!visitMap[h.member_id]) visitMap[h.member_id] = h.completed_at.split('T')[0].slice(5).replace('-', '/'); 
+    });
     setLastVisits(visitMap);
+    
     setLoading(false);
   };
 
@@ -74,43 +77,33 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
   }, [members, sortBy]); // 👈 依存配列に sortBy を追加
 
   // 1. 業者選択画面（共通）
-  if (!selectedShop) {
+  if (loading || !selectedShop) {
+    return <div style={{ textAlign: 'center', padding: '100px', color: '#64748b', fontWeight: 'bold' }}>読み込み中...</div>;
+  }
+
+  // 🚀 🆕 無料プラン（システム制限中）の場合のブロック画面
+  if (selectedShop.subscription_plan === 'free') {
     return (
       <div style={containerStyle(isMobile)}>
-        <div style={headerArea}>
-          <h2 style={titleStyle}><Printer size={24} /> 掲示用名簿の作成</h2>
-        </div>
-        <div style={shopGrid(isMobile)}>
-          {shops.map(shop => (
-            <button 
-              key={shop.id} 
-              onClick={() => handleSelectShop(shop)} 
-              // 🚀 無料版はグレーアウト＆操作不可
-              style={{ ...shopCard, opacity: shop.subscription_plan === 'free' ? 0.5 : 1, pointerEvents: shop.subscription_plan === 'free' ? 'none' : 'auto' }}
-            >
-              {/* 🚀 警告バッジを追加 */}
-              {shop.subscription_plan === 'free' && (
-                 <div style={{ color: '#ef4444', fontSize: '0.75rem', fontWeight: 'bold', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                   <AlertCircle size={14} /> システム利用制限中
-                 </div>
-              )}
-              <div style={shopIconCircle(shop.theme_color)}><Building2 size={32} color="#fff" /></div>
-              <strong style={{marginTop:'15px', color:'#3d2b1f'}}>{shop.business_name}</strong>
-              <div style={selectBadge}>{shop.subscription_plan === 'free' ? '利用不可' : '名簿を作成する ➔'}</div>
-            </button>
-          ))}
+        <div style={{ textAlign: 'center', padding: '60px 20px', background: '#fff', borderRadius: '24px', border: '1px solid #fee2e2', marginTop: '20px' }}>
+          <div style={{ background: '#fef2f2', width: '64px', height: '64px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 20px' }}>
+            <AlertCircle size={32} color="#ef4444" />
+          </div>
+          <h2 style={{ color: '#1e293b', marginBottom: '15px' }}>システム利用制限中</h2>
+          <p style={{ color: '#64748b', fontSize: '0.9rem', lineHeight: '1.6' }}>
+            現在、「<strong>{selectedShop.business_name}</strong>」様はシステム利用制限中のため、<br/>
+            掲示用名簿の作成機能がストップされています。
+          </p>
         </div>
       </div>
     );
   }
 
-  // 2. スマホ版：設定リモコン画面
+  // 1. スマホ版：設定リモコン画面
   if (isMobile) {
     return (
       <div style={containerStyle(true)}>
-        <button onClick={() => setSelectedShop(null)} style={backBtn}>
-          <ArrowLeft size={18} /> 業者一覧へ戻る
-        </button>
+        {/* 🚀 🆕 戻るボタンは不要になったため削除 */}
 
         <div style={mRemoteCard}>
           <div style={mRemoteHeader}>
@@ -155,7 +148,7 @@ const FacilityPrintList_PC = ({ facilityId, isMobile }) => {
     <div style={containerStyle(false)}>
       <header className="no-print" style={headerArea}>
         <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
-          <button onClick={() => setSelectedShop(null)} style={backBtn}>← 戻る</button>
+          {/* 🚀 🆕 戻るボタンは不要になったため削除 */}
           <h2 style={titleStyle}>【{selectedShop.business_name}】掲示用リスト プレビュー</h2>
         </div>
 

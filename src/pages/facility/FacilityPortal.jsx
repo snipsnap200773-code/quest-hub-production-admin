@@ -32,7 +32,11 @@ const FacilityPortal = () => {
   const [totalCapacity, setTotalCapacity] = useState(0);
   const [pendingRequestCount, setPendingRequestCount] = useState(0);
 
-  const [urgentKeeps, setUrgentKeeps] = useState([]); 
+  // 🚀 🆕 B案：親画面で業者情報を一括管理するStateを追加
+  const [connectedShops, setConnectedShops] = useState([]);
+  const [selectedShopId, setSelectedShopId] = useState(null);
+
+  const [urgentKeeps, setUrgentKeeps] = useState([]);
   const [unconfirmedKeeps, setUnconfirmedKeeps] = useState([]);
   // 🚀 🆕 修正：月単位ではなく、7日前を切った未確定枠をピュアに格納する部屋
   const [warningKeeps, setWarningKeeps] = useState([]);
@@ -124,29 +128,42 @@ const FacilityPortal = () => {
       if (fac) setFacility(fac);
 
       const [connRes, draftRes, pendingReqRes] = await Promise.all([
-        supabase.from('shop_facility_connections').select('regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active').maybeSingle(),
+        // 🚀 🆕 修正：maybeSingle()を外し、全てのアクティブな提携業者を取得する
+        supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active'),
         supabase.from('visit_list_drafts').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId),
         // 🚀 🆕 訪問業者（shop）からこの施設宛に届いている「承認待ち」の件数をDBから直接カウント！
         supabase.from('shop_facility_connections').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId).eq('status', 'pending').eq('created_by_type', 'shop')
       ]);
       
-      if (connRes.data) setShopProfile(connRes.data.profiles);
+      // 🚀 🆕 追加：取得した業者をセットし、初期選択（一番上）を決定する
+      const shops = connRes.data || [];
+      const sortedShops = shops.sort((a, b) => (a.profiles?.subscription_plan === 'free' ? 1 : 0) - (b.profiles?.subscription_plan === 'free' ? 1 : 0));
+      
+      setConnectedShops(sortedShops);
+      if (sortedShops.length > 0 && !selectedShopId) {
+        setSelectedShopId(sortedShops[0].shop_id);
+        setShopProfile(sortedShops[0].profiles);
+      }
+
       setDraftCount(draftRes.count || 0);
       setPendingRequestCount(pendingReqRes.count || 0); // 🚀 🆕 カウント結果をステートに保存！
 
       const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
       // 💡 確実に確定データをすくうため、隠れ本物カラム【facility_user_id】で検索
       const { data: visitData } = await supabase
-  .from('visit_requests')
-  .select('*')
-  .eq('facility_user_id', facilityId);
+        .from('visit_requests')
+        .select('*')
+        .eq('facility_user_id', facilityId);
 
       const todayStr = new Date().toLocaleDateString('sv-SE');
       const baseToday = new Date(`${todayStr}T00:00:00`); 
       const urgList = [];
       const warnList = []; // 🚀 🆕 オレンジバナー用の下書き配列
       const unconList = [];
-      const rules = connRes.data?.regular_rules || [];
+      
+      // 🚀 🆕 修正：全業者の定期ルールを合算してアラート判定に回す
+      const allRules = sortedShops.flatMap(s => s.regular_rules || []);
+      const rules = allRules;
 
       const processedDates = new Set();
 
@@ -231,6 +248,14 @@ const FacilityPortal = () => {
       setLoading(false);
     }
   };
+
+  // 🚀 🆕 業者が切り替わったら、計算用のプロファイルを差し替える
+  useEffect(() => {
+    if (selectedShopId && connectedShops.length > 0) {
+      const shop = connectedShops.find(s => s.shop_id === selectedShopId);
+      if (shop) setShopProfile(shop.profiles);
+    }
+  }, [selectedShopId, connectedShops]);
 
   useEffect(() => {
     if (!shopProfile) {
@@ -463,12 +488,34 @@ const FacilityPortal = () => {
         </div>
 
         <header style={contentHeaderStyle}>
-          <div style={headerTitleGroup}>
-             <span style={headerIcon}>{menuItems.find(i => i.id === activeTab)?.icon}</span>
-             <div>
-               <h1 style={headerMainTitle}>{menuItems.find(i => i.id === activeTab)?.label}</h1>
-               <p style={headerSubTitle}>{facility?.facility_name} 様専用ページ</p>
-             </div>
+          {/* 🚀 🆕 ヘッダーのレイアウトを横並びに調整 */}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '15px', width: '100%' }}>
+            <div style={headerTitleGroup}>
+               <span style={headerIcon}>{menuItems.find(i => i.id === activeTab)?.icon}</span>
+               <div>
+                 <h1 style={headerMainTitle}>{menuItems.find(i => i.id === activeTab)?.label}</h1>
+                 <p style={headerSubTitle}>{facility?.facility_name} 様専用ページ</p>
+               </div>
+            </div>
+
+            {/* 🚀 🆕 B案：ヘッダーに「業者切替プルダウン」を常時表示！（2社以上いる時だけ） */}
+            {connectedShops.length > 1 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#f8fafc', padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
+                <Store size={18} color="#64748b" />
+                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>対象の業者</span>
+                  <select 
+                    value={selectedShopId || ''} 
+                    onChange={(e) => setSelectedShopId(e.target.value)}
+                    style={{ border: 'none', background: 'transparent', fontWeight: '900', fontSize: '0.9rem', color: '#3d2b1f', outline: 'none', cursor: 'pointer' }}
+                  >
+                    {connectedShops.map(s => (
+                      <option key={s.shop_id} value={s.shop_id}>{s.profiles?.business_name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
@@ -486,7 +533,7 @@ const FacilityPortal = () => {
               ) : activeTab === 'partners' ? (
                 <FacilityPartnerShops_PC facilityId={facilityId} isMobile={isMobile} />
               ) : activeTab === 'keep' ? (
-                <FacilityKeepDate_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} /> 
+                <FacilityKeepDate_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} selectedShopId={selectedShopId} /> 
               ) : activeTab === 'list-up' ? (
                 <FacilityListUp_PC 
                   facilityId={facilityId} 
@@ -494,17 +541,18 @@ const FacilityPortal = () => {
                   setActiveTab={setActiveTab} 
                   sharedDate={sharedDate} 
                   setSharedDate={setSharedDate}
+                  selectedShopId={selectedShopId}
                 />
               ) : activeTab === 'booking' ? ( 
-                <FacilityBooking_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} />
+                <FacilityBooking_PC facilityId={facilityId} isMobile={isMobile} setActiveTab={setActiveTab} sharedDate={sharedDate} setSharedDate={setSharedDate} selectedShopId={selectedShopId} />
               ) : activeTab === 'status' ? (
-                <FacilityStatus_PC facilityId={facilityId} isMobile={isMobile} />
-              ) : activeTab === 'history' ? ( 
-                <FacilityHistory_PC facilityId={facilityId} isMobile={isMobile} sharedDate={sharedDate} setSharedDate={setSharedDate} />
+                <FacilityStatus_PC facilityId={facilityId} isMobile={isMobile} selectedShopId={selectedShopId} />
+              ) : activeTab === 'history' ? (
+                <FacilityHistory_PC facilityId={facilityId} sharedDate={sharedDate} setSharedDate={setSharedDate} selectedShopId={selectedShopId} />
               ) : activeTab === 'print_list' ? ( 
-                <FacilityPrintList_PC facilityId={facilityId} />
-              ) : activeTab === 'invoice' ? ( 
-                <FacilityInvoice_PC facilityId={facilityId} sharedDate={sharedDate} setSharedDate={setSharedDate} />
+                <FacilityPrintList_PC facilityId={facilityId} isMobile={isMobile} selectedShopId={selectedShopId} />
+              ) : activeTab === 'invoice' ? (
+                <FacilityInvoice_PC facilityId={facilityId} sharedDate={sharedDate} setSharedDate={setSharedDate} selectedShopId={selectedShopId} />
               ) : activeTab === 'find_shops' ? (
                 <FacilityFindShops_PC facilityId={facilityId} isMobile={isMobile} />
               ) : activeTab === 'settings' ? (

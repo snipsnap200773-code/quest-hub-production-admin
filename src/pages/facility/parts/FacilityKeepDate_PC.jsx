@@ -6,10 +6,10 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: currentDate, setSharedDate: setCurrentDate }) => {
+const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: currentDate, setSharedDate: setCurrentDate, selectedShopId }) => {
   const [shops, setShops] = useState([]);
   const [selectedShop, setSelectedShop] = useState(null);
-  const [keepDates, setKeepDates] = useState([]); 
+  const [keepDates, setKeepDates] = useState([]);
   const [confirmedVisits, setConfirmedVisits] = useState([]);
   const [shopBlocks, setShopBlocks] = useState([]);
   const [regularRules, setRegularRules] = useState([]);
@@ -51,6 +51,14 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       }, 300);
     }
   }, [keepDates, timeModal.show]); // キープ状況やモーダルが閉じたタイミングで発動
+
+  // 🚀 🆕 親画面から渡された selectedShopId に連動して、この画面の selectedShop を切り替える
+  useEffect(() => {
+    if (selectedShopId && shops.length > 0) {
+      const target = shops.find(s => s.profiles.id === selectedShopId);
+      if (target) setSelectedShop(target.profiles);
+    }
+  }, [selectedShopId, shops]);
 
   const [isTestMode, setIsTestMode] = useState(false);
 
@@ -494,33 +502,9 @@ if (regKeep && !isExcludedForThisShop) {
     }
   };
 
-  const renderShopSelector = () => (
-    <div style={isMobile ? mShopSelectorArea : pcSideListStyle}>
-      <h3 style={sideTitle}><Store size={16} /> 業者切替</h3>
-      <div style={isMobile ? mShopScrollWrapper : shopListWrapper}>
-        {shops.map(con => (
-          <button 
-            key={con.profiles.id} 
-            onClick={() => setSelectedShop(con.profiles)} 
-            style={isMobile ? mShopChip(selectedShop?.id === con.profiles.id, con.profiles.theme_color) : shopCardBtn(selectedShop?.id === con.profiles.id, con.profiles.theme_color)}
-          >
-            {isMobile ? (
-               <span style={{whiteSpace:'nowrap'}}>{con.profiles.business_name}</span>
-            ) : (
-              <>
-                <div style={shopMiniTag(con.profiles.theme_color)}>{con.profiles.business_type}</div>
-                <div style={shopNameLabel}>{con.profiles.business_name}</div>
-              </>
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
   return (
     <div style={containerStyle(isMobile)}>
-      {renderShopSelector()}
+      {/* 👈 🚀 ここにあった {renderShopSelector()} を削除します！ */}
 
       <main style={{ flex: 1, width: '100%' }}>
         {!selectedShop ? (
@@ -740,7 +724,7 @@ if (regKeep && !isExcludedForThisShop) {
 };
 
 // --- スタイル定義 (三土手さん仕様：スリム＆スマート) ---
-const containerStyle = (isMobile) => ({ display: 'flex', gap: '20px', width: '100%', flexDirection: isMobile ? 'column' : 'row', alignItems: 'flex-start' });
+const containerStyle = (isMobile) => ({ width: '100%', display: 'flex', flexDirection: 'column' });
 
 // 🚀 🆕 スリム化したサイドバー (260px -> 200px)
 const pcSideListStyle = { width: '200px', flexShrink: 0, background: '#fff', padding: '15px', borderRadius: '24px', border: '1px solid #eee' };
