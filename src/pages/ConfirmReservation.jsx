@@ -337,12 +337,15 @@ const handleReserve = async () => {
       if (!isAdminEntry) {
         const targetDate = adminDate || date;
         const targetTime = adminTime || time;
-        const checkStartTime = new Date(`${targetDate}T${targetTime}:00`).toISOString();
+        // 🆕 修正：実際の予約保存処理（下記 startDateTime）と同じ「+09:00」を明示し、
+        // ブラウザのタイムゾーンに関わらず必ず日本時間として解釈させる
+        const checkStartTime = new Date(`${targetDate}T${targetTime}:00+09:00`).toISOString();
 
         // 1. 店舗の全スタッフの最新シフトを取得
         const { data: allStaffs } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
         if (allStaffs) {
-          const dObj = new Date(targetDate);
+          // 🆕 修正：曜日判定も日本時間基準に統一する
+          const dObj = new Date(`${targetDate}T00:00:00+09:00`);
           const dayIdx = dObj.getDay();
           
           // 2. その時間に出勤しているスタッフを厳選
@@ -458,7 +461,7 @@ const handleReserve = async () => {
       } else {
         // 制限がない場合は「店舗の閉店時間」までを占有
         const dayOfWeek = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(targetDate).getDay()];
-        const closeTime = shop.business_hours[dayOfWeek]?.close || "18:00";
+        const closeTime = shop.business_hours?.[dayOfWeek]?.close || "18:00";
         const [startH, startM] = targetTime.split(':').map(Number);
         const [closeH, closeM] = closeTime.split(':').map(Number);
         totalMinutes = (closeH * 60 + closeM) - (startH * 60 + startM);
@@ -529,7 +532,9 @@ const handleReserve = async () => {
         furigana: customerData.furigana || null,
         phone: customerData.phone?.replace(/[^0-9]/g, '') || null,
         email: customerData.email || null,
-        zip_code: visitorZip || null, 
+        // 🆕 修正：前画面から渡された visitorZip より、フォームで実際に入力・編集された
+        // customerData.zip_code を優先して保存する（visitorZip はフォールバック）
+        zip_code: customerData.zip_code || visitorZip || null, 
         address: customerData.address || null,
         // 🆕 業種別項目を追加
         parking: customerData.parking || null,
@@ -579,6 +584,11 @@ const handleReserve = async () => {
         // 住所の保護
         if (customerData.address && customerData.address.trim() !== "") {
           updatePayload.address = customerData.address;
+        }
+
+        // 🆕 追加：郵便番号の保護（既存客が新しい郵便番号を入力した場合のみ上書き）
+        if (customerData.zip_code && customerData.zip_code.trim() !== "") {
+          updatePayload.zip_code = customerData.zip_code;
         }
 
         if (authUserProfile?.id && !existingCust?.auth_id) {
@@ -1053,7 +1063,7 @@ return (
                 {q.label} {q.required && <span style={{ color: '#ef4444' }}>*</span>}
               </label>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                {q.options.split(',').map((opt) => (
+                {(q.options || '').split(',').map((opt) => (
                   <label key={opt} style={{ 
                     flex: '1', minWidth: '100px', padding: '10px', borderRadius: '10px', border: '2px solid',
                     borderColor: customAnswers[q.id] === opt ? themeColor : '#e2e8f0',

@@ -568,35 +568,23 @@ const [editFields, setEditFields] = useState({
 
     // 2. 基本の爆速レンジ（過去30日〜未来13か月）を計算
     const realToday = new Date();
-    const historyPast = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
+    // 🚀 🆕 修正：過去の月を見るために、historyPast を customTargetDate に合わせて柔軟に広げる
+    let historyPast = new Date(realToday.getTime() - (30 * 24 * 60 * 60 * 1000));
+    if (customTargetDate) {
+      const activeDate = new Date(customTargetDate);
+      const activeMonthStart = new Date(activeDate.getFullYear(), activeDate.getMonth(), 1);
+      if (activeMonthStart < historyPast) {
+        historyPast = activeMonthStart; // 過去の月を見る時は、開始位置をその月まで広げる
+      }
+    }
     const futureLimit = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
 
     let startRangeStr = historyPast.toLocaleDateString('sv-SE') + "T00:00:00Z";
     let endRangeStr = futureLimit.toLocaleDateString('sv-SE') + "T23:59:59Z";
     // 🏢 施設名簿の取得開始日も、今月1日からではなく「過去30日前（historyPast）」に揃えます
+    // 🚀 🆕 無限ループ防止：小分け通信ロジックを廃止し、2番のステップで広げた範囲をそのまま使う
     let finalStartDayStr = historyPast.toLocaleDateString('sv-SE');
     let finalEndDayStr = futureLimit.toLocaleDateString('sv-SE');
-
-    // 💡 🚀 【ここが最大のキモ！】もしめくった先の日付（ customTargetDate ）が指定され、それが基本範囲外なら、その月だけを「小分け通信」で狙い撃ち
-    if (customTargetDate) {
-      const activeDate = new Date(customTargetDate);
-      // 🚀 🆕 修正：カレンダーの「表示週の初日（月曜日）」を基準にして判定するように変更
-      const dayOfWeek = activeDate.getDay();
-      const firstDayOfWeek = new Date(activeDate);
-      firstDayOfWeek.setDate(activeDate.getDate() - (dayOfWeek === 0 ? 6 : dayOfWeek - 1));
-
-      // 基本範囲外かチェック（週の初日が過去30日より前なら発動）
-      if (firstDayOfWeek < historyPast || activeDate > futureLimit) {
-        const firstDayOfMonth = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth(), 1);
-        const lastDayOfMonth = new Date(firstDayOfWeek.getFullYear(), firstDayOfWeek.getMonth() + 1, 0);
-        
-        startRangeStr = firstDayOfMonth.toLocaleDateString('sv-SE') + "T00:00:00Z";
-        endRangeStr = lastDayOfMonth.toLocaleDateString('sv-SE') + "T23:59:59Z";
-        finalStartDayStr = firstDayOfMonth.toLocaleDateString('sv-SE');
-        finalEndDayStr = lastDayOfMonth.toLocaleDateString('sv-SE');
-        console.log(`⏱ 範囲外データを検知: ${firstDayOfMonth.getFullYear()}年${firstDayOfMonth.getMonth()+1}月分を追っかけロードします。`);
-      }
-    }
 
     // 3. データ一斉取得
     const targetShopIds = profile.schedule_sync_id ? 

@@ -129,10 +129,16 @@ if (shopRes.data) {
 
       setShop(shopData);
             
-      // 👇 🌟 修正：ハイブリッド判定（キーワードで訪問系と来店系を分ける）
-      const businessTypeName = shopRes.data.business_type || '';
-      const vInds = businessTypeName.split(',').map(s=>s.trim()).filter(t => VISIT_KEYWORDS.some(k => t.includes(k)));
-      const sInds = businessTypeName.split(',').map(s=>s.trim()).filter(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
+      // 🚀 🆕 修正：ハイブリッド判定（配列でも文字列でも安全にパースしてクラッシュを完全防止！）
+      let parsedBusinessTypes = [];
+      if (Array.isArray(shopRes.data.business_type)) {
+        parsedBusinessTypes = shopRes.data.business_type;
+      } else if (typeof shopRes.data.business_type === 'string') {
+        parsedBusinessTypes = shopRes.data.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+      }
+
+      const vInds = parsedBusinessTypes.filter(t => VISIT_KEYWORDS.some(k => t.includes(k)));
+      const sInds = parsedBusinessTypes.filter(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
       
       setVisitIndustries(vInds);
       setSalonIndustries(sInds);
@@ -189,9 +195,10 @@ let catQuery = supabase.from('service_categories')
           const filteredCats = catRes.data.filter(c => {
             // 1. 施設専用フラグが TRUE のものは、一般予約フォームでは常に非表示にする
             const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
-if (cat.target_industry && !targetInds.includes(cat.target_industry)) {
-  return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
-}
+            if (c.target_industry && !targetInds.includes(c.target_industry)) {
+              return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
+            }
+            return true; // 🆕 追加：ここまでで除外されなかったカテゴリは表示対象として残す
           });
           
           setCategories(filteredCats);
@@ -215,9 +222,17 @@ if (cat.target_industry && !targetInds.includes(cat.target_industry)) {
   .or('show_on_print.is.null,show_on_print.eq.false') // ✅ false または null のものを取得
   .order('sort_order');
 
-if (servRes.data) setServices(servRes.data);
-const optRes = await supabase.from('service_options').select('*');
-        if (optRes.data) setOptions(optRes.data);
+if (servRes.data) {
+  setServices(servRes.data);
+  // 🚀 🆕 1000件の壁バグ回避：自店舗のメニューIDに紐づく枝オプションのみを安全に取得
+  const serviceIds = servRes.data.map(s => s.id);
+  if (serviceIds.length > 0) {
+    const { data: optData } = await supabase.from('service_options').select('*').in('service_id', serviceIds);
+    setOptions(optData || []);
+  } else {
+    setOptions([]);
+  }
+}
 
         // ✅ スタッフが一人なら自動セットするロジック（State版）
         const { data: staffList } = await supabase.from('staffs').select('*').eq('shop_id', shopId);

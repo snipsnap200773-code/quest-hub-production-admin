@@ -89,7 +89,8 @@ function TimeSelectionCalendar() {
       }
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
-      const todayStr = new Date().toLocaleDateString('sv-SE');
+      // 🆕 修正：端末・ブラウザのタイムゾーンに依存せず、必ず「日本時間の今日」を基準にする
+      const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
@@ -293,7 +294,8 @@ const checkAvailability = (date, timeStr) => {
     // --- 🚀 1. 判定に必要な変数を最初にすべて定義する ---
     const dateStr = date.toLocaleDateString('sv-SE'); // YYYY-MM-DD
     const now = new Date();
-    const todayStr = now.toLocaleDateString('sv-SE');
+    // 🆕 修正：常に日本時間基準で「今日」を判定する（タイムゾーンのズレによる誤判定防止）
+    const todayStr = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     const dayOfWeek = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][date.getDay()];
     const hours = shop.business_hours[dayOfWeek];
     const openTime = hours?.open || "09:00";
@@ -606,6 +608,11 @@ const checkAvailability = (date, timeStr) => {
     return <div style={{textAlign:'center', padding:'100px', color: '#64748b'}}>読み込み中...</div>;
   }
 
+  // 🆕 追加：shopIdが不正などでプロフィール自体が取得できなかった場合の分岐
+  if (!shop) {
+    return <div style={{ textAlign: 'center', padding: '50px' }}>店舗が見つかりません</div>;
+  }
+
   const themeColor = shop?.theme_color || '#2563eb';
 
   return (
@@ -764,14 +771,14 @@ const checkAvailability = (date, timeStr) => {
       e: new Date(p.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
       type: 'private' // 🚀 プライベート予定
     })),
-  ...(shop?.business_hours[dayOfWeek]?.rest_start ? [{ 
+  ...(shop?.business_hours?.[dayOfWeek]?.rest_start ? [{ 
       s: shop.business_hours[dayOfWeek].rest_start.slice(0,5), 
       e: shop.business_hours[dayOfWeek].rest_end.slice(0,5),
       type: 'rest' // 🚀 休憩
     }] : [])
 ];
 
-          const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
+          const openTime = shop?.business_hours?.[dayOfWeek]?.open || "09:00";
 
           // 🚀 🆕 B: 「自動詰め（隙間防止）」判定関数
           const isFillingSlot = (time) => {
@@ -781,8 +788,8 @@ const checkAvailability = (date, timeStr) => {
   if (location.state?.serviceMode === 'visit') return true;
 
   const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
-  const openTime = shop?.business_hours[dayOfWeek]?.open || "09:00";
-  const closeTime = shop?.business_hours[dayOfWeek]?.close || "18:00";
+  const openTime = shop?.business_hours?.[dayOfWeek]?.open || "09:00";
+  const closeTime = shop?.business_hours?.[dayOfWeek]?.close || "18:00";
 
   // 🚀 🆕 プライベート予定のうち、営業時間外のものは隙間判定から除外する
   const gapTasks = busyTimes.filter(b => {

@@ -97,6 +97,10 @@ function AdminManagement() {
   // --- 🆕 売上分析用の新Stateを追加 ---
   const [viewYear, setViewYear] = useState(new Date().getFullYear()); // 表示する年
   const [selectedMonthData, setSelectedMonthData] = useState(null);   // ポップアップで表示する月のデータ
+  
+  // 🚀 🆕 追加：売上分析のタブ切り替え用State（デフォルトは 'all' = 店舗全体）
+  const [activeStaffTab, setActiveStaffTab] = useState('all');
+  
   // --- 顧客情報（カルテ）パネル用State ---
   const [isCustomerInfoOpen, setIsCustomerInfoOpen] = useState(false);
   const [isResidentsListExpanded, setIsResidentsListExpanded] = useState(false);
@@ -271,7 +275,7 @@ function AdminManagement() {
 
       setCategories(allCatsForMap.filter(c => !c.is_adjustment_cat && !c.is_product_cat) || []);
       setServices(servRes.data || []);
-      setServiceOptions(optRes.data || []);
+      setServiceOptions(optData); // 🚀 🆕 ここを optData に書き換えるだけ！
       setAdminAdjustments(adjRes.data || []);
       setProducts(prodRes.data || []);
       setSalesRecords(sDataRes.data || []); 
@@ -2107,92 +2111,94 @@ return (
             {/* 🚀 🆕 ここから下（年間パネル＋月別カード）をまとめてスクロールさせる大枠を追加 */}
             <div style={{ flex: 1, overflowY: 'auto' }}>
               
+              {/* 🚀 🆕 【新機能】売上分析のタブ切り替え（全体／各スタッフ） */}
+              <div style={{ display: 'flex', gap: '8px', padding: '15px 20px 0', overflowX: 'auto', flexShrink: 0 }}>
+                <button
+                  onClick={() => setActiveStaffTab('all')}
+                  style={{
+                    padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+                    background: activeStaffTab === 'all' ? '#008000' : '#e2e8f0',
+                    color: activeStaffTab === 'all' ? '#fff' : '#64748b',
+                    transition: '0.2s', boxShadow: activeStaffTab === 'all' ? '0 4px 10px rgba(0,128,0,0.3)' : 'none'
+                  }}
+                >
+                  店舗全体
+                </button>
+                {/* 年間実績が存在するスタッフのタブを自動生成 */}
+                {Object.keys(yearlySummary.staffBreakdown || {}).sort().map(staffName => (
+                  <button
+                    key={staffName}
+                    onClick={() => setActiveStaffTab(staffName)}
+                    style={{
+                      padding: '8px 16px', borderRadius: '20px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
+                      background: activeStaffTab === staffName ? '#008000' : '#e2e8f0',
+                      color: activeStaffTab === staffName ? '#fff' : '#64748b',
+                      transition: '0.2s', boxShadow: activeStaffTab === staffName ? '0 4px 10px rgba(0,128,0,0.3)' : 'none'
+                    }}
+                  >
+                    👤 {staffName}
+                  </button>
+                ))}
+              </div>
+
               {/* 🚀 🆕 年間売上サマリーパネル */}
-              <div style={{ padding: '20px 20px 0 20px' }}>
+              <div style={{ padding: '15px 20px 0 20px' }}>
                 <div style={{ background: '#fff', borderRadius: '16px', border: '2px solid #008000', padding: '20px', boxShadow: '0 4px 15px rgba(0,0,0,0.05)' }}>
                   
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                    <h3 style={{ margin: 0, color: '#008000', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem' }}>
-                      <BarChart3 size={20} /> {viewYear}年 年間トータル
-                    </h3>
-                    <button onClick={() => handleExportYearlyCSV(yearlySummary)} style={{ padding: '6px 12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                      📥 CSV保存
-                    </button>
-                  </div>
-                  
-                  {/* 🚀 🆕 修正：年間トータルの数値を縦並び（担当者別と同じ形式）に変更してはみ出しを防ぐ */}
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #e2e8f0' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
-                      <span style={{ color: '#64748b', fontWeight: 'bold' }}>年間来客数:</span>
-                      <b style={{ color: '#1e293b' }}>{yearlySummary.count} 名</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
-                      <span style={{ color: '#64748b', fontWeight: 'bold' }}>年間施術売上:</span>
-                      <b style={{ color: '#475569' }}>¥{yearlySummary.technical.toLocaleString()}</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
-                      <span style={{ color: '#008000', fontWeight: 'bold' }}>年間店販売上:</span>
-                      <b style={{ color: '#008000' }}>¥{yearlySummary.product.toLocaleString()}</b>
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '10px', marginTop: '4px' }}>
-                      <span style={{ color: '#d34817', fontWeight: 'bold', fontSize: '1.1rem' }}>年間総売上:</span>
-                      <b style={{ color: '#d34817', fontSize: '1.6rem', fontWeight: '900' }}>¥{yearlySummary.total.toLocaleString()}</b>
-                    </div>
-                  </div>
+                  {(() => {
+                    // 🚀 🆕 タブに応じて表示するデータを切り替える！
+                    const displayData = activeStaffTab === 'all' ? yearlySummary : (yearlySummary.staffBreakdown[activeStaffTab] || { count: 0, technical: 0, product: 0, total: 0 });
+                    const displayTitle = activeStaffTab === 'all' ? `${viewYear}年 店舗全体トータル` : `${viewYear}年 ${activeStaffTab} の実績`;
 
-                  {/* 担当者別集計 */}
-                  {Object.keys(yearlySummary.staffBreakdown).length > 0 && (
-                    <div>
-                      {/* 🚀 🆕 修正：担当者別年間実績をアコーディオン開閉式に変更 */}
-                      <div 
-                        onClick={() => setIsYearlyStaffExpanded(!isYearlyStaffExpanded)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold', color: '#4b2c85', marginBottom: '10px', cursor: 'pointer', padding: '10px', background: '#f3f0ff', borderRadius: '8px' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Users size={16} /> 担当者別 年間実績
+                    return (
+                      <>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+                          <h3 style={{ margin: 0, color: '#008000', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '1.2rem' }}>
+                            <BarChart3 size={20} /> {displayTitle}
+                          </h3>
+                          <button onClick={() => handleExportYearlyCSV(yearlySummary)} style={{ padding: '6px 12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            📥 CSV保存
+                          </button>
                         </div>
-                        {isYearlyStaffExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                      </div>
-
-                      <AnimatePresence>
-                        {isYearlyStaffExpanded && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }} 
-                            animate={{ height: 'auto', opacity: 1 }} 
-                            exit={{ height: 0, opacity: 0 }}
-                            style={{ overflow: 'hidden' }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '10px' }}>
-                              {Object.entries(yearlySummary.staffBreakdown).map(([staffName, stats]) => (
-                                <div key={staffName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#f8fafc', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                                  <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem' }}>{staffName}</span>
-                                  
-                                  {/* 🚀 🆕 スマホでの文字潰れを防ぐため幅を 160px に拡大 */}
-                                  <div style={{ width: '160px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.95rem' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>客数:</span><b style={{ color: '#1e293b' }}>{stats.count}名</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>施術:</span><b style={{ color: '#475569' }}>¥{stats.technical.toLocaleString()}</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#008000' }}>店販:</span><b style={{ color: '#008000' }}>¥{stats.product.toLocaleString()}</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '2px' }}><span style={{ color: '#d34817' }}>合計:</span><b style={{ color: '#d34817', fontSize: '1.1rem' }}>¥{stats.total.toLocaleString()}</b></div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  )}
+                        
+                        {/* 🚀 🆕 タブで切り替わった数値を表示する */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '10px', paddingBottom: '10px' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
+                            <span style={{ color: '#64748b', fontWeight: 'bold' }}>年間来客数:</span>
+                            <b style={{ color: '#1e293b' }}>{displayData.count} 名</b>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
+                            <span style={{ color: '#64748b', fontWeight: 'bold' }}>年間施術売上:</span>
+                            <b style={{ color: '#475569' }}>¥{displayData.technical.toLocaleString()}</b>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '1.05rem' }}>
+                            <span style={{ color: '#008000', fontWeight: 'bold' }}>年間店販売上:</span>
+                            <b style={{ color: '#008000' }}>¥{displayData.product.toLocaleString()}</b>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderTop: '1px solid #cbd5e1', paddingTop: '10px', marginTop: '4px' }}>
+                            <span style={{ color: '#d34817', fontWeight: 'bold', fontSize: '1.1rem' }}>年間総売上:</span>
+                            <b style={{ color: '#d34817', fontSize: '1.6rem', fontWeight: '900' }}>¥{displayData.total.toLocaleString()}</b>
+                          </div>
+                        </div>
+                      </>
+                    );
+                  })()}
+                  
+                  {/* 💡 以前ここにあった「担当者別 年間実績」の開閉アコーディオンは、タブ化によって不要になったため削除してスッキリさせました！ */}
                 </div>
               </div>
 
-              {/* 🚀 🆕 修正：月別のアコーディオンリスト（月自体を開閉する） */}
+              {/* 🚀 🆕 修正：月別のアコーディオンリスト（タブの対象者の数字だけになる） */}
               <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {analyticsData.map(m => {
                   const isExpanded = expandedMonths[m.month];
+                  // 🚀 🆕 タブに応じて月別データを切り替える！
+                  const mDisplay = activeStaffTab === 'all' ? m : (m.staffBreakdown[activeStaffTab] || { count: 0, technical: 0, product: 0, total: 0 });
+
                   return (
                     <div key={m.month} style={{ ...monthCardStyle, padding: '0', overflow: 'hidden', border: isExpanded ? '2px solid #008000' : '1px solid #e2e8f0', transition: 'border 0.2s' }}>
                       
-                      {/* 1. アコーディオンのヘッダー（月名と総合計を常に表示） */}
+                      {/* 1. アコーディオンのヘッダー */}
                       <div 
                         onClick={() => setExpandedMonths(prev => ({ ...prev, [m.month]: !prev[m.month] }))}
                         style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '15px 20px', cursor: 'pointer', background: isExpanded ? '#f0fdf4' : '#fff' }}
@@ -2201,12 +2207,12 @@ return (
                           <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#008000' }}>{m.month}月</span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#d34817' }}>¥{m.total.toLocaleString()}</span>
+                          <span style={{ fontSize: '1.3rem', fontWeight: '900', color: '#d34817' }}>¥{mDisplay.total.toLocaleString()}</span>
                           {isExpanded ? <ChevronUp size={20} color="#008000" /> : <ChevronDown size={20} color="#94a3b8" />}
                         </div>
                       </div>
 
-                      {/* 2. アコーディオンの中身（内訳と日別詳細ボタン） */}
+                      {/* 2. アコーディオンの中身 */}
                       <AnimatePresence>
                         {isExpanded && (
                           <motion.div 
@@ -2219,37 +2225,39 @@ return (
                               <div style={{ borderTop: '1px dashed #cbd5e1', paddingTop: '15px', marginTop: '5px' }}>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px' }}>
                                   <span style={{ color: '#64748b', fontSize: '0.85rem', fontWeight: 'bold' }}>来客数</span>
-                                  <span style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{m.count} 名</span>
+                                  <span style={{ fontWeight: 'bold', fontSize: '1rem', color: '#1e293b' }}>{mDisplay.count} 名</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '6px' }}>
                                   <span style={{ color: '#64748b', fontWeight: 'bold' }}>✂️ 施術売上</span>
-                                  <span style={{ fontWeight: 'bold', color: '#475569' }}>¥{m.technical.toLocaleString()}</span>
+                                  <span style={{ fontWeight: 'bold', color: '#475569' }}>¥{mDisplay.technical.toLocaleString()}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', marginBottom: '12px' }}>
                                   <span style={{ color: '#008000', fontWeight: 'bold' }}>🛍 店販売上</span>
-                                  <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{m.product.toLocaleString()}</span>
+                                  <span style={{ fontWeight: 'bold', color: '#008000' }}>¥{mDisplay.product.toLocaleString()}</span>
                                 </div>
 
-                                {/* 事業（屋号）別の内訳 */}
-                                <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', marginBottom: '15px' }}>
-                                  {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
-                                    <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px', color: '#64748b', fontWeight: 'bold' }}>
-                                      <span>{name}</span>
-                                      <span>¥{price.toLocaleString()}</span>
-                                    </div>
-                                  ))}
-                                </div>
+                                {/* 事業（屋号）別の内訳：店舗全体タブの時だけ表示 */}
+                                {activeStaffTab === 'all' && m.breakdown && (
+                                  <div style={{ background: '#f8fafc', padding: '10px 12px', borderRadius: '8px', marginBottom: '15px' }}>
+                                    {Object.entries(m.breakdown).map(([name, price]) => price > 0 && (
+                                      <div key={name} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '4px', color: '#64748b', fontWeight: 'bold' }}>
+                                        <span>{name}</span>
+                                        <span>¥{price.toLocaleString()}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
 
-                                {/* 🚀 日別詳細・担当者実績を開くボタン（ここをタップでモーダルが開く） */}
+                                {/* 🚀 日別詳細ボタン */}
                                 <button 
                                   onClick={(e) => { 
                                     e.stopPropagation(); 
                                     setSelectedMonthData(m); 
-                                    setExpandedDays({}); // 🚀 🆕 別の月を開くたびにアコーディオン状態をリセット
+                                    setExpandedDays({}); // 別の月を開くたびにリセット
                                   }}
                                   style={{ width: '100%', padding: '12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.9rem', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', boxShadow: '0 4px 6px rgba(0,128,0,0.2)' }}
                                 >
-                                  <Calendar size={18} /> 日別詳細・担当者実績を表示
+                                  <Calendar size={18} /> 日別詳細を表示
                                 </button>
                               </div>
                             </div>
@@ -2263,7 +2271,7 @@ return (
             
             </div>
 
-            {/* 🆕 日別詳細ポップアップ（モーダル）スマホ最適化版 */}
+            {/* 🆕 日別詳細ポップアップ（モーダル）スマホ最適化・タブ連動版 */}
             {selectedMonthData && (
               <div style={modalOverlayStyle} onClick={() => setSelectedMonthData(null)}>
                 <div style={{ 
@@ -2274,9 +2282,11 @@ return (
                   padding: isPC ? '25px' : '15px' 
                 }} onClick={e => e.stopPropagation()}>
                   
-                  {/* 1. ヘッダー（上部に固定） */}
+                  {/* 1. ヘッダー */}
                   <div style={{ display: 'flex', justifyContent: 'space-between', borderBottom: '2px solid #008000', paddingBottom: '10px', marginBottom: '15px', alignItems: 'center', flexShrink: 0 }}>
-                    <h3 style={{ margin: 0, fontSize: '1rem' }}>{viewYear}年 {selectedMonthData.month}月 詳細</h3>
+                    <h3 style={{ margin: 0, fontSize: '1rem' }}>
+                      {viewYear}年 {selectedMonthData.month}月 詳細 {activeStaffTab !== 'all' && `(${activeStaffTab})`}
+                    </h3>
                     <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                       <button onClick={() => handleExportCSV(selectedMonthData)} style={{ padding: '6px 12px', background: '#008000', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}>
                         📥 CSV保存
@@ -2288,123 +2298,152 @@ return (
                   {/* 2. 真ん中（スクロールエリア） */}
                   <div style={{ flex: 1, overflowY: 'auto', paddingRight: '5px' }}>
                     
-                    {/* 事業別合計内訳パネル */}
-                    <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px solid #e2e8f0' }}>
-                      {Object.entries(selectedMonthData.breakdown).map(([name, price]) => price > 0 && (
-                        <div key={name}>
-                          <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>{name} 合計</div>
-                          <div style={{ fontSize: '1.1rem', fontWeight: '900', color: name.includes('フット') ? '#4285f4' : '#1e293b' }}>
-                            ¥{price.toLocaleString()}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-
-                    {/* 🚀 🆕 修正：担当者別 月間実績パネルをアコーディオン開閉式に変更 */}
-                    <div style={{ background: '#fff', padding: '10px', borderRadius: '15px', marginBottom: '15px', border: '1px dashed #00800044' }}>
-                      <div 
-                        onClick={() => setIsMonthlyStaffExpanded(!isMonthlyStaffExpanded)}
-                        style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold', color: '#008000', cursor: 'pointer', padding: '5px' }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          <Users size={16} /> 担当者別 月間実績
-                        </div>
-                        {isMonthlyStaffExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
-                      </div>
-
-                      <AnimatePresence>
-                        {isMonthlyStaffExpanded && (
-                          <motion.div 
-                            initial={{ height: 0, opacity: 0 }} 
-                            animate={{ height: 'auto', opacity: 1 }} 
-                            exit={{ height: 0, opacity: 0 }}
-                            style={{ overflow: 'hidden' }}
-                          >
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
-                              {Object.entries(selectedMonthData.staffBreakdown || {}).map(([name, stats]) => (
-                                <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#f8fafc', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
-                                  <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem' }}>{name}</span>
-                                  <div style={{ width: '150px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.9rem' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>客数:</span><b style={{ color: '#1e293b' }}>{stats.count}名</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>施術:</span><b style={{ color: '#475569' }}>¥{stats.technical.toLocaleString()}</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#008000' }}>店販:</span><b style={{ color: '#008000' }}>¥{stats.product.toLocaleString()}</b></div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '2px' }}><span style={{ color: '#008000' }}>合計:</span><b style={{ color: '#008000', fontSize: '1.1rem' }}>¥{stats.total.toLocaleString()}</b></div>
+                    {(() => {
+                      return (
+                        <>
+                          {/* 全体タブの時だけ事業別合計内訳を表示 */}
+                          {activeStaffTab === 'all' && selectedMonthData.breakdown && (
+                            <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '15px', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '20px', border: '1px solid #e2e8f0' }}>
+                              {Object.entries(selectedMonthData.breakdown).map(([name, price]) => price > 0 && (
+                                <div key={name}>
+                                  <div style={{ fontSize: '0.65rem', color: '#64748b', fontWeight: 'bold' }}>{name} 合計</div>
+                                  <div style={{ fontSize: '1.1rem', fontWeight: '900', color: name.includes('フット') ? '#4285f4' : '#1e293b' }}>
+                                    ¥{price.toLocaleString()}
                                   </div>
                                 </div>
                               ))}
                             </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
+                          )}
 
-                    {/* 🚀 🆕 修正：日別リストをアコーディオン開閉式に変更 */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '10px' }}>
-                      {/* リストのヘッダー部分 */}
-                      <div style={{ display: 'flex', padding: '10px 5px', background: '#fff', borderBottom: '2px solid #008000', fontSize: '0.75rem', fontWeight: 'bold', color: '#008000' }}>
-                        <div style={{ width: '40px' }}>日付</div>
-                        <div style={{ width: '40px', textAlign: 'center' }}>客数</div>
-                        <div style={{ flex: 1, textAlign: 'right' }}>施術</div>
-                        <div style={{ flex: 1, textAlign: 'right' }}>店販</div>
-                        <div style={{ flex: 1.2, textAlign: 'right' }}>合計</div>
-                      </div>
-
-                      {selectedMonthData.days.filter(d => d.total > 0).map(d => {
-                        const isDayExpanded = expandedDays[d.day];
-                        return (
-                          <div key={d.day} style={{ background: isDayExpanded ? '#f0fdf4' : '#fff', borderRadius: '10px', border: isDayExpanded ? '1px solid #bbf7d0' : '1px solid #e2e8f0', overflow: 'hidden', transition: 'all 0.2s' }}>
-                            {/* 行本体（タップで開閉） */}
-                            <div 
-                              onClick={() => setExpandedDays(prev => ({ ...prev, [d.day]: !prev[d.day] }))}
-                              style={{ display: 'flex', padding: '12px 5px', alignItems: 'center', cursor: 'pointer', fontSize: '0.85rem' }}
-                            >
-                              <div style={{ width: '40px', fontWeight: 'bold', color: '#1e293b' }}>{d.day}日</div>
-                              <div style={{ width: '40px', textAlign: 'center', color: '#475569' }}>{d.count}名</div>
-                              <div style={{ flex: 1, textAlign: 'right', color: '#475569' }}>¥{d.technical.toLocaleString()}</div>
-                              <div style={{ flex: 1, textAlign: 'right', color: '#008000', fontWeight: 'bold' }}>¥{d.product.toLocaleString()}</div>
-                              <div style={{ flex: 1.2, textAlign: 'right', fontWeight: '900', color: '#1e293b', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}>
-                                ¥{d.total.toLocaleString()}
-                                {isDayExpanded ? <ChevronUp size={16} color="#008000" /> : <ChevronDown size={16} color="#94a3b8" />}
+                          {/* 🚀 🆕 「担当者別 月間実績」パネルは、全体タブの時だけ表示。スタッフ個別タブの時は不要なので消す */}
+                          {activeStaffTab === 'all' && (
+                            <div style={{ background: '#fff', padding: '10px', borderRadius: '15px', marginBottom: '15px', border: '1px dashed #00800044' }}>
+                              <div 
+                                onClick={() => setIsMonthlyStaffExpanded(!isMonthlyStaffExpanded)}
+                                style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: '0.85rem', fontWeight: 'bold', color: '#008000', cursor: 'pointer', padding: '5px' }}
+                              >
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                  <Users size={16} /> 担当者別 月間実績
+                                </div>
+                                {isMonthlyStaffExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                               </div>
-                            </div>
-                            
-                            {/* アコーディオンの中身（担当者別日別内訳） */}
-                            <AnimatePresence>
-                              {isDayExpanded && (
-                                <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
-                                  <div style={{ padding: '10px', background: '#f8fafc', borderTop: '1px dashed #cbd5e1' }}>
-                                    <div style={{ fontSize: '0.7rem', color: '#008000', fontWeight: 'bold', marginBottom: '6px' }}>👤 担当者別実績</div>
-                                    {Object.entries(d.staffBreakdown || {}).map(([staffName, stats]) => (
-                                      <div key={staffName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
-                                        <div style={{ fontWeight: 'bold', color: '#4b2c85' }}>{staffName}</div>
-                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-                                          <span style={{ color: '#64748b', fontSize: '0.7rem' }}>{stats.count}名</span>
-                                          <span style={{ color: '#1e293b', fontWeight: 'bold' }}>¥{stats.total.toLocaleString()}</span>
+
+                              <AnimatePresence>
+                                {isMonthlyStaffExpanded && (
+                                  <motion.div 
+                                    initial={{ height: 0, opacity: 0 }} 
+                                    animate={{ height: 'auto', opacity: 1 }} 
+                                    exit={{ height: 0, opacity: 0 }}
+                                    style={{ overflow: 'hidden' }}
+                                  >
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '10px' }}>
+                                      {Object.entries(selectedMonthData.staffBreakdown || {}).map(([name, stats]) => (
+                                        <div key={name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', background: '#f8fafc', padding: '15px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                                          <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1.05rem' }}>{name}</span>
+                                          <div style={{ width: '150px', display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.9rem' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>客数:</span><b style={{ color: '#1e293b' }}>{stats.count}名</b></div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#64748b' }}>施術:</span><b style={{ color: '#475569' }}>¥{stats.technical.toLocaleString()}</b></div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#008000' }}>店販:</span><b style={{ color: '#008000' }}>¥{stats.product.toLocaleString()}</b></div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #cbd5e1', paddingTop: '6px', marginTop: '2px' }}><span style={{ color: '#008000' }}>合計:</span><b style={{ color: '#008000', fontSize: '1.1rem' }}>¥{stats.total.toLocaleString()}</b></div>
+                                          </div>
                                         </div>
-                                      </div>
-                                    ))}
+                                      ))}
+                                    </div>
+                                  </motion.div>
+                                )}
+                              </AnimatePresence>
+                            </div>
+                          )}
+
+                          {/* 🚀 🆕 修正：日別リスト。タブがスタッフなら、その人の売上があった日だけを表示し、数値もその人のものを表示する */}
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', paddingBottom: '10px' }}>
+                            <div style={{ display: 'flex', padding: '10px 5px', background: '#fff', borderBottom: '2px solid #008000', fontSize: '0.75rem', fontWeight: 'bold', color: '#008000' }}>
+                              <div style={{ width: '40px' }}>日付</div>
+                              <div style={{ width: '40px', textAlign: 'center' }}>客数</div>
+                              <div style={{ flex: 1, textAlign: 'right' }}>施術</div>
+                              <div style={{ flex: 1, textAlign: 'right' }}>店販</div>
+                              <div style={{ flex: 1.2, textAlign: 'right' }}>合計</div>
+                            </div>
+
+                            {selectedMonthData.days.map(d => {
+                              // タブに応じたその日のデータを取得
+                              const dayData = activeStaffTab === 'all' ? d : (d.staffBreakdown[activeStaffTab] || { count: 0, technical: 0, product: 0, total: 0 });
+                              
+                              // 売上が0の日は表示しない（スッキリさせる）
+                              if (dayData.total === 0) return null;
+
+                              const isDayExpanded = expandedDays[d.day];
+                              
+                              return (
+                                <div key={d.day} style={{ background: isDayExpanded ? '#f0fdf4' : '#fff', borderRadius: '10px', border: isDayExpanded ? '1px solid #bbf7d0' : '1px solid #e2e8f0', overflow: 'hidden', transition: 'all 0.2s' }}>
+                                  <div 
+                                    onClick={() => {
+                                      // 全体タブの時だけアコーディオンを開けるようにする
+                                      if (activeStaffTab === 'all') {
+                                        setExpandedDays(prev => ({ ...prev, [d.day]: !prev[d.day] }))
+                                      }
+                                    }}
+                                    style={{ display: 'flex', padding: '12px 5px', alignItems: 'center', cursor: activeStaffTab === 'all' ? 'pointer' : 'default', fontSize: '0.85rem' }}
+                                  >
+                                    <div style={{ width: '40px', fontWeight: 'bold', color: '#1e293b' }}>{d.day}日</div>
+                                    <div style={{ width: '40px', textAlign: 'center', color: '#475569' }}>{dayData.count}名</div>
+                                    <div style={{ flex: 1, textAlign: 'right', color: '#475569' }}>¥{dayData.technical.toLocaleString()}</div>
+                                    <div style={{ flex: 1, textAlign: 'right', color: '#008000', fontWeight: 'bold' }}>¥{dayData.product.toLocaleString()}</div>
+                                    <div style={{ flex: 1.2, textAlign: 'right', fontWeight: '900', color: '#1e293b', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '4px' }}>
+                                      ¥{dayData.total.toLocaleString()}
+                                      {activeStaffTab === 'all' && (isDayExpanded ? <ChevronUp size={16} color="#008000" /> : <ChevronDown size={16} color="#94a3b8" />)}
+                                    </div>
                                   </div>
-                                </motion.div>
-                              )}
-                            </AnimatePresence>
+                                  
+                                  {/* アコーディオンの中身（担当者別日別内訳）：全体タブの時だけ表示 */}
+                                  {activeStaffTab === 'all' && (
+                                    <AnimatePresence>
+                                      {isDayExpanded && (
+                                        <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} exit={{ height: 0, opacity: 0 }}>
+                                          <div style={{ padding: '10px', background: '#f8fafc', borderTop: '1px dashed #cbd5e1' }}>
+                                            <div style={{ fontSize: '0.7rem', color: '#008000', fontWeight: 'bold', marginBottom: '6px' }}>👤 担当者別実績</div>
+                                            {Object.entries(d.staffBreakdown || {}).map(([staffName, stats]) => (
+                                              <div key={staffName} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #e2e8f0', fontSize: '0.8rem' }}>
+                                                <div style={{ fontWeight: 'bold', color: '#4b2c85' }}>{staffName}</div>
+                                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                                  <span style={{ color: '#64748b', fontSize: '0.7rem' }}>{stats.count}名</span>
+                                                  <span style={{ color: '#1e293b', fontWeight: 'bold' }}>¥{stats.total.toLocaleString()}</span>
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
-                        );
-                      })}
-                    </div>
+                        </>
+                      );
+                    })()}
                   </div>
 
-                  {/* 3. フッター（下部に固定：flexShrink: 0。スマホで文字が潰れないようにサイズを微調整） */}
-                  <div style={{ marginTop: '15px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
-                    <span style={{ fontWeight: 'bold', color: '#008000' }}>{selectedMonthData.month}月 合計</span>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                      <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#166534' }}>
-                        総客数: {selectedMonthData.days.reduce((sum, d) => sum + (d.count || 0), 0)} 名
-                      </span>
-                      <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#d34817' }}>
-                        ¥ {selectedMonthData.total.toLocaleString()}
-                      </span>
-                    </div>
-                  </div>
+                  {/* 3. フッター（下部に固定：スマホで文字が潰れないようにサイズを微調整） */}
+                  {(() => {
+                    // フッターの合計もタブに合わせる
+                    const footerDisplayData = activeStaffTab === 'all' ? selectedMonthData : (selectedMonthData.staffBreakdown[activeStaffTab] || { count: 0, total: 0 });
+                    
+                    return (
+                      <div style={{ marginTop: '15px', padding: '15px', background: '#f0fdf4', borderRadius: '12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0 }}>
+                        <span style={{ fontWeight: 'bold', color: '#008000' }}>{selectedMonthData.month}月 合計</span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                          <span style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#166534' }}>
+                            総客数: {footerDisplayData.count} 名
+                          </span>
+                          <span style={{ fontSize: '1.4rem', fontWeight: '900', color: '#d34817' }}>
+                            ¥ {footerDisplayData.total.toLocaleString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                 </div>
               </div>
