@@ -37,8 +37,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   
   // カテゴリ用
   const [newCategoryName, setNewCategoryName] = useState('');
-  const [newCategoryDesc, setNewCategoryDesc] = useState(''); // 👈 🌟カテゴリ説明用を追加
-  const [newUrlKey, setNewUrlKey] = useState(''); 
+  const [newCategoryDesc, setNewCategoryDesc] = useState(''); 
+  const [newCategoryImageUrl, setNewCategoryImageUrl] = useState(''); // 👈 🌟 🆕 追加：カテゴリ画像URL用
+  const [newUrlKey, setNewUrlKey] = useState('');
   const [newCustomShopName, setNewCustomShopName] = useState(''); 
   const [newCustomDescription, setNewCustomDescription] = useState(''); 
   const [isFacilityOnlyCat, setIsFacilityOnlyCat] = useState(false);
@@ -73,10 +74,12 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
 
   // 2. 引っ越し組 (BasicSettings由来 ＆ ScheduleSettings由来)
   const [notes, setNotes] = useState('');
-  const [allowMultiPerson, setAllowMultiPerson] = useState(true);
+  const [allowMultiPerson, setAllowMultiPerson] = useState(false); // 👈 🌟 修正：デフォルトをOFF(false)に変更
   const [description, setDescription] = useState(''); // 👈 🆕 追加：Basicから引っ越し
-  const [hidePrice, setHidePrice] = useState(true); // 👈 🌟 修正：デフォルトをON(true)に変更
+  // 🚀 🌟 修正：「隠す(ON)」から「表示する(OFF)」へ変更！デフォルトはOFF(false)
+  const [showPrice, setShowPrice] = useState(false); 
   const [useSimpleLayout, setUseSimpleLayout] = useState(true); // 👈 🌟 修正：デフォルトをON(true)に変更
+  const [showCategoryImage, setShowCategoryImage] = useState(true); // 👈 🌟 🆕 追加：カテゴリ画像の表示フラグ
 
   // 👇 🌟 🆕 追加：店舗が持っている大業種のリストを保持する
   const [shopIndustries, setShopIndustries] = useState([]);
@@ -87,7 +90,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const [isDataReady, setIsDataReady] = useState(false);
 
   const currentDataStr = JSON.stringify({
-    allowMultiple, allowMultiPerson, description, notes, hidePrice, useSimpleLayout // 👈 useSimpleLayout を追加
+    // 👇 🌟 🆕 修正：showCategoryImage を変更検知の対象に追加
+    allowMultiple, allowMultiPerson, description, notes, showPrice, useSimpleLayout, showCategoryImage 
   });
   const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
 
@@ -118,12 +122,15 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       setAllowMultiple(data.allow_multiple_services);
       setSlotIntervalMin(data.slot_interval_min || 30);
       setNotes(data.notes || ''); 
-      setAllowMultiPerson(data.allow_multi_person_reservation ?? true); 
+      setAllowMultiPerson(data.allow_multi_person_reservation ?? false); // 👈 🌟 修正：DBが空の場合もOFF(false)にする
       setDescription(data.description || ''); // 👈 🆕 追加：Basicから引っ越し
-      // 🚀 🌟 修正：DBの値が読み込めない場合もデフォルトでON(true)にする。
-      // ※ || を使うと、意図的にOFF(false)にした場合もtrueになってしまうため、?? (null合体演算子) を使います。
-      setHidePrice(data.hide_price ?? true); 
+      
+      // 🚀 🌟 修正：DBの「非表示フラグ」を反転（!）させて「表示フラグ」として読み込む
+      // ※DBがない時は非表示(true)扱いとし、それを反転させるのでOFF(false)になります
+      setShowPrice(!(data.hide_price ?? true)); 
+      
       setUseSimpleLayout(data.use_simple_layout ?? true);
+      setShowCategoryImage(data.show_category_image ?? true); // 👈 🌟 🆕 追加：読み込み処理
 
       // 👇 🌟 修正：文字列でも配列でも、全角カンマが混ざっていても確実に分割して読み取るように強化
       let industries = [];
@@ -197,6 +204,36 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     }
   };
 
+  // 🚀 🌟 🆕 追加：カテゴリ画像用のアップロード＆圧縮処理
+  const handleCategoryImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      showMsg('画像を最適化しています...');
+      const compressedFile = await imageCompression(file, {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: 1200,
+        useWebWorker: true,
+      });
+
+      showMsg('画像をアップロード中...');
+      const fileName = `category-${shopId}-${Date.now()}.${compressedFile.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage
+        .from('shop-images')
+        .upload(fileName, compressedFile, { contentType: compressedFile.type || 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('shop-images').getPublicUrl(fileName);
+      setNewCategoryImageUrl(`${data.publicUrl}?t=${Date.now()}`); // 👈 カテゴリ用のStateにセット
+      showMsg('カテゴリ画像をセットしました！');
+    } catch (err) {
+      console.error("カテゴリ画像アップロードエラー:", err);
+      alert('画像のアップロードに失敗しました: ' + err.message);
+    }
+  };
+
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     showMsg('URLをコピーしました！ 📋');
@@ -232,8 +269,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       allow_multi_person_reservation: allowMultiPerson, 
       notes: notes,
       description: description, // 👈 🆕 追加：引っ越し組を追加
-      hide_price: hidePrice, // 👈 🌟 保存処理を追加
-      use_simple_layout: useSimpleLayout // 👈 🌟 🆕 保存処理を追加
+      hide_price: !showPrice, // 👈 🚀 🌟 修正：表示フラグを反転させてDBの非表示フラグとして保存
+      use_simple_layout: useSimpleLayout, // 👈 🌟 🆕 保存処理を追加
+      show_category_image: showCategoryImage // 👈 🌟 🆕 追加：保存処理
       // ※slotIntervalMin はグループ3へお引っ越し予定なのでここでは保存しません
     }).eq('id', shopId);
     
@@ -251,7 +289,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       name: newCategoryName, url_key: newUrlKey, custom_shop_name: newCustomShopName,
       custom_description: newCustomDescription, is_facility_only: isFacilityOnlyCat,
       target_industry: newTargetIndustry || null,
-      description: newCategoryDesc // 👈 🌟 カテゴリ説明を追加
+      description: newCategoryDesc, // 👈 🌟 カテゴリ説明を追加
+      image_url: newCategoryImageUrl // 👈 🌟 🆕 追加：カテゴリ画像URL
     };
 
     if (editingCategoryId) {
@@ -263,7 +302,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     } else {
       await supabase.from('service_categories').insert([{ ...payload, shop_id: shopId, sort_order: categories.length }]);
     }
-    setEditingCategoryId(null); setNewCategoryName(''); setNewCategoryDesc(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); setNewTargetIndustry(''); // 👈 🌟 setNewCategoryDesc('')を追加
+    
+    // 👇 🌟 🆕 修正：初期化処理に setNewCategoryImageUrl('') を追加
+    setEditingCategoryId(null); setNewCategoryName(''); setNewCategoryDesc(''); setNewCategoryImageUrl(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); setNewTargetIndustry(''); 
     fetchMenuDetails(); showMsg('カテゴリを更新しました');
   };
 
@@ -276,14 +317,14 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       category: finalCategory, restricted_hours: useRestriction ? timeRanges : null,
       is_full_day: isFullDay, is_admin_only: isAdminOnly, is_sales_excluded: isSalesExcluded, show_on_print: showOnPrint,
       description: newServiceDesc, 
-      image_url: newServiceImageUrl,
-      hide_price: hidePrice // 👈 🌟 🆕 追加
+      image_url: newServiceImageUrl
+      // 👈 hide_price の行を削除しました
     };
 
     if (editingServiceId) await supabase.from('services').update(serviceData).eq('id', editingServiceId);
     else await supabase.from('services').insert([{ ...serviceData, sort_order: services.length }]);
     
-    setEditingServiceId(null); setNewServiceName(''); setNewServiceDesc(''); setNewServiceImageUrl(''); setNewServiceSlots(1); setNewServicePrice(0); setHidePrice(false); setIsFullDay(false); setIsAdminOnly(false); setShowOnPrint(false); // 👈 🌟 setHidePrice(false) を追加
+    setEditingServiceId(null); setNewServiceName(''); setNewServiceDesc(''); setNewServiceImageUrl(''); setNewServiceSlots(1); setNewServicePrice(0); setIsFullDay(false); setIsAdminOnly(false); setShowOnPrint(false); // 👈 削除しました
     fetchMenuDetails(); showMsg('サービスを保存しました');
   };
 
@@ -403,17 +444,32 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, border: '2px solid #fee2e2', minHeight: '80px', background: '#fff5f5' }} placeholder="キャンセル規定や遅刻についてなど" />
         </div>
 
-        {/* 🚀 🌟 🆕 追加：予約フォーム全体の金額非表示設定 */}
+        {/* 🚀 🌟 🆕 修正：予約フォームの金額表示設定 */}
         <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <b style={{ fontSize: '0.9rem', color: '#334155' }}>予約フォームの金額をすべて非表示にする</b>
-                <HelpTooltip themeColor={themeColor} text="予約画面のメニューやオプションの金額をすべて隠します。料金が「要相談」の店舗さんに最適です。" />
+                <b style={{ fontSize: '0.9rem', color: '#334155' }}>予約フォームに金額を表示する</b>
+                <HelpTooltip themeColor={themeColor} text="予約画面のメニューやオプションに金額を表示します。OFFにするとすべての金額が非表示になります。" />
               </div>
             </div>
-            <div onClick={() => setHidePrice(!hidePrice)} style={{ width: '52px', height: '28px', background: hidePrice ? themeColor : '#cbd5e1', borderRadius: '20px', position: 'relative', transition: '0.3s' }}>
-              <div style={{ position: 'absolute', top: '2px', left: hidePrice ? '26px' : '2px', width: '24px', height: '24px', background: '#fff', borderRadius: '50%', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+            <div onClick={() => setShowPrice(!showPrice)} style={{ width: '52px', height: '28px', background: showPrice ? themeColor : '#cbd5e1', borderRadius: '20px', position: 'relative', transition: '0.3s' }}>
+              <div style={{ position: 'absolute', top: '2px', left: showPrice ? '26px' : '2px', width: '24px', height: '24px', background: '#fff', borderRadius: '50%', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+            </div>
+          </label>
+        </div>
+
+        {/* 🚀 🌟 🆕 追加：カテゴリ画像の表示/非表示スイッチ */}
+        <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <b style={{ fontSize: '0.9rem', color: '#334155' }}>カテゴリ画像（アイコン）を表示する</b>
+                <HelpTooltip themeColor={themeColor} text="予約画面でカテゴリのタイトル横にサムネイル画像を表示します。「メニューは画像なしでシンプルにしたいけれど、カテゴリだけは画像を見せたい」といった場合に使用します。" />
+              </div>
+            </div>
+            <div onClick={() => setShowCategoryImage(!showCategoryImage)} style={{ width: '52px', height: '28px', background: showCategoryImage ? themeColor : '#cbd5e1', borderRadius: '20px', position: 'relative', transition: '0.3s' }}>
+              <div style={{ position: 'absolute', top: '2px', left: showCategoryImage ? '26px' : '2px', width: '24px', height: '24px', background: '#fff', borderRadius: '50%', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
             </div>
           </label>
         </div>
@@ -531,6 +587,43 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           {/* 🚀 🌟 追加：カテゴリ説明 */}
           <textarea placeholder="カテゴリの説明（任意：予約画面でカテゴリ名の下に表示されます）" value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} />
 
+          {/* 🚀 🌟 🆕 追加：カテゴリ画像のアップロードUI */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>
+              カテゴリ画像 (任意)
+              <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'normal' }}>※カテゴリ自体を象徴する画像です。</p>
+            </label>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+              {/* プレビュー表示エリア */}
+              {newCategoryImageUrl ? (
+                <div style={{ position: 'relative' }}>
+                  <img src={newCategoryImageUrl} alt="Preview" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #e2e8f0' }} />
+                  <button 
+                    type="button" 
+                    onClick={() => setNewCategoryImageUrl('')} 
+                    style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div style={{ width: '80px', height: '80px', background: '#f1f5f9', borderRadius: '12px', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  NO IMAGE
+                </div>
+              )}
+              {/* アップロードボタン */}
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input 
+                  type="file" accept="image/*" onChange={handleCategoryImageUpload} 
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }} 
+                />
+                <button type="button" style={{ width: '100%', padding: '12px', background: '#fff', border: `1px solid ${themeColor}`, color: themeColor, borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                  📸 画像を選択 / 変更
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 🚀 🌟 修正：店舗の業種（大カテゴリ）が2つ以上あるハイブリッド店舗にだけ表示する */}
           {shopIndustries.length > 1 && (
             <div>
@@ -597,6 +690,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
             <div key={c.id} style={{ background: '#f8fafc', padding: '16px', borderRadius: '16px', border: '1px solid #e5e7eb' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {/* 🚀 🌟 🆕 追加：画像があれば小さなアイコンを表示 */}
+                  {c.image_url && <ImageIcon size={16} color={themeColor} />}
                   <span style={{ fontWeight: 'bold', color: '#1e293b' }}>{c.name}</span>
                   {/* 👇 🌟 🆕 追加：どの大業種用かバッジを表示する */}
                   {c.target_industry && <span style={{ fontSize: '0.65rem', padding: '2px 8px', background: themeColor, color: '#fff', borderRadius: '4px' }}>{c.target_industry}</span>}
@@ -612,7 +707,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                   <button onClick={() => { 
   setEditingCategoryId(c.id); 
   setNewCategoryName(c.name); 
-  setNewCategoryDesc(c.description || ''); // 👈 🌟 カテゴリ説明の読み込みを追加
+  setNewCategoryDesc(c.description || ''); 
+  setNewCategoryImageUrl(c.image_url || ''); // 👈 🌟 🆕 追加：画像の読み込み
   setNewUrlKey(c.url_key || ''); 
   setNewCustomShopName(c.custom_shop_name || ''); 
   setNewCustomDescription(c.custom_description || ''); 
@@ -733,19 +829,6 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                 required 
               />
             </div>
-          </div>
-
-          {/* 🚀 🌟 🆕 追加：金額非表示設定 */}
-          <div style={{ marginBottom: '20px', padding: '15px', background: hidePrice ? '#f8fafc' : '#fff', borderRadius: '12px', border: hidePrice ? `1px solid #cbd5e1` : '1px solid #e2e8f0' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
-              <input type="checkbox" checked={hidePrice} onChange={(e) => setHidePrice(e.target.value)} style={{ width: '18px', height: '18px' }} />
-              <div>
-                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: hidePrice ? '#1e293b' : '#334155' }}>
-                  予約画面でこのサービスの金額を非表示にする
-                </span>
-                <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: '#64748b' }}>※金額を見せたくない場合や、料金が「要相談」のメニューに使用します。</p>
-              </div>
-            </label>
           </div>
 
           {/* 1. 受付時間制限 */}
@@ -932,12 +1015,11 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                       onClick={() => { 
                         setEditingServiceId(s.id); 
                         setNewServiceName(s.name); 
-                        setNewServiceDesc(s.description || ''); // 👈 🌟 サービス説明の復元を追加
-                        setNewServiceImageUrl(s.image_url || ''); // 👈 🌟 画像URLの復元を追加
+                        setNewServiceDesc(s.description || ''); 
+                        setNewServiceImageUrl(s.image_url || ''); 
                         setNewServiceSlots(s.slots); 
                         setNewServicePrice(s.price || 0); 
-                        setHidePrice(s.hide_price || false); // 👈 🌟 🆕 これを追加
-                        setSelectedCategory(s.category);
+                        setSelectedCategory(s.category); // 👈 setHidePriceの行を削除しました
                         setIsFullDay(s.is_full_day || false);
                         setIsAdminOnly(s.is_admin_only || false);
                         setIsSalesExcluded(s.is_sales_excluded || false);

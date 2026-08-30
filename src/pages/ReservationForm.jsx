@@ -828,7 +828,7 @@ const handleNextStep = (input = null) => {
       {(!(serviceMode === 'visit') || isAddressFixed || isAdminMode) ? (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
           <h3 style={{ fontSize: '1rem', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', marginBottom: '20px' }}>
-            {people.length === 0 ? "メニューを選択" : `${people.length + 1}人目のメニューを選択`}
+            {people.length === 0 ? "サービスを選択" : `${people.length + 1}人目のサービスを選択`}
           </h3>
           
           {categories
@@ -851,21 +851,34 @@ const handleNextStep = (input = null) => {
               const isDisabled = disabledCategoryNames.includes(cat.name);
               return (
                 <div key={cat.id} ref={el => categoryRefs.current[cat.id] = el} style={{ marginBottom: '35px', opacity: isDisabled ? 0.3 : 1 }}>
-                  {/* 🚀 🆕 修正：カテゴリ説明文の表示を追加 */}
-                  <div style={{ marginBottom: '12px' }}>
-                    <h4 style={{ fontSize: '0.85rem', color: '#64748b', margin: 0, lineHeight: '1.4' }}>
-                      {cat.name.split('/').map((text, i) => (
-                        <React.Fragment key={i}>
-                          {text.trim()}
-                          {i < cat.name.split('/').length - 1 && <br />}
-                        </React.Fragment>
-                      ))}
-                    </h4>
-                    {cat.description && (
-                      <p style={{ margin: '6px 0 0 0', fontSize: '0.75rem', color: '#94a3b8', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
-                        {cat.description}
-                      </p>
+                  {/* 🚀 🌟 修正：カテゴリ画像・タイトル・説明文のリッチなレイアウト */}
+                  <div style={{ marginBottom: '15px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                    
+                    {/* 🖼 左側：カテゴリ画像（専用の「表示フラグ」がONで、かつ画像が登録されている場合のみ表示） */}
+                    {/* ※ DBデータが読み込めていない時は安全のために表示する(!== false)ようにしています */}
+                    {shop?.show_category_image !== false && cat.image_url && (
+                      <div style={{ width: '50px', height: '50px', flexShrink: 0, borderRadius: '12px', overflow: 'hidden', border: '1px solid #e2e8f0', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+                        <img src={cat.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      </div>
                     )}
+                    
+                    {/* 📝 右側：テキストエリア */}
+                    <div style={{ flex: 1 }}>
+                      <h4 style={{ fontSize: '1rem', color: '#1e293b', margin: 0, lineHeight: '1.4', fontWeight: 'bold' }}>
+                        {cat.name.split('/').map((text, i) => (
+                          <React.Fragment key={i}>
+                            {text.trim()}
+                            {i < cat.name.split('/').length - 1 && <br />}
+                          </React.Fragment>
+                        ))}
+                      </h4>
+                      {cat.description && (
+                        <p style={{ margin: '6px 0 0 0', fontSize: '0.75rem', color: '#64748b', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                          {cat.description}
+                        </p>
+                      )}
+                    </div>
+                    
                   </div>
                   <div style={{ display: 'grid', gap: '10px' }}>
                     {services
@@ -1093,7 +1106,7 @@ const handleNextStep = (input = null) => {
             }}
           >
             {isAdminMode ? (
-              (!allOptionsSelected || !isRequiredMet || !isTotalTimeOk) ? 'メニューを選択してください' : `予約内容を確定する (${totalSlotsNeeded * (shop?.slot_interval_min || 15)}分)`
+              (!allOptionsSelected || !isRequiredMet || !isTotalTimeOk) ? 'サービスを選択してください' : `予約内容を確定する (${totalSlotsNeeded * (shop?.slot_interval_min || 15)}分)`
             ) : (
               serviceMode === 'visit' && !isAddressFixed ? (
                 !(/[0-9０-９一二三四五六七八九十]$|[\-\－]|丁目|番地|号|の[一二三四五六七八九十]/.test(visitorAddress)) ? '番地（数字）を入力してください' : '1. 訪問先を確定してください'
