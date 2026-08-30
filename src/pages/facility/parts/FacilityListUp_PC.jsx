@@ -247,26 +247,26 @@ const FacilityListUp_PC = ({
         // 1. まず、その店舗の「施設専用(is_facility_only: true)」カテゴリを特定する
         const { data: catList } = await supabase
           .from('service_categories')
-          .select('name, is_facility_only, target_industry')
+          .select('name, is_facility_only')
           .eq('shop_id', sid);
 
-        const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-        const targetCatNames = catList?.filter(c => 
-          c.is_facility_only || 
-          !c.target_industry || 
-          VISIT_KEYWORDS.some(kw => (c.target_industry || '').includes(kw))
-        ).map(c => c.name) || [];
+        // 🚀 🆕 修正：「施設予約専用(is_facility_only)」になっているカテゴリ名だけを抽出
+        const facilityCatNames = catList?.filter(c => c.is_facility_only).map(c => c.name) || [];
 
-        if (targetCatNames.length > 0) {
-          // 2. 特定したカテゴリに属するメニューだけを拾う
-          const { data: services } = await supabase
-            .from('services')
-            .select('name')
-            .eq('shop_id', sid)
-            .in('category', targetCatNames) // 💡 配列に含まれるものだけ
-            .order('sort_order');
-          
-          setShopServices(services || []);
+        // 2. サービス（メニュー）をすべて取得
+        const { data: allServices } = await supabase
+          .from('services')
+          .select('name, category, show_on_print')
+          .eq('shop_id', sid)
+          .order('sort_order');
+
+        // 🚀 🌟 🆕 修正：純粋に「施設予約専用(is_facility_only)」カテゴリに属しているメニューだけに厳格に絞り込む！
+        const targetServices = allServices?.filter(s => 
+          facilityCatNames.includes(s.category)
+        ) || [];
+
+        if (targetServices.length > 0) {
+          setShopServices(targetServices);
         } else {
           setShopServices([{ name: '（施設用メニュー未設定）' }]);
         }

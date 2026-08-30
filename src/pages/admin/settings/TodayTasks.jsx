@@ -72,6 +72,11 @@ const TodayTasks = () => {
   const [categoryMap, setCategoryMap] = useState({});
   const [staffCount, setStaffCount] = useState(0);
 
+  // 🚀 🆕 追加：ハイブリッド業種判定用のState
+  const [visitIndustries, setVisitIndustries] = useState([]);
+  const [salonIndustries, setSalonIndustries] = useState([]);
+  const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+
   // 👈 🆕 追加：プレビューモードかどうかを判定
   const searchParams = new URLSearchParams(location.search);
   const isPreviewMode = searchParams.get('mode') === 'preview';
@@ -215,10 +220,26 @@ const fetchMasterData = async () => {
 
   const fetchShopData = async () => {
     const { data } = await supabase.from('profiles')
-      // 🚀 🆕 is_timeline_default に修正して取得する
-      .select('theme_color, business_name, auto_sales_matching, allow_batch_matching, is_timeline_default') 
+      // 🚀 🆕 business_type を追加
+      .select('theme_color, business_name, auto_sales_matching, allow_batch_matching, is_timeline_default, business_type') 
       .eq('id', shopId).single();
-    if (data) setShopData(data);
+    
+    if (data) {
+      setShopData(data);
+
+      // 🚀 🆕 業種の仕分け（来店用か訪問用か）
+      let parsedBusinessTypes = [];
+      if (Array.isArray(data.business_type)) {
+        parsedBusinessTypes = data.business_type;
+      } else if (typeof data.business_type === 'string') {
+        parsedBusinessTypes = data.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
+      }
+      const vInds = parsedBusinessTypes.filter(t => VISIT_KEYWORDS.some(k => t.includes(k)));
+      const sInds = parsedBusinessTypes.filter(t => !VISIT_KEYWORDS.some(k => t.includes(k)));
+      
+      setVisitIndustries(vInds);
+      setSalonIndustries(sInds);
+    }
   };
 
 const fetchTodayTasks = async () => {
@@ -1574,8 +1595,28 @@ const handleSaveMemo = async () => {
       <div style={{ flex: 1, overflowY: 'auto', padding: '15px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
         {/* ✅ ポイント：取得済みの categories (マスタ順) をベースにループさせる */}
         {categories.map(cat => {
-          // このカテゴリに属するサービスを抽出（これらも fetchMasterData で sort_order 順に取得済み）
-          const filteredServices = services.filter(s => s.category === cat.name);
+          // 🚀 🆕 追加：開いているタスクが施設か個人かを判定
+          const isFacility = selectedTask?.task_type === 'facility';
+          const targetInds = isFacility ? visitIndustries : salonIndustries;
+          
+          // 🚀 🆕 1. 施設専用カテゴリは個人の場合は非表示
+          if (cat.is_facility_only && !isFacility) return null;
+          
+          // 🚀 🆕 2. ハイブリッド業種の出し分け
+          if (cat.target_industry) {
+            const isMatch = targetInds.some(ind => ind.includes(cat.target_industry) || cat.target_industry.includes(ind));
+            if (!isMatch) return null;
+          }
+
+          // このカテゴリに属するサービスを抽出し、さらに掲示用フラグもチェック
+          const filteredServices = services.filter(s => {
+            if (s.category !== cat.name) return false;
+            // 🚀 🆕 3. 掲示用(show_on_print)メニューは個人の場合は非表示
+            if (s.show_on_print && !isFacility) return false;
+            // 🚀 🌟 🆕 4. 管理者専用(is_admin_only)は「ねじ込み予約作成時」専用なので、当日の変更画面では非表示にする
+            if (s.is_admin_only) return false;
+            return true;
+          });
           
           // メニューが1つも登録されていないカテゴリは表示しない
           if (filteredServices.length === 0) return null;
