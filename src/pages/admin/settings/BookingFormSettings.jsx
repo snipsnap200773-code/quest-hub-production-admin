@@ -3,9 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   ArrowLeft, Sparkles, Save, Edit2, Trash2, ArrowUp, ArrowDown,
-  Layers, Link2, AlertCircle, CheckCircle2, AlertTriangle, Users, Globe // 👈 Globe を追加
+  Layers, Link2, AlertCircle, CheckCircle2, AlertTriangle, Users, Globe, Image as ImageIcon // 👈 ImageIcon を追加
 } from 'lucide-react';
 import HelpTooltip from '../../../components/ui/HelpTooltip';
+import imageCompression from 'browser-image-compression';
 
 // 🚀 SettingsPreviewLayout から reloadPreview と setShowMobilePreview を受け取る
 const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 setShowMobilePreview を追加
@@ -36,6 +37,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   
   // カテゴリ用
   const [newCategoryName, setNewCategoryName] = useState('');
+  const [newCategoryDesc, setNewCategoryDesc] = useState(''); // 👈 🌟カテゴリ説明用を追加
   const [newUrlKey, setNewUrlKey] = useState(''); 
   const [newCustomShopName, setNewCustomShopName] = useState(''); 
   const [newCustomDescription, setNewCustomDescription] = useState(''); 
@@ -43,10 +45,13 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const [editingCategoryId, setEditingCategoryId] = useState(null);
   const [editingDisableCatId, setEditingDisableCatId] = useState(null);
 
-  // メニュー用
+  // サービス（旧：メニュー）用
   const [newServiceName, setNewServiceName] = useState('');
+  const [newServiceDesc, setNewServiceDesc] = useState('');
+  const [newServiceImageUrl, setNewServiceImageUrl] = useState('');
   const [newServiceSlots, setNewServiceSlots] = useState(1);
   const [newServicePrice, setNewServicePrice] = useState(0);
+  // ※ここにあった hidePrice を下に移動します
   const [selectedCategory, setSelectedCategory] = useState('');
   const [editingServiceId, setEditingServiceId] = useState(null);
   const [isFullDay, setIsFullDay] = useState(false);
@@ -70,17 +75,19 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const [notes, setNotes] = useState('');
   const [allowMultiPerson, setAllowMultiPerson] = useState(true);
   const [description, setDescription] = useState(''); // 👈 🆕 追加：Basicから引っ越し
+  const [hidePrice, setHidePrice] = useState(true); // 👈 🌟 修正：デフォルトをON(true)に変更
+  const [useSimpleLayout, setUseSimpleLayout] = useState(true); // 👈 🌟 修正：デフォルトをON(true)に変更
 
   // 👇 🌟 🆕 追加：店舗が持っている大業種のリストを保持する
   const [shopIndustries, setShopIndustries] = useState([]);
   const [newTargetIndustry, setNewTargetIndustry] = useState(''); // 👈 カテゴリ作成用の選択State
 
-  // 🚀 🆕 変更検知用のStateとロジックを追加（フッターで保存する4項目のみ）
+  // 🚀 🆕 変更検知用のStateとロジックを追加（フッターで保存する項目のみ）
   const [initialDataStr, setInitialDataStr] = useState(null);
   const [isDataReady, setIsDataReady] = useState(false);
 
   const currentDataStr = JSON.stringify({
-    allowMultiple, allowMultiPerson, description, notes
+    allowMultiple, allowMultiPerson, description, notes, hidePrice, useSimpleLayout // 👈 useSimpleLayout を追加
   });
   const hasChanges = initialDataStr !== null && initialDataStr !== currentDataStr;
 
@@ -113,6 +120,10 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       setNotes(data.notes || ''); 
       setAllowMultiPerson(data.allow_multi_person_reservation ?? true); 
       setDescription(data.description || ''); // 👈 🆕 追加：Basicから引っ越し
+      // 🚀 🌟 修正：DBの値が読み込めない場合もデフォルトでON(true)にする。
+      // ※ || を使うと、意図的にOFF(false)にした場合もtrueになってしまうため、?? (null合体演算子) を使います。
+      setHidePrice(data.hide_price ?? true); 
+      setUseSimpleLayout(data.use_simple_layout ?? true);
 
       // 👇 🌟 修正：文字列でも配列でも、全角カンマが混ざっていても確実に分割して読み取るように強化
       let industries = [];
@@ -156,6 +167,36 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     }
   };
 
+  // 🚀 🌟 サービス画像用のアップロード＆圧縮処理を追加
+  const handleServiceImageUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    try {
+      showMsg('画像を最適化しています...');
+      const compressedFile = await imageCompression(file, {
+        maxSizeMB: 0.3,
+        maxWidthOrHeight: 1200,
+        useWebWorker: true,
+      });
+
+      showMsg('画像をアップロード中...');
+      const fileName = `service-${shopId}-${Date.now()}.${compressedFile.name.split('.').pop()}`;
+      const { error: uploadError } = await supabase.storage
+        .from('shop-images')
+        .upload(fileName, compressedFile, { contentType: compressedFile.type || 'image/jpeg', upsert: true });
+
+      if (uploadError) throw uploadError;
+
+      const { data } = supabase.storage.from('shop-images').getPublicUrl(fileName);
+      setNewServiceImageUrl(`${data.publicUrl}?t=${Date.now()}`);
+      showMsg('画像をセットしました！');
+    } catch (err) {
+      console.error("画像アップロードエラー:", err);
+      alert('画像のアップロードに失敗しました: ' + err.message);
+    }
+  };
+
   const copyToClipboard = (text) => {
     navigator.clipboard.writeText(text);
     showMsg('URLをコピーしました！ 📋');
@@ -190,7 +231,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       allow_multiple_services: allowMultiple,
       allow_multi_person_reservation: allowMultiPerson, 
       notes: notes,
-      description: description // 👈 🆕 追加：引っ越し組を追加
+      description: description, // 👈 🆕 追加：引っ越し組を追加
+      hide_price: hidePrice, // 👈 🌟 保存処理を追加
+      use_simple_layout: useSimpleLayout // 👈 🌟 🆕 保存処理を追加
       // ※slotIntervalMin はグループ3へお引っ越し予定なのでここでは保存しません
     }).eq('id', shopId);
     
@@ -207,7 +250,8 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     const payload = { 
       name: newCategoryName, url_key: newUrlKey, custom_shop_name: newCustomShopName,
       custom_description: newCustomDescription, is_facility_only: isFacilityOnlyCat,
-      target_industry: newTargetIndustry || null // 👈 🌟 🆕 追加
+      target_industry: newTargetIndustry || null,
+      description: newCategoryDesc // 👈 🌟 カテゴリ説明を追加
     };
 
     if (editingCategoryId) {
@@ -219,7 +263,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     } else {
       await supabase.from('service_categories').insert([{ ...payload, shop_id: shopId, sort_order: categories.length }]);
     }
-    setEditingCategoryId(null); setNewCategoryName(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); setNewTargetIndustry(''); // 👈 🌟 🆕 初期化を追加
+    setEditingCategoryId(null); setNewCategoryName(''); setNewCategoryDesc(''); setNewUrlKey(''); setNewCustomShopName(''); setNewCustomDescription(''); setIsFacilityOnlyCat(false); setNewTargetIndustry(''); // 👈 🌟 setNewCategoryDesc('')を追加
     fetchMenuDetails(); showMsg('カテゴリを更新しました');
   };
 
@@ -230,14 +274,17 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
     const serviceData = { 
       shop_id: shopId, name: newServiceName, slots: Number(newServiceSlots), price: Number(newServicePrice), 
       category: finalCategory, restricted_hours: useRestriction ? timeRanges : null,
-      is_full_day: isFullDay, is_admin_only: isAdminOnly, is_sales_excluded: isSalesExcluded, show_on_print: showOnPrint
+      is_full_day: isFullDay, is_admin_only: isAdminOnly, is_sales_excluded: isSalesExcluded, show_on_print: showOnPrint,
+      description: newServiceDesc, 
+      image_url: newServiceImageUrl,
+      hide_price: hidePrice // 👈 🌟 🆕 追加
     };
 
     if (editingServiceId) await supabase.from('services').update(serviceData).eq('id', editingServiceId);
     else await supabase.from('services').insert([{ ...serviceData, sort_order: services.length }]);
     
-    setEditingServiceId(null); setNewServiceName(''); setNewServiceSlots(1); setNewServicePrice(0); setIsFullDay(false); setIsAdminOnly(false); setShowOnPrint(false);
-    fetchMenuDetails(); showMsg('メニューを保存しました');
+    setEditingServiceId(null); setNewServiceName(''); setNewServiceDesc(''); setNewServiceImageUrl(''); setNewServiceSlots(1); setNewServicePrice(0); setHidePrice(false); setIsFullDay(false); setIsAdminOnly(false); setShowOnPrint(false); // 👈 🌟 setHidePrice(false) を追加
+    fetchMenuDetails(); showMsg('サービスを保存しました');
   };
 
   const handleOptionSubmit = async (e) => {
@@ -355,6 +402,53 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           </label>
           <textarea value={notes} onChange={(e) => setNotes(e.target.value)} style={{ ...inputStyle, border: '2px solid #fee2e2', minHeight: '80px', background: '#fff5f5' }} placeholder="キャンセル規定や遅刻についてなど" />
         </div>
+
+        {/* 🚀 🌟 🆕 追加：予約フォーム全体の金額非表示設定 */}
+        <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center' }}>
+                <b style={{ fontSize: '0.9rem', color: '#334155' }}>予約フォームの金額をすべて非表示にする</b>
+                <HelpTooltip themeColor={themeColor} text="予約画面のメニューやオプションの金額をすべて隠します。料金が「要相談」の店舗さんに最適です。" />
+              </div>
+            </div>
+            <div onClick={() => setHidePrice(!hidePrice)} style={{ width: '52px', height: '28px', background: hidePrice ? themeColor : '#cbd5e1', borderRadius: '20px', position: 'relative', transition: '0.3s' }}>
+              <div style={{ position: 'absolute', top: '2px', left: hidePrice ? '26px' : '2px', width: '24px', height: '24px', background: '#fff', borderRadius: '50%', transition: '0.3s', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }} />
+            </div>
+          </label>
+        </div>
+
+        {/* 🚀 🌟 🆕 追加：予約フォームのレイアウト切替 */}
+        <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '16px', border: '1px solid #e2e8f0' }}>
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px', color: '#334155' }}>
+            メニューの表示形式（レイアウト）
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: isPC ? '1fr 1fr' : '1fr', gap: '10px' }}>
+            <button 
+              type="button"
+              onClick={() => setUseSimpleLayout(false)}
+              style={{ padding: '15px', borderRadius: '12px', border: `2px solid ${!useSimpleLayout ? themeColor : '#cbd5e1'}`, background: !useSimpleLayout ? `${themeColor}08` : '#fff', textAlign: 'left', cursor: 'pointer', transition: '0.2s' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: `5px solid ${!useSimpleLayout ? themeColor : '#cbd5e1'}`, background: '#fff' }} />
+                <b style={{ color: !useSimpleLayout ? themeColor : '#475569', fontSize: '0.9rem' }}>画像あり（モダン）</b>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>左側にサムネイル画像を表示し、視覚的にわかりやすいリッチなレイアウトです。（※画像未設定の場合はNO IMAGE枠が出ます）</p>
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setUseSimpleLayout(true)}
+              style={{ padding: '15px', borderRadius: '12px', border: `2px solid ${useSimpleLayout ? themeColor : '#cbd5e1'}`, background: useSimpleLayout ? `${themeColor}08` : '#fff', textAlign: 'left', cursor: 'pointer', transition: '0.2s' }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                <div style={{ width: '18px', height: '18px', borderRadius: '50%', border: `5px solid ${useSimpleLayout ? themeColor : '#cbd5e1'}`, background: '#fff' }} />
+                <b style={{ color: useSimpleLayout ? themeColor : '#475569', fontSize: '0.9rem' }}>画像なし（シンプル）</b>
+              </div>
+              <p style={{ margin: 0, fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>画像を一切使用せず、文字情報だけでスッキリ見せるレイアウトです。（※画像は表示されません）</p>
+            </button>
+          </div>
+        </div>
       </section>
 
       {/* 🛑 PC/モバイル対応・変更検知アニメーション付き固定フッター */}
@@ -434,8 +528,11 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
         <form onSubmit={handleCategorySubmit} style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '24px' }}>
           <input placeholder="カテゴリ名 (例: カット, カラー)" value={newCategoryName || ''} onChange={(e) => setNewCategoryName(e.target.value)} style={inputStyle} required />
           
-          {/* 👇 🌟 修正：店舗の業種数に関わらず常に表示するように変更（length > 0） */}
-          {shopIndustries.length > 0 && (
+          {/* 🚀 🌟 追加：カテゴリ説明 */}
+          <textarea placeholder="カテゴリの説明（任意：予約画面でカテゴリ名の下に表示されます）" value={newCategoryDesc} onChange={(e) => setNewCategoryDesc(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} />
+
+          {/* 🚀 🌟 修正：店舗の業種（大カテゴリ）が2つ以上あるハイブリッド店舗にだけ表示する */}
+          {shopIndustries.length > 1 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
                 <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold' }}>対象とする大業種（ハイブリッド用）</span>
@@ -515,11 +612,12 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                   <button onClick={() => { 
   setEditingCategoryId(c.id); 
   setNewCategoryName(c.name); 
+  setNewCategoryDesc(c.description || ''); // 👈 🌟 カテゴリ説明の読み込みを追加
   setNewUrlKey(c.url_key || ''); 
   setNewCustomShopName(c.custom_shop_name || ''); 
   setNewCustomDescription(c.custom_description || ''); 
   setIsFacilityOnlyCat(!!c.is_facility_only); 
-  setNewTargetIndustry(c.target_industry || ''); // 👈 🌟 🆕 追加：設定済みの業種を読み込む
+  setNewTargetIndustry(c.target_industry || ''); 
   // 👇 追加：入力フォームの位置まで自動でスクロールさせる
   categoryFormRef.current?.scrollIntoView({ behavior: 'smooth' }); 
 }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6', cursor: 'pointer' }}><Edit2 size={16} /></button>
@@ -556,7 +654,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       {/* メニュー登録 */}
       <section ref={menuFormRef} style={{ ...cardStyle, background: '#f8fafc', border: '1px solid #cbd5e1' }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-          <Edit2 size={20} color="#64748b" /> メニュー登録・編集
+          <Edit2 size={20} color="#64748b" /> サービス登録・編集
         </h3>
         <form onSubmit={handleServiceSubmit}>
           <div style={{ marginBottom: '12px' }}>
@@ -566,10 +664,61 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
             </select>
           </div>
+          
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>メニュー名</label>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>サービス名</label>
             <input value={newServiceName} onChange={(e) => setNewServiceName(e.target.value)} style={inputStyle} placeholder="例: カット ＆ ブロー" required />
           </div>
+
+          {/* 🚀 🌟 追加：サービス説明 */}
+          <div style={{ marginBottom: '12px' }}>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>サービスの説明 (任意)</label>
+            <textarea value={newServiceDesc} onChange={(e) => setNewServiceDesc(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} placeholder="施術内容や効果などの詳細な説明" />
+          </div>
+
+          {/* 🚀 🌟 追加：サービス画像（画像アップロードUI） */}
+          <div style={{ marginBottom: '20px' }}>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>
+              イメージ画像 (任意)
+              <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: '#94a3b8', fontWeight: 'normal' }}>※予約画面のサービス一覧に表示される画像です。</p>
+            </label>
+            <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+              {/* プレビュー表示エリア */}
+              {newServiceImageUrl ? (
+                <div style={{ position: 'relative' }}>
+                  <img src={newServiceImageUrl} alt="Preview" style={{ width: '80px', height: '80px', objectFit: 'cover', borderRadius: '12px', border: '1px solid #e2e8f0' }} />
+                  <button 
+                    type="button" 
+                    onClick={() => setNewServiceImageUrl('')} // ✖ボタンで画像を削除
+                    style={{ position: 'absolute', top: '-8px', right: '-8px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: '50%', width: '24px', height: '24px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                  >
+                    <Trash2 size={12} />
+                  </button>
+                </div>
+              ) : (
+                <div style={{ width: '80px', height: '80px', background: '#f1f5f9', borderRadius: '12px', border: '1px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                  NO IMAGE
+                </div>
+              )}
+
+              {/* アップロードボタン */}
+              <div style={{ position: 'relative', flex: 1 }}>
+                <input 
+                  type="file" 
+                  accept="image/*" 
+                  onChange={handleServiceImageUpload} 
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer', zIndex: 2 }} 
+                />
+                <button 
+                  type="button" 
+                  style={{ width: '100%', padding: '12px', background: '#fff', border: `1px solid ${themeColor}`, color: themeColor, borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem' }}
+                >
+                  📸 画像を選択 / 変更
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* 基本料金（UIも元のリッチな表示に戻しました） */}
           <div style={{ marginBottom: '12px' }}>
             <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>基本料金 (税込)</label>
@@ -584,6 +733,19 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                 required 
               />
             </div>
+          </div>
+
+          {/* 🚀 🌟 🆕 追加：金額非表示設定 */}
+          <div style={{ marginBottom: '20px', padding: '15px', background: hidePrice ? '#f8fafc' : '#fff', borderRadius: '12px', border: hidePrice ? `1px solid #cbd5e1` : '1px solid #e2e8f0' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+              <input type="checkbox" checked={hidePrice} onChange={(e) => setHidePrice(e.target.value)} style={{ width: '18px', height: '18px' }} />
+              <div>
+                <span style={{ fontSize: '0.85rem', fontWeight: 'bold', color: hidePrice ? '#1e293b' : '#334155' }}>
+                  予約画面でこのサービスの金額を非表示にする
+                </span>
+                <p style={{ margin: '4px 0 0', fontSize: '0.7rem', color: '#64748b' }}>※金額を見せたくない場合や、料金が「要相談」のメニューに使用します。</p>
+              </div>
+            </label>
           </div>
 
           {/* 1. 受付時間制限 */}
@@ -707,14 +869,14 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
             </div>
           </div>
           <button type="submit" style={{ width: '100%', padding: '16px', background: themeColor, color: 'white', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-            {editingServiceId ? 'メニューを更新する' : 'メニューを新規登録'}
+            {editingServiceId ? 'サービスを更新する' : 'サービスを新規登録'}
           </button>
         </form>
       </section>
 
-      {/* メニュー一覧 */}
+      {/* サービス一覧 */}
       <div style={{ marginTop: '30px' }}>
-        <h3 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '20px', fontWeight: 'bold' }}>現在のメニュー一覧</h3>
+        <h3 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '20px', fontWeight: 'bold' }}>現在のサービス一覧</h3>
         {categories.map((cat) => (
           <div key={cat.id} style={{ marginBottom: '30px' }}>
             <h4 style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '12px', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', fontWeight: 'bold' }}>{cat.name}</h4>
@@ -722,7 +884,11 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               <div key={s.id} style={{ ...cardStyle, marginBottom: '12px', border: activeServiceForOptions?.id === s.id ? `2px solid ${themeColor}` : '1px solid #e2e8f0' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{s.name}</div>
+                    {/* 🚀 🌟 追加：画像が登録されている場合は小さなアイコンを表示 */}
+                    <div style={{ fontWeight: 'bold', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      {s.image_url && <ImageIcon size={14} color={themeColor} />}
+                      {s.name}
+                    </div>
                     <div style={{ display: 'flex', gap: '12px', marginTop: '4px' }}>
                       <div style={{ fontSize: '0.8rem', color: themeColor, fontWeight: 'bold' }}>{s.slots}コマ（{s.slots * slotIntervalMin}分）</div>
                       <div style={{ fontSize: '0.8rem', color: '#d34817', fontWeight: 'bold' }}>¥{(s.price || 0).toLocaleString()}</div>
@@ -766,9 +932,12 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                       onClick={() => { 
                         setEditingServiceId(s.id); 
                         setNewServiceName(s.name); 
+                        setNewServiceDesc(s.description || ''); // 👈 🌟 サービス説明の復元を追加
+                        setNewServiceImageUrl(s.image_url || ''); // 👈 🌟 画像URLの復元を追加
                         setNewServiceSlots(s.slots); 
                         setNewServicePrice(s.price || 0); 
-                        setSelectedCategory(s.category); 
+                        setHidePrice(s.hide_price || false); // 👈 🌟 🆕 これを追加
+                        setSelectedCategory(s.category);
                         setIsFullDay(s.is_full_day || false);
                         setIsAdminOnly(s.is_admin_only || false);
                         setIsSalesExcluded(s.is_sales_excluded || false);

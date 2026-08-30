@@ -4,7 +4,7 @@ import { supabase, supabaseAnon } from '../supabaseClient';
 import liff from '@line/liff';
 
 // 🚀 🆕 修正：User アイコンを追加
-import { MapPin, CheckCircle2, ChevronRight, AlertCircle, User } from 'lucide-react';
+import { MapPin, CheckCircle2, ChevronRight, AlertCircle, User, Image as ImageIcon } from 'lucide-react';
 
 // 🚀 🆕 修正：アニメーション用のパッケージを追加
 import { motion, AnimatePresence } from 'framer-motion';
@@ -191,14 +191,13 @@ let catQuery = supabase.from('service_categories')
           const catRes = await catQuery;
         
         if (catRes.data) {
-          // ✅ 修正：施設専用（is_facility_only）フラグをチェックする
+          // ✅ 修正：施設専用フラグと識別キーで基本のフィルタリングを行う
           const filteredCats = catRes.data.filter(c => {
             // 1. 施設専用フラグが TRUE のものは、一般予約フォームでは常に非表示にする
-            const targetInds = serviceMode === 'visit' ? visitIndustries : salonIndustries;
-            if (c.target_industry && !targetInds.includes(c.target_industry)) {
-              return false; // モードが違う（対象業種が含まれていない）場合はカテゴリごと非表示にする！
-            }
-            return true; // 🆕 追加：ここまでで除外されなかったカテゴリは表示対象として残す
+            if (c.is_facility_only) return false;
+
+            // 2. 既存の入り口識別キー（url_key）による絞り込み（これが消えていたのが非表示の原因です！）
+            return entryType ? c.url_key === entryType : !c.url_key;
           });
           
           setCategories(filteredCats);
@@ -852,14 +851,22 @@ const handleNextStep = (input = null) => {
               const isDisabled = disabledCategoryNames.includes(cat.name);
               return (
                 <div key={cat.id} ref={el => categoryRefs.current[cat.id] = el} style={{ marginBottom: '35px', opacity: isDisabled ? 0.3 : 1 }}>
-                  <h4 style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '12px', lineHeight: '1.4' }}>
-                    {cat.name.split('/').map((text, i) => (
-                      <React.Fragment key={i}>
-                        {text.trim()}
-                        {i < cat.name.split('/').length - 1 && <br />}
-                      </React.Fragment>
-                    ))}
-                  </h4>
+                  {/* 🚀 🆕 修正：カテゴリ説明文の表示を追加 */}
+                  <div style={{ marginBottom: '12px' }}>
+                    <h4 style={{ fontSize: '0.85rem', color: '#64748b', margin: 0, lineHeight: '1.4' }}>
+                      {cat.name.split('/').map((text, i) => (
+                        <React.Fragment key={i}>
+                          {text.trim()}
+                          {i < cat.name.split('/').length - 1 && <br />}
+                        </React.Fragment>
+                      ))}
+                    </h4>
+                    {cat.description && (
+                      <p style={{ margin: '6px 0 0 0', fontSize: '0.75rem', color: '#94a3b8', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                        {cat.description}
+                      </p>
+                    )}
+                  </div>
                   <div style={{ display: 'grid', gap: '10px' }}>
                     {services
                       .filter(s => s.category === cat.name)
@@ -873,25 +880,111 @@ const handleNextStep = (input = null) => {
                         const groupedOpts = getGroupedOptions(service.id);
                         return (
                           <div key={service.id} ref={el => serviceRefs.current[service.id] = el} 
-                               style={{ border: isSelected ? `2px solid ${themeColor}` : '1px solid #ddd', borderRadius: '12px', background: 'white' }}>
-                            <button disabled={isDisabled} onClick={() => toggleService(service, idx)} style={{ width: '100%', padding: '15px', border: 'none', background: 'none', textAlign: 'left' }}>
-                              <div style={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                               style={{ border: isSelected ? `2px solid ${themeColor}` : '1px solid #ddd', borderRadius: '12px', background: 'white', overflow: 'hidden', transition: 'border 0.2s' }}>
+                            
+                            {/* 🚀 🌟 🆕 追加：店舗設定によって「シンプル」と「モダン（画像）」を切り替える！ */}
+                            {shop?.use_simple_layout ? (
+                              
+                              /* --- シンプルモード（画像なし・左に丸ボタン） --- */
+                              /* ※説明文と金額の有無によって自動で縦配置（シンプルモード2）か中央配置（シンプルモード1）に可変します */
+                              <button disabled={isDisabled} onClick={() => toggleService(service, idx)} style={{ width: '100%', padding: '15px', border: 'none', background: 'none', textAlign: 'left', display: 'flex', gap: '15px', alignItems: service.description || !shop?.hide_price ? 'flex-start' : 'center', cursor: isDisabled ? 'not-allowed' : 'pointer' }}>
+                                {/* 左側：選択チェック（シンプルモード用） */}
                                 <div style={{ 
-                                  width: '18px', height: '18px', border: `2px solid ${themeColor}`, 
-                                  borderRadius: cat.allow_multiple_in_category ? '4px' : '50%', 
-                                  background: isSelected ? themeColor : 'transparent', 
-                                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white' 
-                                }}>{isSelected && '✓'}</div>
-                                <span style={{ lineHeight: '1.4' }}>
-  {service.name.split('/').map((text, i) => (
-    <React.Fragment key={i}>
-      {text.trim()}
-      {i < service.name.split('/').length - 1 && <br />}
-    </React.Fragment>
-  ))}
-</span>
-                              </div>
-                            </button>
+                                  width: '24px', height: '24px', border: `2px solid ${isSelected ? themeColor : '#cbd5e1'}`, 
+                                  borderRadius: cat.allow_multiple_in_category ? '6px' : '50%', 
+                                  background: isSelected ? themeColor : '#fff', 
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0,
+                                  marginTop: service.description || !shop?.hide_price ? '2px' : '0',
+                                  transition: 'all 0.2s'
+                                }}>
+                                  {isSelected && <CheckCircle2 size={16} strokeWidth={3} />}
+                                </div>
+
+                                {/* 右側：テキスト情報 */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', lineHeight: '1.3', display: 'block' }}>
+                                    {service.name.split('/').map((text, i) => (
+                                      <React.Fragment key={i}>
+                                        {text.trim()}
+                                        {i < service.name.split('/').length - 1 && <br />}
+                                      </React.Fragment>
+                                    ))}
+                                  </span>
+                                  
+                                  {/* 説明文 or 金額がある場合（シンプルモード2として表示） */}
+                                  {(service.description || !shop?.hide_price) && (
+                                    <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                      {service.description && (
+                                        <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.5', whiteSpace: 'pre-wrap' }}>
+                                          {service.description}
+                                        </div>
+                                      )}
+                                      {!shop?.hide_price && (
+                                        <div style={{ fontSize: '0.85rem', fontWeight: 'bold', color: '#d34817' }}>
+                                          ¥{(service.price || 0).toLocaleString()}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              </button>
+                            
+                            ) : (
+
+                              /* --- モダン画像モード（既存のリッチレイアウト） --- */
+                              <button disabled={isDisabled} onClick={() => toggleService(service, idx)} style={{ width: '100%', padding: '15px', border: 'none', background: 'none', textAlign: 'left', display: 'flex', gap: '15px', alignItems: 'stretch', cursor: isDisabled ? 'not-allowed' : 'pointer' }}>
+                                {/* 🖼 左側：画像エリア（画像がない場合はグレー枠のNO IMAGE） */}
+                                <div style={{ width: '80px', height: '80px', flexShrink: 0, background: '#f1f5f9', borderRadius: '8px', overflow: 'hidden', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  {service.image_url ? (
+                                    <img src={service.image_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                  ) : (
+                                    <div style={{ color: '#cbd5e1', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px' }}>
+                                      <ImageIcon size={24} strokeWidth={1.5} />
+                                      <span style={{ fontSize: '0.5rem', fontWeight: 'bold' }}>NO IMAGE</span>
+                                    </div>
+                                  )}
+                                </div>
+
+                                {/* 📝 右側：情報エリア（縦に並べる） */}
+                                <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                                  <div>
+                                    <span style={{ fontWeight: 'bold', color: '#1e293b', fontSize: '1rem', lineHeight: '1.3', display: 'block', marginBottom: service.description ? '6px' : '0' }}>
+                                      {service.name.split('/').map((text, i) => (
+                                        <React.Fragment key={i}>
+                                          {text.trim()}
+                                          {i < service.name.split('/').length - 1 && <br />}
+                                        </React.Fragment>
+                                      ))}
+                                    </span>
+                                    {service.description && (
+                                      <div style={{ 
+                                        fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4', whiteSpace: 'pre-wrap',
+                                        display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden'
+                                      }}>
+                                        {service.description}
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: '10px' }}>
+                                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: shop?.hide_price ? 'transparent' : '#d34817' }}>
+                                      {!shop?.hide_price && `¥${(service.price || 0).toLocaleString()}`}
+                                    </div>
+                                    <div style={{ 
+                                      width: '24px', height: '24px', border: `2px solid ${isSelected ? themeColor : '#cbd5e1'}`, 
+                                      borderRadius: cat.allow_multiple_in_category ? '6px' : '50%', 
+                                      background: isSelected ? themeColor : '#fff', 
+                                      display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', flexShrink: 0,
+                                      boxShadow: isSelected ? `0 2px 6px ${themeColor}44` : 'none',
+                                      transition: 'all 0.2s'
+                                    }}>
+                                      {isSelected && <CheckCircle2 size={16} strokeWidth={3} />}
+                                    </div>
+                                  </div>
+                                </div>
+                              </button>
+                            )}
+
                             {isSelected && !isDisabled && Object.keys(groupedOpts).length > 0 && (
                               <div style={{ padding: '0 15px 15px 15px', background: '#f8fafc' }}>
                                 {Object.keys(groupedOpts).map(gn => (
