@@ -246,22 +246,30 @@ const InventoryManager = () => {
     }
   };
 
-  const handleProdCatSubmit = async (e) => {
+const handleProdCatSubmit = async (e) => {
     e.preventDefault();
     const payload = { name: newProdCatName, shop_id: shopId, is_product_cat: true };
 
     if (editingProdCatId) {
       const oldCat = productCategories.find(c => c.id === editingProdCatId);
       await supabase.from('service_categories').update(payload).eq('id', editingProdCatId);
-      if (oldCat?.name && oldCat.name !== newProdCatName) {
+
+      // 🔧 修正：同じ名前の別カテゴリが他にもある場合、名前ベースの付け替えが
+      // その別カテゴリに属する商品まで巻き込んでしまうため中止する
+      const sameNameOthers = productCategories.filter(c => c.id !== editingProdCatId && c.name === oldCat?.name).length;
+      if (oldCat?.name && oldCat.name !== newProdCatName && sameNameOthers === 0) {
         await supabase.from('products').update({ category: newProdCatName }).eq('shop_id', shopId).eq('category', oldCat.name);
+      } else if (oldCat?.name && oldCat.name !== newProdCatName && sameNameOthers > 0) {
+        alert(`「${oldCat.name}」という名前のカテゴリが他にも存在するため、安全のため商品の付け替えはスキップしました。\nカテゴリ名が重複しないようにしてから、再度お試しください。`);
       }
     } else {
-      await supabase.from('service_categories').insert([{ ...payload, sort_order: productCategories.length }]);
+      const nextSortOrder = productCategories.length > 0
+        ? Math.max(...productCategories.map(c => c.sort_order ?? 0)) + 1
+        : 0;
+      await supabase.from('service_categories').insert([{ ...payload, sort_order: nextSortOrder }]);
     }
     setNewProdCatName(''); setEditingProdCatId(null); fetchMasterData(); showMsg('商品カテゴリを更新しました');
-  };
-  
+  };  
   const handleProductSubmit = async (e) => {
     e.preventDefault();
     const finalCat = selectedProdCat || (productCategories[0]?.name || '未分類');
@@ -284,7 +292,10 @@ const InventoryManager = () => {
       const res = await supabase.from('products').update(payload).eq('id', editingProdId);
       error = res.error;
     } else {
-      const res = await supabase.from('products').insert([{ ...payload, sort_order: originalProducts.length }]);
+      const nextSortOrder = originalProducts.length > 0
+        ? Math.max(...originalProducts.map(p => p.sort_order ?? 0)) + 1
+        : 0;
+      const res = await supabase.from('products').insert([{ ...payload, sort_order: nextSortOrder }]);
       error = res.error;
     }
 
@@ -743,21 +754,35 @@ const InventoryManager = () => {
 
   // ▼▼▼ 追加：仕入履歴の取得 ＆ 取消ロジック ▼▼▼
   const fetchReceiveLogs = async () => {
-    const { data } = await supabase
-      .from('inventory_logs')
-      .select('*')
-      .eq('shop_id', shopId)
-      .in('reason', ['仕入・入庫増', '返品']) // 🌟 変更：「返品」も含めて取得する
-      .order('created_at', { ascending: false });
-      // 🌟 修正：分析のために .limit(50) を外し、全期間を取得
+    // 🔧 修正：1000件の壁を回避するため、.range()で1000件ずつページングして「全期間」を確実に取得する
+    const PAGE_SIZE = 1000;
+    let allData = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('inventory_logs')
+        .select('*')
+        .eq('shop_id', shopId)
+        .in('reason', ['仕入・入庫増', '返品']) // 🌟 変更：「返品」も含めて取得する
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
 
-    if (data) {
-      setReceiveLogs(data);
-      // 🌟 修正：画面を開いた時、自動的に「最新の月」のアコーディオンだけを開いておく
-      if (data.length > 0) {
-        const d = new Date(data[0].created_at);
-        setExpandedMonths([`${d.getFullYear()}年${d.getMonth() + 1}月`]);
+      if (error) {
+        console.error('仕入履歴の取得に失敗しました:', error.message);
+        break;
       }
+      if (!page || page.length === 0) break;
+
+      allData = allData.concat(page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    setReceiveLogs(allData);
+    // 🌟 修正：画面を開いた時、自動的に「最新の月」のアコーディオンだけを開いておく
+    if (allData.length > 0) {
+      const d = new Date(allData[0].created_at);
+      setExpandedMonths([`${d.getFullYear()}年${d.getMonth() + 1}月`]);
     }
   };
 
@@ -1649,7 +1674,16 @@ const InventoryManager = () => {
                       <button onClick={() => moveItem('category', productCategories, c.id, 'up')} disabled={idx === 0} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === 0 ? 0.3 : 1 }}><ArrowUp size={16} /></button>
                       <button onClick={() => moveItem('category', productCategories, c.id, 'down')} disabled={idx === productCategories.length - 1} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === productCategories.length - 1 ? 0.3 : 1 }}><ArrowDown size={16} /></button>
                       <button onClick={() => { setEditingProdCatId(c.id); setNewProdCatName(c.name); }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6' }}><Edit2 size={16} /></button>
-                      <button onClick={async () => { if(window.confirm('削除しますか？')){ await supabase.from('products').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMasterData(); } }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
+                      <button onClick={async () => {
+                        // 🔧 修正：同じ名前の別カテゴリが他にもある場合、名前ベースの一括削除が
+                        // その別カテゴリに属する商品まで巻き込んで削除してしまうため中止する
+                        const sameNameCount = productCategories.filter(other => other.name === c.name).length;
+                        if (sameNameCount > 1) {
+                          alert(`「${c.name}」という名前のカテゴリが複数存在するため、安全のため削除を中止しました。\n先にカテゴリ名を重複しないように変更してから、再度削除してください。`);
+                          return;
+                        }
+                        if(window.confirm('削除しますか？')){ await supabase.from('products').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMasterData(); }
+                      }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
                     </div>
                   </div>
                 ))}

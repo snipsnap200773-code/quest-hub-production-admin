@@ -222,7 +222,7 @@ const StaffSettings = () => {
   const toggleHoliday = (staffId, dayIndex) => {
     setStaffs(prev => prev.map(s => {
       if (s.id !== staffId) return s;
-      const current = s.weekly_holidays;
+      const current = s.weekly_holidays || [];
       const updated = current.includes(dayIndex)
         ? current.filter(d => d !== dayIndex)
         : [...current, dayIndex];

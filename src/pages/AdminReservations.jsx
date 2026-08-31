@@ -177,7 +177,7 @@ function AdminReservations() {
   const [selectedDate, setSelectedDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const dateParam = params.get('date');
-    return dateParam || new Date().toLocaleDateString('sv-SE');
+    return dateParam || new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
   }); 
   
   // --- デザイン（スタイル）の定義をここに追加 ---
@@ -579,28 +579,33 @@ const [editFields, setEditFields] = useState({
     }
     const futureLimit = new Date(realToday.getFullYear(), realToday.getMonth() + 13, 0);
 
-    let startRangeStr = historyPast.toLocaleDateString('sv-SE') + "T00:00:00Z";
-    let endRangeStr = futureLimit.toLocaleDateString('sv-SE') + "T23:59:59Z";
+    let startRangeStr = historyPast.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }) + "T00:00:00Z";
+    let endRangeStr = futureLimit.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }) + "T23:59:59Z";
     // 🏢 施設名簿の取得開始日も、今月1日からではなく「過去30日前（historyPast）」に揃えます
     // 🚀 🆕 無限ループ防止：小分け通信ロジックを廃止し、2番のステップで広げた範囲をそのまま使う
-    let finalStartDayStr = historyPast.toLocaleDateString('sv-SE');
-    let finalEndDayStr = futureLimit.toLocaleDateString('sv-SE');
+    let finalStartDayStr = historyPast.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+    let finalEndDayStr = futureLimit.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
     // 3. データ一斉取得
     const targetShopIds = profile.schedule_sync_id ? 
       (await supabase.from('profiles').select('id').eq('schedule_sync_id', profile.schedule_sync_id)).data.map(s => s.id) : [shopId];
 
-    const [resRes, privRes, connRes, visitRes, keepRes, exclRes, salesRes] = await Promise.all([
+    const [resRes, privRes, connRes, visitRes, keepRes, exclRes] = await Promise.all([
   supabase.from('reservations').select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)').in('shop_id', targetShopIds).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
   supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
   supabase.from('shop_facility_connections').select('*, facility_users(id, facility_name, furigana, address, tel, email)').eq('shop_id', shopId).eq('status', 'active'),
   supabase.from('visit_requests').select('*, facility_users(facility_name), visit_request_residents(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
   supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', finalStartDayStr).lte('date', finalEndDayStr),
-  supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId),
-  supabase.from('sales').select('visit_request_id, reservation_id, total_amount, details').eq('shop_id', shopId) // 👈 【ここを追加】
+  // 🔧 修正：表示期間（finalStartDayStr〜finalEndDayStr）に絞り込み、全期間取得による1000件の壁を回避
+  supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId).gte('excluded_date', finalStartDayStr).lte('excluded_date', finalEndDayStr),
 ]);
 
-setSalesRecords(salesRes.data || []);
+// 🔧 修正：全期間のsalesを無差別取得せず、表示期間内のvisit_requestsに紐づく分だけに絞り込む（1000件の壁を回避）
+const visitIdsForSales = (visitRes.data || []).map(v => v.id);
+const { data: salesData } = visitIdsForSales.length > 0
+  ? await supabase.from('sales').select('visit_request_id, reservation_id, total_amount, details').eq('shop_id', shopId).in('visit_request_id', visitIdsForSales)
+  : { data: [] };
+setSalesRecords(salesData || []);
 
     // 💡 🚀 もし追っかけロード（追加通信）だったら、既存のデータと合体（マージ）させて蓄積する
     setReservations(prev => {
@@ -632,7 +637,8 @@ setSalesRecords(salesRes.data || []);
       supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
       supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
       // 🚀 修正：他施設の除外日に巻き込まれないよう facility_user_id も取得しておく
-      supabase.from('regular_keep_exclusions').select('excluded_date, facility_user_id').eq('shop_id', shopId)
+      // 🔧 修正：このデータは今日から90日先までのスキャンにしか使われないため、todayStr以降に絞り込んで全件取得を回避
+      supabase.from('regular_keep_exclusions').select('excluded_date, facility_user_id').eq('shop_id', shopId).gte('excluded_date', todayStr)
     ]);
 
     const irregularList = []; const urgentList = []; const timeChangedList = []; const processedKeys = new Set();
@@ -1438,14 +1444,16 @@ setSalesRecords(salesRes.data || []);
 
       // 予約（normal）の場合のみ、顧客マスタの来店回数を減らすロジック（既存）
       if (!isPrivate && selectedRes.res_type === 'normal') {
-        const { customer_name } = selectedRes;
-        const { count } = await supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).eq('customer_name', customer_name);
-        if (count === 0) {
-          await supabase.from('customers').delete().eq('shop_id', shopId).eq('name', customer_name);
-        } else {
-          const { data: cust } = await supabase.from('customers').select('id, total_visits').eq('shop_id', shopId).eq('name', customer_name).maybeSingle();
-          if (cust) {
-            await supabase.from('customers').update({ total_visits: Math.max(0, (cust.total_visits || 1) - 1) }).eq('id', cust.id);
+        const { customer_id, customer_name } = selectedRes;
+        if (customer_id) {
+          const { count } = await supabase.from('reservations').select('*', { count: 'exact', head: true }).eq('shop_id', shopId).eq('customer_id', customer_id);
+          if (count === 0) {
+            await supabase.from('customers').delete().eq('id', customer_id);
+          } else {
+            const { data: cust } = await supabase.from('customers').select('id, total_visits').eq('id', customer_id).maybeSingle();
+            if (cust) {
+              await supabase.from('customers').update({ total_visits: Math.max(0, (cust.total_visits || 1) - 1) }).eq('id', cust.id);
+            }
           }
         }
       }
@@ -1722,7 +1730,7 @@ setSalesRecords(salesRes.data || []);
     return slots;
   }, [shop]);
 
-  const getJapanDateStr = (date) => date.toLocaleDateString('sv-SE');
+  const getJapanDateStr = (date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
 const getStatusAt = (dateStr, timeStr) => {
     const dateObj = new Date(dateStr);
@@ -1946,7 +1954,7 @@ const getStatusAt = (dateStr, timeStr) => {
   const goNext = () => setStartDate(new Date(new Date(startDate).setDate(new Date(startDate).getDate() + 7)));
   const goPrevMonth = () => setStartDate(new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() - 1)));
   const goNextMonth = () => setStartDate(new Date(new Date(startDate).setMonth(new Date(startDate).getMonth() + 1)));
-  const goToday = () => { const today = new Date(); setStartDate(today); setSelectedDate(today.toLocaleDateString('sv-SE')); navigate(`/admin/${shopId}/reservations`, { replace: true }); };
+  const goToday = () => { const today = new Date(); setStartDate(today); setSelectedDate(today.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' })); navigate(`/admin/${shopId}/reservations`, { replace: true }); };
 
   const themeColor = shop?.theme_color || '#2563eb';
   const themeColorLight = `${themeColor}15`; 

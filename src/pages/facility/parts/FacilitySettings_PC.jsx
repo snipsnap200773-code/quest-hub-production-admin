@@ -38,14 +38,11 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
 
   // 🚀 🆕 許可カテゴリ配列（allowed_categories）を出し入れする関数
   const toggleCategory = async (catName, isChecked) => {
-    let currentList = facility?.allowed_categories || [];
-    let newList;
-    
-    if (isChecked) {
-      newList = [...currentList, catName]; // チェックされたら追加
-    } else {
-      newList = currentList.filter(item => item !== catName); // 外れたら削除
-    }
+    // 👇 修正：DB更新前に、直前のstateではなく「今まさに使われているprev」から計算するよう関数化
+    const currentList = facility?.allowed_categories || [];
+    const newList = isChecked 
+      ? [...currentList, catName] 
+      : currentList.filter(item => item !== catName);
 
     const { error } = await supabase
       .from('facility_users')
@@ -53,7 +50,14 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
       .eq('id', facilityId);
 
     if (!error) {
-      setFacility(prev => ({ ...prev, allowed_categories: newList }));
+      // 👇 修正：関数更新にして、直前の別の変更を上書きしないようにする
+      setFacility(prev => {
+        const prevList = prev?.allowed_categories || [];
+        const mergedList = isChecked
+          ? Array.from(new Set([...prevList, catName]))
+          : prevList.filter(item => item !== catName);
+        return { ...prev, allowed_categories: mergedList };
+      });
     }
   };
 
@@ -73,13 +77,8 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
         try {
           const req = connectedShops.find(c => c.id === connectionId);
           if (req) {
-            await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
-              method: 'POST',
-              headers: { 
-                'Content-Type': 'application/json', 
-                'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` 
-              },
-              body: JSON.stringify({
+            await supabase.functions.invoke('resend', {
+              body: {
                 type: 'partnership_approved',
                 shopName: req.profiles?.business_name,
                 facilityName: facility?.facility_name,
@@ -87,7 +86,7 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
                 facilityEmail: facility?.email,
                 shopId: req.shop_id,
                 facilityId: facilityId
-              })
+              }
             });
           }
         } catch (mailErr) {

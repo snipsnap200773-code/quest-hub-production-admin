@@ -95,17 +95,28 @@ const FacilityManagement = () => {
         setLoading(false); return;
       }
 
-      const visitDates = allVisits.map(v => {
-        const d = new Date(v.scheduled_date);
-        const day = d.getDate();
-        const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
-        return `${day}日(${dayOfWeek})`;
-      });
+      const parseDateOnly = (dateStr) => {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d); // ローカルタイムとして生成
+};
+
+const visitDates = allVisits.map(v => {
+  const d = parseDateOnly(v.scheduled_date);
+  const day = d.getDate();
+  const dayOfWeek = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+  return `${day}日(${dayOfWeek})`;
+});
 
       const [histRes, memRes] = await Promise.all([
-        supabase.from('visit_request_residents').select('member_id, completed_at, visit_requests!inner(shop_id)').eq('status', 'completed').eq('visit_requests.shop_id', shopId).order('completed_at', { ascending: false }),
-        supabase.from('members').select('*').eq('facility_user_id', worksheetTarget.facility_user_id).order('floor', { ascending: true }).order('room', { ascending: true })
-      ]);
+  supabase
+    .from('visit_request_residents')
+    .select('member_id, completed_at, visit_requests!inner(shop_id, facility_user_id)')
+    .eq('status', 'completed')
+    .eq('visit_requests.shop_id', shopId)
+    .eq('visit_requests.facility_user_id', worksheetTarget.facility_user_id) // 👈 追加：対象施設だけに絞る
+    .order('completed_at', { ascending: false }),
+  supabase.from('members').select('*').eq('facility_user_id', worksheetTarget.facility_user_id).order('floor', { ascending: true }).order('room', { ascending: true })
+]);
 
       const visitMap = {};
       histRes.data?.forEach(h => { 
@@ -221,22 +232,37 @@ const FacilityManagement = () => {
       const currentKMonth = new Date(keepViewMonth);
       const kPast = new Date(currentKMonth.getFullYear(), currentKMonth.getMonth() - 1, 1);
       const kFuture = new Date(currentKMonth.getFullYear(), currentKMonth.getMonth() + 2, 0);
-      const kStartStr = kPast.toLocaleDateString('sv-SE');
-      const kEndStr = kFuture.toLocaleDateString('sv-SE');
+      const kStartStr = kPast.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+const kEndStr = kFuture.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
       const kStartStrT = kStartStr + "T00:00:00Z";
       const kEndStrT = kEndStr + "T23:59:59Z";
 
-      const [sRes, cRes, resData, privData, visitData, mData, exclData, staffsRes] = await Promise.all([
-        supabase.from('sales').select('*').eq('shop_id', shopId),
-        supabase.from('customers').select('id, name').eq('shop_id', shopId),
-        supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
-        supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
-        supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
-        supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
-        supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId),
-        // 👇 🌟 修正：休み情報も含めて全て取得するため「*」に変更
-        supabase.from('staffs').select('*').eq('shop_id', shopId)
-      ]);
+      const fetchAllRows = async (queryFactory) => {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryFactory().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+};
+
+// fetchFacilities内
+const [salesAll, customersAll, resData, privData, visitData, mData, exclData, staffsRes] = await Promise.all([
+  fetchAllRows(() => supabase.from('sales').select('*').eq('shop_id', shopId)),
+  fetchAllRows(() => supabase.from('customers').select('id, name').eq('shop_id', shopId)),
+  supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
+  supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
+  supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
+  supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
+  supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId),
+  supabase.from('staffs').select('*').eq('shop_id', shopId)
+]);
 
       // 👇 🌟 修正：訪問対応可能なスタッフの「データ丸ごと」と「IDリスト」を作る
       const staffs = staffsRes.data || [];
@@ -249,8 +275,8 @@ const FacilityManagement = () => {
       setVisitStaffs(vStaffs); // 👈 🌟 抽出したスタッフ情報を保存
       const visitStaffIds = vStaffs.map(s => s.id);
 
-      setSalesRecords(sRes.data || []);
-      setAllCustomers(cRes.data || []);
+      setSalesRecords(salesAll);
+setAllCustomers(customersAll);
 
       // ○△✕判定用のデータをStateへガッチリ蓄積
       // 👇 🌟 修正：訪問スタッフに関係ない予約・予定は弾いてStateに入れる！
@@ -575,8 +601,8 @@ const handleSave = async (e) => {
 
   // 🚀 🆕 究極版：予定名(3文字)+開始時間、複数件カウントに対応した○△✕判定ロジック
   const getKeepSlotStatus = (dateStr) => {
-    const d = new Date(dateStr);
-    const todayStr = new Date().toLocaleDateString('sv-SE');
+  const d = new Date(dateStr);
+  const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }); // 👈 明示的にJSTを指定
     
     // ⏳ 過去と今日（22日）は無条件で選択不可（ past ）
     if (dateStr <= todayStr) return { status: 'past', label: '✕', name: '', time: '' };
@@ -1686,9 +1712,9 @@ facilities.forEach(conn => {
               {/* 📅 月曜始まりミニカレンダー */}
               <div style={{ textAlign: 'center', marginBottom: '20px', background: '#f8fafc', padding: '15px 10px', borderRadius: '20px', border: '1px solid #f1f5f9' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() - 1)))}>◀</button>
+                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}>◀</button>
                   <span style={{ fontWeight: '900', color: '#1e293b', fontSize: '1.1rem' }}>{keepViewMonth.getFullYear()}年 {keepViewMonth.getMonth() + 1}月</span>
-                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(new Date(keepViewMonth.setMonth(keepViewMonth.getMonth() + 1)))}>▶</button>
+                  <button type="button" style={circleBtn} onClick={() => setKeepViewMonth(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}>▶</button>
                 </div>
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px', fontSize: '0.9rem', textAlign: 'center' }}>

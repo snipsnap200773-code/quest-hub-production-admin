@@ -30,22 +30,31 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
     if (fData) setMyFacility(fData);
     
     // 🚀 1. 大カテゴリに「訪問」系が含まれていて、「施設検索公開ON」の店舗を取得
-    const { data: profiles } = await supabase
+    const { data: profiles, error: pError } = await supabase
       .from('profiles')
       .select('*')
-      // 👇 🌟 修正：完全一致(.eq)から、部分一致(.ilike)に変更し、ハイブリッド店舗もヒットするようにする！
-      .ilike('business_type', '%訪問%')
       .eq('is_facility_searchable', true)
       .not('business_name', 'is', null)
       // 👇 🌟 🆕 有料プラン・トライアル中・テスターのいずれかの店舗だけに絞り込む（無料版を弾く）
       .or('is_tester.eq.true,subscription_status.eq.active,subscription_status.eq.trialing');
+
+    if (pError) console.error("店舗データの取得に失敗:", pError);
+
+    // 👇 追加：大カテゴリに「訪問」を含むかどうかを、配列・カンマ区切り文字列どちらでも
+    // 安全に判定する（ハイブリッド店舗を確実に拾うための本命の修正）
+    const visitingProfiles = (profiles || []).filter(p => {
+      const bt = p.business_type;
+      if (Array.isArray(bt)) return bt.some(t => String(t).includes('訪問'));
+      if (typeof bt === 'string') return bt.includes('訪問');
+      return false;
+    });
 
     const { data: conns } = await supabase
       .from('shop_facility_connections')
       .select('shop_id, status, created_by_type') // 👈 これを追加
       .eq('facility_user_id', facilityId);
 
-    setShops(profiles || []);
+    setShops(visitingProfiles);
     setMyConnections(conns || []);
     setLoading(false);
   };
@@ -72,13 +81,8 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
       const targetEmail = targetShop?.email_contact || targetShop?.email;
       
       if (targetEmail) {
-        await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
-          method: 'POST',
-          headers: { 
-            'Content-Type': 'application/json', 
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}` 
-          },
-          body: JSON.stringify({
+        await supabase.functions.invoke('resend', {
+          body: {
             type: 'partnership_requested', 
             shopName: targetShop?.business_name,
             shopEmail: targetEmail,
@@ -87,7 +91,7 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
             facilityEmail: myFacility?.email,
             shopId: shopId,
             facilityId: facilityId
-          })
+          }
         });
       } else {
         console.warn("⚠️ 店舗のメールアドレスが未登録のため、通知メールの送信をスキップしました。");

@@ -37,6 +37,16 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
 
   const handleDisconnect = async (conn) => {
     const shopName = conn.profiles?.business_name;
+
+    // 👇 追加：業者名が無い（データ欠損）場合は、名前入力を求めずシンプルな確認にする
+    if (!shopName) {
+      if (window.confirm('業者情報が見つからない提携データです。この提携を解消（削除）しますか？')) {
+        await supabase.from('shop_facility_connections').delete().eq('id', conn.id);
+        fetchPartners();
+      }
+      return;
+    }
+
     const inputName = window.prompt(`「${shopName}」との提携を解消しますか？\n実行する場合は店舗名を正確に入力してください：`);
     if (inputName === shopName) {
       await supabase.from('shop_facility_connections').delete().eq('id', conn.id);
@@ -58,6 +68,22 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
         <div style={gridStyle(isMobile)}>
           {partners.map(conn => {
             const shop = conn.profiles;
+
+            // 👇 追加：業者データが欠損している場合はクラッシュせず、専用の簡易カードを出す
+            if (!shop) {
+              return (
+                <motion.div key={conn.id} style={{ ...partnerCardStyle('#94a3b8'), alignItems: 'center' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+                    <AlertCircle size={20} color="#94a3b8" />
+                    <span style={{ color: '#64748b', fontWeight: 'bold', fontSize: '0.9rem' }}>
+                      業者情報を読み込めませんでした（削除された業者の可能性があります）
+                    </span>
+                  </div>
+                  <button onClick={() => handleDisconnect(conn)} style={{ ...disconnectBtn, alignSelf: 'flex-start' }}>提携解消</button>
+                </motion.div>
+              );
+            }
+
             const themeColor = shop.theme_color || '#c5a059';
             return (
               <motion.div key={conn.id} whileHover={{ y: -5 }} style={partnerCardStyle(themeColor)}>

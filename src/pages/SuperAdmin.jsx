@@ -114,11 +114,28 @@ function SuperAdmin() {
 
   // --- 🆕 施設一覧を取得する関数を追加 ---
   const fetchFacilities = async () => {
-    const { data, error } = await supabase
-      .from('facility_users')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (!error) setFacilities(data || []);
+    // 🔧 修正：1000件の壁を回避するため、.range()で1000件ずつページングして全件取得する
+    const PAGE_SIZE = 1000;
+    let allData = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('facility_users')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('施設一覧の取得に失敗しました:', error.message);
+        break;
+      }
+      if (!page || page.length === 0) break;
+
+      allData = allData.concat(page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    setFacilities(allData);
   };
 
   const handleLogin = (e) => {
@@ -133,8 +150,28 @@ function SuperAdmin() {
   };
 
   const fetchCreatedShops = async () => {
-    const { data } = await supabase.from('profiles').select('*').order('created_at', { ascending: false });
-    if (data) setCreatedShops(data);
+    // 🔧 修正：1000件の壁を回避するため、.range()で1000件ずつページングして全件取得する
+    const PAGE_SIZE = 1000;
+    let allData = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('profiles')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('店舗一覧の取得に失敗しました:', error.message);
+        break;
+      }
+      if (!page || page.length === 0) break;
+
+      allData = allData.concat(page);
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+    setCreatedShops(allData);
   };
 
   const fetchPortalContent = async () => {
@@ -147,7 +184,11 @@ function SuperAdmin() {
   const filteredShops = useMemo(() => {
     return createdShops.filter(shop => {
       const matchSearch = (shop.business_name || "").includes(searchTerm) || (shop.owner_name || "").includes(searchTerm) || (shop.phone || "").includes(searchTerm);
-      const matchCat = activeCategory === 'すべて' || shop.business_type === activeCategory;
+      // 🔧 修正：business_typeが配列でも文字列（カンマ区切り）でも、複数業種のどれかがカテゴリに含まれていれば一致とみなす
+      const shopTypes = Array.isArray(shop.business_type)
+        ? shop.business_type
+        : (shop.business_type || '').split(/,|、/).map(s => s.trim()).filter(Boolean);
+      const matchCat = activeCategory === 'すべて' || shopTypes.includes(activeCategory);
       return matchSearch && matchCat;
     });
   }, [createdShops, searchTerm, activeCategory]);
@@ -1012,7 +1053,11 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
             editState.setEditOwnerName(shop.owner_name || "");
             editState.setEditOwnerNameKana(shop.owner_name_kana || "");
             // 👇 🌟 修正：文字列カンマ区切りデータを配列に戻してセット
-            editState.setEditBusinessType(shop.business_type ? shop.business_type.split(',') : []);
+            editState.setEditBusinessType(
+              Array.isArray(shop.business_type)
+                ? shop.business_type
+                : (shop.business_type ? shop.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean) : [])
+            );
             // 🆕 既存の小カテゴリをセット
             editState.setEditSubBusinessType(shop.sub_business_type || "");
             editState.setEditEmail(shop.email_contact || "");
@@ -1084,7 +1129,15 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
         <div style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
           <h4 style={{ margin: '0 0 5px 0', fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>{shop.business_name}</h4>
           <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '5px' }}>{shop.owner_name} / PW: <strong>{shop.admin_password}</strong></div>
-          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '15px' }}>業種: {shop.business_type ? shop.business_type.replace(/,/g, ' / ') : "未設定"}</div>
+          <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '15px' }}>
+            業種: {
+              !shop.business_type
+                ? "未設定"
+                : Array.isArray(shop.business_type)
+                  ? shop.business_type.join(' / ')
+                  : shop.business_type.replace(/,/g, ' / ')
+            }
+          </div>
           
           {/* ✅ 🆕 プラン選択スイッチへアップグレード */}
           <div style={{ marginBottom: '15px', padding: '12px', background: '#f5f3ff', borderRadius: '12px', border: '1px solid #7c3aed' }}>

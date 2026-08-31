@@ -23,6 +23,22 @@ const getKanaGroup = (kana) => {
   return "その他";
 };
 
+// 👇 🆕 ここに新しく追加：.range()でページングしながら「本当に全件」取得するヘルパー
+const fetchAllRows = async (queryFactory) => {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryFactory().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+};
+
 export default function FacilityUserList_PC({ facilityId, isMobile }) {
   // --- 1. State 管理 ---
   const [residents, setResidents] = useState([]);
@@ -81,13 +97,15 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
       .eq('is_active', true); 
       
     // 2. 🚀 🆕 前回利用日を特定するために「全期間の完了履歴」を取得
-    const { data: hData } = await supabase
-      .from('visit_request_residents')
-      .select('member_id, visit_requests!inner(scheduled_date)')
-      .eq('status', 'completed')
-      .eq('visit_requests.facility_user_id', facilityId);
+    const hData = await fetchAllRows(() =>
+      supabase
+        .from('visit_request_residents')
+        .select('member_id, visit_requests!inner(scheduled_date)')
+        .eq('status', 'completed')
+        .eq('visit_requests.facility_user_id', facilityId)
+    );
 
-    // 最新日をマッピング
+    // 最新日をマッピング（ここは変更なし）
     const vMap = {};
     hData?.forEach(v => {
       const mid = v.member_id;
@@ -142,10 +160,12 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
       };
       
       if (editingId) {
-        await supabase.from('members').update(userData).eq('id', editingId);
+        const { error: updateError } = await supabase.from('members').update(userData).eq('id', editingId);
+        if (updateError) throw updateError;
         setEditingId(null);
       } else {
-        await supabase.from('members').insert([userData]);
+        const { error: insertError } = await supabase.from('members').insert([userData]);
+        if (insertError) throw insertError;
       }
       
       await fetchResidents(); 
@@ -349,7 +369,7 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
         </div>
 
          {/* 🚀 🆕 追加：スマホ版の並べ替え（ソート）選択スイッチボタン */}
-         <div style={{ display: 'flex', justifycontent: 'space-between', alignitems: 'center', background: '#fff', padding: '10px 15px', borderRadius: '15px', border: '1px solid #eee', marginBottom: '5px' }}>
+         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#fff', padding: '10px 15px', borderRadius: '15px', border: '1px solid #eee', marginBottom: '5px' }}>
            <span style={{ fontSize: '0.8rem', fontWeight: '900', color: '#64748b' }}>並べ替え</span>
            <div style={{ display: 'flex', background: '#f1f5f9', padding: '3px', borderRadius: '10px' }}>
              <button 

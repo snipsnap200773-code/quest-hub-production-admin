@@ -50,7 +50,7 @@ const FacilityPortal = () => {
   
   // ① 定期キープの判定ロジック
   const checkIsRegularKeep = (date, rules) => {
-    if (!rules || rules.length === 0) return false;
+    if (!rules || rules.length === 0) return { matched: false, time: null };
     const day = date.getDay();
     const dom = date.getDate();
     const m = date.getMonth() + 1;
@@ -60,14 +60,14 @@ const FacilityPortal = () => {
     const t14 = new Date(date); t14.setDate(dom + 14);
     const isL2 = t14.getMonth() !== date.getMonth() && !isL1;
 
-    let matched = false;
+    let matchedRule = null; // 👈 修正：true/falseではなく、一致したルール自体を保持
     rules.forEach(r => {
       const monthMatch = (r.monthType === 0) || (r.monthType === 1 && m % 2 !== 0) || (r.monthType === 2 && m % 2 === 0);
       const dayMatch = (r.day === day);
       const weekMatch = (r.week === nthWeek) || (r.week === -1 && isL1) || (r.week === -2 && isL2);
-      if (monthMatch && dayMatch && weekMatch) matched = true;
+      if (monthMatch && dayMatch && weekMatch) matchedRule = r;
     });
-    return matched;
+    return { matched: !!matchedRule, time: matchedRule?.time || null }; // 👈 修正：一致したルールの開始時間も一緒に返す
   };
 
   // ② 施術可能人数の計算機
@@ -127,6 +127,9 @@ const FacilityPortal = () => {
       const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
       if (fac) setFacility(fac);
 
+      // 👇 🆕 ここに前倒しで移動（元は158行目にあったもの）
+      const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+
       const [connRes, draftRes, pendingReqRes] = await Promise.all([
         // 🚀 🆕 修正：maybeSingle()を外し、全てのアクティブな提携業者を取得する
         supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active'),
@@ -148,14 +151,22 @@ const FacilityPortal = () => {
       setDraftCount(draftRes.count || 0);
       setPendingRequestCount(pendingReqRes.count || 0); // 🚀 🆕 カウント結果をステートに保存！
 
-      const { data: mData } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
+      // 👇 🆕 .gte('date', todayStr) を追加（バグ1の修正）
+      const { data: mData } = await supabase
+        .from('keep_dates')
+        .select('*')
+        .eq('facility_user_id', facilityId)
+        .gte('date', todayStr);
+
       // 💡 確実に確定データをすくうため、隠れ本物カラム【facility_user_id】で検索
+      // 👇 🆕 .gte('scheduled_date', todayStr) を追加（バグ2の修正）
       const { data: visitData } = await supabase
         .from('visit_requests')
         .select('*')
-        .eq('facility_user_id', facilityId);
+        .eq('facility_user_id', facilityId)
+        .gte('scheduled_date', todayStr);
 
-      const todayStr = new Date().toLocaleDateString('sv-SE');
+      // 👇 元々158行目にあった行は「削除」（上に移動済みなので、ここにはもう書かない）
       const baseToday = new Date(`${todayStr}T00:00:00`); 
       const urgList = [];
       const warnList = []; // 🚀 🆕 オレンジバナー用の下書き配列
@@ -182,7 +193,7 @@ const FacilityPortal = () => {
           const isCanceled = (visitData || []).some(v => v.status === 'canceled' && v.scheduled_date === k.date);
 
           if (!isBooked && !isCanceled) { // ✅ ここに !isCanceled を追加！
-            const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules);
+            const isRegularDay = checkIsRegularKeep(new Date(`${k.date}T00:00:00`), rules).matched; // 👈 .matched を見る
             unconList.push({ ...k, isRegular: isRegularDay });
             
             const dObj = new Date(`${k.date}T00:00:00`);
@@ -201,10 +212,10 @@ const FacilityPortal = () => {
       // 🚀 B: 次に手動データがない「純粋な定期キープの日」も未来30日分自動スキャン
       const scanDate = new Date(`${todayStr}T00:00:00`); 
       for (let i = 0; i < 30; i++) {
-        const dStr = scanDate.toLocaleDateString('sv-SE');
+        const dStr = scanDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
         
         if (!processedDates.has(dStr)) {
-          const isRegularDay = checkIsRegularKeep(scanDate, rules);
+          const isRegularDay = checkIsRegularKeep(scanDate, rules).matched; // 👈 .matched を見る
           
           if (isRegularDay) {
             // 🚀 🆕 ここで判定を強化：
@@ -273,11 +284,11 @@ const FacilityPortal = () => {
     const lastDate = new Date(sharedDate.getFullYear(), sharedDate.getMonth() + 1, 0).getDate();
     for (let d = 1; d <= lastDate; d++) {
       const date = new Date(sharedDate.getFullYear(), sharedDate.getMonth(), d);
-      const dateStr = date.toLocaleDateString('sv-SE');
-      const regTime = checkIsRegularKeep(date, rules); 
+      const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+      const regResult = checkIsRegularKeep(date, rules); 
       
-      if (regTime) {
-         regularTotal += calculateCapacity(dateStr, regTime === true ? '09:00' : regTime, shopProfile);
+      if (regResult.matched) {
+         regularTotal += calculateCapacity(dateStr, regResult.time || '09:00', shopProfile);
       }
     }
     setTotalCapacity(manualTotal + regularTotal);
@@ -463,7 +474,7 @@ const FacilityPortal = () => {
             {urgentKeeps.length === 0 && warningKeeps.length > 0 && activeTab !== 'booking' && activeTab !== 'list-up' && (
               <motion.div
                 initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }}
-                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 20px', display: 'flex', justifycontent: 'space-between', alignItems: 'center' }}
+                style={{ background: '#fff7ed', borderBottom: '1px solid #fed7aa', padding: '10px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                   <span style={{ fontSize: '1.2rem' }}>⚠️</span>

@@ -112,11 +112,15 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
   };
 
   // 👇 🆕 追加：店舗の業種が「訪問サービス系」かどうかを判定する
+  // 🔧 修正：business_type が配列でも文字列でも安全に判定できるようにする
   const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-  const isVisit = VISIT_KEYWORDS.some(keyword => (shopData?.business_type || '').includes(keyword));
+  const shopIndustries = Array.isArray(shopData?.business_type)
+    ? shopData.business_type
+    : (shopData?.business_type || '').split(/,|、/).map(s => s.trim()).filter(Boolean);
+  const isVisit = shopIndustries.some(type => VISIT_KEYWORDS.some(keyword => type.includes(keyword)));
 
   const handleCapacityChange = (val) => {
-    const num = parseInt(val);
+    const num = parseInt(val) || 1;
     setMaxCapacity(num);
     if (num > 1) setAutoFillLogic(false);
   };

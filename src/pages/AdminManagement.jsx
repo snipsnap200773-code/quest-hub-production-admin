@@ -37,6 +37,9 @@ const getKanaGroup = (kana) => {
   return "その他";
 };
 
+// 🔧 追加：日本時間（Asia/Tokyo）に固定して日付文字列を取得するヘルパー関数
+const getJapanDateStr = (date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+
 function AdminManagement() {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -48,7 +51,7 @@ function AdminManagement() {
   const [loading, setLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isAutoProcessing, setIsAutoProcessing] = useState(false);
-  const [selectedDate, setSelectedDate] = useState(new Date().toLocaleDateString('sv-SE'));
+  const [selectedDate, setSelectedDate] = useState(getJapanDateStr(new Date()));
   const [categoryMap, setCategoryMap] = useState({});
   const [viewMonth, setViewMonth] = useState(new Date());
 
@@ -183,24 +186,44 @@ function AdminManagement() {
 
       const startOfYear = `${viewYear}-01-01`;
       const endOfYear = `${viewYear}-12-31`;
+      const startOfYearISO = `${startOfYear}T00:00:00`;
+      const endOfYearISO = `${endOfYear}T23:59:59`;
 
       // --- 2. 予約 ＆ 施設訪問データを取得（常に自店のみ） ---
-      const [resRes, visitRes] = await Promise.all([
+      // 🔧 修正：全期間を無差別取得せず「表示年」に絞り込む＋「未処理の取りこぼし」だけ別途全期間から拾う（1000件の壁を回避）
+      const [resRes, visitRes, incompleteResRes, incompleteVisitRes] = await Promise.all([
         supabase.from('reservations')
           .select('*, staffs(name)') 
           .eq('shop_id', cleanShopId) 
           .neq('status', 'canceled') // 🚀 追記：個人予約のキャンセル分を除外
           .or('is_block.is.null,is_block.eq.false')
+          .gte('start_time', startOfYearISO)
+          .lte('start_time', endOfYearISO)
           .order('start_time', { ascending: true }),
         
         supabase.from('visit_requests')
           .select('*, facility_data:facility_user_id(facility_name)')
           .eq('shop_id', cleanShopId) 
           .neq('status', 'canceled') // 🚀 追記：施設予約のキャンセル分を除外
+          .gte('scheduled_date', startOfYear)
+          .lte('scheduled_date', endOfYear),
+
+        // 🔧 追加：表示年より前の「レジ処理忘れ」を取りこぼさないよう、未完了ステータスのみ全期間取得（件数が少ないため1000件の壁の心配なし）
+        supabase.from('reservations')
+          .select('*, staffs(name)')
+          .eq('shop_id', cleanShopId)
+          .not('status', 'in', '(completed,canceled)')
+          .lt('start_time', startOfYearISO),
+
+        supabase.from('visit_requests')
+          .select('*, facility_data:facility_user_id(facility_name)')
+          .eq('shop_id', cleanShopId)
+          .not('status', 'in', '(completed,canceled)')
+          .lt('scheduled_date', startOfYear)
       ]);
 
-      const reservationsData = resRes.data || [];
-      const visitsData = visitRes.data || [];
+      const reservationsData = [...(resRes.data || []), ...(incompleteResRes.data || [])];
+      const visitsData = [...(visitRes.data || []), ...(incompleteVisitRes.data || [])];
       const facilityIds = [...new Set(visitsData.map(v => v.facility_user_id))].filter(Boolean);
 
       // --- 3. 売上・顧客名簿・マスターを取得（常に自店のみ） ---
@@ -674,7 +697,7 @@ const completePayment = async () => {
 
     setIsAutoProcessing(true); // 👈 fetchInitialData の前あたりに追加した State
     try {
-      const todayStr = new Date().toLocaleDateString('sv-SE');
+      const todayStr = getJapanDateStr(new Date());
       
       // 1. 過去の未処理予約（完了・キャンセル以外、かつ売上対象外でないもの）を抽出
       const incompleteTasks = allReservations.filter(r => 
@@ -816,7 +839,7 @@ const completePayment = async () => {
 
   // 🆕 修正：過去の「レジ処理忘れ」を自動検知するロジック
   const oldestIncompleteDate = useMemo(() => {
-    const today = new Date().toLocaleDateString('sv-SE');
+    const today = getJapanDateStr(new Date());
     
     const incomplete = allReservations
       .filter(r => 
@@ -1155,12 +1178,19 @@ const sortedAllCustomers = useMemo(() => {
     try {
       const searchName = (res.customer_name || '').replace(/　/g, ' ').trim();
 
-      // 1. DBから顧客情報を取得
-      let query = supabase.from('customers').select('*').eq('shop_id', cleanShopId);
-      if (res.customer_id) query = query.eq('id', res.customer_id);
-      else query = query.eq('name', searchName);
-      
-      const { data: customer } = await query.maybeSingle();
+      // 🔧 修正：customer_id が無い状態で「名前の完全一致」だけを頼りに顧客を確定させると、
+      // 同姓同名の別人を誤ってこのカルテの編集対象にしてしまい、保存時に別人のデータを
+      // 上書きする危険がある。customer_id が無い場合は「未登録の新規客」として扱う。
+      let customer = null;
+      if (res.customer_id) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('shop_id', cleanShopId)
+          .eq('id', res.customer_id)
+          .maybeSingle();
+        customer = data;
+      }
       const currentCustomer = customer || { name: res.customer_name };
 
       // 🚩 2. 【施設判定】
@@ -1249,15 +1279,11 @@ const sortedAllCustomers = useMemo(() => {
     const cleanEmail = editFields.email?.trim();
 
     try {
-      // 1. まず同じ名前の人がいないかDBをチェック（名寄せの基本）
-      const { data: existingCust } = await supabase
-        .from('customers')
-        .select('id')
-        .eq('shop_id', cleanShopId)
-        .eq('name', normalizedName)
-        .maybeSingle();
-
-      const targetId = selectedCustomer?.id || existingCust?.id;
+      // 🔧 修正：名前の完全一致だけで既存顧客を自動的に紐付けると、別人のデータを
+      // 誤って上書きしてしまう恐れがあるため廃止。targetIdは「今開いているカルテに
+      // 既にIDが紐付いている場合」だけを信頼する（同姓同名の統合は、この直後にある
+      // 電話番号・メールアドレスによる名寄せロジック＋確認ダイアログに任せる）。
+      const targetId = selectedCustomer?.id || null;
 
       // --- 🚀 🆕 【統合ロジック開始】 ---
       // 2. 電話番号またはメールアドレスを使って、重複している「別のIDのデータ」を探す
@@ -1386,7 +1412,7 @@ const sortedAllCustomers = useMemo(() => {
 
   const handleDateChangeUI = (days) => {
     
-    const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(d.toLocaleDateString('sv-SE')); };
+    const d = new Date(selectedDate); d.setDate(d.getDate() + days); setSelectedDate(getJapanDateStr(d)); };
 
   // 🆕 修正：開いているポップアップをすべて強制終了する関数
   const closeAllPopups = () => {
@@ -1438,8 +1464,8 @@ return (
                 const firstDay = new Date(year, month, 1).getDay();
                 const d = new Date(year, month, i - (firstDay === 0 ? 6 : firstDay - 1) + 1);
                 if (d.getMonth() !== month) return <div key={i} />;
-                const isSelected = d.toLocaleDateString('sv-SE') === selectedDate;
-                return <div key={i} onClick={() => setSelectedDate(d.toLocaleDateString('sv-SE'))} style={{ fontSize: '0.7rem', padding: '4px 0', cursor: 'pointer', borderRadius: '4px', background: isSelected ? '#4b2c85' : 'none', color: isSelected ? '#fff' : '#333' }}>{d.getDate()}</div>
+                const isSelected = getJapanDateStr(d) === selectedDate;
+                return <div key={i} onClick={() => setSelectedDate(getJapanDateStr(d))} style={{ fontSize: '0.7rem', padding: '4px 0', cursor: 'pointer', borderRadius: '4px', background: isSelected ? '#4b2c85' : 'none', color: isSelected ? '#fff' : '#333' }}>{d.getDate()}</div>
               })}
             </div>
           </div>
@@ -1547,7 +1573,7 @@ return (
   </button>
 
   <button onClick={() => handleDateChangeUI(-1)} style={headerBtnSmall}>前日</button>
-                  <button onClick={() => setSelectedDate(new Date().toLocaleDateString('sv-SE'))} style={headerBtnSmall}>今日</button>
+                <button onClick={() => setSelectedDate(getJapanDateStr(new Date()))} style={headerBtnSmall}>今日</button>
                 <button onClick={() => handleDateChangeUI(1)} style={headerBtnSmall}>次日</button>
                 {/* 📊 スマホ版のみ、サイドバーの代わりに「分析」ボタンを表示 */}
                 {!isPC && (
@@ -2017,7 +2043,7 @@ return (
                           )}
 
                           <div 
-                            onClick={() => openCustomerInfo({ customer_name: cust.name })} 
+                            onClick={() => openCustomerInfo({ customer_name: cust.name, customer_id: cust.id })} 
                             style={{ 
                               background: cust.is_active === false ? '#f1f5f9' : '#fff',
                               opacity: cust.is_active === false ? 0.6 : 1,

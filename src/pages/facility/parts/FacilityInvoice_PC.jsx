@@ -3,6 +3,22 @@ import { supabase } from '../../../supabaseClient';
 import { ReceiptText, X, Printer, ChevronLeft, ChevronRight, Building2, AlertCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// 🆕 追加：.range()でページングして「本当に全件」取得するヘルパー
+const fetchAllRows = async (queryFactory) => {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryFactory().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+};
+
 const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
   const [loading, setLoading] = useState(true);
   const [facilityName, setFacilityName] = useState('');
@@ -38,14 +54,14 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
         setSelectedShop(shop || null);
 
         if (shop) {
-          // ③ 🚀 🆕 選択された業者だけの売上と顧客名簿を取得（1000件エラー回避！）
-          const [sRes, cRes] = await Promise.all([
-            supabase.from('sales').select('*').eq('shop_id', selectedShopId),
-            supabase.from('customers').select('id, name, shop_id').eq('shop_id', selectedShopId)
+          // ③ 🚀 🆕 選択された業者だけの売上と顧客名簿を取得（1000件の壁対策済み）
+          const [salesAll, customersAll] = await Promise.all([
+            fetchAllRows(() => supabase.from('sales').select('*').eq('shop_id', selectedShopId)),
+            fetchAllRows(() => supabase.from('customers').select('id, name, shop_id').eq('shop_id', selectedShopId))
           ]);
 
-          setSalesRecords(sRes.data || []);
-          setAllCustomers(cRes.data || []);
+          setSalesRecords(salesAll);
+          setAllCustomers(customersAll);
         }
       } catch (err) {
         console.error("Fetch Error:", err);
@@ -69,8 +85,8 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
     if (!selectedShop) return [];
     return salesRecords.filter(s => {
       if (!s.sale_date || s.shop_id !== selectedShop.id) return false;
-      const d = new Date(s.sale_date);
-      return d.getFullYear() === invoiceYear && (d.getMonth() + 1) === invoiceMonth && targetCustomerIds.includes(s.customer_id);
+      const [y, m] = s.sale_date.split('-').map(Number); // 👈 修正：Dateを経由せず文字列から直接年月を取り出す
+      return y === invoiceYear && m === invoiceMonth && targetCustomerIds.includes(s.customer_id);
     });
   }, [salesRecords, targetCustomerIds, invoiceYear, invoiceMonth, selectedShop]);
 
@@ -97,7 +113,7 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
           const trimmedName = (m.name || "").trim();
           return { 
             ...m, 
-            date: s.sale_date || s.created_at.split('T')[0],
+            date: s.sale_date || s.created_at?.split('T')[0] || '',
             // 🚀 🆕 もし売上データ側にふりがなが無ければ、今名簿にある最新のふりがなを全自動でドッキング！
             kana: m.kana || kanaLookup[trimmedName] || "" 
           };

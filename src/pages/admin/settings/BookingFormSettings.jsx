@@ -105,8 +105,9 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
   const themeColor = shopData?.theme_color || '#2563eb';
   
   // 👇 🆕 追加：店舗の業種が「訪問サービス系」かどうかを判定する
+  // 🔧 修正：既に安全にパース済みの shopIndustries（配列）を使って判定する
   const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-  const isVisit = VISIT_KEYWORDS.some(keyword => (shopData?.business_type || '').includes(keyword));
+  const isVisit = shopIndustries.some(type => VISIT_KEYWORDS.some(keyword => type.includes(keyword)));
 
   useEffect(() => {
     if (shopId) {
@@ -729,14 +730,14 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                   <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: '#ef4444', marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}><AlertCircle size={14} /> 同時に選べないカテゴリ：</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '16px' }}>
                     {categories.filter(t => t.id !== c.id).map(t => {
-                      const isDis = c.disable_categories?.split(',').includes(t.name);
+                      const isDis = !!c.disable_categories?.split(',').includes(t.name);
                       return <button key={t.id} onClick={() => handleToggleDisableCat(c.id, t.name)} style={{ fontSize: '0.7rem', padding: '5px 10px', borderRadius: '15px', border: '1px solid', borderColor: isDis ? '#ef4444' : '#cbd5e1', background: isDis ? '#fee2e2' : '#fff', color: isDis ? '#ef4444' : '#475569', cursor: 'pointer' }}>{t.name}</button>
                     })}
                   </div>
                   <p style={{ fontSize: '0.75rem', fontWeight: 'bold', color: themeColor, marginBottom: '8px', display: 'flex', alignItems: 'center', gap: '4px' }}><CheckCircle2 size={14} /> セットで選ぶ必要があるカテゴリ：</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
                     {categories.filter(t => t.id !== c.id).map(t => {
-                      const isReq = c.required_categories?.split(',').includes(t.name);
+                      const isReq = !!c.required_categories?.split(',').includes(t.name);
                       return <button key={t.id} onClick={() => handleToggleRequiredCat(c.id, t.name)} style={{ fontSize: '0.7rem', padding: '5px 10px', borderRadius: '15px', border: '1px solid', borderColor: isReq ? themeColor : '#cbd5e1', background: isReq ? '#dbeafe' : '#fff', color: isReq ? themeColor : '#475569' }}>{t.name}</button>
                     })}
                   </div>

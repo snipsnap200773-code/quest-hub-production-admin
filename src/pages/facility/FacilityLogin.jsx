@@ -71,14 +71,17 @@ const FacilityLogin = () => {
     e.preventDefault();
     setIsProcessing(true);
 
-    const isEmail = loginId.includes('@');
+    // 🔧 修正：前後の余分な空白を除去してから判定・照合する（自動補完等による入力ミス対策）
+    const cleanLoginId = loginId.trim();
+    const cleanPassword = password.trim();
+    const isEmail = cleanLoginId.includes('@');
 
     if (isEmail) {
       console.log("=== 店舗/総括 認証プロセス開始 ===");
       
       const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email: loginId,
-        password: password,
+        email: cleanLoginId,
+        password: cleanPassword,
       });
 
       if (!authError && authData.user) {

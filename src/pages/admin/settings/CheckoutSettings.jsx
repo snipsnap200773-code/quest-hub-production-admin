@@ -125,11 +125,17 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
     if (editingAdjCatId) {
       const oldCat = adjCategories.find(c => c.id === editingAdjCatId);
       await supabase.from('service_categories').update(payload).eq('id', editingAdjCatId);
-      if (oldCat?.name && oldCat.name !== newAdjCatName) {
+      // 🔧 修正：同名の別カテゴリが他にもある場合、名前ベースの付け替えが別カテゴリの項目まで巻き込むため中止する
+      const sameNameOthers = adjCategories.filter(c => c.id !== editingAdjCatId && c.name === oldCat?.name).length;
+      if (oldCat?.name && oldCat.name !== newAdjCatName && sameNameOthers === 0) {
         await supabase.from('admin_adjustments').update({ category: newAdjCatName }).eq('shop_id', shopId).eq('category', oldCat.name);
       }
     } else {
-      await supabase.from('service_categories').insert([{ ...payload, sort_order: adjCategories.length }]);
+      // 🔧 修正：配列の要素数ではなく、既存の最大sort_order+1を使うことで、削除後の重複を防ぐ
+      const nextSortOrder = adjCategories.length > 0
+        ? Math.max(...adjCategories.map(c => c.sort_order ?? 0)) + 1
+        : 0;
+      await supabase.from('service_categories').insert([{ ...payload, sort_order: nextSortOrder }]);
     }
     setNewAdjCatName(''); setEditingAdjCatId(null); fetchMasterDetails(); showMsg('調整カテゴリを更新しました');
   };
@@ -142,7 +148,13 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
       is_percent: adjType === 'percent', is_minus: adjType === 'minus' || adjType === 'percent', service_id: null
     };
     if (editingAdjId) await supabase.from('admin_adjustments').update(payload).eq('id', editingAdjId);
-    else await supabase.from('admin_adjustments').insert([{ ...payload, sort_order: adjustments.length }]);
+    else {
+      // 🔧 修正：配列の要素数ではなく、既存の最大sort_order+1を使うことで、削除後の重複を防ぐ
+      const nextSortOrder = adjustments.length > 0
+        ? Math.max(...adjustments.map(a => a.sort_order ?? 0)) + 1
+        : 0;
+      await supabase.from('admin_adjustments').insert([{ ...payload, sort_order: nextSortOrder }]);
+    }
     
     setNewAdjName(''); setAdjValue(0); setEditingAdjId(null); fetchMasterDetails(); showMsg('調整項目を保存しました');
   };
@@ -275,7 +287,15 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
                   <button onClick={() => moveItem('category', adjCategories, c.id, 'up')} disabled={idx === 0} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === 0 ? 0.3 : 1 }}><ArrowUp size={16} /></button>
                   <button onClick={() => moveItem('category', adjCategories, c.id, 'down')} disabled={idx === adjCategories.length - 1} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', opacity: idx === adjCategories.length - 1 ? 0.3 : 1 }}><ArrowDown size={16} /></button>
                   <button onClick={() => { setEditingAdjCatId(c.id); setNewAdjCatName(c.name); }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#3b82f6' }}><Edit2 size={16} /></button>
-                  <button onClick={async () => { if(window.confirm('削除しますか？')){ await supabase.from('admin_adjustments').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMasterDetails(); } }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
+                  <button onClick={async () => { 
+                    // 🔧 修正：同名カテゴリが他にもある場合は、名前ベースの一括削除が別カテゴリを巻き込むため警告して止める
+                    const sameNameCount = adjCategories.filter(other => other.name === c.name).length;
+                    if (sameNameCount > 1) {
+                      alert(`「${c.name}」という名前のカテゴリが複数存在するため、安全のため削除を中止しました。\n先にカテゴリ名を重複しないように変更してから、再度削除してください。`);
+                      return;
+                    }
+                    if(window.confirm('削除しますか？')){ await supabase.from('admin_adjustments').delete().eq('category', c.name); await supabase.from('service_categories').delete().eq('id', c.id); fetchMasterDetails(); } 
+                  }} style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '6px', padding: '4px', color: '#ef4444' }}><Trash2 size={16} /></button>
                 </div>
               </div>
             ))}

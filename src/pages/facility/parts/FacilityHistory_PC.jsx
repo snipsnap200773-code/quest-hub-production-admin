@@ -6,6 +6,13 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
+// 🆕 追加：business_type（配列 or カンマ区切り文字列）を「、」区切りの読みやすい文字列に整形する
+const formatBusinessType = (bt) => {
+  if (Array.isArray(bt)) return bt.join('、');
+  if (typeof bt === 'string') return bt.split(/,|、/).map(s => s.trim()).filter(Boolean).join('、');
+  return '';
+};
+
 const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedShopId }) => {
   const [history, setHistory] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +81,8 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedSho
       const shopId = visit.shop_id;
       if (!groups[shopId]) {
         groups[shopId] = {
-          shop: visit.profiles,
+          // 👇 修正：visit.profilesがnullの場合に備え、表示用の最低限の情報を用意する
+          shop: visit.profiles || { id: shopId, business_name: '（削除された業者）', theme_color: null, business_type: '' },
           visits: [],
           totalResidents: 0
         };
@@ -106,8 +114,8 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedSho
     
     // 検索フィルタリング
     return Object.values(groups).filter(g => 
-      g.shop.business_name.includes(searchTerm) || 
-      g.visits.some(v => v.residents.some(r => r.members?.name.includes(searchTerm)))
+      (g.shop.business_name || '').includes(searchTerm) || 
+      g.visits.some(v => v.residents.some(r => (r.members?.name || '').includes(searchTerm)))
     );
   }, [history, searchTerm, sortMode]);
 
@@ -161,7 +169,7 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedSho
                   </div>
                   <div>
                     <h3 style={shopNameTitle}>{group.shop.business_name}</h3>
-                    <span style={shopTypeLabel}>{group.shop.business_type}</span>
+                    <span style={shopTypeLabel}>{formatBusinessType(group.shop.business_type)}</span>
                   </div>
                 </div>
                 
@@ -257,7 +265,7 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedSho
                     <div key={g.shop.id} style={{ marginBottom: '40px' }}>
                       <div style={{ background: '#eee', padding: '10px 15px', borderLeft: '10px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
                         <h2 style={{ margin: 0, fontSize: '15pt' }}>
-                          ■ {g.shop.business_name} <small style={{fontSize: '10pt', fontWeight: 'normal'}}>({g.shop.business_type})</small>
+                          ■ {g.shop.business_name} <small style={{fontSize: '10pt', fontWeight: 'normal'}}>({formatBusinessType(g.shop.business_type)})</small>
                         </h2>
                         <span style={{ fontSize: '11pt', fontWeight: 'bold' }}>当月実施合計：{g.totalResidents} 名</span>
                       </div>

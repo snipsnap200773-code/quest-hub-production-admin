@@ -168,7 +168,7 @@ const FacilityListUp_PC = ({
         .eq('scheduled_month', currentMonthKey); // 💡 月情報でフィルター
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
-      const [resData, connData, visitResidentsRes, visitDatesRes, otherVisits, personalRes, privateTasksRes] = await Promise.all([
+      const [resData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
         supabase
           .from('members')
           .select('*')
@@ -202,12 +202,7 @@ const FacilityListUp_PC = ({
           .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者の日程が混ざるのを防ぐ
           .gte('scheduled_date', startOfMonth)
           .lte('scheduled_date', endOfMonth)
-          .neq('status', 'canceled'),
-
-        // ③ 🆕 ショップ側の「他の予定」を取得（ availability 判定用）
-        supabase.from('visit_requests').select('scheduled_date').neq('facility_user_id', facilityId).neq('status', 'canceled'),
-        supabase.from('reservations').select('start_time, end_time').neq('status', 'canceled'),
-        supabase.from('private_tasks').select('start_time, end_time')
+          .neq('status', 'canceled')
       ]);
 
       // 🚀 4. 各メンバーの「一番新しい訪問日」を割り出す（履歴取得）
@@ -215,7 +210,8 @@ const FacilityListUp_PC = ({
         .from('visit_request_residents')
         .select('member_id, visit_requests!inner(scheduled_date)')
         .eq('status', 'completed')
-        .eq('visit_requests.facility_user_id', facilityId);
+        .eq('visit_requests.facility_user_id', facilityId)
+        .eq('visit_requests.shop_id', selectedShopId); // 👈 追加
 
       const vMap = {};
       allHistoryData?.forEach(v => {
@@ -273,8 +269,14 @@ const FacilityListUp_PC = ({
         // --------------------------------------------------
       }
 
-      const { data: keeps } = await supabase.from('keep_dates').select('*').eq('facility_user_id', facilityId);
-      const { data: excl } = await supabase.from('regular_keep_exclusions').select('excluded_date').eq('facility_user_id', facilityId);
+      const { data: keeps } = await supabase.from('keep_dates').select('*')
+        .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 追加：他の業者のキープが混ざるのを防ぐ
+        .gte('date', startOfMonth).lte('date', endOfMonth); // 👈 追加：期間を絞る
+      const { data: excl } = await supabase.from('regular_keep_exclusions').select('excluded_date')
+        .eq('facility_user_id', facilityId)
+        .eq('shop_id', selectedShopId) // 👈 追加：他の業者の除外設定が混ざるのを防ぐ
+        .gte('excluded_date', startOfMonth).lte('excluded_date', endOfMonth); // 👈 追加：期間を絞る
       setManualKeeps(keeps || []);
       setExclusions(excl?.map(e => e.excluded_date) || []);
 
@@ -312,7 +314,7 @@ const FacilityListUp_PC = ({
   const allEnsuredDates = useMemo(() => {
     if (!shopProfile) return [];
     const list = [];
-    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     const currentMonthPrefix = `${year}-${String(month + 1).padStart(2, '0')}`;
 
     // 🚀 1. まず「確定済み予約」をベースにする
@@ -350,7 +352,7 @@ const FacilityListUp_PC = ({
     const lastDate = new Date(year, month + 1, 0).getDate();
     for (let d = 1; d <= lastDate; d++) {
       const date = new Date(year, month, d);
-      const dateStr = date.toLocaleDateString('sv-SE');
+      const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
       const regTime = checkIsRegularKeep(date);
       // 🚀 修正：テストモード中、または今日以降であれば表示する
       const isTimeToShow = isTestMode || dateStr >= todayStr;
@@ -502,7 +504,7 @@ const FacilityListUp_PC = ({
     !draftList.some(d => d.member_id === r.id) && 
     !dbReservedResidents.some(db => db.member_id === r.id) && 
     (
-      r.name.includes(searchTerm) || 
+      (r.name || '').includes(searchTerm) || 
       (r.room || '').includes(searchTerm) || 
       (r.kana || '').includes(searchTerm)
     )

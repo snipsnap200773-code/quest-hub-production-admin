@@ -108,7 +108,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile, selectedShopId }) => {
         return { ...visit, residents };
       });
       setVisits(combinedData);
-      const todayStr = new Date().toLocaleDateString('sv-SE');
+      const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
       const todayVisit = combinedData.find(v => v.scheduled_date === todayStr);
       setExpandedId(todayVisit ? todayVisit.id : null);
     }
@@ -194,7 +194,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile, selectedShopId }) => {
         </div>
 
         {visits.map((visit) => {
-          const todayStr = new Date().toLocaleDateString('sv-SE');
+          const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
           const residents = visit.residents || [];
           
           // 🚀 1. フィルター（完了・待機中・キャンセルをすべて通す）

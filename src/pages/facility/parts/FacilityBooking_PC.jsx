@@ -134,13 +134,15 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
         supabase.from('keep_dates')
           .select('date, start_time')
           .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 追加：他の業者のキープが混ざるのを防ぐ
           .gte('date', startOfMonth)
-          .lte('date', endOfMonth), // 👈 追加
+          .lte('date', endOfMonth),
         supabase.from('regular_keep_exclusions')
           .select('excluded_date')
           .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 追加：他の業者の除外設定が混ざるのを防ぐ
           .gte('excluded_date', startOfMonth)
-          .lte('excluded_date', endOfMonth) // 👈 追加
+          .lte('excluded_date', endOfMonth)
       ]);
 
       setManualKeeps(keepRes.data || []);
@@ -375,6 +377,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
         await supabase.from('keep_dates')
           .delete()
           .eq('facility_user_id', facilityId)
+          .eq('shop_id', selectedShopId) // 👈 追加：他の業者のキープ枠を巻き込んで消さないように守る
           .like('date', `${targetMonthKey}%`);
       }
 

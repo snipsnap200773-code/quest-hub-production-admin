@@ -24,7 +24,15 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   // 🚀 🆕 自動スクロール用のターゲット（ボタンの位置）
   const nextStepRef = useRef(null);
 
-  const todayStr = new Date().toLocaleDateString('sv-SE');
+  const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+
+  // 👇 🆕 追加：'YYYY-MM-DD'文字列をUTCではなくローカルタイムとして解釈するヘルパー
+  // （new Date('YYYY-MM-DD')はUTC0時として解釈されるため、海外アクセス時に.getDay()等が前日を返すことがある）
+  const parseDateOnly = (dateStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, m - 1, d);
+  };
+
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
@@ -38,7 +46,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   // 🚀 🆕 【今回追加した部分】選択中の業者が変わったら、その業者の「予約制限日数」を特定してStateに入れる
   useEffect(() => {
     if (selectedShop && shops.length > 0) {
-      const currentConn = shops.find(s => s.profiles.id === selectedShop.id);
+      // 🚀 修正：profilesが取得できなかった場合のクラッシュを防止 (? を追加)
+      const currentConn = shops.find(s => s.profiles?.id === selectedShop.id);
       setAdvanceDays(currentConn?.advance_booking_days || 0);
     }
   }, [selectedShop, shops]);
@@ -55,7 +64,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   // 🚀 🆕 親画面から渡された selectedShopId に連動して、この画面の selectedShop を切り替える
   useEffect(() => {
     if (selectedShopId && shops.length > 0) {
-      const target = shops.find(s => s.profiles.id === selectedShopId);
+      // 🚀 修正：こちらも同様にオプショナルチェイニング (? を追加)
+      const target = shops.find(s => s.profiles?.id === selectedShopId);
       if (target) setSelectedShop(target.profiles);
     }
   }, [selectedShopId, shops]);
@@ -89,22 +99,32 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     setLoading(true);
     const shopId = selectedShop.id;
 
+    const monthStartStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+    const monthLastDate = new Date(year, month + 1, 0).getDate();
+    const monthEndStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(monthLastDate).padStart(2, '0')}`;
+
     const [thisFacRes, keeps, conns, exclData, otherFacRes, personalRes, privateTasksRes, staffsRes] = await Promise.all([
       // ① この施設の予約（🚀 修正：status を追加）
-      supabase.from('visit_requests').select('scheduled_date, start_time, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled'),
-      // ② 全キープ日程
-      supabase.from('keep_dates').select('*').eq('shop_id', shopId),
-      // ③ 提携ルール
+      supabase.from('visit_requests').select('scheduled_date, start_time, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled')
+        .gte('scheduled_date', monthStartStr).lte('scheduled_date', monthEndStr), // 👈 追加
+      // ② この月のキープ日程
+      supabase.from('keep_dates').select('*').eq('shop_id', shopId)
+        .gte('date', monthStartStr).lte('date', monthEndStr), // 👈 追加
+      // ③ 提携ルール（マスターデータなので絞り込み不要）
       supabase.from('shop_facility_connections').select('facility_user_id, regular_rules, assigned_staff_id').eq('shop_id', shopId),
-      // ④ 定期除外
-      supabase.from('regular_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId),
+      // ④ この月の定期除外
+      supabase.from('regular_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId)
+        .gte('excluded_date', monthStartStr).lte('excluded_date', monthEndStr), // 👈 追加
       // ⑤ 他施設の予約（他施設名義の visit_requests）
-      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled'),
-      // ⑥ 個人予約（開始・終了時間を取得）
-      supabase.from('reservations').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled'),
-      // ⑦ プライベート予定（開始・終了時間を取得）
-      supabase.from('private_tasks').select('start_time, end_time, staff_id').eq('shop_id', shopId),
-      // 👇 🌟 修正：休み情報（weekly_holidays, custom_shifts等）も含めて全て取得するため「*」に変更
+      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled')
+        .gte('scheduled_date', monthStartStr).lte('scheduled_date', monthEndStr), // 👈 追加
+      // ⑥ この月の個人予約（開始・終了時間を取得）
+      supabase.from('reservations').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled')
+        .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
+      // ⑦ この月のプライベート予定（開始・終了時間を取得）
+      supabase.from('private_tasks').select('start_time, end_time, staff_id').eq('shop_id', shopId)
+        .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
+      // 👇 🌟 修正：休み情報（weekly_holidays, custom_shifts等）も含めて全て取得するため「*」に変更（マスターデータなので絞り込み不要）
       supabase.from('staffs').select('*').eq('shop_id', shopId)
     ]);
 
@@ -171,7 +191,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     const myConn = regularRules.find(r => r.facility_user_id === facilityId);
     const assignedStaffId = myConn?.assigned_staff_id;
 
-    const d = new Date(dateStr);
+    const d = parseDateOnly(dateStr);
     const dayIndex = d.getDay();
 
     if (assignedStaffId) {
@@ -210,10 +230,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const calculateCapacity = (dateStr, startTimeStr) => {
     if (!selectedShop || !startTimeStr) return 0;
     
-    const d = new Date(dateStr);
+    const d = parseDateOnly(dateStr);
     const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = dayNames[d.getDay()];
-    const bHours = selectedShop?.business_hours || {};
 
     const toMin = (t) => {
       const [h, m] = t.split(':').map(Number);
@@ -272,7 +291,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
     // 🚀 【修正】その日の営業時間を取得（open / close に対応）
     const bHours = selectedShop?.business_hours || {};
-    const d = new Date(dateStr);
+    const d = parseDateOnly(dateStr);
     const dayNames = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = dayNames[d.getDay()];
     
@@ -312,7 +331,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
 
   // --- 4. カレンダーの表示状態決定ロジック ---
   const getStatus = (dateStr) => {
-    const d = new Date(dateStr);
+    const d = parseDateOnly(dateStr);
     const regKeep = checkIsRegularKeep(d);
     
     // 🚀 修正：テストモードがOFFの時だけ、過去日をロックする
@@ -333,10 +352,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     // 🚀 3. 予約制限日や定休日の判定（ここからは既存のまま）
     const limitDate = new Date();
     limitDate.setDate(new Date().getDate() + advanceDays);
-    const limitDateStr = limitDate.toLocaleDateString('sv-SE');
+    const limitDateStr = limitDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     // 🚀 修正：テストモードがOFFの時だけ、予約制限（受付終了）をロックする
     if (!isTestMode && dateStr < limitDateStr) return 'limit-closed';
-    if (dateStr < limitDateStr) return 'limit-closed';
 
     const specialHolidays = selectedShop?.special_holidays || [];
     if (specialHolidays.some(h => dateStr >= h.start && dateStr <= h.end)) return 'ng';
@@ -407,7 +425,7 @@ if (regKeep && !isExcludedForThisShop) {
     keepDates
       .filter(k => k.facility_user_id === facilityId && k.date.startsWith(currentMonthPrefix))
       .forEach(k => {
-        const d = new Date(k.date);
+        const d = parseDateOnly(k.date);
         const regKeep = checkIsRegularKeep(d); // その日が定期ルールの対象日かチェック
         
         // 定期ルールの日なら true（定期）、違うなら false（単発）にする
@@ -417,14 +435,15 @@ if (regKeep && !isExcludedForThisShop) {
     days.forEach(day => {
       if (!day) return;
       const dStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-      const regKeep = checkIsRegularKeep(new Date(dStr));
+      const regKeep = checkIsRegularKeep(parseDateOnly(dStr));
       const isAlreadyBooked = confirmedVisits.some(v => v.scheduled_date === dStr);
       
       // 🚀 🆕 既存のキープデータから開始時間を特定
       const manualKeep = keepDates.find(k => k.date === dStr && k.facility_user_id === facilityId);
       const activeStartTime = manualKeep?.start_time || (regKeep?.keeperId === facilityId ? regKeep.time : '09:00');
 
-      if (regKeep && regKeep.keeperId === facilityId && !exclusions.includes(dStr) && !isAlreadyBooked) {
+      const isExcludedForThisFacility = exclusions.some(e => e.excluded_date === dStr && e.facility_user_id === facilityId); // 👈 追加
+      if (regKeep && regKeep.keeperId === facilityId && !isExcludedForThisFacility && !isAlreadyBooked) {
         if (!list.some(k => k.date === dStr)) {
           list.push({ 
             date: dStr, 
@@ -472,7 +491,7 @@ if (regKeep && !isExcludedForThisShop) {
         dateStr, 
         // 優先順位：1.選択中の時間(statusData.time) 2.確定済みの時間(confirmedTime) 3.デフォルト
         currentTime: (typeof statusData === 'object' ? statusData.time : confirmedTime) || '09:00',
-        isRegular: !!checkIsRegularKeep(new Date(dateStr))
+        isRegular: !!checkIsRegularKeep(parseDateOnly(dateStr))
       });
     } else {
       // (空き日をクリックした時の既存ロジックはそのまま)

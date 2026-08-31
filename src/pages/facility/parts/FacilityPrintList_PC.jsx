@@ -2,6 +2,29 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { Printer, Building2, ChevronRight, Loader2, Square, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
+// 🆕 追加：business_type（配列 or カンマ区切り文字列）を「、」区切りの読みやすい文字列に整形する
+const formatBusinessType = (bt) => {
+  if (Array.isArray(bt)) return bt.join('、');
+  if (typeof bt === 'string') return bt.split(/,|、/).map(s => s.trim()).filter(Boolean).join('、');
+  return '';
+};
+
+// 🆕 追加：.range()でページングしながら「本当に全件」取得するヘルパー
+const fetchAllRows = async (queryFactory) => {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await queryFactory().range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+};
+
 const FacilityPrintList_PC = ({ facilityId, isMobile, selectedShopId }) => {
   const [selectedShop, setSelectedShop] = useState(null);
   const [members, setMembers] = useState([]);
@@ -35,18 +58,26 @@ const FacilityPrintList_PC = ({ facilityId, isMobile, selectedShopId }) => {
     setSelectedShop(shop);
 
     // 2. メンバー、印刷対象メニュー、訪問履歴を並列取得
-    const [memRes, servRes, histRes] = await Promise.all([
-      supabase.from('members').select('*').eq('facility_user_id', facilityId).order('floor', { ascending: true }).order('room', { ascending: true }),
-      supabase.from('services').select('*').eq('shop_id', selectedShopId).eq('show_on_print', true), // 👈 🚀 🆕 親からの selectedShopId で絞り込み
-      supabase.from('visit_request_residents').select('member_id, completed_at, visit_requests!inner(shop_id)').eq('status', 'completed').eq('visit_requests.shop_id', selectedShopId).order('completed_at', { ascending: false })
+    const [memRes, servRes] = await Promise.all([
+      supabase.from('members').select('*').eq('facility_user_id', facilityId).eq('is_active', true).order('floor', { ascending: true }).order('room', { ascending: true }),
+      supabase.from('services').select('*').eq('shop_id', selectedShopId).eq('show_on_print', true)
     ]);
+
+    // 🚀 1000件の壁対策：訪問履歴だけページングして全件取得
+    const histData = await fetchAllRows(() =>
+      supabase.from('visit_request_residents')
+        .select('member_id, completed_at, visit_requests!inner(shop_id)')
+        .eq('status', 'completed')
+        .eq('visit_requests.shop_id', selectedShopId)
+        .order('completed_at', { ascending: false })
+    );
 
     setServices(servRes.data || []);
     setMembers(memRes.data || []);
 
     const visitMap = {};
-    histRes.data?.forEach(h => { 
-      if (!visitMap[h.member_id]) visitMap[h.member_id] = h.completed_at.split('T')[0].slice(5).replace('-', '/'); 
+    histData?.forEach(h => { 
+      if (!visitMap[h.member_id] && h.completed_at) visitMap[h.member_id] = h.completed_at.split('T')[0].slice(5).replace('-', '/'); 
     });
     setLastVisits(visitMap);
     
@@ -107,7 +138,7 @@ const FacilityPrintList_PC = ({ facilityId, isMobile, selectedShopId }) => {
 
         <div style={mRemoteCard}>
           <div style={mRemoteHeader}>
-            <div style={shopBadge(selectedShop.theme_color)}>{selectedShop.business_type}</div>
+            <div style={shopBadge(selectedShop.theme_color)}>{formatBusinessType(selectedShop.business_type)}</div>
             <h2 style={{margin:'10px 0 0', fontSize:'1.4rem'}}>{selectedShop.business_name}</h2>
             <p style={{color:'#64748b', fontSize:'0.85rem'}}>掲示用名簿の印刷準備が完了しました</p>
           </div>

@@ -143,9 +143,6 @@ const AdminDashboard = () => {
     transition: 'all 0.2s'
   };
 
-  // ロード中は何も出さない
-  if (isLoading) return null;
-
   // ロード中、または未認証時は何も出さない（navigate で飛ばされるため）
   if (isLoading || !isAuthorized) return null;
 
@@ -205,10 +202,12 @@ const AdminDashboard = () => {
       {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
       {(() => {
         if (shopData?.subscription_status !== 'trialing' || !shopData?.trial_ends_at) return null;
+        // 🔧 修正：時刻を含めた差分だと実行タイミングで日数がブレるため、日付同士（0時基準）で差分を取る
         const endsAt = new Date(shopData.trial_ends_at);
+        const endsAtZero = new Date(endsAt.getFullYear(), endsAt.getMonth(), endsAt.getDate());
         const now = new Date();
-        const diffTime = endsAt.getTime() - now.getTime();
-        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        const todayZero = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const diffDays = Math.round((endsAtZero.getTime() - todayZero.getTime()) / (1000 * 60 * 60 * 24));
 
         // 残り7日以下で表示
         if (diffDays <= 7 && diffDays >= 0) {

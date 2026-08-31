@@ -68,6 +68,10 @@ const parseReservationDetails = (res) => {
   };
 };
 
+// 🔧 追加：日本時間（Asia/Tokyo）に固定して日付文字列を取得するヘルパー関数
+// 端末のローカルタイムゾーンに依存すると、海外アクセス時に「今日」の判定がズレるため必須
+const getJapanDateStr = (date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+
 // 🆕 追加：定休日かどうかを判定するヘルパー関数（エラー解決用）
 const isShopHoliday = (shop, date) => {
   if (!shop?.business_hours?.regular_holidays) return false;
@@ -87,7 +91,7 @@ const isShopHoliday = (shop, date) => {
   if (isRegular) return true;
 
   if (shop.special_holidays && Array.isArray(shop.special_holidays)) {
-    const dStr = date.toLocaleDateString('sv-SE');
+    const dStr = getJapanDateStr(date);
     const isSpecial = shop.special_holidays.some(h => dStr >= h.start && dStr <= h.end);
     if (isSpecial) return true;
   }
@@ -315,7 +319,7 @@ function AdminTimeline() {
   const [selectedDate, setSelectedDate] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     const dateParam = params.get('date');
-    return dateParam || new Date().toLocaleDateString('sv-SE');
+    return dateParam || getJapanDateStr(new Date());
   });
   const [categoryMap, setCategoryMap] = useState({});
 
@@ -374,7 +378,8 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   // 店舗が持っている業種を配列化
   const shopIndustries = useMemo(() => {
     if (!shop?.business_type) return [];
-    return shop.business_type.split(',').map(s => s.trim()).filter(Boolean);
+    if (Array.isArray(shop.business_type)) return shop.business_type;
+    return shop.business_type.split(/,|、/).map(s => s.trim()).filter(Boolean);
   }, [shop]);
 
   // 選択されたタブに応じてスタッフを絞り込む
@@ -437,20 +442,20 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   const goPrev = () => { 
     scrolledForReserveRef.current = false; // 🌟 スイッチを解除
     const d = new Date(selectedDate); d.setDate(d.getDate() - 1); 
-    const dStr = d.toLocaleDateString('sv-SE');
+    const dStr = getJapanDateStr(d);
     setSelectedDate(dStr);
     navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
   };
   const goNext = () => { 
     scrolledForReserveRef.current = false; // 🌟 スイッチを解除
     const d = new Date(selectedDate); d.setDate(d.getDate() + 1); 
-    const dStr = d.toLocaleDateString('sv-SE');
+    const dStr = getJapanDateStr(d);
     setSelectedDate(dStr);
     navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
   };
   const goToday = () => { 
     scrolledForReserveRef.current = false; // 🌟 スイッチを解除
-    const dStr = new Date().toLocaleDateString('sv-SE');
+    const dStr = getJapanDateStr(new Date());
     setSelectedDate(dStr);
     navigate(`/admin/${shopId}/timeline?date=${dStr}`, { replace: true, state: {} }); // 🌟 リセットして遷移
   };
@@ -611,20 +616,29 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
     // 👇 🌟 🆕 ここから追加：アラートバナー用の「未来の全データ」取得と集計ロジック
     const today = new Date();
-    const todayStr = today.toLocaleDateString('sv-SE');
+    const todayStr = getJapanDateStr(today);
     const [allKeepRes, allVisitRes, exclRes] = await Promise.all([
       supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
       supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
-      supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId)
+      // 🔧 修正：このデータは今日から90日先までのスキャンにしか使われないため、todayStr以降に絞り込む（1000件の壁の予備軍対策）
+      supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId).gte('excluded_date', todayStr)
     ]);
+
+    // 🔧 修正：時間帯のズレによる日数計算の誤差を防ぐため、日付同士を0時に揃えてから差分を出す
+    const getSafeDiffDays = (dStr) => {
+      const t = new Date();
+      const todayZero = new Date(t.getFullYear(), t.getMonth(), t.getDate());
+      const [y, m, d] = dStr.split('-').map(Number);
+      const targetZero = new Date(y, m - 1, d);
+      return Math.round((targetZero.getTime() - todayZero.getTime()) / 86400000);
+    };
 
     const irregularList = []; const urgentList = []; const timeChangedList = []; const processedKeys = new Set();
     (allKeepRes.data || []).forEach(k => {
       processedKeys.add(`${k.facility_user_id}_${k.date}`);
       const isBooked = (allVisitRes.data || []).some(v => (v.status === 'confirmed' || v.status === 'completed') && v.facility_user_id === k.facility_user_id && v.scheduled_date === k.date);
       if (isBooked) return;
-      const dObj = new Date(k.date);
-      const diffDays = Math.round((dObj.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)); 
+      const diffDays = getSafeDiffDays(k.date);
       if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...k, diffDays });
       else irregularList.push({ ...k });
     });
@@ -633,7 +647,7 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
       if (!conn.regular_rules) return;
       let scanDate = new Date(today);
       for (let i = 0; i < 90; i++) {
-        const dStr = scanDate.toLocaleDateString('sv-SE');
+        const dStr = getJapanDateStr(scanDate);
         const comboKey = `${conn.facility_user_id}_${dStr}`;
         if (!processedKeys.has(comboKey)) {
            const day = scanDate.getDay(); const dom = scanDate.getDate(); const m = scanDate.getMonth() + 1;
@@ -644,7 +658,7 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
               const isBooked = (allVisitRes.data || []).some(v => v.facility_user_id === conn.facility_user_id && v.scheduled_date === dStr);
               if (!isBooked) {
                  const fakeKeep = { id: `reg-${conn.facility_user_id}-${dStr}`, date: dStr, facility_user_id: conn.facility_user_id, facility_users: conn.facility_users, isRegular: true };
-                 const diffDays = Math.round((scanDate.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+                 const diffDays = getSafeDiffDays(dStr);
                  if (diffDays >= 0 && diffDays <= 3) urgentList.push({ ...fakeKeep, diffDays });
               }
            }
@@ -665,10 +679,34 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   // 🚀 🆕 ここから追加：検索＆カレンダーを動かすためのロジック群
   // =========================================================
   const fetchAllCustomersForSearch = async () => {
-    const { data } = await supabase.from('customers').select('*').eq('shop_id', shopId).order('furigana', { ascending: true });
-    if (data) {
+    // 🔧 修正：1000件の壁を回避するため、.range()で1000件ずつページングして全件取得する
+    const PAGE_SIZE = 1000;
+    let allData = [];
+    let from = 0;
+    while (true) {
+      const { data: page, error } = await supabase
+        .from('customers')
+        .select('*')
+        .eq('shop_id', shopId)
+        .order('furigana', { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) {
+        console.error('顧客一覧の取得に失敗しました:', error.message);
+        break;
+      }
+      if (!page || page.length === 0) break;
+
+      allData = allData.concat(page);
+
+      // 取得件数がページサイズ未満なら、それが最後のページ
+      if (page.length < PAGE_SIZE) break;
+      from += PAGE_SIZE;
+    }
+
+    if (allData.length > 0) {
       const uniqueMap = new Map();
-      data.forEach(c => {
+      allData.forEach(c => {
         const nameKey = (c.name || "").trim();
         if (!uniqueMap.has(nameKey) || (c.address && !uniqueMap.get(nameKey).address)) uniqueMap.set(nameKey, c);
       });
@@ -1213,7 +1251,7 @@ const timeSlots = useMemo(() => {
 
       // 👇 🌟 修正②：通常の画面移動時（ねじ込み直後以外）
       const now = new Date();
-      const todayStr = now.toLocaleDateString('sv-SE');
+      const todayStr = getJapanDateStr(now);
       
       if (selectedDate === todayStr) {
         const currentTimeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
@@ -2553,9 +2591,9 @@ const timeSlots = useMemo(() => {
               
               {miniCalendarDays.map((date, i) => {
                 if (!date) return <div key={i} />;
-                const dStr = date.toLocaleDateString('sv-SE');
+                const dStr = getJapanDateStr(date);
                 const isSelected = dStr === selectedDate;
-                const isToday = dStr === new Date().toLocaleDateString('sv-SE');
+                const isToday = dStr === getJapanDateStr(new Date());
                 const summary = getDayEventSummary(date);
 
                 return (

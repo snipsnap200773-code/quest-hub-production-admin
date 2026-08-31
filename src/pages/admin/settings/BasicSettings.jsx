@@ -344,7 +344,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       image_url: imageUrl, 
       official_url: officialUrl,
       base_address: baseAddress,
-      minutes_per_km: minutesPerKm,
+      minutes_per_km: Number(minutesPerKm) || 3, // 🔧 修正：文字列のまま保存されるのを防ぎ、数値に統一する
 
       // 🆕 保存対象に追加
       catchphrase,
@@ -511,11 +511,11 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
                     key={label}
                     type="button"
                     onClick={() => {
-                      setBusinessType(prev => {
-                        const newArr = isActive ? prev.filter(t => t !== label) : [...prev, label];
-                        setSubBusinessType(''); // 大カテゴリが変わったら小カテゴリを一旦リセット
-                        return newArr;
-                      });
+                      // 🔧 修正：setState の更新関数の中で別のStateを更新するのは避け、
+                      // 計算とその後の副作用（別Stateの更新）を分離する
+                      const newArr = isActive ? businessType.filter(t => t !== label) : [...businessType, label];
+                      setBusinessType(newArr);
+                      setSubBusinessType(''); // 大カテゴリが変わったら小カテゴリを一旦リセット
                     }}
                     style={{
                       padding: '8px 12px', borderRadius: '10px', fontSize: '0.85rem', fontWeight: 'bold', cursor: 'pointer',
@@ -758,7 +758,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 <input 
                   type="number" 
                   value={minutesPerKm} 
-                  onChange={(e) => setMinutesPerKm(e.target.value)} 
+                  onChange={(e) => setMinutesPerKm(e.target.value === '' ? '' : Number(e.target.value))} 
                   style={{ ...inputStyle, width: '80px', textAlign: 'center' }} 
                 />
                 <span style={{ fontSize: '0.85rem' }}>分で移動</span>
