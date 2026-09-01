@@ -778,10 +778,23 @@ setSalesRecords(salesData || []);
         // カレンダー上の名前から「様」やスペースを徹底お掃除
         const cleanSearchName = fullResData.customer_name.replace(/様$/g, '').replace(/[\s ]+/g, '').trim();
         
-        // 自店の全顧客を引っ張ってきて、プログラム側で文字掃除しながら安全にマージする
-        const { data: allCusts } = await supabase.from('customers').select('*').eq('shop_id', shopId);
+        // 🛡️ 修正：1000件の壁を越えて自店の全顧客を安全に取得（ページング）
+        const pageSize = 1000;
+        let page = 0;
+        let allCusts = [];
+        while (true) {
+          const { data } = await supabase
+            .from('customers')
+            .select('*')
+            .eq('shop_id', shopId)
+            .range(page * pageSize, page * pageSize + pageSize - 1);
+          if (!data || data.length === 0) break;
+          allCusts = allCusts.concat(data);
+          if (data.length < pageSize) break;
+          page++;
+        }
         
-        if (allCusts) {
+        if (allCusts.length > 0) {
           cust = allCusts.find(c => {
             const cleanMasterName = (c.name || '').replace(/様$/g, '').replace(/[\s ]+/g, '').trim();
             const cleanAdminName = (c.admin_name || '').replace(/様$/g, '').replace(/[\s ]+/g, '').trim();
@@ -844,7 +857,8 @@ setSalesRecords(salesData || []);
           .order('start_time', { ascending: false });
           
         if (cust?.id) {
-          resQuery = resQuery.or(`customer_id.eq.${cust.id},customer_name.eq.${searchName}`);
+          // 🛡️ IDが判明している場合はIDのみで絞り込む（名前が一致するだけの別人の履歴が混ざるのを防ぐ）
+          resQuery = resQuery.eq('customer_id', cust.id);
         } else {
           resQuery = resQuery.eq('customer_name', searchName);
         }
@@ -1038,11 +1052,10 @@ setSalesRecords(salesData || []);
           }
         }
         
-        // 🌟 合流し終えた enrichedHistory を流し込みます
-        setCustomerHistory((historyData || []).map(v => ({ 
+        // 🛡️ 修正：合流前の historyData ではなく、計算済みの enrichedHistory を使う
+        setCustomerHistory(enrichedHistory.map(v => ({ 
           ...v, 
           start_time: v.scheduled_date,
-          // 🚀 履歴ポップアップで使うためにここで結合したデータをvの中に保持させる
           sale_record: v.sale_record 
         })));
       } else {

@@ -74,7 +74,8 @@ const AdminFacilityVisit_PC = () => {
 
     if (adminOptions.length > 0) {
       // 枝メニューがあれば、一旦ポップアップへ
-      setPendingSelection({ residentId, service, adminOptions });
+      // 🛡️ originalMenuName を渡し忘れると、確定時に "undefined（○○）" として保存されてしまうため必ずセットする
+      setPendingSelection({ residentId, service, adminOptions, originalMenuName: service.name });
       setShowSubMenuModal(true);
     } else {
       // なければ、これまでの通り親メニュー名で即更新
@@ -1103,8 +1104,8 @@ const AdminFacilityVisit_PC = () => {
                     }}
                     style={{
                       padding: '20px 10px', borderRadius: '18px', border: '1px solid #e2e8f0',
-                      background: targetResident.menu_name.includes(s.name) ? `${themeColor}15` : '#f8fafc',
-                      color: targetResident.menu_name.includes(s.name) ? themeColor : '#1e293b',
+                      background: (targetResident.menu_name || '').includes(s.name) ? `${themeColor}15` : '#f8fafc',
+                      color: (targetResident.menu_name || '').includes(s.name) ? themeColor : '#1e293b',
                       fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer'
                     }}
                   >

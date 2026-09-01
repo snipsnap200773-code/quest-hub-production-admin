@@ -315,7 +315,7 @@ fetchPreviousAddress();
       const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${visitorZip}`);
       const data = await res.json();
 
-      if (data.results) {
+      if (data.results && data.results.length > 0) {
         // 3. 成功したら住所をセット
         const { address1, address2, address3 } = data.results[0];
         const fullAddress = `${address1}${address2}${address3}`;
@@ -1023,10 +1023,10 @@ const handleNextStep = (input = null) => {
                                             }}
                                           >
                                             <span style={{ lineHeight: '1.2', display: 'block' }}>
-  {opt.option_name.split('/').map((text, i) => (
+  {(opt.option_name || '').split('/').map((text, i) => (
     <React.Fragment key={i}>
       {text.trim()}
-      {i < opt.option_name.split('/').length - 1 && <br />}
+      {i < (opt.option_name || '').split('/').length - 1 && <br />}
     </React.Fragment>
   ))}
 </span>

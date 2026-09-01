@@ -227,7 +227,7 @@ function AdminManagement() {
       const facilityIds = [...new Set(visitsData.map(v => v.facility_user_id))].filter(Boolean);
 
       // --- 3. 売上・顧客名簿・マスターを取得（常に自店のみ） ---
-      const [catRes, servRes, adjRes, prodRes, sDataRes, custAllRes, membersRes, staffsRes] = await Promise.all([
+      const [catRes, servRes, adjRes, prodRes, sDataRes, allCustomersData, membersRes, staffsRes] = await Promise.all([
         supabase.from('service_categories').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         supabase.from('services').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         supabase.from('admin_adjustments').select('*').eq('shop_id', cleanShopId),
@@ -240,11 +240,8 @@ function AdminManagement() {
           .gte('sale_date', startOfYear)
           .lte('sale_date', endOfYear),
         
-        // 👤 顧客名簿：自分の店のみ
-        supabase.from('customers')
-          .select('*')
-          .eq('shop_id', cleanShopId) // 👈 .in ではなく .eq
-          .order('last_arrival_at', { ascending: false }),
+        // 👤 顧客名簿：自分の店のみ（1000件の壁を越えてページングで全件取得）
+        fetchAllCustomers(cleanShopId),
         
         facilityIds.length > 0 
           ? supabase.from('members').select('*').in('facility_user_id', facilityIds)
@@ -302,7 +299,7 @@ function AdminManagement() {
       setAdminAdjustments(adjRes.data || []);
       setProducts(prodRes.data || []);
       setSalesRecords(sDataRes.data || []); 
-      setAllCustomers(custAllRes.data || []); 
+      setAllCustomers(allCustomersData || []); 
       setAllMembers(membersRes.data || []);
       setStaffs(staffsRes.data || []);
 
@@ -601,12 +598,32 @@ const completePayment = async () => {
       const dbMenuName = branchNames.length > 0 ? `${currentBaseName}（${branchNames.join(', ')}）` : currentBaseName;
 
       // --- ステップA：顧客名簿の更新（常に自店） ---
-      const { data: currentMaster } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', cleanShopId)
-        .eq('name', normalizedName)
-        .maybeSingle();
+      // 🛡️ 修正：名前の完全一致だけで既存顧客を確定すると、同姓同名の別人のプロフィールへ
+      // 今回のお会計情報を誤って上書き保存してしまう危険がある。
+      // 「今のカルテに既にIDが紐付いている場合」を最優先で信頼し、
+      // それが無い場合のみ「名前＋電話番号」が一致した時だけ同一人物とみなす。
+      const normalizedResPhone = selectedRes.customer_phone?.replace(/[^0-9]/g, '') || '';
+      const candidatePhone = (editFields.phone?.replace(/[^0-9]/g, '')) || normalizedResPhone;
+
+      let currentMaster = null;
+      if (selectedCustomer?.id) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('shop_id', cleanShopId)
+          .eq('id', selectedCustomer.id)
+          .maybeSingle();
+        currentMaster = data;
+      } else if (candidatePhone) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('shop_id', cleanShopId)
+          .eq('name', normalizedName)
+          .eq('phone', candidatePhone) // 👈 名前だけでなく電話番号も一致させる
+          .maybeSingle();
+        currentMaster = data;
+      }
 
       const finalTargetId = currentMaster?.id || selectedCustomer?.id;
 
@@ -616,7 +633,7 @@ const completePayment = async () => {
         admin_name: normalizedName,
         // 入力があれば採用、なければDBの既存データを維持（これで消えません！）
         furigana: editFields.furigana?.trim() || currentMaster?.furigana || null,
-        phone: (editFields.phone?.replace(/[^0-9]/g, '')) || currentMaster?.phone || (selectedRes.customer_phone?.replace(/[^0-9]/g, '')) || null,
+        phone: candidatePhone || currentMaster?.phone || null,
         email: editFields.email?.trim() || currentMaster?.email || null,
         address: editFields.address?.trim() || currentMaster?.address || null,
         zip_code: editFields.zip_code?.trim() || currentMaster?.zip_code || null,
@@ -1251,8 +1268,12 @@ const sortedAllCustomers = useMemo(() => {
       } else {
         // 個人の履歴
         let resQuery = supabase.from('reservations').select('*, staffs(name)').eq('shop_id', cleanShopId).in('status', ['completed', 'canceled']).order('start_time', { ascending: false });
-        if (currentCustomer.id) resQuery = resQuery.or(`customer_id.eq.${currentCustomer.id},customer_name.eq.${searchName}`);
-        else resQuery = resQuery.eq('customer_name', searchName);
+        if (currentCustomer.id) {
+          // 🛡️ 修正：顧客IDが判明している場合はIDのみで絞り込む（名前が一致するだけの別人の履歴が混ざるのを防ぐ）
+          resQuery = resQuery.eq('customer_id', currentCustomer.id);
+        } else {
+          resQuery = resQuery.eq('customer_name', searchName);
+        }
         const { data } = await resQuery;
         historyData = data || [];
       }

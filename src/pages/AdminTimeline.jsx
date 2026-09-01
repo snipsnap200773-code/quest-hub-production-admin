@@ -274,11 +274,6 @@ function AdminTimeline() {
           }
         }
         
-        // カレンダー画面(AdminReservations)用の即時非表示処理（エラー防止付き）
-        if (typeof setVisitRequests === 'function') {
-          setVisitRequests(prev => prev.filter(v => v.id !== id));
-        }
-
       } else {
         // 🆕 追加：facility_user_id（id）が無いのに削除を投げると400になるためガード
         if (!id) {
@@ -729,8 +724,9 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
     setSelectedCustomer(latestCust);
     setSelectedRes({ res_type: 'normal', customer_id: latestCust.id, customer_name: latestCust.name, status: 'completed' });
 
+    // 🛡️ この関数は検索結果一覧から選ばれた「IDが確定済み」の顧客なので、IDのみで絞り込む
     const { data } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', shopId)
-      .or(`customer_id.eq.${latestCust.id},customer_name.eq.${latestCust.name}`).order('start_time', { ascending: false });
+      .eq('customer_id', latestCust.id).order('start_time', { ascending: false });
       
     setCustomerHistory(data || []);
     setSearchTerm('');
@@ -884,7 +880,7 @@ const finalizeOpenDetail = async (res, cust) => {
       .select('*, staffs(name)')
       .eq('shop_id', shopId)
       .eq('res_type', 'normal')
-      .or(`customer_name.eq."${res.customer_name}"${cust?.id ? `,customer_id.eq.${cust.id}` : ''}`)
+      .or(cust?.id ? `customer_id.eq.${cust.id}` : `customer_name.eq."${res.customer_name}"`)
       .order('start_time', { ascending: false });
 
     setCustomerHistory(history || []);

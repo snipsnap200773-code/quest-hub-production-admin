@@ -91,18 +91,22 @@ function TimeSelectionCalendar() {
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       // 🆕 修正：端末・ブラウザのタイムゾーンに依存せず、必ず「日本時間の今日」を基準にする
       const todayStr = new Date().toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+      // 🛡️ 修正：日時カラム（timestamptz）と比較する際は、日本時間の「0時0分」を明示したISO文字列を使う。
+      // 日付だけの文字列（オフセットなし）だとUTCとして解釈され、日本時間0:00〜9:00の予約が
+      // 絞り込みから漏れてダブルブッキングにつながるため。
+      const todayJstMidnightISO = `${todayStr}T00:00:00+09:00`;
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
-        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds).gte('start_time', todayStr), // 👈 🚀 追加
-        supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 🚀 追加
-        supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 🚀 追加
+        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
+        supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 date型カラムなのでそのままでOK
+        supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 定期ルール
         supabase.from('shop_facility_connections').select('regular_rules').in('shop_id', targetShopIds).eq('status', 'active'),
         // ルール除外日
-        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 🚀 追加
+        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 🚀 🆕 追加：プライベート予定もデータベースから取ってくる
-        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds).gte('start_time', todayStr) // 👈 🚀 追加
+        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO) // 👈 🚀 追加
       ]);
         
       setExistingReservations(resRes.data || []);
@@ -166,7 +170,7 @@ function TimeSelectionCalendar() {
     const regularHolidaysSettings = shop.business_hours.regular_holidays;
 
     // --- 🚀 🆕 祝日判定（APIデータ連動版） ---
-    const dateStr = date.toLocaleDateString('sv-SE'); // "2026-04-29" の形式に変換
+    const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     const isPublicHoliday = !!holidays[dateStr];     // 祝日リストにこの日付があれば true
     
     // 設定1：営業日でも祝日は「定休日」にする場合
@@ -209,14 +213,14 @@ function TimeSelectionCalendar() {
   // 1. 長期休暇（夏休み・正月休みなど）の判定
   const checkIsSpecialHoliday = (date) => {
     if (!shop?.special_holidays || !Array.isArray(shop.special_holidays)) return false;
-    const targetDateStr = date.toLocaleDateString('sv-SE');
+    const targetDateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     return shop.special_holidays.some(h => targetDateStr >= h.start && targetDateStr <= h.end);
   };
 
   // 2. 定期キープ（第n月曜など）の対象日か判定
   const checkIsRegularKeepDay = (date) => {
     if (!regularKeepRules || regularKeepRules.length === 0) return false;
-    const dateStr = date.toLocaleDateString('sv-SE');
+    const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     // 除外設定がある日はスルー
     if (exclusions.includes(dateStr)) return false;
 
@@ -244,7 +248,7 @@ function TimeSelectionCalendar() {
     let isOff = staff?.weekly_holidays?.includes(dayIndex);
     
     // 🚀 🆕 カスタムシフト（シフト休・出勤）の判定を追加
-    const dateStr = date.toLocaleDateString('sv-SE');
+    const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     const shift = staff?.custom_shifts?.[dateStr];
     if (shift) {
       if (shift.type === 'off') {
@@ -292,7 +296,7 @@ const checkAvailability = (date, timeStr) => {
     }).map(s => s.id);
 
     // --- 🚀 1. 判定に必要な変数を最初にすべて定義する ---
-    const dateStr = date.toLocaleDateString('sv-SE'); // YYYY-MM-DD
+    const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
     const now = new Date();
     // 🆕 修正：常に日本時間基準で「今日」を判定する（タイムゾーンのズレによる誤判定防止）
     const todayStr = now.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
@@ -496,7 +500,7 @@ const checkAvailability = (date, timeStr) => {
 
   // 🚀 🆕 追加：その日が「なぜ予約できないか」の理由メッセージを取得する
   const getUnavailabilityMessage = (date) => {
-    const dateStr = date.toLocaleDateString('sv-SE');
+    const dateStr = date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
     // 👇 🌟 🆕 追加：メッセージ取得時も対象スタッフを絞り込む
     const targetIndustries = location.state?.targetIndustries || [];
@@ -740,7 +744,7 @@ const checkAvailability = (date, timeStr) => {
               {(() => {
           const selectedServices = (people || []).flatMap(p => p.services || []);
           const hasRestrictedMenu = selectedServices.some(s => s.restricted_hours && s.restricted_hours.length > 0);
-          const dateStr = selectedDate.toLocaleDateString('sv-SE');
+          const dateStr = selectedDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
           // 🚀 🆕 A: その日の「忙しい時間（予約・ブロック・休憩・予定）」をリスト化
           const dayOfWeek = ['sun','mon','tue','wed','thu','fri','sat'][selectedDate.getDay()];
@@ -806,7 +810,7 @@ const checkAvailability = (date, timeStr) => {
 
   const interval = shop?.slot_interval_min || 15; 
   const myDuration = totalSlotsNeeded * interval; 
-  const dateStr = selectedDate.toLocaleDateString('sv-SE');
+  const dateStr = selectedDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
   
   const startMs = new Date(`${dateStr}T${time}:00+09:00`).getTime();
   const endMs = startMs + (myDuration * 60000);
@@ -908,7 +912,7 @@ const checkAvailability = (date, timeStr) => {
               // 🆕 1. 施設予約モード（mode: 'facility'）の場合
               if (location.state?.mode === 'facility') {
                 const { facilityUserId, requestId, selectedResidentIds } = location.state;
-                const dateStr = selectedDate.toLocaleDateString('sv-SE');
+                const dateStr = selectedDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
                 try {
                   let targetRequestId = requestId;
@@ -963,7 +967,7 @@ const checkAvailability = (date, timeStr) => {
               navigate(`/shop/${shopId}/confirm${window.location.search}`, { 
                 state: { 
                   ...location.state, 
-                  date: selectedDate.toLocaleDateString('sv-SE'), 
+                  date: selectedDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }), 
                   time: selectedTime, 
                   staffId: targetStaff?.id || staffIdFromUrl || location.state?.staffId 
                 } 

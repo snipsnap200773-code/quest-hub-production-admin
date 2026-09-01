@@ -62,6 +62,11 @@ const getKanaGroup = (kana) => {
   return "その他";
 };
 
+// 追加：端末のタイムゾーンに依存せず、常に日本時間（Asia/Tokyo）で「今日の日付」を取得する
+const getJSTDateStr = (d = new Date()) => {
+  return new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(d);
+};
+
 const TodayTasks = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -102,7 +107,7 @@ const TodayTasks = () => {
   const [isSavingMemo, setIsSavingMemo] = useState(false);
 
   const [tasks, setTasks] = useState([]);
-  const [targetDate, setTargetDate] = useState(new Date().toLocaleDateString('sv-SE'));
+  const [targetDate, setTargetDate] = useState(getJSTDateStr());
   const [oldestIncompleteDate, setOldestIncompleteDate] = useState(null);
   const [shopData, setShopData] = useState(null);
   const [isAutoProcessing, setIsAutoProcessing] = useState(false);
@@ -272,8 +277,8 @@ const { data: resData, error: resError } = await supabase
   .select('*, customers(name, admin_name, memo), staffs(name)') // 🚀 🆕 staffs(name) を追加
   .eq('shop_id', shopId)
       .neq('status', 'canceled') // 🚀 追記：キャンセルされた個人予約を除外
-      .gte('start_time', `${dateStr} 00:00:00`)
-      .lte('start_time', `${dateStr} 23:59:59`)
+      .gte('start_time', `${dateStr}T00:00:00+09:00`)
+      .lte('start_time', `${dateStr}T23:59:59+09:00`)
       .or('is_block.is.null,is_block.eq.false')
       .eq('res_type', 'normal');
 
@@ -306,7 +311,7 @@ const { data: resData, error: resError } = await supabase
     // ==========================================
     // 🚀 🆕 過去のレジ忘れ（未処理）チェック：個人と施設の両方を探す
     // ==========================================
-    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const todayStr = getJSTDateStr();
     
     const [resRes2, visitRes2] = await Promise.all([
       // 1. 個人の未処理
@@ -446,11 +451,16 @@ const isSalesExcludedTask = (task) => {
 const syncReservationToSupabase = async (newSvcs, newOpts) => {
   if (!selectedTask) return;
   const newMenuName = newSvcs.map(s => s.name).join(', ');
-  
+
+  // 🛡️ options が文字列(JSON文字列)で保存されているケースにも安全に対応してから展開する
+  const currentOpts = typeof selectedTask.options === 'string'
+    ? JSON.parse(selectedTask.options)
+    : (selectedTask.options || {});
+
   // 💡 変更があった瞬間にDBを更新することで、戻ってもリセットされなくなります [cite: 2026-03-08]
   const { error } = await supabase.from('reservations').update({ 
     menu_name: newMenuName,
-    options: { ...selectedTask.options, services: newSvcs, options: newOpts } 
+    options: { ...currentOpts, services: newSvcs, options: newOpts } 
   }).eq('id', selectedTask.id);
 
   if (error) console.error("自動保存エラー:", error.message);
@@ -702,7 +712,7 @@ const handleAutoBatchProcess = async () => {
 
   setIsAutoProcessing(true); // 👈 前の手順でStateに追加したもの
   try {
-    const todayStr = new Date().toLocaleDateString('sv-SE');
+    const todayStr = getJSTDateStr();
     
     // 1. 過去の未処理予約（キャンセル・完了以外）をすべて取得
     const { data: incompleteTasks, error: fetchError } = await supabase
@@ -842,14 +852,14 @@ const handleAutoBatchProcess = async () => {
       const { error } = await supabase
         .from('reservations')
         .update({ status: 'canceled' })
-        .eq('id', id);
+        .eq('id', task.id);
 
       if (error) throw error;
 
       // 🚀 🆕 追加：顧客マスタのキャンセル回数を +1 する
-      if (selectedRes?.customer_id) {
-        const { data: cust } = await supabase.from('customers').select('cancel_count').eq('id', selectedRes.customer_id).single();
-        await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', selectedRes.customer_id);
+      if (task.customer_id) {
+        const { data: cust } = await supabase.from('customers').select('cancel_count').eq('id', task.customer_id).single();
+        await supabase.from('customers').update({ cancel_count: (cust?.cancel_count || 0) + 1 }).eq('id', task.customer_id);
       }
       showMsg("キャンセルとして記録しました");
       fetchTodayTasks(); // 🔄 リストを再読み込みして表示を更新
@@ -865,6 +875,10 @@ const openCustomerInfo = async (task) => {
     setSelectedTask(task);
     let cust = null;
     const searchName = task.customer_name;
+    // 🛡️ 電話番号を正規化（ハイフン等を除去）。同姓同名の別人との誤結合を防ぐキーとして使う
+    const normalizedPhone = (task.customer_phone && task.customer_phone !== '---')
+      ? task.customer_phone.replace(/[^0-9]/g, '')
+      : '';
 
     try {
       // 1. まずIDで検索
@@ -873,13 +887,25 @@ const openCustomerInfo = async (task) => {
         cust = data;
       }
 
-      // 2. IDで見つからない、または施設の場合は「名前」で名簿を検索
-      if (!cust && searchName) {
+      // 2. IDで見つからない場合は「名前＋電話番号」の組み合わせで名簿を検索（同姓同名の別人との誤結合を防止）
+      if (!cust && searchName && normalizedPhone) {
         const { data } = await supabase
           .from('customers')
           .select('*')
           .eq('shop_id', shopId)
-          .eq('name', searchName) // 👈 名前でガサ入れ！
+          .eq('name', searchName)
+          .eq('phone', normalizedPhone) // 👈 名前だけでなく電話番号も一致させる
+          .maybeSingle();
+        cust = data;
+      }
+
+      // 2b. 電話番号の情報が無い場合のみ、やむを得ず「名前」だけで検索（同姓同名リスクが残るため最終手段）
+      if (!cust && searchName && !normalizedPhone) {
+        const { data } = await supabase
+          .from('customers')
+          .select('*')
+          .eq('shop_id', shopId)
+          .eq('name', searchName)
           .maybeSingle();
         cust = data;
       }
@@ -943,8 +969,13 @@ const openCustomerInfo = async (task) => {
         .in('status', ['completed', 'canceled']);
 
       if (searchId) {
-        historyQuery = historyQuery.or(`customer_id.eq.${searchId},customer_name.eq.${task.customer_name}`);
+        // 顧客IDが特定できている場合はIDのみで絞り込む（名前が一致するだけの別人の履歴混入を防ぐ）
+        historyQuery = historyQuery.eq('customer_id', searchId);
+      } else if (normalizedPhone) {
+        // IDが無い場合は「名前＋電話番号」の組み合わせで絞り込む
+        historyQuery = historyQuery.eq('customer_name', task.customer_name).eq('customer_phone', normalizedPhone);
       } else {
+        // 電話番号の情報も無い場合はやむを得ず名前のみ（同姓同名リスクが残る）
         historyQuery = historyQuery.eq('customer_name', task.customer_name);
       }
 

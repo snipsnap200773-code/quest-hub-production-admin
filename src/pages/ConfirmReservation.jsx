@@ -332,15 +332,55 @@ const handleReserve = async () => {
     setIsSubmitting(true);
 
     try {
+      // --- 🛡️ 修正：日時と終了バッファの計算を先に行う（最終チェックで終了時刻が必要なため） ---
+      const targetDate = adminDate || date;
+      const targetTime = adminTime || time;
+      const startDateTime = new Date(`${targetDate}T${targetTime}:00+09:00`);
+
+      // 🆕 日時と終了バッファの計算（準備時間を確実に含める）
+      // 🆕 1日貸切モード対応：終了時刻の算出ロジック
+      const interval = shop.slot_interval_min || 15;
+      const buffer = shop.buffer_preparation_min || 0;
+
+      // 現在選択されている全メニューの中から「1日貸切」設定のものを探す
+      const selectedServicesList = (people || []).flatMap(p => p.services || []);
+      const fullDayMenu = selectedServicesList.find(s => s.is_full_day);
+
+      let totalMinutes;
+
+      if (fullDayMenu) {
+        // 💡 1日貸切の場合
+        if (fullDayMenu.restricted_hours && fullDayMenu.restricted_hours.length > 0) {
+          // 設定された「受付時間制限」の終了時刻までを占有
+          const activeRange = fullDayMenu.restricted_hours.find(r => targetTime >= r.start && targetTime < r.end);
+          if (activeRange) {
+            const [startH, startM] = targetTime.split(':').map(Number);
+            const [endH, endM] = activeRange.end.split(':').map(Number);
+            totalMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+          } else {
+            totalMinutes = (totalSlotsNeeded * interval) + buffer + (travelTimeMinutes || 0);
+          }
+        } else {
+          // 制限がない場合は「店舗の閉店時間」までを占有
+          const dayOfWeek = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(targetDate).getDay()];
+          const closeTime = shop.business_hours?.[dayOfWeek]?.close || "18:00";
+          const [startH, startM] = targetTime.split(':').map(Number);
+          const [closeH, closeM] = closeTime.split(':').map(Number);
+          totalMinutes = (closeH * 60 + closeM) - (startH * 60 + startM);
+        }
+      } else {
+        // 通常メニューの場合
+        totalMinutes = (totalSlotsNeeded * interval) + buffer + (travelTimeMinutes || 0);
+      }
+
+      const endDateTime = new Date(startDateTime.getTime() + totalMinutes * 60000);
+      // 🛡️ チェック用に、ISO文字列も先に作っておく
+      const checkStartTimeISO = startDateTime.toISOString();
+      const checkEndTimeISO = endDateTime.toISOString();
+
       // 💡 🆕 修正：ファイナル・ガード（動的キャパシティ対応版）
       // 管理者の「ねじ込み」でない場合のみ、本当に枠が空いているか再確認する
       if (!isAdminEntry) {
-        const targetDate = adminDate || date;
-        const targetTime = adminTime || time;
-        // 🆕 修正：実際の予約保存処理（下記 startDateTime）と同じ「+09:00」を明示し、
-        // ブラウザのタイムゾーンに関わらず必ず日本時間として解釈させる
-        const checkStartTime = new Date(`${targetDate}T${targetTime}:00+09:00`).toISOString();
-
         // 1. 店舗の全スタッフの最新シフトを取得
         const { data: allStaffs } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
         if (allStaffs) {
@@ -380,12 +420,16 @@ const handleReserve = async () => {
               staffMax = 1; // 🛡️ 平等モード：アシスタント不在時は強制的に1名に制限
             }
 
+            // 🛡️ 修正：開始時刻の完全一致ではなく「時間帯が重なっているか」で数える
+            // （既存予約: start_time < 自分のend_time）かつ（既存予約: end_time > 自分のstart_time）なら重複
             const { count: staffCount } = await supabase
               .from('reservations')
               .select('*', { count: 'exact', head: true })
               .eq('staff_id', staffId)
-              .eq('start_time', checkStartTime)
-              .eq('res_type', 'normal');
+              .eq('res_type', 'normal')
+              .neq('status', 'canceled')
+              .lt('start_time', checkEndTimeISO)
+              .gt('end_time', checkStartTimeISO);
 
             if (staffCount >= staffMax) {
               alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
@@ -396,12 +440,15 @@ const handleReserve = async () => {
           }
 
           // 6. 【ガード3】お店全体の予約数が、動的キャパシティ（currentStoreMax）に達していないか？
+          // 🛡️ 修正：こちらも「時間帯の重なり」で数える
           const { count: globalCount } = await supabase
             .from('reservations')
             .select('*', { count: 'exact', head: true })
             .eq('shop_id', shopId)
-            .eq('start_time', checkStartTime)
-            .eq('res_type', 'normal');
+            .eq('res_type', 'normal')
+            .neq('status', 'canceled')
+            .lt('start_time', checkEndTimeISO)
+            .gt('end_time', checkStartTimeISO);
 
           if (globalCount >= currentStoreMax) {
             alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
@@ -430,49 +477,6 @@ const handleReserve = async () => {
 
       const menuLabel = getDetailedMenuLabel();
 
-      // --- 3. 日時と終了バッファの計算 ---
-      const targetDate = adminDate || date;
-      const targetTime = adminTime || time;
-      const startDateTime = new Date(`${targetDate}T${targetTime}:00+09:00`);
-      
-// 🆕 日時と終了バッファの計算（準備時間を確実に含める）
-// 🆕 1日貸切モード対応：終了時刻の算出ロジック
-    const interval = shop.slot_interval_min || 15;
-    const buffer = shop.buffer_preparation_min || 0;
-
-    // 現在選択されている全メニューの中から「1日貸切」設定のものを探す
-    const selectedServicesList = (people || []).flatMap(p => p.services || []);
-    const fullDayMenu = selectedServicesList.find(s => s.is_full_day);
-
-    let totalMinutes;
-
-    if (fullDayMenu) {
-      // 💡 1日貸切の場合
-      if (fullDayMenu.restricted_hours && fullDayMenu.restricted_hours.length > 0) {
-        // 設定された「受付時間制限」の終了時刻までを占有
-        const activeRange = fullDayMenu.restricted_hours.find(r => targetTime >= r.start && targetTime < r.end);
-        if (activeRange) {
-          const [startH, startM] = targetTime.split(':').map(Number);
-          const [endH, endM] = activeRange.end.split(':').map(Number);
-          totalMinutes = (endH * 60 + endM) - (startH * 60 + startM);
-        } else {
-          totalMinutes = (totalSlotsNeeded * interval) + buffer + (travelTimeMinutes || 0);
-        }
-      } else {
-        // 制限がない場合は「店舗の閉店時間」までを占有
-        const dayOfWeek = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'][new Date(targetDate).getDay()];
-        const closeTime = shop.business_hours?.[dayOfWeek]?.close || "18:00";
-        const [startH, startM] = targetTime.split(':').map(Number);
-        const [closeH, closeM] = closeTime.split(':').map(Number);
-        totalMinutes = (closeH * 60 + closeM) - (startH * 60 + startM);
-      }
-    } else {
-      // 通常メニューの場合
-      totalMinutes = (totalSlotsNeeded * interval) + buffer + (travelTimeMinutes || 0);
-    }
-
-    const endDateTime = new Date(startDateTime.getTime() + totalMinutes * 60000);
-          
       const cancelToken = crypto.randomUUID();
       const cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
 
@@ -511,16 +515,22 @@ const handleReserve = async () => {
           orConditions.push(`phone.eq.${cleanPhone}`);
         }
 
-        const { data: matched } = await supabase
-          .from('customers')
-          .select('*') // 👈 '*' にすることで、既存のふりがな等もすべて把握します
-          .or(orConditions.length > 0 ? orConditions.join(',') : `name.eq.${customerData.name}`)
-          .eq('shop_id', shopId)
-          .maybeSingle();
+        // 🛡️ 修正：auth_id・line_user_id・電話番号のいずれも無い場合、
+        // 「名前の完全一致」だけを頼りに他人の顧客レコードへ紐付けると、
+        // 同姓同名の別人の情報を上書きしてしまう危険があるため、
+        // その場合は既存顧客とはみなさず、常に新規顧客として扱う。
+        if (orConditions.length > 0) {
+          const { data: matched } = await supabase
+            .from('customers')
+            .select('*') // 👈 '*' にすることで、既存のふりがな等もすべて把握します
+            .or(orConditions.join(','))
+            .eq('shop_id', shopId)
+            .maybeSingle();
 
-        if (matched) {
-          finalCustomerId = matched.id;
-          existingCust = matched;
+          if (matched) {
+            finalCustomerId = matched.id;
+            existingCust = matched;
+          }
         }
       }
 
