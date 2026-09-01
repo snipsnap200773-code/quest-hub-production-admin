@@ -98,7 +98,7 @@ function TimeSelectionCalendar() {
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
-        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
+        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block, status').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
         supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 date型カラムなのでそのままでOK
         supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 定期ルール
@@ -459,6 +459,8 @@ const checkAvailability = (date, timeStr) => {
 
       // 💡 D. 店舗全体で予約枠が上限に達していないかチェック
       const globalCount = existingReservations.filter(res => {
+        // 🛡️ 修正：キャンセル済みの予約は空き枠計算から除外する
+        if (res.status === 'canceled') return false;
         // 👇 🌟 修正：今のモードで対応できないスタッフ（違う業種のスタッフ）の予約はカウントから除外！
         if (res.staff_id && !workingStaffs.some(s => s.id === res.staff_id)) return false;
 
@@ -482,6 +484,8 @@ const checkAvailability = (date, timeStr) => {
         }
 
         const staffCurrentLoad = existingReservations.filter(res => {
+          // 🛡️ 修正：キャンセル済みの予約は空き枠計算から除外する
+          if (res.status === 'canceled') return false;
           if (res.staff_id !== staff.id) return false;
           const resStart = new Date(res.start_time).getTime();
           const resEnd = new Date(res.end_time).getTime();

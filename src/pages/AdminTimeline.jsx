@@ -137,6 +137,8 @@ function AdminTimeline() {
     return saved ? JSON.parse(saved) : [];
   });
   const [alertModalMode, setAlertModalMode] = useState(null);
+  // 🆕 追加：「キャンセル状況・履歴」アラート用
+  const [cancellationAlerts, setCancellationAlerts] = useState([]);
   const [message, setMessage] = useState('');
 
   // 👇 🌟 🆕 追加：施設予約キャンセル専用のState
@@ -459,6 +461,8 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
   const headerBtnStylePC = { padding: '10px 20px', borderRadius: '10px', border: '1px solid #e2e8f0', background: '#fff', fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer' };
 
   useEffect(() => { fetchData(); }, [shopId, selectedDate]);
+  // 🆕 追加：キャンセル状況アラートは「日付」に依存しないので、shopIdが決まった時だけ取得する
+  useEffect(() => { if (shopId) fetchCancellationAlerts(); }, [shopId]);
 
   // 🚀 🆕 追加：履歴カードをタップした時に詳細を開く命令
   const openHistoryDetail = (visit) => {
@@ -992,7 +996,56 @@ const handleSavePrivateTask = async () => {
   }
 };
 
-// 🚀 🆕 ここにキャンセル関数を差し込みます
+// 🆕 追加：キャンセル後、まだ他の日で予約を入れ直していないお客様の一覧を取得する
+  const fetchCancellationAlerts = async () => {
+    try {
+      // 直近60日以内にキャンセルされた予約だけを対象にする
+      const cutoff = new Date();
+      cutoff.setDate(cutoff.getDate() - 60);
+      const cutoffStr = cutoff.toISOString();
+
+      const { data: canceledList } = await supabase
+        .from('reservations')
+        .select('id, customer_id, customer_name, customer_phone, start_time, menu_name')
+        .eq('shop_id', shopId)
+        .eq('res_type', 'normal')
+        .eq('status', 'canceled')
+        .not('customer_id', 'is', null) // 🛡️ 顧客IDが無い（名前だけの）予約は、同姓同名の別人と誤判定するリスクがあるため対象外
+        .gte('start_time', cutoffStr)
+        .order('start_time', { ascending: false });
+
+      if (!canceledList || canceledList.length === 0) {
+        setCancellationAlerts([]);
+        return;
+      }
+
+      // このお客様たちが、キャンセル以外の予約を1件でも持っているか確認する
+      const customerIds = [...new Set(canceledList.map(c => c.customer_id))];
+      const { data: activeList } = await supabase
+        .from('reservations')
+        .select('customer_id')
+        .eq('shop_id', shopId)
+        .eq('res_type', 'normal')
+        .neq('status', 'canceled')
+        .in('customer_id', customerIds);
+
+      const resolvedCustomerIds = new Set((activeList || []).map(a => a.customer_id));
+
+      // 再予約が無い（＝未解決の）キャンセルだけを残し、同じお客様が複数回キャンセルしていても1件にまとめる（最新のものを表示）
+      const unresolved = canceledList.filter(c => !resolvedCustomerIds.has(c.customer_id));
+      const uniqueByCustomer = new Map();
+      unresolved.forEach(c => {
+        if (!uniqueByCustomer.has(c.customer_id)) {
+          uniqueByCustomer.set(c.customer_id, c);
+        }
+      });
+
+      setCancellationAlerts(Array.from(uniqueByCustomer.values()));
+    } catch (err) {
+      console.error("キャンセル状況の取得エラー:", err);
+    }
+  };
+
   const cancelRes = async (id) => {
     if (!window.confirm("この予約を「キャンセル扱い」にして記録に残しますか？\n（予約枠は空きます）")) return;
 
@@ -1012,6 +1065,7 @@ const handleSavePrivateTask = async () => {
       
       setShowDetailModal(false);
       fetchData(); // 🔄 画面を最新にする
+      fetchCancellationAlerts(); // 🆕 追加：キャンセル状況アラートも最新にする
       alert("キャンセルとして記録しました"); 
     } catch (err) {
       alert("エラー: " + err.message);
@@ -1572,6 +1626,24 @@ const timeSlots = useMemo(() => {
           </div>
         );
       })()}
+
+      {/* 🆕 追加：キャンセル状況・履歴のアラートバナー */}
+      {cancellationAlerts.length > 0 && (
+        <div style={{ zIndex: 100, padding: '8px 20px', background: '#fff1f2', borderBottom: '1px solid #fecdd3', display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: '0.2s', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{ fontSize: '1.1rem' }}>🚫</span>
+            <span style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+              キャンセルされたまま再予約のないお客様が {cancellationAlerts.length} 名います
+            </span>
+          </div>
+          <button
+            onClick={() => setAlertModalMode('cancellations')}
+            style={{ background: '#be123c', color: '#fff', border: 'none', padding: '6px 16px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.75rem', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', flexShrink: 0 }}
+          >
+            確認
+          </button>
+        </div>
+      )}
       {/* 👆 アラートバナー追加ここまで */}
 
       {/* タイムライン本体 */}
@@ -1634,7 +1706,7 @@ const timeSlots = useMemo(() => {
                     const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
                     const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
                     
-                    const resMatches = reservations.filter(r => (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
+                    const resMatches = reservations.filter(r => r.status !== 'canceled' && (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
                     const privMatches = privateTasks.filter(p => (p.staff_id === staffIdVal) && currentSlotStart >= new Date(p.start_time).getTime() && currentSlotStart < new Date(p.end_time).getTime()).map(p => ({ ...p, res_type: 'private_task', customer_name: p.title }));
                     const matches = [...resMatches, ...privMatches];
                     const hasRes = matches.length > 0;
@@ -1765,7 +1837,7 @@ const timeSlots = useMemo(() => {
                     const isStandardTime = hours && !hours.is_closed && time >= hours.open && time < hours.close;
                     const isRestTime = hours && hours.rest_start && hours.rest_end && time >= hours.rest_start && time < hours.rest_end;
                     
-                    const resMatches = reservations.filter(r => (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
+                    const resMatches = reservations.filter(r => r.status !== 'canceled' && (r.staff_id === staffIdVal) && currentSlotStart >= new Date(r.start_time).getTime() && currentSlotStart < new Date(r.end_time).getTime());
                     const privMatches = privateTasks.filter(p => (p.staff_id === staffIdVal) && currentSlotStart >= new Date(p.start_time).getTime() && currentSlotStart < new Date(p.end_time).getTime()).map(p => ({ ...p, res_type: 'private_task', customer_name: p.title }));
                     const matches = [...resMatches, ...privMatches];
                     const hasRes = matches.length > 0;
@@ -2768,6 +2840,44 @@ const timeSlots = useMemo(() => {
                     </div>
                   </div>
                 ))}
+            </div>
+            <div style={{ padding: '15px 20px', background: '#fff', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
+              <button onClick={() => setAlertModalMode(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}>一覧を閉じる</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 🆕 追加：キャンセル状況・履歴の詳細モーダル */}
+      {alertModalMode === 'cancellations' && (
+        <div style={overlayStyle} onClick={() => setAlertModalMode(null)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '550px', padding: '0', overflow: 'hidden', borderRadius: '28px' }}>
+            <div style={{ background: '#be123c', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>🚫 キャンセル状況・履歴</div>
+                <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>キャンセル後、まだ別日の予約が入っていないお客様です（直近60日分）</div>
+              </div>
+              <button onClick={() => setAlertModalMode(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff', fontWeight: 'bold' }}>✕</button>
+            </div>
+
+            <div style={{ padding: '20px', maxHeight: '60vh', overflowY: 'auto', background: '#f8fafc', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {cancellationAlerts.length === 0 ? (
+                <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>現在、未解決のキャンセルはありません。</div>
+              ) : (
+                cancellationAlerts.map((c) => (
+                  <div key={`cancel-alert-${c.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '12px 15px', borderRadius: '16px', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+                    <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                      🚫 {c.customer_name} 様
+                    </div>
+                    <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                      キャンセルされた予定：<strong>{new Date(c.start_time).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</strong>
+                      {c.menu_name && <span> ／ {c.menu_name}</span>}
+                    </div>
+                    {c.customer_phone && c.customer_phone !== '---' && (
+                      <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>📞 {c.customer_phone}</div>
+                    )}
+                  </div>
+                ))
+              )}
             </div>
             <div style={{ padding: '15px 20px', background: '#fff', borderTop: '1px solid #f1f5f9', textAlign: 'center' }}>
               <button onClick={() => setAlertModalMode(null)} style={{ width: '100%', padding: '12px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.9rem' }}>一覧を閉じる</button>
