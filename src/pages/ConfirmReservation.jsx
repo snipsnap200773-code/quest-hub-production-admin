@@ -374,12 +374,13 @@ const handleReserve = async () => {
       }
 
       const endDateTime = new Date(startDateTime.getTime() + totalMinutes * 60000);
-      // 🛡️ チェック用に、ISO文字列も先に作っておく
-      const checkStartTimeISO = startDateTime.toISOString();
-      const checkEndTimeISO = endDateTime.toISOString();
 
-      // 💡 🆕 修正：ファイナル・ガード（動的キャパシティ対応版）
-      // 管理者の「ねじ込み」でない場合のみ、本当に枠が空いているか再確認する
+      // 💡 🛡️ 修正：ここでは「容量の数字」だけを計算する。
+      // 実際の重複チェック（本当に空いているか）は、後段の book_reservation_safely 関数の中で、
+      // 排他ロックを取った状態でDB側が最終的に行う（ここでのカウントクエリはもう不要なので削除）。
+      let finalStaffMax = null;   // null = 容量チェックの対象外（管理者ねじ込み時など）
+      let finalStoreMax = null;
+
       if (!isAdminEntry) {
         // 1. 店舗の全スタッフの最新シフトを取得
         const { data: allStaffs } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
@@ -403,9 +404,9 @@ const handleReserve = async () => {
           const workingStylists = workingStaffs.filter(s => s.role_type === 'stylist' || !s.role_type);
           const workingAssistants = workingStaffs.filter(s => s.role_type === 'assistant');
           const hasAssistant = workingAssistants.length > 0;
-          const currentStoreMax = workingStylists.length + workingAssistants.reduce((sum, a) => sum + (a.concurrent_capacity || 1), 0);
+          finalStoreMax = workingStylists.length + workingAssistants.reduce((sum, a) => sum + (a.concurrent_capacity || 1), 0);
 
-          // 4. 【ガード1】指名スタッフがそもそも出勤しているか？
+          // 4. 【ガード1】指名スタッフがそもそも出勤しているか？（レースコンディションと無関係な事前チェックなので、そのまま残す）
           if (staffId) {
             const targetStaff = workingStaffs.find(s => s.id === staffId);
             if (!targetStaff) {
@@ -414,47 +415,11 @@ const handleReserve = async () => {
               return;
             }
 
-            // 5. 【ガード2】指名スタッフの「個人上限」に達していないか？
-            let staffMax = targetStaff.concurrent_capacity || 1;
+            // 5. 指名スタッフの「個人上限」を計算（実際のチェックはDB関数側で行う）
+            finalStaffMax = targetStaff.concurrent_capacity || 1;
             if (!hasAssistant && shop?.restrict_stylist_without_assistant) {
-              staffMax = 1; // 🛡️ 平等モード：アシスタント不在時は強制的に1名に制限
+              finalStaffMax = 1; // 🛡️ 平等モード：アシスタント不在時は強制的に1名に制限
             }
-
-            // 🛡️ 修正：開始時刻の完全一致ではなく「時間帯が重なっているか」で数える
-            // （既存予約: start_time < 自分のend_time）かつ（既存予約: end_time > 自分のstart_time）なら重複
-            const { count: staffCount } = await supabase
-              .from('reservations')
-              .select('*', { count: 'exact', head: true })
-              .eq('staff_id', staffId)
-              .eq('res_type', 'normal')
-              .neq('status', 'canceled')
-              .lt('start_time', checkEndTimeISO)
-              .gt('end_time', checkStartTimeISO);
-
-            if (staffCount >= staffMax) {
-              alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
-              setIsSubmitting(false);
-              navigate(`/shop/${shopId}/reserve`);
-              return;
-            }
-          }
-
-          // 6. 【ガード3】お店全体の予約数が、動的キャパシティ（currentStoreMax）に達していないか？
-          // 🛡️ 修正：こちらも「時間帯の重なり」で数える
-          const { count: globalCount } = await supabase
-            .from('reservations')
-            .select('*', { count: 'exact', head: true })
-            .eq('shop_id', shopId)
-            .eq('res_type', 'normal')
-            .neq('status', 'canceled')
-            .lt('start_time', checkEndTimeISO)
-            .gt('end_time', checkStartTimeISO);
-
-          if (globalCount >= currentStoreMax) {
-            alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
-            setIsSubmitting(false);
-            navigate(`/shop/${shopId}/reserve`);
-            return;
           }
         }
       }
@@ -620,41 +585,56 @@ const handleReserve = async () => {
       
       // 修正箇所：customer_name の決定ロジック
       const finalDisplayName = existingCust?.admin_name || existingCust?.name || customerData.name;
-      // ✅ 予約データの挿入
-      const { error: dbError } = await supabase.from('reservations').insert([
-        {
-          shop_id: shopId,
-          customer_id: finalCustomerId,
-          staff_id: finalStaffId,
-          reservation_date: targetDate, 
-          customer_name: finalDisplayName,
-          customer_phone: customerData.phone || '---',
-          customer_email: customerData.email || null,
-          zip_code: customerData.zip_code || null,
-          // 🆕 ここを start_time と end_time の2つだけに絞ります
-          start_time: startDateTime.toISOString(),
-          end_time: endDateTime.toISOString(), 
-          total_slots: totalSlotsNeeded,
-          res_type: 'normal',
-          biz_type: location.state?.bizType,
-          line_user_id: lineUser?.userId || null,
-          cancel_token: cancelToken,
-          menu_name: menuLabel,
-          options: { 
-            people: people,
-            applied_shop_name: customShopName || shop.business_name,
-            // 🆕 重要：ここに「売上対象外」という印を刻む！
-            is_sales_excluded: isSalesExcluded, 
-            visit_info: {
-              address: customerData.address,
-              parking: customerData.parking,
-              custom_answers: customAnswers 
-            }
+
+      // 🛡️ 修正：確認と保存を1つの不可分な処理（DB側の関数）にまとめて呼び出す
+      const { data: newReservation, error: dbError } = await supabase.rpc('book_reservation_safely', {
+        p_shop_id: shopId,
+        p_staff_id: finalStaffId,
+        p_start_time: startDateTime.toISOString(),
+        p_end_time: endDateTime.toISOString(),
+        p_staff_max: finalStaffMax,
+        p_store_max: finalStoreMax,
+        p_bypass_check: isAdminEntry, // 管理者ねじ込みなら容量チェックをスキップ
+        p_customer_id: finalCustomerId,
+        p_reservation_date: targetDate,
+        p_customer_name: finalDisplayName,
+        p_customer_phone: customerData.phone || '---',
+        p_customer_email: customerData.email || null,
+        p_zip_code: customerData.zip_code || null,
+        p_total_slots: totalSlotsNeeded,
+        p_biz_type: location.state?.bizType || null,
+        p_line_user_id: lineUser?.userId || null,
+        p_cancel_token: cancelToken,
+        p_menu_name: menuLabel,
+        p_options: { 
+          people: people,
+          applied_shop_name: customShopName || shop.business_name,
+          // 🆕 重要：ここに「売上対象外」という印を刻む！
+          is_sales_excluded: isSalesExcluded, 
+          visit_info: {
+            address: customerData.address,
+            parking: customerData.parking,
+            custom_answers: customAnswers 
           }
         }
-      ]);
+      });
 
-      if (dbError) throw dbError;
+      if (dbError) {
+        // 🛡️ DB関数側が投げた「満席」エラーを、これまでと同じ文言のアラートに変換する
+        if (dbError.message?.includes('STAFF_FULL')) {
+          alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
+          setIsSubmitting(false);
+          navigate(`/shop/${shopId}/reserve`);
+          return;
+        }
+        if (dbError.message?.includes('STORE_FULL')) {
+          alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
+          setIsSubmitting(false);
+          navigate(`/shop/${shopId}/reserve`);
+          return;
+        }
+        throw dbError;
+      }
 
 // 🚀 🆕 【ガード2】isAdminEntryでない、かつ名前・日付・時間が揃っている時だけ通知を送る
       if (!isAdminEntry && finalDisplayName && targetDate && targetTime) {
