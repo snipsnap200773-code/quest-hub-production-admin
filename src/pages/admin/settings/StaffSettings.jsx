@@ -290,13 +290,13 @@ const StaffSettings = () => {
           <h2 style={{ margin: 0, fontSize: '1.25rem', color: '#1e293b' }}>スタッフ管理</h2>
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '30px', flexWrap: 'wrap' }}>
           <input 
             type="text" 
             placeholder="新しいスタッフ名" 
             value={newStaffName}
             onChange={(e) => setNewStaffName(e.target.value)}
-            style={{ flex: 1, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none' }}
+            style={{ flex: '1 1 160px', minWidth: 0, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', outline: 'none', boxSizing: 'border-box' }}
           />
           
           {/* 👈 🌟 🆕 追加：役割を選択するプルダウン */}
@@ -304,15 +304,15 @@ const StaffSettings = () => {
             value={newStaffRole}
             onChange={(e) => setNewStaffRole(e.target.value)}
             style={{ 
-              padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-              outline: 'none', background: '#fff', color: '#1e293b', fontWeight: 'bold' 
+              flex: '1 1 160px', minWidth: 0, padding: '12px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+              outline: 'none', background: '#fff', color: '#1e293b', fontWeight: 'bold', boxSizing: 'border-box'
             }}
           >
             <option value="stylist">担当スタッフ（指名可）</option>
             <option value="assistant">アシスタント（指名不可）</option>
           </select>
 
-          <button onClick={addStaff} style={{ background: '#f43f5e', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+          <button onClick={addStaff} style={{ flex: '0 0 auto', background: '#f43f5e', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
             <Plus size={20} />
           </button>
         </div>

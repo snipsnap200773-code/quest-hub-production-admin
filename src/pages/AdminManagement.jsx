@@ -40,6 +40,27 @@ const getKanaGroup = (kana) => {
 // 🔧 追加：日本時間（Asia/Tokyo）に固定して日付文字列を取得するヘルパー関数
 const getJapanDateStr = (date) => date.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 
+// 👤 追加：.range()でページングしながら、指定した店舗の顧客名簿を「本当に全件」取得する関数
+// （1000件の壁を超えて全件取得するためのヘルパー）
+const fetchAllCustomers = async (shopId) => {
+  const PAGE_SIZE = 1000;
+  let allRows = [];
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from('customers')
+      .select('*')
+      .eq('shop_id', shopId)
+      .range(from, from + PAGE_SIZE - 1);
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    allRows = allRows.concat(data);
+    if (data.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return allRows;
+};
+
 function AdminManagement() {
   const { shopId } = useParams();
   const navigate = useNavigate();
