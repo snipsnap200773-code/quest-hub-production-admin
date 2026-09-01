@@ -1419,14 +1419,14 @@ setSalesRecords(salesData || []);
   // 🆕 キャンセル（記録を残す）処理
   const fetchCancellationAlerts = async () => {
     try {
-      // 直近60日以内にキャンセルされた予約だけを対象にする
+      // 🛡️ 修正：直近60日→直近30日以内にキャンセルされた予約だけを対象にする
       const cutoff = new Date();
-      cutoff.setDate(cutoff.getDate() - 60);
+      cutoff.setDate(cutoff.getDate() - 30);
       const cutoffStr = cutoff.toISOString();
 
       const { data: canceledList } = await supabase
         .from('reservations')
-        .select('id, customer_id, customer_name, customer_phone, start_time, menu_name')
+        .select('id, customer_id, customer_name, customer_phone, customer_email, start_time, created_at, menu_name') // 🆕 customer_email と created_at を追加取得
         .eq('shop_id', shopId)
         .eq('res_type', 'normal')
         .eq('status', 'canceled')
@@ -1439,8 +1439,9 @@ setSalesRecords(salesData || []);
         return;
       }
 
-      // このお客様たちが、キャンセル以外の予約を1件でも持っているか確認する
       const customerIds = [...new Set(canceledList.map(c => c.customer_id))];
+
+      // このお客様たちが、キャンセル以外の予約を1件でも持っているか確認する
       const { data: activeList } = await supabase
         .from('reservations')
         .select('customer_id')
@@ -1451,8 +1452,25 @@ setSalesRecords(salesData || []);
 
       const resolvedCustomerIds = new Set((activeList || []).map(a => a.customer_id));
 
-      // 再予約が無い（＝未解決の）キャンセルだけを残し、同じお客様が複数回キャンセルしていても1件にまとめる（最新のものを表示）
-      const unresolved = canceledList.filter(c => !resolvedCustomerIds.has(c.customer_id));
+      // 🆕 追加：手動で「消去」されたお客様も除外対象にする
+      const { data: customersData } = await supabase
+        .from('customers')
+        .select('id, cancel_alert_dismissed_at')
+        .in('id', customerIds);
+
+      const dismissedMap = new Map((customersData || []).map(c => [c.id, c.cancel_alert_dismissed_at]));
+
+      // 再予約が無く（＝未解決）、かつ「消去」もされていないキャンセルだけを残す
+      const unresolved = canceledList.filter(c => {
+        if (resolvedCustomerIds.has(c.customer_id)) return false;
+        const dismissedAt = dismissedMap.get(c.customer_id);
+        // 🆕 追加：消去した時点より前に作られた予約のキャンセルは表示しない。
+        // （消去より後に新しく作られた予約がキャンセルされた場合は、新しい問題として再表示する）
+        if (dismissedAt && new Date(dismissedAt) > new Date(c.created_at)) return false;
+        return true;
+      });
+
+      // 同じお客様が複数回キャンセルしていても1件にまとめる（最新のものを表示）
       const uniqueByCustomer = new Map();
       unresolved.forEach(c => {
         if (!uniqueByCustomer.has(c.customer_id)) {
@@ -1463,6 +1481,21 @@ setSalesRecords(salesData || []);
       setCancellationAlerts(Array.from(uniqueByCustomer.values()));
     } catch (err) {
       console.error("キャンセル状況の取得エラー:", err);
+    }
+  };
+
+  // 🆕 追加：ご逝去・ご入院など、今後の来店予定が無いお客様を一覧から消去する
+  const dismissCancellationAlert = async (customerId, customerName) => {
+    if (!window.confirm(`「${customerName} 様」を、このキャンセル状況・履歴の一覧から消去しますか？\n（ご逝去・ご入院など、今後の来店予定が無い場合にご利用ください。再度キャンセルが発生した場合は、また一覧に表示されます。）`)) return;
+    try {
+      const { error } = await supabase
+        .from('customers')
+        .update({ cancel_alert_dismissed_at: new Date().toISOString() })
+        .eq('id', customerId);
+      if (error) throw error;
+      fetchCancellationAlerts();
+    } catch (err) {
+      alert("消去に失敗しました: " + err.message);
     }
   };
 
@@ -2977,7 +3010,7 @@ else if (
       <div style={{ background: '#be123c', color: '#fff', padding: '20px 25px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div>
           <div style={{ fontSize: '1.1rem', fontWeight: '900' }}>🚫 キャンセル状況・履歴</div>
-          <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>キャンセル後、まだ別日の予約が入っていないお客様です（直近60日分）</div>
+          <div style={{ fontSize: '0.7rem', opacity: 0.9, marginTop: '2px' }}>キャンセル後、まだ別日の予約が入っていないお客様です（直近30日分）</div>
         </div>
         <button onClick={() => setAlertModalMode(null)} style={{ background: 'rgba(255,255,255,0.2)', border: 'none', width: '36px', height: '36px', borderRadius: '50%', cursor: 'pointer', color: '#fff', fontWeight: 'bold' }}>✕</button>
       </div>
@@ -2988,16 +3021,36 @@ else if (
         ) : (
           cancellationAlerts.map((c) => (
             <div key={`cancel-alert-${c.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '12px 15px', borderRadius: '16px', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
-              <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
-                🚫 {c.customer_name} 様
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
+                <div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                    🚫 {c.customer_name} 様
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                    キャンセルされた予定：<strong>{new Date(c.start_time).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</strong>
+                    {c.menu_name && <span> ／ {c.menu_name}</span>}
+                  </div>
+                  {/* 🆕 電話番号タップで発信 */}
+                  {c.customer_phone && c.customer_phone !== '---' && (
+                    <a href={`tel:${c.customer_phone}`} style={{ display: 'block', fontSize: '0.75rem', color: '#0369a1', marginTop: '4px', textDecoration: 'none' }}>
+                      📞 {c.customer_phone}
+                    </a>
+                  )}
+                  {/* 🆕 追加：メールアドレス表示＋タップで送信 */}
+                  {c.customer_email && (
+                    <a href={`mailto:${c.customer_email}`} style={{ display: 'block', fontSize: '0.75rem', color: '#0369a1', marginTop: '2px', textDecoration: 'none' }}>
+                      ✉️ {c.customer_email}
+                    </a>
+                  )}
+                </div>
+                {/* 🆕 追加：消去ボタン（ご逝去・ご入院などの場合） */}
+                <button
+                  onClick={() => dismissCancellationAlert(c.customer_id, c.customer_name)}
+                  style={{ flexShrink: 0, background: '#fff', color: '#94a3b8', border: '1px solid #e2e8f0', padding: '5px 10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.7rem' }}
+                >
+                  消去
+                </button>
               </div>
-              <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
-                キャンセルされた予定：<strong>{new Date(c.start_time).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</strong>
-                {c.menu_name && <span> ／ {c.menu_name}</span>}
-              </div>
-              {c.customer_phone && c.customer_phone !== '---' && (
-                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>📞 {c.customer_phone}</div>
-              )}
             </div>
           ))
         )}
