@@ -432,7 +432,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
               type="button" 
               style={{ width: '100%', padding: '12px', background: '#fff', border: `2px solid ${themeColor}`, color: themeColor, borderRadius: '12px', fontWeight: 'bold', fontSize: '0.9rem' }}
             >
-              📸 写真を撮る / 変更する
+              写真を撮る / 変更する
             </button>
           </div>
         </div>
@@ -478,7 +478,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
               )}
               <div style={{ position: 'relative' }}>
                 <input type="file" accept="image/*" onChange={handleOwnerImageUpload} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
-                <button type="button" style={{ fontSize: '0.75rem', padding: '6px 12px', borderRadius: '20px', border: `1px solid ${themeColor}`, color: themeColor, background: '#fff' }}>画像設定</button>
+                <button type="button" style={{ fontSize: '0.75rem', padding: '6px 12px', borderRadius: '20px', border: `1px solid ${themeColor}`, color: themeColor, background: '#fff' }}>写真を撮る / 変更する</button>
               </div>
             </div>
             
@@ -488,7 +488,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 <div><label style={labelStyle}>ふりがな</label><input value={ownerNameKana} onChange={(e) => setOwnerNameKana(e.target.value)} style={inputStyle} placeholder="おなまえ" /></div>
               </div>
               <div>
-                <label style={labelStyle}>メッセージ</label>
+                <label style={labelStyle}>メッセージ（代表者からのご挨拶文）</label>
                 <textarea value={ownerBio} onChange={(e) => setOwnerBio(e.target.value)} style={{ ...inputStyle, minHeight: '80px' }} placeholder="お客様へのご挨拶" />
               </div>
             </div>
@@ -499,7 +499,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
         <div style={{ marginBottom: '20px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
           <div style={{ marginBottom: '10px' }}>
             <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-              大カテゴリ（業種・複数選択可）
+              業種（複数選択可）
               <HelpTooltip themeColor={themeColor} text="お店が提供している業種をすべて選択してください。複数選択可能です。" />
             </label>
             {/* 👇 🌟 修正：複数選択可能なボタングループに変更 */}
@@ -535,7 +535,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
           {/* 👇 🌟 修正：選択された全ての大カテゴリのサブカテゴリを合体させて表示 */}
           {businessType.length > 0 && businessType.flatMap(type => getSubCategories(type)).length > 0 && (
             <div style={{ marginTop: '15px', paddingLeft: '15px', borderLeft: `3px solid ${themeColor}` }}>
-              <label style={labelStyle}>詳細ジャンル（小カテゴリ）</label>
+              <label style={labelStyle}>詳細ジャンル（任意）</label>
               <select 
                 value={subBusinessType} 
                 onChange={(e) => setSubBusinessType(e.target.value)} 
@@ -552,9 +552,13 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
 
         {/* 店舗紹介・詳細アピール文 */}
         <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}><Info size={14} /> 店舗紹介・詳細アピール文</label>
-          <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} style={{ ...inputStyle, minHeight: '150px' }} placeholder="お客様へのメッセージをご記入ください" />
-        </div>
+  <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
+    <Info size={14} /> 店舗紹介文
+    {/* 🆕 追加：他の2つの入力欄との違いを明記 */}
+    <HelpTooltip themeColor={themeColor} text="ページ中盤に表示される、お店の特徴やこだわりを説明する長文です。トップの短いキャッチコピーとは別に、じっくり読んでもらう文章として使えます。" />
+  </label>
+  <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} style={{ ...inputStyle, minHeight: '150px' }} placeholder="お客様へのメッセージをご記入ください" />
+</div>
       </section>
 
       {/* 🆕 === ギャラリー === */}
@@ -600,23 +604,23 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
         {/* 🛑 サブタイトルとタイトルを横並びで入力できるように変更 */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px', marginBottom: '20px' }}>
           <div>
-            <label style={labelStyle}>英語サブタイトル</label>
-            <input 
-              value={menuSectionSubtitle} 
-              onChange={(e) => setMenuSectionSubtitle(e.target.value)} 
-              style={inputStyle} 
-              placeholder="例: PRICE, SERVICE" 
-            />
-          </div>
-          <div>
-            <label style={labelStyle}>メインタイトル</label>
-            <input 
-              value={menuSectionTitle} 
-              onChange={(e) => setMenuSectionTitle(e.target.value)} 
-              style={inputStyle} 
-              placeholder="例: 料金表, メニュー" 
-            />
-          </div>
+  <label style={labelStyle}>見出し（小）</label>
+  <input 
+    value={menuSectionSubtitle} 
+    onChange={(e) => setMenuSectionSubtitle(e.target.value)} 
+    style={inputStyle} 
+    placeholder="例: PRICE, SERVICE" 
+  />
+</div>
+<div>
+  <label style={labelStyle}>見出し（大）</label>
+  <input 
+    value={menuSectionTitle} 
+    onChange={(e) => setMenuSectionTitle(e.target.value)} 
+    style={inputStyle} 
+    placeholder="例: 料金表, メニュー" 
+  />
+</div>
         </div>
         
         {highlightMenus.map((category, catIdx) => (
@@ -737,8 +741,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
 
             <div style={{ marginBottom: '15px' }}>
               <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-                出発・帰還の拠点住所
-                <HelpTooltip themeColor={themeColor} text="出張・訪問サービスを行う際の「出発地点」です。" />
+                拠点住所（出発・帰着地点）
+                <HelpTooltip themeColor={themeColor} text="出張・訪問サービスを行う際の「出発地点」であり「戻ってくる場所」でもあります。" />
               </label>
               <input 
                 value={baseAddress} 
@@ -788,8 +792,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
             <Calendar size={18} color={themeColor} /> 週間スケジュール表
           </h4>
           <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '15px' }}>
-            ※クリニックやサロン向けに、曜日ごとの詳細な時間割（○、×、休 など）を作成できます。
-          </p>
+            ※曜日ごとの詳細な時間割（○、×、休 など）を作成できます。診療時間や受付時間帯が曜日で異なる場合にご利用ください。
+</p>
           
           <div style={{ overflowX: 'auto', marginBottom: '15px' }}>
             <table style={{ width: '100%', minWidth: '600px', borderCollapse: 'collapse', textAlign: 'center' }}>
@@ -837,7 +841,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
               value={weeklyScheduleNote} 
               onChange={(e) => setWeeklyScheduleNote(e.target.value)} 
               style={{ ...inputStyle, fontSize: '0.85rem', padding: '8px 12px' }} 
-              placeholder="例: ※祝日の診療時間は土曜と同じになります / ※予約優先制" 
+              placeholder="例: ※祝日の営業時間は土曜と同じになります / ※予約優先制" 
             />
           </div>
         </div>
@@ -912,7 +916,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -935,7 +939,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
             <button 
               onClick={() => {

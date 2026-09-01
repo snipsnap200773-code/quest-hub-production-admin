@@ -172,7 +172,7 @@ const StaffSettings = () => {
     if (newStaffRole === 'stylist') {
       const currentStylistCount = staffs.filter(s => s.role_type === 'stylist').length;
       if (currentStylistCount >= currentLimit.stylist) {
-        alert(`現在のプランでは、技術者（プレイヤー）の登録は最大 ${currentLimit.stylist} 名までです。\nこれ以上追加する場合は、プランのアップグレードをお願いいたします。`);
+        alert(`現在のプランでは、担当スタッフの登録は最大 ${currentLimit.stylist} 名までです。\nこれ以上追加する場合は、プランのアップグレードをお願いいたします。`);
         return; 
       }
     } else {
@@ -308,8 +308,8 @@ const StaffSettings = () => {
               outline: 'none', background: '#fff', color: '#1e293b', fontWeight: 'bold' 
             }}
           >
-            <option value="stylist">✂️ 技術者</option>
-            <option value="assistant">🧹 アシスト</option>
+            <option value="stylist">担当スタッフ（指名可）</option>
+            <option value="assistant">アシスタント（指名不可）</option>
           </select>
 
           <button onClick={addStaff} style={{ background: '#f43f5e', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -358,7 +358,7 @@ const StaffSettings = () => {
                           color: staff.is_default_for_admin ? '#fff' : '#64748b'
                         }}
                       >
-                        {staff.is_default_for_admin ? '⭐ デフォルト予約先' : '☆ デフォルトに設定'}
+                        {staff.is_default_for_admin ? '初期選択スタッフ' : '初期選択スタッフにする'}
                       </button>
 
                       <select 
@@ -370,7 +370,7 @@ const StaffSettings = () => {
                           if (newRole === 'stylist') {
                             const currentStylistCount = staffs.filter(s => s.role_type === 'stylist').length;
                             if (currentStylistCount >= currentLimit.stylist) {
-                              alert(`技術者（プレイヤー）の登録上限（${currentLimit.stylist}名）に達しているため、役割を変更できません。`);
+                              alert(`担当スタッフの登録上限（${currentLimit.stylist}名）に達しているため、役割を変更できません。`);
                               return; // 変更をキャンセル
                             }
                           } else if (newRole === 'assistant') {
@@ -390,9 +390,13 @@ const StaffSettings = () => {
                           color: isStylist ? '#f43f5e' : '#64748b'
                         }}
                       >
-                        <option value="stylist">✂️ 技術者（指名可能）</option>
-                        <option value="assistant">🧹 アシスタント（指名不可）</option>
+                        <option value="stylist">担当スタッフ（指名可）</option>
+                        <option value="assistant">アシスタント（指名不可）</option>
                       </select>
+                    </div>
+                    {/* 🆕 追加：指名可否の意味を補足 */}
+                    <div style={{ fontSize: '0.65rem', color: '#94a3b8', marginTop: '4px' }}>
+                      「指名可」＝お客様が予約時にこの人を選べます
                     </div>
                   </div>
 
@@ -450,7 +454,7 @@ const StaffSettings = () => {
                   </>
                 ) : (
                   <div style={{ background: '#fff', padding: '12px', borderRadius: '10px', fontSize: '0.75rem', color: '#94a3b8', textAlign: 'center', border: '1px dashed #cbd5e1', marginBottom: '20px' }}>
-                    このスタッフは「アシスタント」のため、専用の指名予約URLは発行されません。
+                    アシスタントには専用の指名予約URLは発行されません（お客様から個別指名できるのは「担当スタッフ」のみです）。
                   </div>
                 )}
 
@@ -458,7 +462,7 @@ const StaffSettings = () => {
                 <div style={{ marginBottom: '25px', padding: '15px', background: isStylist ? '#fff' : '#f0f9ff', borderRadius: '15px', border: `1px solid ${isStylist ? '#e2e8f0' : '#bae6fd'}` }}>
                   <div style={{ fontSize: '0.8rem', color: isStylist ? '#64748b' : '#0284c7', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
                     <Users size={14} /> 
-                    {isStylist ? '個人の同時受け入れ上限（人）' : '店舗のサポート力（人）'}
+                    {isStylist ? '同時対応可能人数' : 'このスタッフが増やす受け入れ枠'}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <input 
@@ -477,11 +481,11 @@ const StaffSettings = () => {
                     />
                     <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
                       {isStylist ? (
-                        <>アシスタントがいる前提で、この人が同じ時間に<br />最大何人まで掛け持ちできるか</>
-                      ) : (
-                        <>この人が出勤していると、お店全体の<br />最大受け入れ枠がプラス何人増えるか</>
-                      )}
-                    </div>
+      <>この担当者が同時に対応できる<br />お客様の人数です（通常は1）</>
+    ) : (
+      <>このスタッフが出勤する日、お店全体の<br />予約受付枠が何人分増えるか</>
+    )}
+  </div>
                   </div>
                 </div>
 
@@ -541,7 +545,7 @@ const StaffSettings = () => {
 
                 <div>
                   <div style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                    <Calendar size={14} /> 定休日（毎週）
+                    <Calendar size={14} /> 毎週の休み（定休日）
                   </div>
                   <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
                     {DAYS.map((day, idx) => {
@@ -571,7 +575,7 @@ const StaffSettings = () => {
                 <div style={{ marginTop: '20px', borderTop: '1px dashed #cbd5e1', paddingTop: '15px' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ fontSize: '0.8rem', color: '#64748b', display: 'flex', alignItems: 'center', gap: '4px', fontWeight: 'bold' }}>
-                      <Calendar size={14} /> シフト休み（特定日）の設定
+                      <Calendar size={14} /> 個別の休み（特定日）の設定
                     </div>
                     <button
                       onClick={() => setOpenCalendarId(openCalendarId === staff.id ? null : staff.id)}
@@ -779,7 +783,7 @@ const StaffSettings = () => {
                 animation: (hasChanges && isSaving !== 'all') ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {isSaving === 'all' ? '保存中...' : (hasChanges ? '未保存の変更があります' : '変更はありません')}
+              <Save size={20} /> {isSaving === 'all' ? '保存中...' : '保存する'}
             </button>
           </div>
         ) : (
@@ -802,7 +806,7 @@ const StaffSettings = () => {
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isSaving === 'all' ? '保存中...' : (hasChanges ? '保存する' : '変更なし')}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isSaving === 'all' ? '保存中...' : '保存する'}</span>
             </button>
             {/* 👇 プレビューボタンと同じ大きさの透明な「空きスペース」 */}
             <div style={{ flex: 1 }}></div>

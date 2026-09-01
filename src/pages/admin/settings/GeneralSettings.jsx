@@ -202,7 +202,7 @@ const [initialDataStr, setInitialDataStr] = useState(null);
 
   const handleUpdatePassword = async () => {
     if (!newPassword || newPassword.length < 8) { alert("セキュリティのため、パスワードは8文字以上に設定してください。"); return; }
-    if (window.confirm("パスワードを更新します。一度更新されると運営者もあなたのパスワードを知ることはできなくなります。よろしいですか？")) {
+    if (window.confirm("パスワードを更新します。新しいパスワードも安全な形式で保存され、運営者を含め誰にも見られることはありません。よろしいですか？")) {
       const salt = bcrypt.genSaltSync(10);
       const hashed = bcrypt.hashSync(newPassword, salt);
       const { error } = await supabase.from('profiles').update({ hashed_password: hashed, admin_password: '********' }).eq('id', shopId);
@@ -298,7 +298,7 @@ return (
               新着予約の通知を受け取る（調整中）
             </div>
             <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-              現在メンテナンス中のため、通知はメール・LINEのみとなります。
+              近日公開予定の機能です。現在は通知はメール・LINEのみとなります。
             </div>
           </div>
           <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'default' }}>
@@ -373,7 +373,7 @@ return (
           <Shield size={20} /> セキュリティ設定
         </h3>
         <p style={{ fontSize: '0.8rem', color: '#64748b', marginBottom: '24px', lineHeight: '1.5' }}>
-          パスワードは強力なハッシュ化により保護されます。運営者もあなたのパスワードを知ることはできません。
+          パスワードは安全な形式で保存されており、運営者を含め誰も内容を見ることはできません。
         </p>
         
         {!isChangingPassword ? (
@@ -389,7 +389,7 @@ return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', animation: 'fadeIn 0.3s ease' }}>
             <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} style={inputStyle} placeholder="新しいパスワード（8文字以上）" autoFocus />
             <div style={{ display: 'flex', gap: '10px' }}>
-              <button onClick={handleUpdatePassword} style={{ flex: 1, padding: '15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>安全に保存</button>
+              <button onClick={handleUpdatePassword} style={{ flex: 1, padding: '15px', background: '#1e293b', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>パスワードを更新する</button>
               <button onClick={() => setIsChangingPassword(false)} style={{ flex: 1, padding: '15px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>キャンセル</button>
             </div>
           </div>
@@ -426,7 +426,7 @@ return (
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -449,7 +449,7 @@ return (
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
           </div>
         )}

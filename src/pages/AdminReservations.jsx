@@ -1499,6 +1499,30 @@ setSalesRecords(salesData || []);
     }
   };
 
+  // 🆕 追加：クリップボードへのコピー（メールソフトが無い環境向けのフォールバック付き）
+  const copyToClipboard = async (text) => {
+    try {
+      if (navigator.clipboard && window.isSecureContext) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        // 🛡️ 古いブラウザやWebView（クリップボードAPI非対応）向けのフォールバック
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+      }
+      showMsg('コピーしました！');
+    } catch (err) {
+      console.error("コピー失敗:", err);
+      alert("コピーに失敗しました。お手数ですが手動で選択してコピーしてください。");
+    }
+  };
+
   const cancelRes = async (id) => {
     if (!window.confirm("この予約を「キャンセル扱い」にして記録に残しますか？\n（予約枠は空きます）")) return;
 
@@ -3020,33 +3044,50 @@ else if (
           <div style={{ textAlign: 'center', color: '#94a3b8', padding: '30px' }}>現在、未解決のキャンセルはありません。</div>
         ) : (
           cancellationAlerts.map((c) => (
-            <div key={`cancel-alert-${c.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '12px 15px', borderRadius: '16px', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
+            <div key={`cancel-alert-${c.id}`} style={{ background: '#fff', border: '1px solid #fecdd3', padding: '14px 16px', borderRadius: '16px', boxShadow: '0 2px 6px rgba(0,0,0,0.02)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' }}>
-                <div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: '900', color: '#be123c' }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: '1rem', fontWeight: '900', color: '#be123c' }}>
                     🚫 {c.customer_name} 様
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b', marginTop: '6px' }}>
                     キャンセルされた予定：<strong>{new Date(c.start_time).toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}</strong>
                     {c.menu_name && <span> ／ {c.menu_name}</span>}
                   </div>
-                  {/* 🆕 電話番号タップで発信 */}
+
+                  {/* 🆕 修正：電話番号タップで発信（フォントを拡大し、タップ範囲を広げた） */}
                   {c.customer_phone && c.customer_phone !== '---' && (
-                    <a href={`tel:${c.customer_phone}`} style={{ display: 'block', fontSize: '0.75rem', color: '#0369a1', marginTop: '4px', textDecoration: 'none' }}>
+                    <a 
+                      href={`tel:${c.customer_phone}`} 
+                      style={{ display: 'inline-block', fontSize: '1rem', fontWeight: 'bold', color: '#0369a1', marginTop: '10px', textDecoration: 'none', padding: '6px 0' }}
+                    >
                       📞 {c.customer_phone}
                     </a>
                   )}
-                  {/* 🆕 追加：メールアドレス表示＋タップで送信 */}
+
+                  {/* 🆕 修正：メールアドレス（フォント拡大）＋ コピーボタンを追加 */}
                   {c.customer_email && (
-                    <a href={`mailto:${c.customer_email}`} style={{ display: 'block', fontSize: '0.75rem', color: '#0369a1', marginTop: '2px', textDecoration: 'none' }}>
-                      ✉️ {c.customer_email}
-                    </a>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '6px' }}>
+                      <a 
+                        href={`mailto:${c.customer_email}`} 
+                        style={{ fontSize: '1rem', fontWeight: 'bold', color: '#0369a1', textDecoration: 'none', padding: '6px 0', wordBreak: 'break-all' }}
+                      >
+                        ✉️ {c.customer_email}
+                      </a>
+                      <button
+                        onClick={() => copyToClipboard(c.customer_email)}
+                        style={{ flexShrink: 0, background: '#f1f5f9', color: '#475569', border: '1px solid #cbd5e1', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
+                      >
+                        コピー
+                      </button>
+                    </div>
                   )}
                 </div>
-                {/* 🆕 追加：消去ボタン（ご逝去・ご入院などの場合） */}
+
+                {/* 消去ボタン（ご逝去・ご入院などの場合） */}
                 <button
                   onClick={() => dismissCancellationAlert(c.customer_id, c.customer_name)}
-                  style={{ flexShrink: 0, background: '#fff', color: '#94a3b8', border: '1px solid #e2e8f0', padding: '5px 10px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.7rem' }}
+                  style={{ flexShrink: 0, background: '#fff', color: '#94a3b8', border: '1px solid #e2e8f0', padding: '6px 12px', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.8rem' }}
                 >
                   消去
                 </button>

@@ -43,11 +43,16 @@ const ConfigItem = ({ id, icon: Icon, title, description, formConfig, themeColor
 
         <div style={{ display: 'flex', gap: '16px', textAlign: 'center' }}>
           <div>
-            <div style={{ fontSize: '0.65rem', color: '#ef4444', marginBottom: '4px', fontWeight: 'bold' }}>必須</div>
-            <button onClick={() => toggleField(id, 'required')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: formConfig[id].required ? '#ef4444' : '#cbd5e1' }} disabled={id === 'name'}>
-              {formConfig[id].required ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
-            </button>
-          </div>
+  <div style={{ fontSize: '0.65rem', color: '#ef4444', marginBottom: '4px', fontWeight: 'bold' }}>必須</div>
+  <button 
+    onClick={() => toggleField(id, 'required')} 
+    style={{ background: 'none', border: 'none', cursor: id === 'name' ? 'default' : 'pointer', color: formConfig[id].required ? '#ef4444' : '#cbd5e1' }} 
+    disabled={id === 'name'}
+    title={id === 'name' ? 'お名前は常に必須項目です' : ''}
+  >
+    {formConfig[id].required ? <ToggleRight size={32} /> : <ToggleLeft size={32} />}
+  </button>
+</div>
           <div>
             <div style={{ fontSize: '0.65rem', color: '#64748b', marginBottom: '4px', fontWeight: 'bold' }}>Web</div>
             <button onClick={() => toggleField(id, 'normal')} style={{ background: 'none', border: 'none', cursor: 'pointer', color: formConfig[id].enabled ? themeColor : '#cbd5e1' }}>
@@ -108,9 +113,15 @@ const CustomFieldItem = ({ field, themeColor, updateCustomField, deleteCustomFie
           <input type="text" value={field.label || ''} onChange={(e) => updateCustomField(field.id, 'label', e.target.value)} style={inputStyle} />
         </div>
         <div>
-          <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#64748b' }}>選択肢（カンマ区切り）</label>
-          <input type="text" value={field.options} onChange={(e) => updateCustomField(field.id, 'options', e.target.value)} style={inputStyle} />
-        </div>
+  <label style={{ fontSize: '0.7rem', fontWeight: 'bold', color: '#64748b' }}>選択肢（カンマ区切り）</label>
+  <input 
+    type="text" 
+    value={field.options} 
+    onChange={(e) => updateCustomField(field.id, 'options', e.target.value)} 
+    style={inputStyle} 
+    placeholder="例: はい,いいえ,わからない" 
+  />
+</div>
       </div>
       <div style={{ display: 'flex', gap: '25px', borderTop: '1px solid #e2e8f0', paddingTop: '15px' }}>
         <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
@@ -303,14 +314,24 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
       {isHybrid && (
         <div style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', marginBottom: '25px', border: '1px solid #e2e8f0' }}>
           <p style={{ margin: 0, fontSize: '0.85rem', color: '#475569', lineHeight: '1.5' }}>
-            <span style={{ fontWeight: 'bold', color: themeColor }}>💡 ハイブリッド店舗モード：</span><br/>
+            <span style={{ fontWeight: 'bold', color: themeColor }}>店舗＋訪問の両方に対応中：</span><br/>
             「表示対象」を切り替えることで、来店のお客様と訪問のお客様で、表示する入力フォームを自動で出し分けることができます。
           </p>
         </div>
       )}
 
-      <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ 基本情報</h3>
-      <section style={{ ...cardStyle, borderTop: `6px solid #94a3b8` }}>
+      <div style={{ background: '#f8fafc', padding: '15px 20px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #e2e8f0' }}>
+  <p style={{ margin: 0, fontSize: '0.8rem', color: '#475569', lineHeight: '1.7' }}>
+    各項目の横にある4つのスイッチの意味です。<br/>
+    <span style={{ color: '#ef4444', fontWeight: 'bold' }}>必須</span>：入力しないと予約を進められなくなります　/　
+    <span style={{ fontWeight: 'bold' }}>Web</span>：通常のWeb予約フォームに表示　/　
+    <span style={{ color: '#16a34a', fontWeight: 'bold' }}>LINE</span>：LINEからの予約フォームに表示　/　
+    <span style={{ color: '#f59e0b', fontWeight: 'bold' }}>問合せ</span>：お問い合わせフォームに表示
+  </p>
+</div>
+
+<h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ 基本情報</h3>
+<section style={{ ...cardStyle, borderTop: `6px solid #94a3b8` }}>
         <ConfigItem id="name" icon={User} title="お名前" description="必須項目です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
         <ConfigItem id="furigana" icon={User} title="ふりがな" description="読み仮名を有効にします。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
         <ConfigItem id="email" icon={Mail} title="メールアドレス" description="通知先になります。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
@@ -324,10 +345,10 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
         <ConfigItem id="parking" icon={Car} title="駐車場" description="駐車場の有無。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
         <ConfigItem id="building_type" icon={Building2} title="建物の種類" description="戸建・集合住宅など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
         <ConfigItem id="company_name" icon={Building2} title="会社名" description="法人のお客様向け。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
-        <ConfigItem id="care_notes" icon={HeartPulse} title="お身体の状況" description="介助の有無など。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
-        <ConfigItem id="symptoms" icon={Sparkles} title="お悩み" description="状態やレベル。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
-        <ConfigItem id="request_details" icon={Scissors} title="詳細要望" description="デザイン等。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
-        <ConfigItem id="notes" icon={MessageSquare} title="備考欄" description="末尾に固定されます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="care_notes" icon={HeartPulse} title="お身体の状況" description="介助の要否や車椅子の利用有無などをお客様に記入していただけます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="symptoms" icon={Sparkles} title="お悩み" description="お客様の今の状態や気になっていることを記入していただけます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="request_details" icon={Scissors} title="詳細要望" description="仕上がりイメージやご要望を自由に記入していただけます。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
+        <ConfigItem id="notes" icon={MessageSquare} title="備考欄" description="予約フォームの一番下に表示される自由記入欄です。" formConfig={formConfig} themeColor={themeColor} toggleField={toggleField} isHybrid={isHybrid} updateFieldMode={updateFieldMode} />
       </section>
       
       <h3 style={{ fontSize: '1rem', color: '#64748b', marginBottom: '15px', paddingLeft: '10px' }}>▼ カスタム質問（ラジオボタン）</h3>
@@ -368,7 +389,7 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -390,7 +411,7 @@ const BookingDetailsSettings = ({ reloadPreview, setShowMobilePreview }) => {
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
             <button 
               onClick={() => {

@@ -465,7 +465,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', cursor: 'pointer' }}>
             <div>
               <div style={{ display: 'flex', alignItems: 'center' }}>
-                <b style={{ fontSize: '0.9rem', color: '#334155' }}>カテゴリ画像（アイコン）を表示する</b>
+                <b style={{ fontSize: '0.9rem', color: '#334155' }}>カテゴリ画像を表示する</b>
                 <HelpTooltip themeColor={themeColor} text="予約画面でカテゴリのタイトル横にサムネイル画像を表示します。「メニューは画像なしでシンプルにしたいけれど、カテゴリだけは画像を見せたい」といった場合に使用します。" />
               </div>
             </div>
@@ -538,7 +538,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -561,7 +561,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
             <button 
               onClick={() => {
@@ -629,7 +629,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           {shopIndustries.length > 1 && (
             <div>
               <div style={{ display: 'flex', alignItems: 'center', marginBottom: '5px' }}>
-                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold' }}>対象とする大業種（ハイブリッド用）</span>
+                <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold' }}>表示する業種を限定する（複数業種を運営している場合）</span>
                 <HelpTooltip themeColor={themeColor} text="お客様が予約画面で「店舗へ行く」「訪問してもらう」などを選んだ際、どのタブでこのカテゴリを表示させるか設定します。" />
               </div>
               <select 
@@ -652,7 +652,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               {/* ラベル部分の復元 */}
               <div style={{ display: 'flex', flexDirection: isPC ? 'row' : 'column', gap: '10px', alignItems: isPC ? 'center' : 'flex-start', marginBottom: '5px' }}>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
-                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>識別キー</span>
+                  <span style={{ fontSize: '0.7rem', color: '#64748b' }}>専用URLキーワード（英数字）</span>
                   <HelpTooltip themeColor={themeColor} text="英数字を入力すると、このカテゴリ専用の予約URLを作成できます（例：hair）。" />
                 </div>
                 <div style={{ flex: 1, display: 'flex', alignItems: 'center' }}>
@@ -723,7 +723,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
               </div>
               <div style={{ marginTop: '12px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 <button onClick={async () => { await supabase.from('service_categories').update({ allow_multiple_in_category: !c.allow_multiple_in_category }).eq('id', c.id); fetchMenuDetails(); }} style={{ fontSize: '0.75rem', padding: '6px 12px', background: c.allow_multiple_in_category ? themeColor : '#fff', color: c.allow_multiple_in_category ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '20px', fontWeight: 'bold', cursor: 'pointer' }}>{c.allow_multiple_in_category ? '複数選択可' : '1つのみ選択'}</button>
-                <button onClick={() => setEditingDisableCatId(editingDisableCatId === c.id ? null : c.id)} style={{ fontSize: '0.75rem', padding: '6px 12px', background: editingDisableCatId === c.id ? '#1e293b' : '#fff', color: editingDisableCatId === c.id ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}><Link2 size={14} /> 連動設定 {editingDisableCatId === c.id ? 'を閉じる' : ''}</button>
+                <button onClick={() => setEditingDisableCatId(editingDisableCatId === c.id ? null : c.id)} style={{ fontSize: '0.75rem', padding: '6px 12px', background: editingDisableCatId === c.id ? '#1e293b' : '#fff', color: editingDisableCatId === c.id ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '20px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer' }}><Link2 size={14} /> 他カテゴリとの組み合わせ設定 {editingDisableCatId === c.id ? 'を閉じる' : ''}</button>
               </div>
               {editingDisableCatId === c.id && (
                 <div style={{ marginTop: '16px', padding: '16px', background: '#fff', borderRadius: '16px', border: `2px solid ${themeColor}` }}>
@@ -751,7 +751,7 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
       {/* メニュー登録 */}
       <section ref={menuFormRef} style={{ ...cardStyle, background: '#f8fafc', border: '1px solid #cbd5e1' }}>
         <h3 style={{ marginTop: 0, fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '20px' }}>
-          <Edit2 size={20} color="#64748b" /> サービス登録・編集
+          <Edit2 size={20} color="#64748b" /> メニュー登録・編集
         </h3>
         <form onSubmit={handleServiceSubmit}>
           <div style={{ marginBottom: '12px' }}>
@@ -763,13 +763,13 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
           </div>
           
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>サービス名</label>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>メニュー名</label>
             <input value={newServiceName} onChange={(e) => setNewServiceName(e.target.value)} style={inputStyle} placeholder="例: カット ＆ ブロー" required />
           </div>
 
           {/* 🚀 🌟 追加：サービス説明 */}
           <div style={{ marginBottom: '12px' }}>
-            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>サービスの説明 (任意)</label>
+            <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '6px' }}>メニューの説明 (任意)</label>
             <textarea value={newServiceDesc} onChange={(e) => setNewServiceDesc(e.target.value)} style={{ ...inputStyle, minHeight: '60px', resize: 'vertical' }} placeholder="施術内容や効果などの詳細な説明" />
           </div>
 
@@ -953,14 +953,14 @@ const BookingFormSettings = ({ reloadPreview, setShowMobilePreview }) => { // �
             </div>
           </div>
           <button type="submit" style={{ width: '100%', padding: '16px', background: themeColor, color: 'white', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer' }}>
-            {editingServiceId ? 'サービスを更新する' : 'サービスを新規登録'}
+            {editingServiceId ? 'メニューを更新する' : 'メニューを新規登録'}
           </button>
         </form>
       </section>
 
-      {/* サービス一覧 */}
+      {/* メニュー一覧 */}
       <div style={{ marginTop: '30px' }}>
-        <h3 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '20px', fontWeight: 'bold' }}>現在のサービス一覧</h3>
+        <h3 style={{ fontSize: '1rem', color: '#1e293b', marginBottom: '20px', fontWeight: 'bold' }}>現在のメニュー一覧</h3>
         {categories.map((cat) => (
           <div key={cat.id} style={{ marginBottom: '30px' }}>
             <h4 style={{ color: '#64748b', fontSize: '0.85rem', marginBottom: '12px', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', fontWeight: 'bold' }}>{cat.name}</h4>

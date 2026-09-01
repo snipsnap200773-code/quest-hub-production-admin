@@ -1706,12 +1706,12 @@ const handleProdCatSubmit = async (e) => {
                   </div>
 
                   {/* 🌟 追加：店販用の時だけメーカー名入力を表示 */}
-                  {newUsageType === '店販用' && (
-                    <div style={{ flex: 1, animation: 'fadeIn 0.3s' }}>
-                      <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>発注書用カテゴリ</label>
-                      <input placeholder="例: FIOLE" value={newManufacturerName} onChange={(e) => setNewManufacturerName(e.target.value)} style={inputStyle} />
-                    </div>
-                  )}
+{newUsageType === '店販用' && (
+  <div style={{ flex: 1, animation: 'fadeIn 0.3s' }}>
+    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>メーカー名（発注書に表示されます）</label>
+    <input placeholder="例: FIOLE" value={newManufacturerName} onChange={(e) => setNewManufacturerName(e.target.value)} style={inputStyle} />
+  </div>
+)}
 
                   <div style={{ flex: 1 }}>
                     <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>取引先（ディーラー）</label>
@@ -1762,7 +1762,7 @@ const handleProdCatSubmit = async (e) => {
                     <input type="number" placeholder="例: 3" value={newReorderPoint} onChange={(e) => setNewReorderPoint(e.target.value)} style={inputStyle} />
                   </div>
                   <div style={{ flex: 1 }}>
-                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>ﾃﾞﾌｫﾙﾄ発注数</label>
+                    <label style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#64748b', display: 'block', marginBottom: '8px' }}>デフォルト発注数</label>
                     <input type="number" placeholder="例: 6" value={newDefaultOrderQty} onChange={(e) => setNewDefaultOrderQty(e.target.value)} style={inputStyle} />
                   </div>
                 </div>
@@ -3105,8 +3105,8 @@ const handleProdCatSubmit = async (e) => {
               <div style={{ marginBottom: '15px' }}>
                 <strong style={{ color: '#1e293b', fontSize: '0.95rem' }}>Q. 発注後に「間違えた！やり直したい！」という時は？</strong>
                 <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginTop: '8px', borderLeft: '4px solid #3b82f6', fontSize: '0.85rem' }}>
-                  A. 「仕入（入庫待ち）画面」に行き、間違えた商品の<b>🗑️ゴミ箱ボタン</b>、または<b>一括取消ボタン</b>を押してください。発注リストに未発注の状態として復活します[cite: 1, 9, 10]。
-                </div>
+  A. 「仕入（入庫待ち）画面」に行き、間違えた商品の<b>🗑️ゴミ箱ボタン</b>、または<b>一括取消ボタン</b>を押してください。発注リストに未発注の状態として復活します。
+</div>
               </div>
 
               <div style={{ marginBottom: '15px' }}>

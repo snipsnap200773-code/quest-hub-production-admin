@@ -272,7 +272,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         </p>
         
         <div style={{ marginBottom: '20px' }}>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>☀ 開店前の拡張 (30分 × 数):</label>
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>開店前の拡張枠（30分単位でいくつ追加するか）:</label>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
               <button key={n} type="button" onClick={() => setExtraSlotsBefore(n)} style={{ ...btnActiveS(extraSlotsBefore, n), width: '40px', height: '40px', flex: 'none' }}>{n}</button>
@@ -282,7 +282,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         </div>
 
         <div>
-          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>🌙 閉店後の拡張 (30分 × 数):</label>
+          <label style={{ fontSize: '0.85rem', fontWeight: 'bold', display: 'block', marginBottom: '10px', color: '#854d0e' }}>閉店後の拡張枠（30分単位でいくつ追加するか）:</label>
           <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
             {[0, 1, 2, 3, 4, 5, 6, 7, 8].map(n => (
               <button key={n} type="button" onClick={() => setExtraSlotsAfter(n)} style={{ ...btnActiveS(extraSlotsAfter, n), width: '40px', height: '40px', flex: 'none' }}>{n}</button>
@@ -302,10 +302,10 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         <div style={{ marginBottom: '25px', padding: '15px', background: '#f8fafc', borderRadius: '12px', border: `1px solid ${themeColor}33` }}>
           <label style={{ fontWeight: '900', display: 'flex', alignItems: 'center', marginBottom: '10px', fontSize: '0.9rem', color: themeColor }}>
             アシスタント不在時の予約ルール
-            <HelpTooltip themeColor={themeColor} showDown={true} text="技術者が複数人いる場合に、アシスタントがいない時間帯の予約の入り方を決定します。" />
+            <HelpTooltip themeColor={themeColor} showDown={true} text="担当スタッフが複数人いる場合に、アシスタントがいない時間帯の予約の入り方を決定します。" />
           </label>
           <p style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '15px', lineHeight: '1.5' }}>
-            ※店舗全体の受け入れ上限は、「出勤している技術者＋アシスタントのサポート力」で毎時間自動計算されます。
+            ※店舗全体の受け入れ上限は、「出勤している担当スタッフ＋アシスタントのサポート力」で毎時間自動計算されます。
           </p>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -321,7 +321,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
               <div>
                 <b style={{ fontSize: '0.85rem', color: !restrictStylistWithoutAssistant ? themeColor : '#334155' }}>早い者勝ちモード（歩合制など）</b>
                 <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-                  アシスタントがいなくても、技術者の「個人上限」を維持します。先に予約を取った技術者が優先され、店舗上限に達した時点で他スタッフの予約はブロックされます。
+                  アシスタントがいなくても、担当スタッフの「個人上限」を維持します。先に予約を取った担当スタッフが優先され、店舗上限に達した時点で他スタッフの予約はブロックされます。
                 </p>
               </div>
             </label>
@@ -338,7 +338,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
               <div>
                 <b style={{ fontSize: '0.85rem', color: restrictStylistWithoutAssistant ? themeColor : '#334155' }}>平等モード（枠を均等に割り振り）</b>
                 <p style={{ margin: '4px 0 0 0', fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>
-                  アシスタントがいない時間は、すべての技術者の個人上限を強制的に「1名（マンツーマン）」に制限します。スタッフ全員に均等に予約が入りやすくなります。
+                  アシスタントがいない時間は、すべての担当スタッフの個人上限を強制的に「1名（マンツーマン）」に制限します。スタッフ全員に均等に予約が入りやすくなります。
                 </p>
               </div>
             </label>
@@ -372,8 +372,8 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: maxCapacity === 1 ? 'pointer' : 'not-allowed', padding: '10px', background: '#f8fafc', borderRadius: '12px', opacity: maxCapacity === 1 ? 1 : 0.6 }}>
           <input type="checkbox" checked={autoFillLogic} disabled={maxCapacity !== 1} onChange={(e) => setAutoFillLogic(e.target.checked)} style={{ width: '20px', height: '20px' }} />
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <b style={{ fontSize: '0.9rem', color: '#334155' }}>自動詰め機能を有効にする</b>
-            <HelpTooltip themeColor={themeColor} text="予約枠の前後に不自然な空き時間ができないよう、効率よく予約を埋めるロジックを適用します。" />
+            <b style={{ fontSize: '0.9rem', color: '#334155' }}>予約を自動で効率よく詰める（ゆるい自動調整）</b>
+            <HelpTooltip themeColor={themeColor} text="予約枠の前後に不自然な空き時間ができないよう、効率よく予約を埋めるロジックを適用します。次の「前詰め予約を強制する」よりも緩やかな自動調整です。" />
           </div>
         </label>
         {maxCapacity > 1 && <p style={{ fontSize: '0.65rem', color: '#ef4444', marginTop: '4px', marginLeft: '10px', fontWeight: 'bold' }}>※同時予約有効時はオフ固定</p>}
@@ -381,8 +381,8 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         <label style={{ display: 'flex', alignItems: 'center', gap: '12px', cursor: 'pointer', padding: '10px', background: '#f8fafc', borderRadius: '12px', marginTop: '10px' }}>
           <input type="checkbox" checked={isStrictFillMode} onChange={(e) => setIsStrictFillMode(e.target.checked)} style={{ width: '20px', height: '20px' }} />
           <div style={{ display: 'flex', alignItems: 'center' }}>
-            <b style={{ fontSize: '0.9rem', color: '#1e293b' }}><span style={{ color: '#ef4444' }}>⚡️</span> 前詰め予約を強制する</b>
-            <HelpTooltip themeColor={themeColor} text="お客様は、既にある予約の「直前」か「直後」の時間しか選べなくなるため、効率よく予約を埋められます。" />
+            <b style={{ fontSize: '0.9rem', color: '#1e293b' }}><span style={{ color: '#ef4444' }}>⚡️</span> 前詰め予約を強制する（厳しい自動調整）</b>
+            <HelpTooltip themeColor={themeColor} text="お客様は、既にある予約の「直前」か「直後」の時間しか選べなくなるため、効率よく予約を埋められます。上の「自動で効率よく詰める」よりも強い制限がかかります。" />
           </div>
         </label>
 
@@ -521,7 +521,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -544,7 +544,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
             <button 
               onClick={() => {

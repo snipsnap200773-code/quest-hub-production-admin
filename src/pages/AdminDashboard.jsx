@@ -276,10 +276,10 @@ const AdminDashboard = () => {
 
         {/* スタッフ管理 */}
         <NavCard 
-          title="スタッフ管理" desc="担当者の登録" icon={<Users size={28} />} color="#f43f5e"
-          to={`/admin/${shopId}/settings/staff`}
-          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
-        />
+  title="スタッフ管理" desc="担当スタッフの登録・シフト設定" icon={<Users size={28} />} color="#f43f5e"
+  to={`/admin/${shopId}/settings/staff`}
+  cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+/>
 
         {/* 店舗基本設定のカード */}
         <NavCard 
@@ -327,7 +327,7 @@ const AdminDashboard = () => {
         {/* タスク・お会計設定 */}
         <NavCard 
           title="タスク・お会計設定" 
-          desc="店販商品・調整（割引）マスター・自動処理" 
+          desc="調整（割引）ボタンの登録・お会計の自動処理" 
           icon={<ClipboardList size={28} />} 
           color="#10b981"
           to={`/admin/${shopId}/settings/checkout?preview=tasks`} 
@@ -337,14 +337,14 @@ const AdminDashboard = () => {
 
         {/* 🌟 🆕 追加：在庫管理ポチポチ画面 */}
         <NavCard 
-          title="在庫管理" 
-          desc="業務用商材の開封と在庫状況の確認" 
-          icon={<PackageOpen size={28} />} 
-          color="#f59e0b" /* 少し目立つオレンジ色 */
-          to={`/admin/${shopId}/inventory`} 
-          cardStyle={cardStyle} 
-          iconBoxStyle={iconBoxStyle} 
-        />
+  title="在庫管理" 
+  desc="商品の在庫・発注・仕入・棚卸の一元管理" 
+  icon={<PackageOpen size={28} />} 
+  color="#f59e0b" /* 少し目立つオレンジ色 */
+  to={`/admin/${shopId}/inventory`} 
+  cardStyle={cardStyle} 
+  iconBoxStyle={iconBoxStyle} 
+/>
 
         {/* メール設定（※複雑なため現在は非表示。必要になればコメントアウトを外して復活）
         <NavCard 
@@ -363,10 +363,10 @@ const AdminDashboard = () => {
 
         {/* 全般設定 */}
         <NavCard 
-          title="全般設定" desc="カラー・共有ID・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
-          to={`/admin/${shopId}/settings/general?preview=reserve`}
-          cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
-        />
+  title="全般設定" desc="テーマカラー・通知・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
+  to={`/admin/${shopId}/settings/general?preview=reserve`}
+  cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+/>
 
         {/* 👇 🆕 追加：リンク・シェア用URL管理 */}
         <NavCard 

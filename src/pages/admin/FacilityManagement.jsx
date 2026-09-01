@@ -1052,7 +1052,7 @@ facilities.forEach(conn => {
                    onClick={() => setShopSettings({...shopSettings, is_strict_facility_block: !shopSettings.is_strict_facility_block})}
                    style={toggleBtnStyle(shopSettings.is_strict_facility_block !== false)}
                  >
-                   {shopSettings.is_strict_facility_block !== false ? 'ON (1日ブロック)' : 'OFF (空き枠を計算)'}
+                   {shopSettings.is_strict_facility_block !== false ? 'ON：1件で満員にする' : 'OFF：残り枠を計算する'}
                  </button>
                </div>
                {/* 👆 追加ここまで */}
@@ -1079,11 +1079,12 @@ facilities.forEach(conn => {
                  {/* 🚀 🆕 3列×2段の計6項目が並ぶように調整しました */}
                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '15px' }}>
                    <label style={labelStyle}>1人1時間の施術人数
-                     <input type="number" step="0.1" value={shopSettings.hourly_capacity_per_staff || ''} onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} style={inputStyle} />
-                   </label>
-                   <label style={labelStyle}>訪問スタッフ数(標準)
-                     <input type="number" value={shopSettings.facility_staff_count || ''} onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} style={inputStyle} />
-                   </label>
+  <input type="number" step="0.1" value={shopSettings.hourly_capacity_per_staff || ''} onChange={(e) => setShopSettings({...shopSettings, hourly_capacity_per_staff: parseFloat(e.target.value)})} style={inputStyle} />
+  <span style={{ fontSize: '0.65rem', color: '#166534', fontWeight: 'normal' }}>例：1.5人＝1人を40分ペースで対応</span>
+</label>
+                   <label style={labelStyle}>通常この施設に訪問するスタッフの人数
+  <input type="number" value={shopSettings.facility_staff_count || ''} onChange={(e) => setShopSettings({...shopSettings, facility_staff_count: parseInt(e.target.value)})} style={inputStyle} />
+</label>
 
                    {/* ⭕️ 復活：開始時間 */}
                    <label style={labelStyle}>施設訪問 開始時間
@@ -1915,7 +1916,7 @@ facilities.forEach(conn => {
                     animation: (hasChanges && !isUpdating) ? 'pulse-btn 2s infinite' : 'none' 
                   }}
                 >
-                  <Save size={20} /> {isUpdating ? '保存中...' : (hasChanges ? '未保存の変更があります' : '変更はありません')}
+                  <Save size={20} /> {isUpdating ? '保存中...' : '保存する'}
                 </button>
               </div>
             ) : (
@@ -1937,7 +1938,7 @@ facilities.forEach(conn => {
                   }}
                 >
                   <Save size={20} />
-                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isUpdating ? '保存中...' : (hasChanges ? '保存する' : '変更なし')}</span>
+                  <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{isUpdating ? '保存中...' : '保存する'}</span>
                 </button>
                 <div style={{ flex: 1 }}></div>
               </div>

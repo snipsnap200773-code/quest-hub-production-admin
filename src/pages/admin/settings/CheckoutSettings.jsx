@@ -156,7 +156,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
       await supabase.from('admin_adjustments').insert([{ ...payload, sort_order: nextSortOrder }]);
     }
     
-    setNewAdjName(''); setAdjValue(0); setEditingAdjId(null); fetchMasterDetails(); showMsg('調整項目を保存しました');
+    setNewAdjName(''); setAdjValue(0); setEditingAdjId(null); fetchMasterDetails(); showMsg('調整ボタンを保存しました');
   };
 
   const containerStyle = { fontFamily: 'sans-serif', width: '100%', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', position: 'relative', boxSizing: 'border-box' };
@@ -181,8 +181,8 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
         </h3>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '15px', borderBottom: '1px solid #e2e8f0' }}>
           <div style={{ flex: 1, paddingRight: '15px' }}>
-            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>一括売上確定モード</div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ONにすると、未処理の予約をボタン一つで一括確定できるようになります。</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>一括確定ボタンを表示する（手動）</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ONにすると、未処理の予約をボタン一つで一括確定できるようになります。スタッフが手動で押す必要があります。</div>
           </div>
           <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
             <input type="checkbox" checked={allowBatchMatching} onChange={(e) => setAllowBatchMatching(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -193,8 +193,8 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ flex: 1, paddingRight: '15px' }}>
-            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>自動売上確定モード（深夜自動）</div>
-            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ONにすると、深夜に未処理の予約を自動的に集計します。</div>
+            <div style={{ fontSize: '0.9rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '4px' }}>毎日深夜に自動で確定する（放置OK）</div>
+            <div style={{ fontSize: '0.75rem', color: '#64748b', lineHeight: '1.4' }}>ONにすると、深夜に未処理の予約を自動的に集計します。ボタンを押し忘れても翌朝には反映されています。</div>
           </div>
           <label style={{ position: 'relative', display: 'inline-block', width: '50px', height: '26px', cursor: 'pointer' }}>
             <input type="checkbox" checked={autoSalesMatching} onChange={(e) => setAutoSalesMatching(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
@@ -230,7 +230,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
                 animation: hasChanges ? 'pulse-btn 2s infinite' : 'none' 
               }}
             >
-              <Save size={20} /> {hasChanges ? '未保存の変更があります' : '変更はありません'}
+              <Save size={20} /> 保存する
             </button>
           </div>
         ) : (
@@ -252,7 +252,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
               }}
             >
               <Save size={20} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>{hasChanges ? '保存する' : '変更なし'}</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 'bold' }}>保存する</span>
             </button>
             <button 
               onClick={() => {
@@ -324,7 +324,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
             </div>
             <input type="number" placeholder="数値" value={adjValue} onChange={(e) => setAdjValue(e.target.value)} style={inputStyle} required />
             <button type="submit" style={{ width: '100%', marginTop: '20px', padding: '16px', background: '#ef4444', color: 'white', border: 'none', borderRadius: '16px', fontWeight: 'bold', fontSize: '1rem' }}>
-              {editingAdjId ? '調整項目を更新する' : '調整ボタンを新規登録'}
+              {editingAdjId ? '調整ボタンを更新する' : '調整ボタンを新規登録'}
             </button>
           </form>
         </section>

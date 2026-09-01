@@ -1062,7 +1062,7 @@ const handleSaveMemo = async () => {
         <div style={{ marginBottom: '20px', padding: '20px', background: '#fff1f2', borderRadius: '15px', border: '1px solid #fecdd3', color: '#be123c', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span>⚠️ {oldestIncompleteDate.replace(/-/g, '/')} に未処理があります</span>
           <button onClick={handleJumpToIncomplete} style={{ background: '#be123c', color: '#fff', border: 'none', padding: '8px 12px', borderRadius: '8px', cursor: 'pointer' }}>
-            ワープ
+            ワープして確認
           </button>
         </div>
       )}
