@@ -15,6 +15,18 @@ const SettingsPreviewLayout = ({ children }) => {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
+  // 🚀 追加：この設定画面（プレビュー付き）から離れる瞬間に、
+  // プレビューiframeの中身を強制的に空（about:blank）にしてから破棄する。
+  // iframeの中で動いていたタイマー等の処理を確実に止め、画面遷移後にコンソールへ
+  // エラーが漏れ出るのを防ぐ（在庫管理画面などから予約管理へ即戻る動線が増えたため対策）。
+  useEffect(() => {
+    return () => {
+      if (iframeRef.current) {
+        iframeRef.current.src = 'about:blank';
+      }
+    };
+  }, []);
+
   // プレビューの強制リロード関数
   const reloadPreview = () => {
     if (iframeRef.current) {

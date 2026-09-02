@@ -590,12 +590,7 @@ const toggleFavorite = async () => {
           </div>
 
           {/* 🗺️ Googleマップ表示エリア */}
-          {/* 🚀 変更：プレビュー表示(mode=preview)の時はGoogleマップを読み込まない。
-              管理画面のプレビューはiframeの中にこのページを表示する仕組みのため、
-              そこでさらにGoogleマップのiframeを読み込むと「iframeの二重入れ子」になり、
-              Google側の計測スクリプトが正しく動作せずコンソールにエラーが出るため。
-              実際のお客様がこのページを直接開く場合はプレビューではないので、地図は今まで通り表示されます。 */}
-          {googleMapEmbedUrl && !isPreviewMode && (
+          {googleMapEmbedUrl && (
             <div style={{ marginTop: '20px', borderRadius: '16px', overflow: 'hidden', height: '200px', border: '1px solid #eee' }}>
               <iframe
                 title="Shop Map"
@@ -606,15 +601,6 @@ const toggleFavorite = async () => {
                 src={googleMapEmbedUrl}
                 allowFullScreen
               ></iframe>
-            </div>
-          )}
-          {googleMapEmbedUrl && isPreviewMode && (
-            <div style={{ 
-              marginTop: '20px', borderRadius: '16px', height: '200px', border: '1px solid #eee', 
-              background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center',
-              color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '20px', boxSizing: 'border-box'
-            }}>
-              🗺️ 地図はプレビューでは表示されません<br/>（実際のページでは表示されます）
             </div>
           )}
         </div>
