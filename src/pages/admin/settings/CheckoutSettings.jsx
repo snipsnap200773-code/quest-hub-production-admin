@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   ArrowLeft, Save, Edit2, Trash2, ArrowUp, ArrowDown,
@@ -9,6 +9,8 @@ import {
 const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const entryFrom = location.state?.from; // 🚀 追加：'quick_access'なら予約管理/タイムラインから来た
   const adjFormRef = useRef(null);
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -23,6 +25,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
   
   // --- 1. 自動処理設定用 ---
   const [themeColor, setThemeColor] = useState('#2563eb');
+  const [isTimelineDefault, setIsTimelineDefault] = useState(false);
   const [autoSalesMatching, setAutoSalesMatching] = useState(false);
   const [allowBatchMatching, setAllowBatchMatching] = useState(false);
 
@@ -65,7 +68,19 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
       setThemeColor(data.theme_color || '#2563eb');
       setAutoSalesMatching(data.auto_sales_matching || false);
       setAllowBatchMatching(data.allow_batch_matching || false);
+      setIsTimelineDefault(data.is_timeline_default || false); // 🚀 追加：戻り先判定用
       setIsDataReady(true);
+    }
+  };
+
+  // 🚀 追加：「戻る」の遷移先を判定
+  // ・三本線メニュー(quick_access)経由なら → 予約管理 or タイムライン（isTimelineDefaultに従う）
+  // ・それ以外（通常のAdminDashboard.jsx経由）なら → 従来通りdashboardへ
+  const handleBackClick = () => {
+    if (entryFrom === 'quick_access') {
+      navigate(isTimelineDefault ? `/admin/${shopId}/timeline` : `/admin/${shopId}/reservations`);
+    } else {
+      navigate(`/admin/${shopId}/dashboard`);
     }
   };
 
@@ -215,7 +230,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
         `}</style>
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={handleBackClick} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
             <button 
@@ -235,7 +250,7 @@ const CheckoutSettings = ({ reloadPreview, setShowMobilePreview }) => {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+            <button onClick={handleBackClick} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>

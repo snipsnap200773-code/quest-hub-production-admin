@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { INDUSTRY_LABELS, getSubCategories } from '../../../constants/industryMaster';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 import { supabase } from "../../../supabaseClient";
 import { 
@@ -15,6 +15,9 @@ import imageCompression from 'browser-image-compression';
 const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const entryFrom = location.state?.from; // 🚀 追加：'quick_access'なら予約管理/タイムラインから来た
+  const [isTimelineDefault, setIsTimelineDefault] = useState(false); // 🚀 追加：戻り先判定用
 
   // 画面サイズ管理
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -96,6 +99,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const fetchInitialShopData = async () => {
     const { data } = await supabase.from('profiles').select('*').eq('id', shopId).single();
     if (data) {
+      setIsTimelineDefault(data.is_timeline_default || false); // 🚀 追加：戻り先判定用
       setBusinessName(data.business_name || '');
       setBusinessNameKana(data.business_name_kana || '');
       setOwnerName(data.owner_name || '');
@@ -156,7 +160,18 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
     }
   };
 
-  const showMsg = (txt) => { 
+  // 🚀 追加：「戻る」の遷移先を判定
+  // ・三本線メニュー(quick_access)経由なら → 予約管理 or タイムライン（isTimelineDefaultに従う）
+  // ・それ以外（通常のAdminDashboard.jsx経由）なら → 従来通りdashboardへ
+  const handleBackClick = () => {
+    if (entryFrom === 'quick_access') {
+      navigate(isTimelineDefault ? `/admin/${shopId}/timeline` : `/admin/${shopId}/reservations`);
+    } else {
+      navigate(`/admin/${shopId}/dashboard`);
+    }
+  };
+
+  const showMsg = (txt) => {
     setMessage(txt); 
     setTimeout(() => setMessage(''), 3000); 
     if (typeof reloadPreview === 'function') {
@@ -900,7 +915,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
 
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={handleBackClick} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
             <button 
@@ -921,7 +936,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+            <button onClick={handleBackClick} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>

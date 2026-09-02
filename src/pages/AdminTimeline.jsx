@@ -8,7 +8,8 @@ import {
   X, Clipboard, User, FileText, History, CheckCircle, Trash2,
   ShoppingBag, Scissors, Settings, Search, 
   PackageOpen, // 👈 🌟 🆕 追加：在庫管理アイコン
-  BarChart3 // 🚀 🆕 追加：ボトムナビ用アイコン
+  BarChart3, // 🚀 🆕 追加：ボトムナビ用アイコン
+  Store, Clock, Menu // 🚀 追加：設定☰ポップアップメニュー用
 } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
@@ -349,6 +350,9 @@ function AdminTimeline() {
   const [showMobileSearchModal, setShowMobileSearchModal] = useState(false);
   const [allCustomers, setAllCustomers] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // 🚀 追加：スマホ用フッター「設定」☰ポップアップメニューの開閉フラグ
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
   const touchStartX = useRef(0);
 
   const [expandedYears, setExpandedYears] = useState({});
@@ -1434,7 +1438,7 @@ const timeSlots = useMemo(() => {
 
             {/* 🌟 🆕 追加：在庫管理（ポチポチ）ボタン */}
             <button 
-              onClick={() => navigate(`/admin/${shopId}/inventory`)}
+              onClick={() => navigate(`/admin/${shopId}/inventory`, { state: { from: 'quick_access' } })}
               style={{ ...headerBtnStylePC, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
             >
               <PackageOpen size={16} />
@@ -3088,6 +3092,49 @@ const timeSlots = useMemo(() => {
       )}
       {/* 👆 施設キャンセルモーダル追加ここまで */}
 
+      {/* 🚀 追加：フッター「設定」☰ポップアップメニュー */}
+      {!isPC && !isPreviewMode && showSettingsMenu && (
+        <>
+          <div 
+            onClick={() => setShowSettingsMenu(false)}
+            style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.4)', zIndex: 2040 }}
+          />
+          <div style={{ 
+            position: 'fixed', bottom: '75px', left: 0, right: 0, 
+            background: '#fff', borderRadius: '16px 16px 0 0', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)', 
+            zIndex: 2050, maxHeight: '70vh', overflowY: 'auto' 
+          }}>
+            <div style={{ padding: '14px 20px 10px 20px', fontWeight: 'bold', color: '#94a3b8', fontSize: '0.8rem', letterSpacing: '1px' }}>
+              設定メニュー
+            </div>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/settings/staff`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+              <Users size={20} color="#f43f5e" /> スタッフ管理
+            </button>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/settings/basic?preview=shop`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+              <Store size={20} color="#3b82f6" /> 店舗基本設定
+            </button>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/settings/menu`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+              <Menu size={20} color="#ec4899" /> メニュー・予約受付設定
+            </button>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/settings/schedule?preview=calendar`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+              <Clock size={20} color="#f59e0b" /> カレンダー・スケジュール設定
+            </button>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/settings/checkout?preview=tasks`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+              <Clipboard size={20} color="#10b981" /> タスク・お会計設定
+            </button>
+
+            <button onClick={() => { setShowSettingsMenu(false); navigate(`/admin/${shopId}/dashboard`); }} style={{ ...settingsMenuItemStyle, borderTop: '1px solid #f1f5f9', borderBottom: 'none', color: '#64748b', fontWeight: 'bold' }}>
+              <Settings size={20} color="#64748b" /> すべての設定を見る
+            </button>
+          </div>
+        </>
+      )}
+
       {/* 🚀 🆕 【追加】スマホ用：ボトムナビゲーション */}
       {!isPC && !isPreviewMode && (
         <div style={{
@@ -3097,8 +3144,9 @@ const timeSlots = useMemo(() => {
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxShadow: '0 -4px 15px rgba(0,0,0,0.05)'
         }}>
-          <button onClick={() => { navigate(`/admin/${shopId}/dashboard`); }} style={mobileTabStyle(false, '#64748b')}>
-            <Settings size={22} />
+          {/* 🚀 変更：設定 → 画面遷移せず☰ポップアップを開閉 */}
+          <button onClick={() => setShowSettingsMenu(v => !v)} style={mobileTabStyle(showSettingsMenu, '#64748b')}>
+            <Menu size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
           </button>
 
@@ -3107,7 +3155,7 @@ const timeSlots = useMemo(() => {
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>タスク</span>
           </button>
 
-          <button onClick={() => { navigate(`/admin/${shopId}/inventory`); }} style={mobileTabStyle(false, '#f59e0b')}>
+          <button onClick={() => { navigate(`/admin/${shopId}/inventory`, { state: { from: 'quick_access' } }); }} style={mobileTabStyle(false, '#f59e0b')}>
             <PackageOpen size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>在庫</span>
           </button>
@@ -3145,6 +3193,13 @@ const mobileTabStyle = (active, color) => ({
   padding: '8px 0', 
   transition: 'all 0.2s'
 });
+
+// 🚀 追加：フッター「設定」☰ポップアップメニューの1行分のスタイル
+const settingsMenuItemStyle = {
+  width: '100%', padding: '16px 20px', background: '#fff', border: 'none', borderBottom: '1px solid #f1f5f9',
+  display: 'flex', alignItems: 'center', gap: '12px', fontWeight: 'bold', color: '#1e293b', fontSize: '0.95rem',
+  cursor: 'pointer', textAlign: 'left'
+};
 
 // 🆕 ここに差し込み：電話やマップの小さなボタン用スタイル
 const badgeStyle = (color) => ({

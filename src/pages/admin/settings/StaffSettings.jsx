@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { useSubscription } from '../../../context/SubscriptionContext';
 // 👇 🌟 🆕 追加：業種マスターデータを読み込む
@@ -13,6 +13,8 @@ import {
 const StaffSettings = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const entryFrom = location.state?.from;
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
@@ -127,12 +129,24 @@ const StaffSettings = () => {
   // ※ fetchCategories 関数自体も削除
 
   // 👇 🌟 修正：テーマカラーと業種（business_type）を取得
+  // 🚀 追加：is_timeline_default も一緒に取得（「戻る」の分岐で使用）
   const fetchShopData = async () => {
-    const { data } = await supabase.from('profiles').select('theme_color, business_type').eq('id', shopId).single();
+    const { data } = await supabase.from('profiles').select('theme_color, business_type, is_timeline_default').eq('id', shopId).single();
     if (data) setShopData(data);
   };
 
   const themeColor = shopData?.theme_color || '#2563eb';
+
+  // 🚀 追加：「戻る」の遷移先を判定
+  // ・三本線メニュー(quick_access)経由なら → 予約管理 or タイムライン（is_timeline_defaultに従う）
+  // ・それ以外（通常のAdminDashboard.jsx経由）なら → 従来通りdashboardへ
+  const handleBackClick = () => {
+    if (entryFrom === 'quick_access') {
+      navigate(shopData?.is_timeline_default ? `/admin/${shopId}/timeline` : `/admin/${shopId}/reservations`);
+    } else {
+      navigate(`/admin/${shopId}/dashboard`);
+    }
+  };
 
   const fetchStaffs = async () => {
     setLoading(true);
@@ -767,7 +781,7 @@ const StaffSettings = () => {
 
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={handleBackClick} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
             <button 
@@ -788,7 +802,7 @@ const StaffSettings = () => {
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+            <button onClick={handleBackClick} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>

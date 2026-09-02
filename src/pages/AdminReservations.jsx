@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User, PackageOpen } from 'lucide-react';
+import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User, Users, Store, Menu, PackageOpen } from 'lucide-react';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => {
@@ -218,6 +218,9 @@ const resIndexStyle = (color) => ({
   // 🚀 🆕 追加：スマホ用・全顧客検索ポップアップ用
   const [showMobileSearchModal, setShowMobileSearchModal] = useState(false);
   const [allCustomers, setAllCustomers] = useState([]); // 50音順リスト用
+
+  // 🚀 追加：スマホ用フッター「設定」☰ポップアップメニューの開閉フラグ
+  const [showSettingsMenu, setShowSettingsMenu] = useState(false);
 
 // 施設予約キャンセル専用のState
   const [showFacCancelModal, setShowFacCancelModal] = useState(false);
@@ -1603,6 +1606,7 @@ setSalesRecords(salesData || []);
     setShowMobileCalendar(false);    // スマホ用ミニカレンダー
     setShowMobileSearchModal(false); // スマホ用50音検索ポップアップ
     setShowHistoryDetail(false);     // 📜 今回新しく作った「履歴詳細」
+    setShowSettingsMenu(false);      // 🚀 追加：フッター「設定」☰ポップアップ
   };
   
   // 🆕 定期キープ（施設とのお約束）の判定：エラー修正版
@@ -2183,7 +2187,7 @@ return (
 
               {/* 🌟 🆕 追加：在庫管理（ポチポチ）ボタン */}
               <button 
-                onClick={() => navigate(`/admin/${shopId}/inventory`)}
+                onClick={() => navigate(`/admin/${shopId}/inventory`, { state: { from: 'quick_access' } })}
                 style={{ ...headerBtnStylePC, background: '#f59e0b', color: '#fff', display: 'flex', alignItems: 'center', gap: '6px', border: 'none' }}
               >
                 <PackageOpen size={16} />
@@ -2807,6 +2811,50 @@ else if (
             </div>
           </div>
         )}
+        {/* 🚀 追加：フッター「設定」☰ポップアップメニュー（本体より前に置いてz-indexで前面に出す） */}
+        {!isPC && !isPreviewMode && showSettingsMenu && (
+          <>
+            {/* 背景オーバーレイ（外側タップで閉じる） */}
+            <div 
+              onClick={() => setShowSettingsMenu(false)}
+              style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.4)', zIndex: 2040 }}
+            />
+            <div style={{ 
+              position: 'fixed', bottom: '75px', left: 0, right: 0, 
+              background: '#fff', borderRadius: '16px 16px 0 0', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)', 
+              zIndex: 2050, maxHeight: '70vh', overflowY: 'auto' 
+            }}>
+              <div style={{ padding: '14px 20px 10px 20px', fontWeight: 'bold', color: '#94a3b8', fontSize: '0.8rem', letterSpacing: '1px' }}>
+                設定メニュー
+              </div>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/settings/staff`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+                <Users size={20} color="#f43f5e" /> スタッフ管理
+              </button>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/settings/basic?preview=shop`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+                <Store size={20} color="#3b82f6" /> 店舗基本設定
+              </button>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/settings/menu`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+                <Menu size={20} color="#ec4899" /> メニュー・予約受付設定
+              </button>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/settings/schedule?preview=calendar`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+                <Clock size={20} color="#f59e0b" /> カレンダー・スケジュール設定
+              </button>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/settings/checkout?preview=tasks`, { state: { from: 'quick_access' } }); }} style={settingsMenuItemStyle}>
+                <Clipboard size={20} color="#10b981" /> タスク・お会計設定
+              </button>
+
+              <button onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/dashboard`); }} style={{ ...settingsMenuItemStyle, borderTop: '1px solid #f1f5f9', borderBottom: 'none', color: '#64748b', fontWeight: 'bold' }}>
+                <Settings size={20} color="#64748b" /> すべての設定を見る
+              </button>
+            </div>
+          </>
+        )}
+
         {!isPC && !isPreviewMode && (
         <div style={{ 
           position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px', 
@@ -2815,12 +2863,12 @@ else if (
           paddingBottom: 'env(safe-area-inset-bottom)',
           boxShadow: '0 -4px 15px rgba(0,0,0,0.05)' 
         }}>
-          {/* 🆕 1. 設定：移動前にお掃除を実行 */}
+          {/* 🚀 変更：1. 設定 → 画面遷移せず☰ポップアップを開閉 */}
           <button 
-            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/dashboard`); }} 
-            style={mobileTabStyle(false, '#64748b')}
+            onClick={() => setShowSettingsMenu(v => !v)} 
+            style={mobileTabStyle(showSettingsMenu, '#64748b')}
           >
-            <Settings size={22} />
+            <Menu size={22} />
             <span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>設定</span>
           </button>
 
@@ -2835,7 +2883,7 @@ else if (
 
           {/* 🌟 🆕 追加：在庫管理ボタン */}
           <button 
-            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/inventory`); }} 
+            onClick={() => { closeAllPopups(); navigate(`/admin/${shopId}/inventory`, { state: { from: 'quick_access' } }); }} 
             style={mobileTabStyle(false, '#f59e0b')}
           >
             <PackageOpen size={22} />
@@ -4670,6 +4718,13 @@ const mobileTabStyle = (active, color) => ({
   padding: '8px 0', 
   transition: 'all 0.2s'
 });
+
+// 🚀 追加：フッター「設定」☰ポップアップメニューの1行分のスタイル
+const settingsMenuItemStyle = {
+  width: '100%', padding: '16px 20px', background: '#fff', border: 'none', borderBottom: '1px solid #f1f5f9',
+  display: 'flex', alignItems: 'center', gap: '12px', fontWeight: 'bold', color: '#1e293b', fontSize: '0.95rem',
+  cursor: 'pointer', textAlign: 'left'
+};
 
 const badgeStyle = (color) => ({
   textDecoration: 'none', 

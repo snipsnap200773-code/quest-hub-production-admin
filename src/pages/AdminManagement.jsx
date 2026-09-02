@@ -7,7 +7,8 @@ import {
   Tag, ChevronDown, ChevronUp, RefreshCw, ChevronLeft, ChevronRight, Settings, Users, Percent, Plus, Minus, X, CheckCircle, User, FileText, History, ShoppingBag, Edit3, BarChart3,
   AlertCircle,
   Scissors,
-  Search
+  Search,
+  ArrowLeft // 🚀 追加：フッター「戻る」アイコンを他画面と統一
 } from 'lucide-react';
 
 // 🚀 🆕 エラー解消！ スタイルの定義を関数（AdminManagement）の外、かつ上に移動します
@@ -3267,7 +3268,7 @@ return (
           <button onClick={() => { closeAllPopups(); setActiveMenu('customers'); }} style={mobileTabStyle(activeMenu === 'customers', '#4285f4')}><Users size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>名簿</span></button>
           <button onClick={() => { closeAllPopups(); setActiveMenu('analytics'); }} style={mobileTabStyle(activeMenu === 'analytics', '#008000')}><BarChart3 size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>分析</span></button>
           {/* 🚀 🆕 修正：戻るボタンを「予約台帳」に変更 */}
-          <button onClick={() => { closeAllPopups(); navigate(`/admin/${cleanShopId}/${shop?.is_timeline_default ? 'timeline' : 'reservations'}`); }} style={mobileTabStyle(false, '#4b2c85')}><Clipboard size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>予約台帳</span></button>
+          <button onClick={() => { closeAllPopups(); navigate(`/admin/${cleanShopId}/${shop?.is_timeline_default ? 'timeline' : 'reservations'}`); }} style={mobileTabStyle(false, '#4b2c85')}><ArrowLeft size={22} /><span style={{ fontSize: '0.65rem', fontWeight: 'bold' }}>戻る</span></button>
         </div>
       )}
 

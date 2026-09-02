@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   Clock, Calendar, Save, Zap, ArrowLeft, Sparkles, Plus, Trash2, Layout, Settings2, CheckCircle2, Globe // 👈 Globe を追加
@@ -10,6 +10,8 @@ import HelpTooltip from '../../../components/ui/HelpTooltip';
 const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { // 👈 setShowMobilePreview を追加
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
+  const entryFrom = location.state?.from;
 
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
   useEffect(() => {
@@ -181,6 +183,17 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
   };
 
   const themeColor = shopData?.theme_color || '#2563eb';
+
+  // 🚀 追加：「戻る」の遷移先を判定
+  // ・三本線メニュー(quick_access)経由なら → 予約管理 or タイムライン（is_timeline_defaultに従う）
+  // ・それ以外（通常のAdminDashboard.jsx経由）なら → 従来通りdashboardへ
+  const handleBackClick = () => {
+    if (entryFrom === 'quick_access') {
+      navigate(shopData?.is_timeline_default ? `/admin/${shopId}/timeline` : `/admin/${shopId}/reservations`);
+    } else {
+      navigate(`/admin/${shopId}/dashboard`);
+    }
+  };
   
   const containerStyle = { width: '100%', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', boxSizing: 'border-box', fontFamily: 'sans-serif', position: 'relative' };
   const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
@@ -505,7 +518,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
 
         {isPC ? (
           <div style={{ maxWidth: '700px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={handleBackClick} style={{ flex: '0 0 auto', padding: '15px 25px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', fontWeight: 'bold', fontSize: '0.95rem', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <ArrowLeft size={18} /> 戻る
             </button>
             <button 
@@ -526,7 +539,7 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
           </div>
         ) : (
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
-            <button onClick={() => navigate(`/admin/${shopId}/dashboard`)} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
+            <button onClick={handleBackClick} style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: '12px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px', cursor: 'pointer' }}>
               <ArrowLeft size={20} />
               <span style={{ fontSize: '0.75rem', fontWeight: 'bold' }}>戻る</span>
             </button>

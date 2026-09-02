@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   PackageOpen, Minus, Plus, ArrowLeft, CheckCircle2, AlertCircle, Save, RotateCcw,
   ShoppingCart, Truck, ClipboardList, Search, Settings, Undo2, PackageMinus,
   Edit2, Trash2, ArrowUp, ArrowDown, Layers, Printer, Send, Building2, Wand2, Copy,
-  HelpCircle // 🌟 追加
+  HelpCircle, Menu // 🌟 追加：Menu＝スマホ用フッターのハンバーガーアイコン
 } from 'lucide-react';
 
 const fullPageWrapper = {
@@ -17,13 +17,41 @@ const fullPageWrapper = {
 const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
 const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
 
+// 🚀 追加：スマホ用フッター固定メニューの高さ（他の要素の余白計算にも使用）
+const MOBILE_FOOTER_HEIGHT = 64;
+
+// 🚀 追加：スマホ用フッターメニューのタブ（払出・発注・仕入・戻る・☰）用スタイル
+const footerTabStyle = (active) => ({
+  flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+  gap: '4px', background: 'none', border: 'none', cursor: 'pointer', padding: '6px 0', height: '100%'
+});
+const footerTabLabelStyle = (active) => ({
+  fontSize: '0.68rem', fontWeight: 'bold', color: active ? '#0ea5e9' : '#64748b'
+});
+
+// 🚀 追加：ハンバーガーメニュー（その他項目）の1行分のスタイル
+const mobileMenuItemStyle = {
+  width: '100%', padding: '16px 20px', background: '#fff', border: 'none', borderBottom: '1px solid #f1f5f9',
+  display: 'flex', alignItems: 'center', gap: '12px', fontWeight: 'bold', color: '#1e293b', fontSize: '0.95rem',
+  cursor: 'pointer', textAlign: 'left'
+};
+
 const InventoryManager = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const prodFormRef = useRef(null);
-  
+
+  // 🚀 追加：遷移元の判定
+  // 'quick_access' = 予約管理/タイムラインのフッター「在庫」アイコンから来た
+  // 'settings'     = 設定画面（AdminDashboard）の設定一覧から来た
+  // undefined      = 直接URLを開いた等、情報がない場合（従来通りブラウザバックにフォールバック）
+  const entryFrom = location.state?.from;
+
   const [themeColor, setThemeColor] = useState('#2563eb');
-  const [activeView, setActiveView] = useState('dashboard'); 
+  const [isTimelineDefault, setIsTimelineDefault] = useState(false); // 🚀 追加：ログイン時の初期画面設定（false=予約管理 / true=タイムライン）
+  // 🚀 変更：PCは従来通り'dashboard'、スマホは'consume'（払出）を初期画面にする
+  const [activeView, setActiveView] = useState(() => (window.innerWidth > 900 ? 'dashboard' : 'consume'));
   const [message, setMessage] = useState('');
 
   // --- ポチポチ消費用のState ---
@@ -92,6 +120,9 @@ const InventoryManager = () => {
   
   const [showHelpModal, setShowHelpModal] = useState(false); // 🌟 追加：使い方ガイド用
   // ▲▲▲ ここまで ▲▲▲
+
+  // 🚀 追加：スマホ用フッターの「☰」メニュー（その他項目）開閉用State
+  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
   // 🚀 🆕 追加：発注完了後の送信モーダル用State
   const [completedOrderData, setCompletedOrderData] = useState(null);
@@ -198,6 +229,39 @@ const InventoryManager = () => {
     setLocalProducts(prev => prev.map(p => p.id === productId ? { ...p, stock: Math.max(0, (p.stock || 0) + delta) } : p));
   };
   const hasChanges = JSON.stringify(originalProducts) !== JSON.stringify(localProducts);
+
+  // 🚀 追加：呼び出し元（予約管理/タイムライン or 設定画面）へ実際に離脱する処理
+  // ・entryFrom === 'settings'     → 設定画面（AdminDashboard）へ
+  // ・entryFrom === 'quick_access' → 予約管理 or タイムライン（GeneralSettingsの「ログイン時の初期画面」設定に従う）
+  // ・それ以外（情報がない場合）    → 従来通りブラウザの戻る（navigate(-1)）にフォールバック
+  // 🔧 要確認：/admin/${shopId}/reservations と /admin/${shopId}/timeline のパスは
+  //           実際のルーティング定義（App.jsx等のRoute設定）に合わせて調整してください。
+  const handleExitInventory = () => {
+    if (entryFrom === 'settings') {
+      navigate(`/admin/${shopId}/dashboard`);
+    } else if (entryFrom === 'quick_access') {
+      navigate(isTimelineDefault ? `/admin/${shopId}/timeline` : `/admin/${shopId}/reservations`);
+    } else {
+      navigate(-1);
+    }
+  };
+
+  // 🚀 変更：「戻る」処理を共通関数化（ヘッダーの矢印ボタンとスマホフッターの「戻る」タブの両方から呼び出す）
+  // forceExit === true の場合は、画面の途中段階を飛ばして即座に呼び出し元へ離脱する
+  // （スマホフッターの「戻る」タブは、営業中すぐに予約画面へ戻れるよう常にforceExit）
+  const handleBack = (forceExit) => {
+    if (activeView === 'consume' && hasChanges) {
+      if (!window.confirm('未保存の変更があります。破棄して戻りますか？')) return;
+      setLocalProducts(JSON.parse(JSON.stringify(originalProducts)));
+    }
+    // 🚀 変更：PCは'dashboard'、スマホは'consume'（払出）がホーム画面
+    const homeView = isPC ? 'dashboard' : 'consume';
+    if (forceExit !== true && activeView !== homeView) {
+      setActiveView(homeView);
+      return;
+    }
+    handleExitInventory();
+  };
 
   // 🚀 🌟 ここが修正ポイント：shop_id をログに含めて送信する
   const handleSaveLogs = async () => {
@@ -941,19 +1005,15 @@ const handleProdCatSubmit = async (e) => {
         boxShadow: '0 2px 4px rgba(0,0,0,0.1)', flexShrink: 0
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-          <button 
-            onClick={() => {
-              if (activeView === 'consume' && hasChanges) {
-                if (!window.confirm('未保存の変更があります。破棄して戻りますか？')) return;
-                setLocalProducts(JSON.parse(JSON.stringify(originalProducts)));
-              }
-              if (activeView !== 'dashboard') setActiveView('dashboard');
-              else navigate(-1); 
-            }} 
-            style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '8px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-          >
-            <ArrowLeft size={20} />
-          </button>
+          {/* 🚀 変更：スマホはフッターの「戻る」タブがあるため、左上の「←」はPCのみ表示 */}
+          {isPC && (
+            <button 
+              onClick={handleBack} 
+              style={{ background: 'rgba(255,255,255,0.2)', border: 'none', borderRadius: '8px', padding: '8px', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+            >
+              <ArrowLeft size={20} />
+            </button>
+          )}
           <h2 style={{ margin: 0, fontStyle: 'italic', fontSize: isPC ? '1.4rem' : '1.1rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PackageOpen size={24} /> 在庫管理システム
           </h2>
@@ -970,12 +1030,14 @@ const handleProdCatSubmit = async (e) => {
       </div>
 
       {/* 🚀 🆕 修正：ref={mainScrollRef} を追加し、画面切り替え時にスクロールを戻せるようにする */}
-      <div ref={mainScrollRef} style={{ flex: 1, overflowY: 'auto', paddingTop: isPC ? '30px' : '15px', paddingLeft: isPC ? '40px' : '15px', paddingRight: isPC ? '40px' : '15px', paddingBottom: '120px' }}>
+      <div ref={mainScrollRef} style={{ flex: 1, overflowY: 'auto', paddingTop: isPC ? '30px' : '15px', paddingLeft: isPC ? '40px' : '15px', paddingRight: isPC ? '40px' : '15px', paddingBottom: isPC ? '120px' : '190px' }}>
         
         {/* ==========================================
             🏠 ビュー1：総合ダッシュボード（トップ画面）
+            🚀 変更：PC専用画面にする（スマホ表示ではカード一覧を出さず、
+                     デフォルトで「払出」画面が開く仕様に変更したため）
             ========================================== */}
-        {activeView === 'dashboard' && (
+        {activeView === 'dashboard' && isPC && (
           <div style={{ animation: 'fadeIn 0.3s' }}>
             {isPC && <p style={{ color: '#64748b', fontSize: '1rem', marginTop: 0, marginBottom: '25px', fontWeight: 'bold' }}>美容室の商材・店販を管理する総合メニュー</p>}
 
@@ -2820,11 +2882,107 @@ const handleProdCatSubmit = async (e) => {
 
       </div>
 
+      {/* ============================================================
+          🚀 追加：スマホ用フッター固定メニュー（グローバルナビ）
+          ・PC表示（isPC）では表示しない → PC表示は従来のダッシュボードのまま
+          ・「☰」「払出」「発注」「仕入」「戻る」を横並びで常時表示
+          ・「☰」タップで、その他の項目（仕入修正・履歴／返品／棚卸／在庫照会／
+            在庫リスト印刷／マスター設定・商品登録／取引先(ディーラー)）を
+            下からせり上がるパネルで表示
+          ============================================================ */}
+      {!isPC && (
+        <>
+          {/* ☰メニューを開いた時の背景オーバーレイ（外側タップで閉じる） */}
+          {showMobileMenu && (
+            <div 
+              onClick={() => setShowMobileMenu(false)}
+              style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.4)', zIndex: 1090 }}
+            />
+          )}
+
+          {/* ☰メニューの中身（その他項目） */}
+          {showMobileMenu && (
+            <div style={{ 
+              position: 'fixed', bottom: `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, 
+              background: '#fff', borderRadius: '16px 16px 0 0', boxShadow: '0 -4px 20px rgba(0,0,0,0.15)', 
+              zIndex: 1095, maxHeight: '70vh', overflowY: 'auto', animation: 'fadeIn 0.15s' 
+            }}>
+              <div style={{ padding: '14px 20px 10px 20px', fontWeight: 'bold', color: '#94a3b8', fontSize: '0.8rem', letterSpacing: '1px' }}>
+                その他のメニュー
+              </div>
+
+              <button onClick={() => { setActiveView('receive_history'); fetchReceiveLogs(); setShowMobileMenu(false); }} style={mobileMenuItemStyle}>
+                <ClipboardList size={20} color="#10b981" /> 仕入修正・履歴
+              </button>
+
+              <button onClick={() => { setReturnInputs({}); setActiveView('return'); setShowMobileMenu(false); }} style={mobileMenuItemStyle}>
+                <Undo2 size={20} color="#ef4444" /> 返品
+              </button>
+
+              <button onClick={() => { setInventoryInputs({}); setActiveView('inventory_check'); setShowMobileMenu(false); }} style={mobileMenuItemStyle}>
+                <ClipboardList size={20} color="#ec4899" /> 棚卸（月末棚卸処理）
+              </button>
+
+              <button onClick={() => { setInvSearchQuery(''); setInvFilterGroup('all'); setInvFilterDealer('all'); setInvFilterAlertOnly(false); setActiveView('inventory_view'); setShowMobileMenu(false); }} style={mobileMenuItemStyle}>
+                <Search size={20} color="#8b5cf6" /> 在庫照会
+              </button>
+
+              <button onClick={() => { setInvSearchQuery(''); setInvFilterGroup('all'); setInvFilterDealer('all'); setInvFilterAlertOnly(false); setActiveView('inventory_view'); setShowMobileMenu(false); setTimeout(() => window.print(), 500); }} style={mobileMenuItemStyle}>
+                <ClipboardList size={20} color="#94a3b8" /> 在庫リスト印刷
+              </button>
+
+              <button onClick={() => { setActiveView('master'); setShowMobileMenu(false); }} style={mobileMenuItemStyle}>
+                <Settings size={20} color="#64748b" /> マスター設定／商品登録
+              </button>
+
+              <button onClick={() => { setActiveView('dealers'); setShowMobileMenu(false); }} style={{ ...mobileMenuItemStyle, borderBottom: 'none' }}>
+                <Building2 size={20} color="#64748b" /> 取引先(ディーラー)
+              </button>
+            </div>
+          )}
+
+          {/* フッター固定タブバー本体 */}
+          <div style={{ 
+            position: 'fixed', bottom: 0, left: 0, right: 0, height: `${MOBILE_FOOTER_HEIGHT}px`, 
+            background: '#fff', borderTop: '1px solid #e2e8f0', boxShadow: '0 -2px 8px rgba(0,0,0,0.08)', 
+            display: 'flex', zIndex: 1080 
+          }}>
+            <button onClick={() => setShowMobileMenu(v => !v)} style={footerTabStyle(showMobileMenu)}>
+              <Menu size={22} color={showMobileMenu ? '#0ea5e9' : '#64748b'} />
+              <span style={footerTabLabelStyle(showMobileMenu)}>メニュー</span>
+            </button>
+
+            <button onClick={() => { setShowMobileMenu(false); setActiveView('consume'); }} style={footerTabStyle(activeView === 'consume')}>
+              <PackageMinus size={22} color={activeView === 'consume' ? '#f59e0b' : '#64748b'} />
+              <span style={footerTabLabelStyle(activeView === 'consume')}>払出</span>
+            </button>
+
+            <button onClick={() => { setShowMobileMenu(false); handleGoToOrder(); }} style={footerTabStyle(activeView === 'order')}>
+              <ShoppingCart size={22} color={activeView === 'order' ? '#3b82f6' : '#64748b'} />
+              <span style={footerTabLabelStyle(activeView === 'order')}>発注</span>
+            </button>
+
+            <button onClick={() => { setShowMobileMenu(false); setActiveView('receive'); }} style={footerTabStyle(activeView === 'receive')}>
+              <Truck size={22} color={activeView === 'receive' ? '#10b981' : '#64748b'} />
+              <span style={footerTabLabelStyle(activeView === 'receive')}>仕入</span>
+            </button>
+
+            <button onClick={() => { setShowMobileMenu(false); handleBack(true); }} style={footerTabStyle(false)}>
+              <ArrowLeft size={22} color="#64748b" />
+              <span style={footerTabLabelStyle(false)}>戻る</span>
+            </button>
+          </div>
+        </>
+      )}
+      {/* ============================================================
+          ▲▲▲ スマホ用フッター固定メニュー ここまで ▲▲▲
+          ============================================================ */}
+
       {/* 🛑 払出画面専用 フッター（保存ボタン等） */}
       {activeView === 'consume' && (
         <>
           <style>{`@keyframes pulse-orange { 0% { box-shadow: 0 4px 15px rgba(245,158,11,0.4); } 50% { box-shadow: 0 4px 25px rgba(245,158,11,0.7); } 100% { box-shadow: 0 4px 15px rgba(245,158,11,0.4); } }`}</style>
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+          <div style={{ position: 'fixed', bottom: isPC ? 0 : `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
             <div style={isPC ? { maxWidth: '800px', margin: '0 auto', display: 'flex', gap: '10px', alignItems: 'center' } : { display: 'flex', gap: '8px', alignItems: 'center', width: '100%' }}>
               
               {hasChanges && (
@@ -2850,7 +3008,7 @@ const handleProdCatSubmit = async (e) => {
 
       {/* 🛑 発注画面専用 フッター */}
       {activeView === 'order' && pendingOrders.length > 0 && (
-        <div className="no-print" style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        <div className="no-print" style={{ position: 'fixed', bottom: isPC ? 0 : `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
           {/* 🌟 変更：flexDirectionを調整して、スマホでは金額とボタンが縦並びになるように */}
           <div style={isPC ? { maxWidth: '900px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'flex-end' } : { display: 'flex', flexDirection: 'column', gap: '10px', width: '100%' }}>
             
@@ -2887,7 +3045,7 @@ const handleProdCatSubmit = async (e) => {
 
       {/* ▼▼▼ 追加：仕入・入庫画面専用 フッター（金額計算も連動版） ▼▼▼ */}
       {activeView === 'receive' && orderedItems.filter(o => activeReceiveTab === 'unspecified' ? !o.products?.dealer_id : o.products?.dealer_id === activeReceiveTab).length > 0 && (
-        <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+        <div style={{ position: 'fixed', bottom: isPC ? 0 : `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
           {/* 🌟 変更：justifyContentをspace-betweenにして左に取消ボタン、右に入庫ボタンを配置。スマホは縦並び（取消が下） */}
           <div style={isPC ? { maxWidth: '900px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'space-between' } : { display: 'flex', flexDirection: 'column-reverse', gap: '12px', width: '100%' }}>
             
@@ -2944,7 +3102,7 @@ const handleProdCatSubmit = async (e) => {
       {activeView === 'inventory_check' && (
         <>
           <style>{`@keyframes pulse-pink { 0% { box-shadow: 0 4px 15px rgba(236,72,153,0.4); } 50% { box-shadow: 0 4px 25px rgba(236,72,153,0.7); } 100% { box-shadow: 0 4px 15px rgba(236,72,153,0.4); } }`}</style>
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+          <div style={{ position: 'fixed', bottom: isPC ? 0 : `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
             <div style={isPC ? { maxWidth: '800px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'space-between' } : { display: 'flex', flexDirection: 'column-reverse', gap: '10px', width: '100%' }}>
               
               {Object.keys(inventoryInputs).length > 0 && (
@@ -2994,7 +3152,7 @@ const handleProdCatSubmit = async (e) => {
       {activeView === 'return' && Object.keys(returnInputs).some(id => returnInputs[id] > 0) && (
         <>
           <style>{`@keyframes pulse-red { 0% { box-shadow: 0 4px 15px rgba(239,68,68,0.4); } 50% { box-shadow: 0 4px 25px rgba(239,68,68,0.7); } 100% { box-shadow: 0 4px 15px rgba(239,68,68,0.4); } }`}</style>
-          <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
+          <div style={{ position: 'fixed', bottom: isPC ? 0 : `${MOBILE_FOOTER_HEIGHT}px`, left: 0, right: 0, padding: isPC ? '15px 20px' : '10px 15px', background: 'rgba(255,255,255,0.95)', backdropFilter: 'blur(10px)', borderTop: '1px solid #e2e8f0', zIndex: 1000 }}>
             <div style={isPC ? { maxWidth: '900px', margin: '0 auto', display: 'flex', gap: '15px', alignItems: 'center', justifyContent: 'space-between' } : { display: 'flex', flexDirection: 'column-reverse', gap: '10px', width: '100%' }}>
               
               <button 

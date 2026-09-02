@@ -1050,7 +1050,7 @@ const handleSaveMemo = async () => {
   if (loading) return <div style={{ textAlign: 'center', padding: '50px' }}>読み込み中...</div>;
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: '100px', fontFamily: 'sans-serif' }}>
+    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '20px', paddingBottom: isPC ? '100px' : '110px', fontFamily: 'sans-serif' }}>
       {message && (
         <div style={{ position: 'fixed', top: 20, left: '50%', transform: 'translateX(-50%)', width: '90%', maxWidth: '400px', padding: '15px', background: '#dcfce7', color: '#166534', borderRadius: '12px', zIndex: 1001, textAlign: 'center', fontWeight: 'bold', boxShadow: '0 10px 15px rgba(0,0,0,0.1)' }}>
           {message}
@@ -1069,44 +1069,49 @@ const handleSaveMemo = async () => {
 
       {/* --- 🚀 修正後のヘッダー ＆ カレンダー差し込みエリア --- */}
       {/* 👇 修正：プレビューモードの時はヘッダー部分を隠す */}
+      {/* 🚀 変更：タイトルは常時表示。日付ナビ＋予約台帳へボタンはPCのみここに表示（スマホはフッターに移設） */}
       {!isPreviewMode && (
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '20px', flexWrap: 'wrap', gap: '15px' }}>
           <div>
             <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e293b', fontWeight: '900' }}>⚡ タスク実行</h2>
             
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
-              <button onClick={() => {
-                const d = new Date(targetDate);
-                d.setDate(d.getDate() - 1);
-                setTargetDate(d.toLocaleDateString('sv-SE'));
-                setViewMonth(d);
-              }} style={arrowBtnStyle}>◀</button>
+            {isPC && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '12px' }}>
+                <button onClick={() => {
+                  const d = new Date(targetDate);
+                  d.setDate(d.getDate() - 1);
+                  setTargetDate(d.toLocaleDateString('sv-SE'));
+                  setViewMonth(d);
+                }} style={arrowBtnStyle}>◀</button>
 
-              <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
-                padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', 
-                background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' 
-              }}>
-                <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
+                <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
+                  padding: '8px 15px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+                  background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' 
+                }}>
+                  <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
+                </button>
+
+                <button onClick={() => {
+                  const d = new Date(targetDate);
+                  d.setDate(d.getDate() + 1);
+                  setTargetDate(d.toLocaleDateString('sv-SE'));
+                  setViewMonth(d);
+                }} style={arrowBtnStyle}>▶</button>
+              </div>
+            )}
+          </div>
+
+          {isPC && (
+            <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
+              {/* 🚀 🆕 修正：カレンダーとタイムラインを統合して「予約台帳」ボタンに */}
+              <button 
+                onClick={() => navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`)} 
+                style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}
+              >
+                <ClipboardList size={14} /> 予約台帳へ
               </button>
-
-              <button onClick={() => {
-                const d = new Date(targetDate);
-                d.setDate(d.getDate() + 1);
-                setTargetDate(d.toLocaleDateString('sv-SE'));
-                setViewMonth(d);
-              }} style={arrowBtnStyle}>▶</button>
             </div>
-          </div>
-
-          <div style={{ display: 'flex', background: '#f1f5f9', padding: '4px', borderRadius: '12px', gap: '4px' }}>
-            {/* 🚀 🆕 修正：カレンダーとタイムラインを統合して「予約台帳」ボタンに */}
-            <button 
-              onClick={() => navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`)} 
-              style={{ ...navSwitchBtnStyle, color: '#4b2c85' }}
-            >
-              <ClipboardList size={14} /> 予約台帳へ
-            </button>
-          </div>
+          )}
         </div>
       )}
 
@@ -2183,6 +2188,48 @@ const handleSaveMemo = async () => {
           </div>
         )}
       </AnimatePresence>
+
+      {/* 🚀 追加：スマホ用固定フッター（日付ナビ＋予約台帳へ）。PCはヘッダー内に表示するのでここは出さない */}
+      {!isPC && !isPreviewMode && (
+        <div style={{ 
+          position: 'fixed', bottom: 0, left: 0, right: 0, height: '75px', 
+          background: '#fff', borderTop: '1px solid #e2e8f0', display: 'flex', 
+          alignItems: 'center', justifyContent: 'space-between', gap: '10px',
+          padding: '0 15px', zIndex: 2000, paddingBottom: 'env(safe-area-inset-bottom)',
+          boxShadow: '0 -4px 15px rgba(0,0,0,0.05)' 
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button onClick={() => {
+              const d = new Date(targetDate);
+              d.setDate(d.getDate() - 1);
+              setTargetDate(d.toLocaleDateString('sv-SE'));
+              setViewMonth(d);
+            }} style={arrowBtnStyle}>◀</button>
+
+            <button onClick={() => setShowCalendar(!showCalendar)} style={{ 
+              padding: '8px 12px', borderRadius: '12px', border: '1px solid #e2e8f0', 
+              background: '#fff', fontWeight: 'bold', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '6px',
+              fontSize: '0.85rem', whiteSpace: 'nowrap'
+            }}>
+              <Calendar size={16} /> {targetDate.replace(/-/g, '/')}
+            </button>
+
+            <button onClick={() => {
+              const d = new Date(targetDate);
+              d.setDate(d.getDate() + 1);
+              setTargetDate(d.toLocaleDateString('sv-SE'));
+              setViewMonth(d);
+            }} style={arrowBtnStyle}>▶</button>
+          </div>
+
+          <button 
+            onClick={() => navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`)} 
+            style={{ ...navSwitchBtnStyle, color: '#4b2c85', flexShrink: 0 }}
+          >
+            <ArrowLeft size={14} /> 戻る
+          </button>
+        </div>
+      )}
 
     </div> // 👈 ファイルの最後、一番外側の div
   );
