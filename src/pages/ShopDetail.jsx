@@ -540,10 +540,11 @@ const toggleFavorite = async () => {
           <div style={{ borderTop: '1px solid #f0f0f0', paddingTop: '20px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
             
             {/* 🆕 営業時間・定休日 */}
-            {shop.display_business_hours && (
+            {shop.business_hours && (
               <div style={{ display: 'flex', gap: '10px', alignItems: 'flex-start', fontSize: '0.85rem', color: '#4b5563' }}>
                 <Clock size={18} color={themeColor} style={{ flexShrink: 0 }} />
-                <span>{shop.display_business_hours}</span>
+                {/* 🛑 オブジェクト型（古いデータ）の場合はクラッシュを防ぐ処理 */}
+                <span>{typeof shop.business_hours === 'string' ? shop.business_hours : '※設定画面で営業時間を再入力してください'}</span>
               </div>
             )}
             {shop.regular_holiday && (
@@ -589,7 +590,12 @@ const toggleFavorite = async () => {
           </div>
 
           {/* 🗺️ Googleマップ表示エリア */}
-          {googleMapEmbedUrl && (
+          {/* 🚀 変更：プレビュー表示(mode=preview)の時はGoogleマップを読み込まない。
+              管理画面のプレビューはiframeの中にこのページを表示する仕組みのため、
+              そこでさらにGoogleマップのiframeを読み込むと「iframeの二重入れ子」になり、
+              Google側の計測スクリプトが正しく動作せずコンソールにエラーが出るため。
+              実際のお客様がこのページを直接開く場合はプレビューではないので、地図は今まで通り表示されます。 */}
+          {googleMapEmbedUrl && !isPreviewMode && (
             <div style={{ marginTop: '20px', borderRadius: '16px', overflow: 'hidden', height: '200px', border: '1px solid #eee' }}>
               <iframe
                 title="Shop Map"
@@ -600,6 +606,15 @@ const toggleFavorite = async () => {
                 src={googleMapEmbedUrl}
                 allowFullScreen
               ></iframe>
+            </div>
+          )}
+          {googleMapEmbedUrl && isPreviewMode && (
+            <div style={{ 
+              marginTop: '20px', borderRadius: '16px', height: '200px', border: '1px solid #eee', 
+              background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#94a3b8', fontSize: '0.85rem', textAlign: 'center', padding: '20px', boxSizing: 'border-box'
+            }}>
+              🗺️ 地図はプレビューでは表示されません<br/>（実際のページでは表示されます）
             </div>
           )}
         </div>

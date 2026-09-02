@@ -198,6 +198,9 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
   const containerStyle = { width: '100%', maxWidth: '700px', margin: '0 auto', padding: '20px', paddingBottom: '120px', boxSizing: 'border-box', fontFamily: 'sans-serif', position: 'relative' };
   const cardStyle = { marginBottom: '20px', background: '#fff', padding: '24px', borderRadius: '20px', border: '1px solid #e2e8f0', boxSizing: 'border-box', width: '100%', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)' };
   const inputStyle = { padding: '10px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#fff', width: '90px', boxSizing: 'border-box' };
+  // 🚀 追加：曜日別営業時間・休憩の時刻入力専用スタイル（幅不足で時刻が見切れる問題を解消）
+  const timeInputStyle = { padding: '10px 8px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '0.95rem', background: '#fff', color: '#1e293b', width: '118px', minWidth: '118px', boxSizing: 'border-box' };
+  const timeLabelBadge = (bgColor) => ({ fontSize: '0.75rem', fontWeight: 'bold', color: '#fff', background: bgColor, padding: '5px 12px', borderRadius: '20px', flexShrink: 0, textAlign: 'center' });
   const selectStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', fontSize: '1rem', background: '#fff' };
   const btnActiveS = (val, target) => ({ padding: '12px 5px', background: val === target ? themeColor : '#fff', color: val === target ? '#fff' : '#475569', border: '1px solid #cbd5e1', borderRadius: '10px', fontWeight: 'bold', fontSize: '0.85rem', cursor: 'pointer', flex: 1, textAlign: 'center' });
 
@@ -256,18 +259,18 @@ const BookingScheduleSettings = ({ reloadPreview, setShowMobilePreview }) => { /
         {Object.keys(dayMap).map(day => (
           <div key={day} style={{ borderBottom: '1px solid #f1f5f9', padding: '15px 0' }}>
             <b style={{ fontSize: '0.95rem', color: '#1e293b', display: 'block', marginBottom: '12px' }}>{dayMap[day]}</b>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px', background: '#f8fafc', borderRadius: '16px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', width: '35px', color: '#64748b', fontWeight: 'bold' }}>営業</span>
-                <input type="time" value={businessHours[day]?.open ?? '09:00'} onChange={(e) => setBusinessHours({...businessHours, [day]: {...businessHours[day], open: e.target.value}})} style={inputStyle} />
-                <span style={{ color: '#cbd5e1' }}>〜</span>
-                <input type="time" value={businessHours[day]?.close ?? '18:00'} onChange={(e) => setBusinessHours({...businessHours, [day]: {...businessHours[day], close: e.target.value}})} style={inputStyle} />
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', padding: '16px', background: '#f8fafc', borderRadius: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={timeLabelBadge('#f59e0b')}>営業</span>
+                <input type="time" value={businessHours[day]?.open ?? '09:00'} onChange={(e) => setBusinessHours({...businessHours, [day]: {...businessHours[day], open: e.target.value}})} style={timeInputStyle} />
+                <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>〜</span>
+                <input type="time" value={businessHours[day]?.close ?? '18:00'} onChange={(e) => setBusinessHours({...businessHours, [day]: {...businessHours[day], close: e.target.value}})} style={timeInputStyle} />
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
-                <span style={{ fontSize: '0.8rem', width: '35px', color: '#64748b', fontWeight: 'bold' }}>休憩</span>
-                <input type="time" value={businessHours[day]?.rest_start || ''} onChange={(e) => setBusinessHours({...businessHours, [day]: { ...businessHours[day], rest_start: e.target.value }})} style={inputStyle} />
-                <span style={{ color: '#cbd5e1' }}>〜</span>
-                <input type="time" value={businessHours[day]?.rest_end || ''} onChange={(e) => setBusinessHours({...businessHours, [day]: { ...businessHours[day], rest_end: e.target.value }})} style={inputStyle} />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span style={timeLabelBadge('#3b82f6')}>休憩</span>
+                <input type="time" value={businessHours[day]?.rest_start || ''} onChange={(e) => setBusinessHours({...businessHours, [day]: { ...businessHours[day], rest_start: e.target.value }})} style={timeInputStyle} />
+                <span style={{ color: '#94a3b8', fontWeight: 'bold' }}>〜</span>
+                <input type="time" value={businessHours[day]?.rest_end || ''} onChange={(e) => setBusinessHours({...businessHours, [day]: { ...businessHours[day], rest_end: e.target.value }})} style={timeInputStyle} />
               </div>
             </div>
           </div>

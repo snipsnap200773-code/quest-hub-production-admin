@@ -6,7 +6,8 @@ import { supabase } from "../../../supabaseClient";
 import { 
   ArrowLeft, Sparkles, Save, Camera, MapPin, 
   User, Phone, Mail, Globe, Info, Clock, Calendar,
-  Instagram, Twitter, Youtube, Quote, Image as ImageIcon, Plus, Trash2, List, HelpCircle
+  Instagram, Twitter, Youtube, Quote, Image as ImageIcon, Plus, Trash2, List, HelpCircle,
+  ChevronDown, ChevronUp // 🚀 追加：メニュー・料金表のアコーディオン開閉用
 } from 'lucide-react';
 
 import HelpTooltip from '../../../components/ui/HelpTooltip';
@@ -66,6 +67,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const [menuSectionSubtitle, setMenuSectionSubtitle] = useState('PRICE');
   const [menuSectionTitle, setMenuSectionTitle] = useState('料金表');
   const [highlightMenus, setHighlightMenus] = useState([]);
+  const [expandedMenuCats, setExpandedMenuCats] = useState([]); // 🚀 追加：メニュー・料金表のアコーディオン開閉状態（開いているカテゴリのindexを保持）
   const [faqs, setFaqs] = useState([]);
 
   // 🛑 週間スケジュール用のStateを追加
@@ -292,9 +294,16 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   // 🆕 動的リスト操作（メニュー）の設定
   const addMenuCategory = () => {
     setHighlightMenus([...highlightMenus, { categoryName: '', items: [{ name: '', price: '', desc: '' }] }]);
+    setExpandedMenuCats(prev => [...prev, highlightMenus.length]); // 🚀 追加：新規カテゴリは自動的に開いた状態にする
   };
   const removeMenuCategory = (catIdx) => {
     setHighlightMenus(highlightMenus.filter((_, i) => i !== catIdx));
+    // 🚀 追加：削除に合わせて開閉Stateのindexもズレないよう調整
+    setExpandedMenuCats(prev => prev.filter(i => i !== catIdx).map(i => i > catIdx ? i - 1 : i));
+  };
+  // 🚀 追加：カテゴリのアコーディオン開閉トグル
+  const toggleMenuCat = (catIdx) => {
+    setExpandedMenuCats(prev => prev.includes(catIdx) ? prev.filter(i => i !== catIdx) : [...prev, catIdx]);
   };
   const updateMenuCategoryName = (catIdx, value) => {
     const newMenus = [...highlightMenus];
@@ -638,44 +647,71 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
 </div>
         </div>
         
-        {highlightMenus.map((category, catIdx) => (
-          <div key={catIdx} style={{ background: '#f8fafc', padding: '15px', borderRadius: '12px', marginBottom: '20px', border: '1px solid #cbd5e1', position: 'relative' }}>
-            <button onClick={() => removeMenuCategory(catIdx)} style={{ position: 'absolute', top: '15px', right: '15px', background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer' }}><Trash2 size={18} /></button>
-            
-            <div style={{ marginBottom: '15px', paddingRight: '30px' }}>
-              <label style={{...labelStyle, fontSize: '0.8rem', color: themeColor}}>カテゴリ名</label>
-              <input 
-                value={category.categoryName} 
-                onChange={(e) => updateMenuCategoryName(catIdx, e.target.value)} 
-                style={{...inputStyle, border: `2px solid ${themeColor}66`}} 
-                placeholder="例: Color (シャンプー別)" 
-              />
-            </div>
-
-            {category.items.map((item, itemIdx) => (
-              <div key={itemIdx} style={{ background: '#fff', padding: '10px', borderRadius: '8px', marginBottom: '10px', border: '1px solid #e2e8f0', position: 'relative' }}>
-                <button onClick={() => removeMenuItem(catIdx, itemIdx)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><Trash2 size={16} /></button>
-                <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', paddingRight: '25px', marginBottom: '5px' }}>
-                  <div>
-                    <label style={{...labelStyle, fontSize: '0.7rem'}}>メニュー名</label>
-                    <input value={item.name} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'name', e.target.value)} style={{...inputStyle, padding: '8px'}} placeholder="リタッチ" />
-                  </div>
-                  <div>
-                    <label style={{...labelStyle, fontSize: '0.7rem'}}>料金</label>
-                    <input value={item.price} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'price', e.target.value)} style={{...inputStyle, padding: '8px'}} placeholder="¥4,000" />
-                  </div>
+        {highlightMenus.map((category, catIdx) => {
+          const isOpen = expandedMenuCats.includes(catIdx);
+          return (
+          <div key={catIdx} style={{ background: '#f8fafc', borderRadius: '12px', marginBottom: '15px', border: '1px solid #cbd5e1', overflow: 'hidden' }}>
+            {/* 🚀 追加：カテゴリの見出し行（タップで開閉）。ここは常に表示される */}
+            <div 
+              onClick={() => toggleMenuCat(catIdx)}
+              style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '15px', cursor: 'pointer' }}
+            >
+              {isOpen ? <ChevronUp size={20} color={themeColor} /> : <ChevronDown size={20} color="#94a3b8" />}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 'bold', color: category.categoryName ? '#1e293b' : '#94a3b8', fontSize: '0.95rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {category.categoryName || '（カテゴリ名未設定）'}
                 </div>
-                <div style={{ paddingRight: '25px' }}>
-                  <input value={item.desc} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'desc', e.target.value)} style={{...inputStyle, padding: '6px 8px', fontSize: '0.8rem'}} placeholder="補足説明（不要な場合は空欄）" />
+                <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
+                  {category.items.length}件のメニュー
                 </div>
               </div>
-            ))}
-            
-            <button onClick={() => addMenuItem(catIdx)} style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px dashed #cbd5e1', color: '#475569', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', cursor: 'pointer' }}>
-              <Plus size={16} /> このカテゴリにメニューを追加
-            </button>
+              <button 
+                onClick={(e) => { e.stopPropagation(); removeMenuCategory(catIdx); }} 
+                style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', flexShrink: 0, padding: '4px' }}
+              >
+                <Trash2 size={18} />
+              </button>
+            </div>
+
+            {/* 🚀 追加：開いている時だけ中身を表示 */}
+            {isOpen && (
+              <div style={{ padding: '0 15px 15px 15px' }}>
+                <div style={{ marginBottom: '15px' }}>
+                  <label style={{...labelStyle, fontSize: '0.8rem', color: themeColor}}>カテゴリ名</label>
+                  <input 
+                    value={category.categoryName} 
+                    onChange={(e) => updateMenuCategoryName(catIdx, e.target.value)} 
+                    style={{...inputStyle, border: `2px solid ${themeColor}66`}} 
+                    placeholder="例: Color (シャンプー別)" 
+                  />
+                </div>
+
+                {category.items.map((item, itemIdx) => (
+                  <div key={itemIdx} style={{ background: '#fff', padding: '10px', borderRadius: '8px', marginBottom: '10px', border: '1px solid #e2e8f0', position: 'relative' }}>
+                    <button onClick={() => removeMenuItem(catIdx, itemIdx)} style={{ position: 'absolute', top: '10px', right: '10px', background: 'none', border: 'none', color: '#94a3b8', cursor: 'pointer' }}><Trash2 size={16} /></button>
+                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '10px', paddingRight: '25px', marginBottom: '5px' }}>
+                      <div>
+                        <label style={{...labelStyle, fontSize: '0.7rem'}}>メニュー名</label>
+                        <input value={item.name} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'name', e.target.value)} style={{...inputStyle, padding: '8px'}} placeholder="リタッチ" />
+                      </div>
+                      <div>
+                        <label style={{...labelStyle, fontSize: '0.7rem'}}>料金</label>
+                        <input value={item.price} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'price', e.target.value)} style={{...inputStyle, padding: '8px'}} placeholder="¥4,000" />
+                      </div>
+                    </div>
+                    <div style={{ paddingRight: '25px' }}>
+                      <input value={item.desc} onChange={(e) => updateMenuItem(catIdx, itemIdx, 'desc', e.target.value)} style={{...inputStyle, padding: '6px 8px', fontSize: '0.8rem'}} placeholder="補足説明（不要な場合は空欄）" />
+                    </div>
+                  </div>
+                ))}
+                
+                <button onClick={() => addMenuItem(catIdx)} style={{ width: '100%', padding: '10px', background: '#f1f5f9', border: '1px dashed #cbd5e1', color: '#475569', borderRadius: '8px', fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', cursor: 'pointer' }}>
+                  <Plus size={16} /> このカテゴリにメニューを追加
+                </button>
+              </div>
+            )}
           </div>
-        ))}
+        )})}
         
         <button onClick={addMenuCategory} style={{ width: '100%', padding: '12px', background: '#fff', border: `2px dashed ${themeColor}`, color: themeColor, borderRadius: '12px', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', cursor: 'pointer' }}>
           <Plus size={18} /> 新しいカテゴリを追加する
