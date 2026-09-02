@@ -291,17 +291,6 @@ const AdminDashboard = () => {
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* 👇 修正：リンク先に ?preview=details を追加し、説明文を微調整 */}
-        <NavCard 
-          title="予約フォーム設定" 
-          desc="予約時の入力項目のカスタマイズ" 
-          icon={<Layout size={28} />} 
-          color="#f97316"
-          to={`/admin/${shopId}/settings/form?preview=details`} 
-          cardStyle={cardStyle} 
-          iconBoxStyle={iconBoxStyle} 
-        />
-
         {/* 👇 修正：メニュー管理を「メニュー・予約受付設定」に変更 */}
         <NavCard 
           title="メニュー・予約受付設定" 
@@ -320,6 +309,19 @@ const AdminDashboard = () => {
           icon={<Clock size={28} />} 
           color="#f59e0b"
           to={`/admin/${shopId}/settings/schedule?preview=calendar`} // 👈 🆕 これを追加
+          cardStyle={cardStyle} 
+          iconBoxStyle={iconBoxStyle} 
+        />
+
+        {/* 🚀 移動：実際の予約フロー（メニュー選択→日時選択→確認画面）の順序に合わせて、
+            「カレンダー・スケジュール設定」の直後に移動 */}
+        {/* 👇 修正：リンク先に ?preview=details を追加し、説明文を微調整 */}
+        <NavCard 
+          title="予約フォーム設定" 
+          desc="予約時の入力項目のカスタマイズ" 
+          icon={<Layout size={28} />} 
+          color="#f97316"
+          to={`/admin/${shopId}/settings/form?preview=details`} 
           cardStyle={cardStyle} 
           iconBoxStyle={iconBoxStyle} 
         />
@@ -361,13 +363,7 @@ const AdminDashboard = () => {
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
 
-        {/* 全般設定 */}
-        <NavCard 
-  title="全般設定" desc="テーマカラー・通知・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
-  to={`/admin/${shopId}/settings/general?preview=reserve`}
-  cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
-/>
-
+        {/* 🚀 移動：「お客様に見える・渡す系」としてLINE連携の直後にまとめる */}
         {/* 👇 🆕 追加：リンク・シェア用URL管理 */}
         <NavCard 
           title="リンク・シェア用URL" 
@@ -377,6 +373,13 @@ const AdminDashboard = () => {
           to={`/admin/${shopId}/settings/share-links`}
           cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
         />
+
+        {/* 全般設定 */}
+        <NavCard 
+  title="全般設定" desc="テーマカラー・通知・パスワード設定" icon={<Settings size={28} />} color="#6366f1"
+  to={`/admin/${shopId}/settings/general?preview=reserve`}
+  cardStyle={cardStyle} iconBoxStyle={iconBoxStyle} 
+/>
 
         {/* 👇 🌟 🆕 今回ここから追加：プラン・お支払い設定 */}
         <NavCard 
