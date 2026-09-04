@@ -71,6 +71,28 @@ const FacilityManagement = () => {
   const [editingId, setEditingId] = useState(null);
   const visitingSubCategories = INDUSTRY_PRESETS.visiting.subCategories;
 
+  // 🏢 🆕 施設連携機能の利用可否（ベータ第1期は許可した店舗のみ）
+  const [isFeatureAllowed, setIsFeatureAllowed] = useState(null); // null = 判定中
+
+  useEffect(() => {
+    let ignore = false;
+    (async () => {
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('facility_feature_enabled')
+        .eq('id', shopId)
+        .single();
+      if (ignore) return;
+      if (error || !data?.facility_feature_enabled) {
+        setIsFeatureAllowed(false);
+        navigate(`/admin/${shopId}`, { replace: true });
+      } else {
+        setIsFeatureAllowed(true);
+      }
+    })();
+    return () => { ignore = true; };
+  }, [shopId, navigate]);
+
   // 🚀 🆕 1. ワークシート印刷用の関数をここに追加！！
   const handlePrintWorkSheet = async () => {
     if (!worksheetTarget) return;
@@ -967,6 +989,10 @@ facilities.forEach(conn => {
     });
     setSelMonthType(0);
   };
+
+  // 🏢 🆕 施設連携機能が許可されていない店舗には何も表示しない
+  // （判定中は null、不許可なら上の useEffect がダッシュボードへ戻す）
+  if (isFeatureAllowed !== true) return null;
 
   return (
     <div style={containerStyle}>

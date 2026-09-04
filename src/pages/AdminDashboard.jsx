@@ -149,19 +149,11 @@ const AdminDashboard = () => {
   // 👇 🌟 🆕 無料版の判定を追加
   const isFreePlan = shopData && !shopData.is_tester && shopData.subscription_status !== 'active' && shopData.subscription_status !== 'trialing';
 
-  // 🚀 🆕 ハイブリッド対応：「訪問」系のカテゴリが含まれているか、文字列でも配列でも確実に見つけるロジック
-  const isVisitShop = (() => {
-    if (!shopData) return false;
-    if (shopData.sub_business_type === '施設訪問') return true;
-    
-    // 文字列ならカンマで分割して配列にし、配列ならそのまま使う
-    const types = Array.isArray(shopData.business_type) 
-      ? shopData.business_type 
-      : (shopData.business_type || '').split(/,|、/);
-      
-    // 配列の各要素の中に「訪問」が含まれているかチェック
-    return types.some(type => typeof type === 'string' && type.includes('訪問'));
-  })();
+  // 🏢 施設連携機能の表示判定
+  // ベータ第1期では新規アカウントに提供しないため、DBのフラグでのみ制御する。
+  // （旧ロジックは business_type に「訪問」を含むかで判定していたが、
+  //   個人宅訪問の事業者まで対象になってしまうため廃止）
+  const isVisitShop = shopData?.facility_feature_enabled === true;
 
   // ✅ ログイン成功時のみ表示されるダッシュボード本体
   return (

@@ -13,7 +13,7 @@ const corsHeaders = {
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";
 
 // 🆕 1. 訪問型判定キーワード
-const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+const _VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
 
 // 🆕 2. 訪問型専用のデフォルト文章
 const VISIT_DEFAULTS = {
@@ -122,10 +122,16 @@ Deno.serve(async (req) => {
     const { type } = payload; // まず合言葉（type）だけをピンポイントでチェック
 
     // 🏆 システム内で使用するすべての正規の合言葉（ホワイトリスト）
+    //
+    // ⚠️ 2026/09/04 一時停止：以下の4つは呼び出し元の認証チェックが未実装のため、
+    //    誰でも他店舗のアカウントを操作できる状態でした。JWT検証を実装するまで無効化します。
+    //    'CREATE_SHOP_FULL'  … 任意のアカウント作成
+    //    'REPAIR_AUTH'       … 任意のパスワードでの認証復旧
+    //    'UPDATE_PASSWORD'   … 任意の店舗のパスワード変更
+    //    'DELETE_SHOP_FULL'  … 任意の店舗の完全削除
     const allowedTypes = [
       'remind_all', 'auto_sales_batch', 'signup_otp', 'partnership_approved', 
       'facility_booking', 'facility_booking_update', 'facility_nudge', 'inquiry', 
-      'CREATE_SHOP_FULL', 'REPAIR_AUTH', 'UPDATE_PASSWORD', 'DELETE_SHOP_FULL', 
       'welcome', 'booking', 'cancel'
     ];
 
