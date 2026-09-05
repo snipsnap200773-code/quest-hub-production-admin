@@ -20,11 +20,16 @@ function SuperAdmin() {
   // 1. フックと状態管理（ここが抜けていました！）
   const navigate = useNavigate(); 
   const [isAuthorized, setIsAuthorized] = useState(false);
+  const [inputEmail, setInputEmail] = useState(''); // 🆕 メールアドレス入力用
   const [inputPass, setInputPass] = useState(''); // パスワード入力用
+  const [authError, setAuthError] = useState(''); // 🆕 認証エラー表示用
   const [loading, setLoading] = useState(true);
 
-  // 環境変数
-  const MASTER_PASSWORD = import.meta.env.VITE_SUPER_MASTER_PASSWORD; 
+  // ⚠️ 2026/09/05：VITE_SUPER_MASTER_PASSWORD を廃止しました。
+  //    VITE_ で始まる環境変数はビルド後のJSに平文で埋め込まれ、
+  //    本番のソースを見れば誰でも読み取れるためです。
+  //    認証は Supabase Auth のセッション ＋ profiles.role = 'super_admin' で判定します。
+  //    （DELETE_PASSWORD は削除操作の"うっかり防止"用なので当面残します）
   const DELETE_PASSWORD = import.meta.env.VITE_SUPER_DELETE_PASSWORD;
 
   // 🚀 🆕 修正：自動ログインループを防止するログアウト処理
@@ -92,12 +97,30 @@ function SuperAdmin() {
   const [newNewsTitle, setNewNewsTitle] = useState('');
 
   useEffect(() => { 
-    if (sessionStorage.getItem('auth_super') === 'true') {
-      setIsAuthorized(true);
-      fetchAllData();
-    } else {
-      setLoading(false); // バトンがない場合は、読み込みを終わらせてログイン画面を出す
-    }
+    // 🔐 sessionStorage の「バトン」は開発者ツールから偽造できるため信用しない。
+    //    Supabase のセッションを取り、profiles.role を毎回サーバーに問い合わせて判定する。
+    const verifySuperAdmin = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        setLoading(false); // 未ログインならログイン画面を出す
+        return;
+      }
+
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (profile?.role === 'super_admin') {
+        setIsAuthorized(true); // → 下の useEffect が fetchAllData を実行します
+      } else {
+        setLoading(false);
+      }
+    };
+
+    verifySuperAdmin();
   }, []);
 
   const isMobile = windowWidth < 1024;
@@ -138,15 +161,40 @@ function SuperAdmin() {
     setFacilities(allData);
   };
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (inputPass === MASTER_PASSWORD) {
-      sessionStorage.setItem('auth_super', 'true');
-      setIsAuthorized(true);
-      fetchAllData();
-    } else {
-      alert('パスワードが違います');
+    setAuthError('');
+    setIsProcessing(true);
+
+    // 1. Supabase Auth で正規にログインする（＝JWTを取得する）
+    const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
+      email: inputEmail.trim(),
+      password: inputPass.trim(),
+    });
+
+    if (signInError || !authData?.user) {
+      setAuthError('メールアドレスまたはパスワードが違います');
+      setIsProcessing(false);
+      return;
     }
+
+    // 2. ログインできても super_admin でなければ入室させない
+    //    ⚠️ auth.users には一般ユーザーも含まれるため、role の確認は必須
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('id, role')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+
+    if (profile?.role !== 'super_admin') {
+      await supabase.auth.signOut();
+      setAuthError('この画面へのアクセス権限がありません');
+      setIsProcessing(false);
+      return;
+    }
+
+    setIsProcessing(false);
+    setIsAuthorized(true); // → useEffect が fetchAllData を実行します
   };
 
   const fetchCreatedShops = async () => {
@@ -430,21 +478,28 @@ const updateShopInfo = async (id) => {
     }
 
     // 2. 🚀 Auth（認証）側のパスワードも同期させる
-    try {
-      // 🚀 正しい命令(UPDATE_PASSWORD)と新しいパスワードを送ります
-      const { error } = await supabase.functions.invoke('resend', {
-        body: {
-          type: 'UPDATE_PASSWORD',
-          shopId: id,
-          password: editPassword
-        }
-      });
+    //    ⚠️ 空欄や短すぎる値での上書き事故を防ぐため、8文字以上のときだけ同期する
+    if (editPassword && editPassword.length >= 8) {
+      try {
+        // 🚀 正しい命令(UPDATE_PASSWORD)と新しいパスワードを送ります
+        //    invoke なので、ログイン中の super_admin の JWT が自動で付きます
+        const { error } = await supabase.functions.invoke('resend', {
+          body: {
+            type: 'UPDATE_PASSWORD',
+            shopId: id,
+            password: editPassword
+          }
+        });
 
-      if (error) {
-        console.warn("Auth sync failed, but DB was updated.");
+        if (error) {
+          console.warn("Auth sync failed, but DB was updated.", error.message);
+          alert('DBは更新しましたが、ログイン用パスワードの同期に失敗しました。\n' + error.message);
+        }
+      } catch (err) {
+        console.error("Auth Sync Error:", err);
       }
-    } catch (err) {
-      console.error("Auth Sync Error:", err);
+    } else if (editPassword) {
+      alert('パスワードは8文字以上にしてください。\nDBのみ更新され、ログイン用パスワードは変更されていません。');
     }
 
     // 3. 後処理
@@ -590,21 +645,38 @@ const updateShopInfo = async (id) => {
   if (!isAuthorized && !loading) {
     return (
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
-        <form onSubmit={handleLogin} style={panelStyle}>
+        <form onSubmit={handleLogin} style={{ ...panelStyle, maxWidth: '380px' }}>
           <div style={{ textAlign: 'center', marginBottom: '20px' }}>
             <ShieldAlert size={40} color="#1e293b" style={{ marginBottom: '10px' }} />
             <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>QUEST-HUB 管理者認証</h2>
+            <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#64748b' }}>管理者アカウントでログインしてください</p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+            <input 
+              type="email" 
+              value={inputEmail} 
+              onChange={(e) => setInputEmail(e.target.value)} 
+              placeholder="メールアドレス" 
+              style={smallInput} 
+              autoComplete="username"
+              autoFocus
+            />
             <input 
               type="password" 
               value={inputPass} 
               onChange={(e) => setInputPass(e.target.value)} 
-              placeholder="マスターパスワードを入力" 
+              placeholder="パスワード" 
               style={smallInput} 
-              autoFocus
+              autoComplete="current-password"
             />
-            <button type="submit" style={primaryBtn}>認証して入室</button>
+            {authError && (
+              <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold', textAlign: 'center' }}>
+                {authError}
+              </div>
+            )}
+            <button type="submit" disabled={isProcessing} style={{ ...primaryBtn, background: isProcessing ? '#94a3b8' : '#1e293b' }}>
+              {isProcessing ? '認証中...' : '認証して入室'}
+            </button>
           </div>
         </form>
       </div>

@@ -4,7 +4,10 @@ import { supabase } from '../../supabaseClient';
 import { Building2, Lock, User, ArrowRight, ShieldCheck, Gamepad2, Settings, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-const EDGE_FUNCTION_URL = "https://rdpupixaqckhkpgjqcnb.supabase.co/functions/v1/resend";
+// ⚠️ 2026/09/05：プロジェクトIDのハードコードを廃止しました。
+//    旧定数は別プロジェクト（SnipSnap Sandbox・停止中）のURLを指しており、
+//    救済ルートの REPAIR_AUTH は長らく空振りしていました。
+//    supabase.functions.invoke() を使えば supabaseClient の設定が自動で使われます。
 
 const FacilityLogin = () => {
   const { facilityId } = useParams();
@@ -96,7 +99,10 @@ const FacilityLogin = () => {
           sessionStorage.setItem(`auth_${profile.id}`, 'true');
           
           if (profile.role === 'super_admin') {
-            sessionStorage.setItem('auth_super', 'true');
+            // ⚠️ 2026/09/05：sessionStorage への 'auth_super' 書き込みを廃止しました。
+            //    この値は開発者ツールから偽造でき、任意の店舗管理画面への
+            //    侵入経路になっていたためです。権限判定は各画面が
+            //    Supabase のセッションと profiles.role を見て行います。
             setIsProcessing(false);
             setProfileData(profile);
             setShowGmModal(true);
@@ -113,8 +119,8 @@ const FacilityLogin = () => {
         .from('profiles')
         // 🚀 修正：is_timeline_default を読み取る
         .select('id, business_name, role, admin_password, is_timeline_default')
-        .eq('email_contact', loginId)
-        .eq('admin_password', password)
+        .eq('email_contact', cleanLoginId)
+        .eq('admin_password', cleanPassword)
         .maybeSingle();
 
       if (shopUser) {
@@ -122,20 +128,22 @@ const FacilityLogin = () => {
         sessionStorage.setItem(`auth_${shopUser.id}`, 'true'); 
 
         try {
-          const response = await fetch(EDGE_FUNCTION_URL, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
+          // 🔐 invoke なら anon キーが自動付与され、URLも supabaseClient の設定が使われる。
+          //    サーバー側で email / admin_password の照合が行われます。
+          const { error: repairError } = await supabase.functions.invoke('resend', {
+            body: {
               type: 'REPAIR_AUTH',
               shopId: shopUser.id,
-              email: loginId,
-              password: password,
+              email: cleanLoginId,
+              password: cleanPassword,
               shopName: shopUser.business_name
-            })
+            }
           });
 
-          if (!response.ok) {
-            console.warn("Auth sync skipped or failed, but DB password matched.");
+          if (repairError) {
+            console.warn("Auth sync skipped or failed, but DB password matched.", repairError.message);
+          } else {
+            console.log("✅ Auth アカウントの復旧に成功しました");
           }
         } catch (err) {
           console.error("Sync Error:", err);

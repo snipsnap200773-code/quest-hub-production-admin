@@ -17,6 +17,10 @@ const SUBTYPE_OPTIONS = {
 const GameMasterDashboard = () => {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = useState('units');
+
+  // 🛡️ 2026/09/xx 追加：認証ガード用の State
+  const [isAuthorized, setIsAuthorized] = useState(false);
+  const [checkingAuth, setCheckingAuth] = useState(true);
   
   const [units, setUnits] = useState([]);
   const [items, setItems] = useState([]);
@@ -273,7 +277,37 @@ const GameMasterDashboard = () => {
     finally { setLoading(false); }
   };
 
-  useEffect(() => { fetchData(); }, []);
+  // 🛡️ 2026/09/xx 修正：認証ガードを追加
+  //   従来は無条件で fetchData() を呼んでいたため、URLを知っていれば
+  //   誰でもこの画面を開き、ゲームデータを読み込めていました。
+  //   super_admin であることを確認できた場合のみデータを取得します。
+  useEffect(() => {
+    const verifyAndLoad = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+
+      if (!session?.user) {
+        navigate('/', { replace: true });
+        return;
+      }
+
+      const { data: me } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('id', session.user.id)
+        .maybeSingle();
+
+      if (me?.role !== 'super_admin') {
+        navigate('/', { replace: true });
+        return;
+      }
+
+      setIsAuthorized(true);
+      setCheckingAuth(false);
+      fetchData(); // 👈 権限が確認できてから初めてデータを取りに行く
+    };
+
+    verifyAndLoad();
+  }, [navigate]);
 
   // 🛠️ 🆕 ここに綺麗にスッと差し込みます！
   const handleDelete = async (table, id) => {
@@ -766,6 +800,10 @@ const GameMasterDashboard = () => {
     const matchDiff = questFilterDifficulty === 'all' || q.difficulty === questFilterDifficulty;
     return matchSearch && matchDiff;
   });
+
+  // 🛡️ 権限確認が済むまで、および権限が無い場合は何も描画しない
+  if (checkingAuth) return null;
+  if (!isAuthorized) return null;
 
   return (
     <div style={{ backgroundColor: '#0b0f19', minHeight: '100vh', color: '#f1f5f9', padding: '3vw', boxSizing: 'border-box' }}>

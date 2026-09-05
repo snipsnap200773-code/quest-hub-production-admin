@@ -46,13 +46,40 @@ const AdminDashboard = () => {
     setIsLoading(true);
 
     // --- 🛡️ 門番：認証チェックエリア ---
-    const isShopAuth = sessionStorage.getItem(`auth_${shopId}`) === 'true';
-    const isSuperAuth = sessionStorage.getItem('auth_super') === 'true';
+    //
+    // ⚠️ 2026/09/xx 修正：
+    //   旧コードは sessionStorage の 'auth_super' が 'true' なら無条件で通していました。
+    //   この値は開発者ツールから誰でも書き込めるため、任意の店舗の管理画面へ
+    //   侵入できる状態でした。総括管理者の判定を Supabase のセッションへ移行します。
+    //   （店舗側の auth_${shopId} は救済ルート利用者のために従来どおり残します）
 
-    // 「お店のバトン」も「総括のバトン」も持っていない場合
-    if (!isShopAuth && !isSuperAuth) {
-      navigate('/'); // ログイン画面へ強制送還
-      return;        // 🛑 ここで処理を終了（下のデータ取得には進ませない）
+    // 1. 店舗本人のバトン（従来どおり）
+    const isShopAuth = sessionStorage.getItem(`auth_${shopId}`) === 'true';
+
+    // 2. 総括管理者の判定：セッションを取り、profiles.role をサーバーに問い合わせる
+    let isSessionAuth = false;
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        // 総括管理者なら全店舗を閲覧可
+        if (me?.role === 'super_admin') isSessionAuth = true;
+        // 店舗本人が正規ログインしている場合も当然OK
+        if (me?.id === shopId) isSessionAuth = true;
+      }
+    } catch (err) {
+      console.error('[GUARD] 権限確認に失敗しました:', err);
+    }
+
+    // 「お店のバトン」も「セッションによる権限」も無い場合
+    if (!isShopAuth && !isSessionAuth) {
+      navigate('/');
+      return;
     }
 
     // 認証OKなら、表示を許可してデータを取りに行く
