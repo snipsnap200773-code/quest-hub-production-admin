@@ -656,7 +656,10 @@ const handleReserve = async () => {
             services: menuLabel,
             allOptions: allFlattenedOptions,
             customerEmail: customerData.email, // 🆕 これがないとお客様に届きません！
-            shopEmail: shop.email_contact,     // 🆕 これがないと店舗に届きません！
+            // ⚠️ 2026/09/06：shopEmail の送信を廃止しました。
+            //    店舗の連絡先メールアドレスは Edge Function 側が
+            //    shopId から profiles.email_contact を引くようになったため、
+            //    ブラウザに持たせる必要がなくなりました。
             lineUserId: lineUser?.userId || null,
             cancelUrl: cancelUrl,
             // 🆕 フォームの全入力データを送る

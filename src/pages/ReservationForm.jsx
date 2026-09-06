@@ -108,9 +108,18 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
 
   const fetchData = async () => {
     setLoading(true);
-    const shopRes = await supabase.from('profiles').select('*').eq('id', shopId).single();
-    
-if (shopRes.data) {
+    // ⚠️ 2026/09/06：profiles への直接アクセスを廃止し、予約用ビュー
+    //    public_booking_settings に変更しました。
+    //    profiles は admin_password や line_channel_access_token を含む全列が
+    //    誰でも読める状態だったため、予約フォームに必要な列だけを経由します。
+    const shopRes = await supabase.from('public_booking_settings').select('*').eq('id', shopId).maybeSingle();
+
+    if (shopRes.error) {
+      // ⚠️ 失敗を握りつぶすと事故に気づけないため、必ずログに残す
+      console.error('店舗情報の取得に失敗しました:', shopRes.error.message);
+    }
+
+    if (shopRes.data) {
       const shopData = shopRes.data;
 
       // 👇 🌟 🆕 無料版（未契約）の判定を追加

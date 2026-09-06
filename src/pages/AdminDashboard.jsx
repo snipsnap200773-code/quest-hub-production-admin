@@ -230,6 +230,11 @@ const AdminDashboard = () => {
 
       {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
       {(() => {
+        // ⚠️ 2026/09/06：テスター（全機能無料）はトライアル期限で機能が止まらないため、
+        //    trial_ends_at が過ぎていても警告を出さない。
+        //    Web予約の可否判定は is_tester || active || trialing の OR で行われている。
+        if (shopData?.is_tester) return null;
+
         if (shopData?.subscription_status !== 'trialing' || !shopData?.trial_ends_at) return null;
         // 🔧 修正：時刻を含めた差分だと実行タイミングで日数がブレるため、日付同士（0時基準）で差分を取る
         const endsAt = new Date(shopData.trial_ends_at);
