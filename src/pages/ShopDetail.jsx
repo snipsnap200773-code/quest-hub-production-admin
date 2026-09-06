@@ -54,25 +54,24 @@ useEffect(() => {
     const fetchShopDetail = async () => {
       setLoading(true);
       // 1. 店舗プロフィールの取得
+      // ⚠️ 2026/09/06：profiles への直接アクセスを廃止し、公開用ビュー public_shops に変更しました。
+      //    掲載条件（role='shop' / 停止中でない / 無料版でない）はビュー側の where で
+      //    判定されるため、行が取得できなかった＝公開対象外、という意味になります。
+      //    以前ここにあった hasPortalAccess の判定はビュー側へ移りました。
+      //    ※ .single() は0件のときエラーを返すため、0件を正常な結果として扱える
+      //      .maybeSingle() に変更しています。
       const { data, error } = await supabase
-        .from('profiles')
+        .from('public_shops')
         .select('*')
         .eq('id', shopId)
-        .single();
+        .maybeSingle();
+
+      if (error) {
+        // ⚠️ 失敗を握りつぶすと事故に気づけないため、必ずログに残す
+        console.error('店舗情報の取得に失敗しました:', error.message);
+      }
 
       if (!error && data) {
-        // 👇 🌟 🆕 プラン1ではなく、新プラン（有料・トライアル・テスター）の判定に変更
-        const hasPortalAccess = 
-          data.is_tester || 
-          data.subscription_status === 'active' || 
-          data.subscription_status === 'trialing';
-
-        if (!hasPortalAccess) {
-          setShop(null); // shopを空にすることで、下の「有効期限が切れています」が表示されます
-          setLoading(false);
-          return;
-        }
-
         // 🛑 ここを追加：古いデータを新しい「カテゴリ型」に自動変換してエラーを防ぐ
         const fetchedMenus = data.highlight_menus || [];
         if (fetchedMenus.length > 0 && !fetchedMenus[0].items) {

@@ -1153,8 +1153,16 @@ if (type === 'inquiry') {
     
     // 🚀 🆕 【ここを追加！】不足している店舗情報を補完する
     if (profile) {
+      // ⚠️ shopName はブラウザからの値を優先する。
+      //    マルチブランド（専用屋号）機能で customShopName が渡されるため、
+      //    ここをサーバー優先にすると別ブランドの予約に本体の店名が出てしまう。
       shopName = shopName || profile.business_name;
-      shopEmail = shopEmail || profile.email_contact || profile.email;
+
+      // ⚠️ 2026/09/06：shopEmail をサーバー側（DB）優先に変更しました。
+      //    店舗の連絡先メールアドレスをブラウザに渡す必要をなくすためです。
+      //    ブラウザからの値は、DB に登録がない場合のフォールバックとしてのみ使います。
+      //    ※ profiles に 'email' カラムは存在しないため参照をやめました。
+      shopEmail = profile.email_contact || shopEmail;
     }
 
     const currentToken = profile?.line_channel_access_token;
