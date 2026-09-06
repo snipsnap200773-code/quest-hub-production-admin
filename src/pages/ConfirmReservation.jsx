@@ -81,7 +81,15 @@ const [customerData, setCustomerData] = useState({
   const fetchShop = async () => {
     try {
       console.log("🔍 クエストデータ取得開始... shopId:", shopId);
-      const { data, error } = await supabase.from('profiles').select('*').eq('id', shopId).single();
+      // ⚠️ 2026/09/06：profiles への直接アクセスを廃止し、予約用ビュー
+      //    public_booking_settings に変更しました。
+      //    店舗の連絡先メール（email_contact）は Edge Function 側が
+      //    shopId から自分で引くため、ここでは不要になっています。
+      const { data, error } = await supabase
+        .from('public_booking_settings')
+        .select('*')
+        .eq('id', shopId)
+        .maybeSingle();
       
       if (error) {
         console.error("❌ Supabaseエラー:", error.message);

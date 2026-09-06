@@ -61,7 +61,19 @@ function TimeSelectionCalendar() {
         console.error("祝日データの取得に失敗しました", err);
       }
       // 1. ショップ情報の取得
-      const { data: profile } = await supabase.from('profiles').select('*').eq('id', shopId).single();
+      // ⚠️ 2026/09/06：profiles への直接アクセスを廃止し、予約用ビュー
+      //    public_booking_settings に変更しました。
+      const { data: profile, error: profileError } = await supabase
+        .from('public_booking_settings')
+        .select('*')
+        .eq('id', shopId)
+        .maybeSingle();
+
+      if (profileError) {
+        // ⚠️ 失敗を握りつぶすと事故に気づけないため、必ずログに残す
+        console.error('店舗情報の取得に失敗しました:', profileError.message);
+      }
+
       if (!profile) { setLoading(false); return; }
       setShop(profile);
 
@@ -82,11 +94,11 @@ function TimeSelectionCalendar() {
       }
 
       // 3. 同期対象ショップの特定
-      let targetShopIds = [shopId];
-      if (profile.schedule_sync_id) {
-        const { data: siblingShops } = await supabase.from('profiles').select('id').eq('schedule_sync_id', profile.schedule_sync_id);
-        if (siblingShops) targetShopIds = siblingShops.map(s => s.id);
-      }
+      // ⚠️ 2026/09/06：schedule_sync_id を使った複数店舗のスケジュール共有処理を削除しました。
+      //    本番の profiles にこのカラムは存在せず、profile.schedule_sync_id は常に
+      //    undefined だったため、この分岐は一度も実行されていませんでした（機能未実装）。
+      //    将来この機能を復活させる場合は、カラム追加とビューへの追加が必要です。
+      const targetShopIds = [shopId];
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       // 🆕 修正：端末・ブラウザのタイムゾーンに依存せず、必ず「日本時間の今日」を基準にする
