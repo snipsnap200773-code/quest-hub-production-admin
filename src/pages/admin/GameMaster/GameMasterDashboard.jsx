@@ -281,29 +281,47 @@ const GameMasterDashboard = () => {
   //   従来は無条件で fetchData() を呼んでいたため、URLを知っていれば
   //   誰でもこの画面を開き、ゲームデータを読み込めていました。
   //   super_admin であることを確認できた場合のみデータを取得します。
+  //
+  // ⚠️ 2026/09/06：getSession() → getUser() へ変更。
+  //    getSession() はブラウザに保存された値をそのまま返すだけで、
+  //    トークンが有効かどうかを検証しない。profiles の SELECT が公開されている間は、
+  //    期限切れトークンでも role が読めてしまうため、権限判定には getUser() を使う。
   useEffect(() => {
     const verifyAndLoad = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      if (!session?.user) {
+        if (userError || !user) {
+          // トークンが無効・期限切れなら、壊れたセッションを掃除してから統合ログインへ
+          if (userError) await supabase.auth.signOut();
+          setCheckingAuth(false);
+          navigate('/', { replace: true });
+          return;
+        }
+
+        const { data: me } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', user.id)
+          .maybeSingle();
+
+        if (me?.role !== 'super_admin') {
+          // ⚠️ ここで signOut() はしない。店舗オーナーが誤ってこのURLを
+          //    開いただけの場合、ログアウトさせるのは行き過ぎ。
+          setCheckingAuth(false);
+          navigate('/', { replace: true });
+          return;
+        }
+
+        setIsAuthorized(true);
+        setCheckingAuth(false);
+        fetchData(); // 👈 権限が確認できてから初めてデータを取りに行く
+      } catch (err) {
+        // 通信エラー等。安全側に倒して、入室させずログイン画面へ返す
+        console.error('権限確認に失敗しました:', err);
+        setCheckingAuth(false);
         navigate('/', { replace: true });
-        return;
       }
-
-      const { data: me } = await supabase
-        .from('profiles')
-        .select('id, role')
-        .eq('id', session.user.id)
-        .maybeSingle();
-
-      if (me?.role !== 'super_admin') {
-        navigate('/', { replace: true });
-        return;
-      }
-
-      setIsAuthorized(true);
-      setCheckingAuth(false);
-      fetchData(); // 👈 権限が確認できてから初めてデータを取りに行く
     };
 
     verifyAndLoad();

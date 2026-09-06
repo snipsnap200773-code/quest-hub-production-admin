@@ -20,9 +20,10 @@ function SuperAdmin() {
   // 1. フックと状態管理（ここが抜けていました！）
   const navigate = useNavigate(); 
   const [isAuthorized, setIsAuthorized] = useState(false);
-  const [inputEmail, setInputEmail] = useState(''); // 🆕 メールアドレス入力用
-  const [inputPass, setInputPass] = useState(''); // パスワード入力用
-  const [authError, setAuthError] = useState(''); // 🆕 認証エラー表示用
+  // ⚠️ 2026/09/06：この画面に内蔵していたログインフォームを撤去しました。
+  //    ログインの入口は「/」の FacilityLogin（統合ログイン画面）に一本化します。
+  //    認証ロジックが2か所にあると、片方だけ直して穴が残る事故が起きるためです。
+  //    これに伴い inputEmail / inputPass / authError は不要になりました。
   const [loading, setLoading] = useState(true);
 
   // ⚠️ 2026/09/05：VITE_SUPER_MASTER_PASSWORD を廃止しました。
@@ -98,30 +99,46 @@ function SuperAdmin() {
 
   useEffect(() => { 
     // 🔐 sessionStorage の「バトン」は開発者ツールから偽造できるため信用しない。
-    //    Supabase のセッションを取り、profiles.role を毎回サーバーに問い合わせて判定する。
+    //    ⚠️ 2026/09/05：getSession() → getUser() へ変更。
+    //       getSession() はブラウザに保存された値をそのまま返すだけで、
+    //       トークンが有効かどうかを検証しない。profiles の SELECT が公開されている間は、
+    //       期限切れトークンでも role が読めてしまい「画面には入れるが
+    //       Edge Function では401」というズレが起きる。
+    //       getUser() はサーバーに問い合わせて検証するため、権限判定にはこちらを使う。
     const verifySuperAdmin = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
+      try {
+        const { data: { user }, error: userError } = await supabase.auth.getUser();
 
-      if (!session?.user) {
-        setLoading(false); // 未ログインならログイン画面を出す
-        return;
-      }
+        if (userError || !user) {
+          // トークンが無効・期限切れなら、壊れたセッションを掃除してから統合ログインへ
+          if (userError) await supabase.auth.signOut();
+          navigate('/', { replace: true });
+          return;
+        }
 
-      const { data: profile } = await supabase
-        .from('profiles')
-        .select('id, role')
-        .eq('id', session.user.id)
-        .maybeSingle();
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('id', user.id)
+          .maybeSingle();
 
-      if (profile?.role === 'super_admin') {
-        setIsAuthorized(true); // → 下の useEffect が fetchAllData を実行します
-      } else {
-        setLoading(false);
+        if (profile?.role === 'super_admin') {
+          setIsAuthorized(true); // → 下の useEffect が fetchAllData を実行します
+        } else {
+          // ⚠️ ここで signOut() はしない。
+          //    店舗オーナーがこのURLを開いただけの場合、ログアウトさせるのは行き過ぎ。
+          //    「/」へ戻せば FacilityLogin が本人の管理画面へ案内してくれる。
+          navigate('/', { replace: true });
+        }
+      } catch (err) {
+        // 通信エラー等。安全側に倒して、入室させずログイン画面へ返す
+        console.error('権限確認に失敗しました:', err);
+        navigate('/', { replace: true });
       }
     };
 
     verifySuperAdmin();
-  }, []);
+  }, [navigate]);
 
   const isMobile = windowWidth < 1024;
 
@@ -161,41 +178,9 @@ function SuperAdmin() {
     setFacilities(allData);
   };
 
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setAuthError('');
-    setIsProcessing(true);
-
-    // 1. Supabase Auth で正規にログインする（＝JWTを取得する）
-    const { data: authData, error: signInError } = await supabase.auth.signInWithPassword({
-      email: inputEmail.trim(),
-      password: inputPass.trim(),
-    });
-
-    if (signInError || !authData?.user) {
-      setAuthError('メールアドレスまたはパスワードが違います');
-      setIsProcessing(false);
-      return;
-    }
-
-    // 2. ログインできても super_admin でなければ入室させない
-    //    ⚠️ auth.users には一般ユーザーも含まれるため、role の確認は必須
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id, role')
-      .eq('id', authData.user.id)
-      .maybeSingle();
-
-    if (profile?.role !== 'super_admin') {
-      await supabase.auth.signOut();
-      setAuthError('この画面へのアクセス権限がありません');
-      setIsProcessing(false);
-      return;
-    }
-
-    setIsProcessing(false);
-    setIsAuthorized(true); // → useEffect が fetchAllData を実行します
-  };
+  // ⚠️ 2026/09/06：handleLogin を削除しました。
+  //    同じ内容のログイン処理が FacilityLogin.jsx にもあり、二重管理になっていたためです。
+  //    ログインは「/」に集約し、この画面は「入れるかどうかの確認」だけを行います。
 
   const fetchCreatedShops = async () => {
     // 🔧 修正：1000件の壁を回避するため、.range()で1000件ずつページングして全件取得する
@@ -639,50 +624,12 @@ const updateShopInfo = async (id) => {
   };
 
   // 🚀 ここから修正
-  if (loading) return null; // 読み込み中だけ真っ白
+  if (loading) return null; // 権限確認中は真っ白（この間にリダイレクトが走ります）
 
-  // バトン（認証）がない場合に表示するログイン画面
-  if (!isAuthorized && !loading) {
-    return (
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', background: '#f0f2f5' }}>
-        <form onSubmit={handleLogin} style={{ ...panelStyle, maxWidth: '380px' }}>
-          <div style={{ textAlign: 'center', marginBottom: '20px' }}>
-            <ShieldAlert size={40} color="#1e293b" style={{ marginBottom: '10px' }} />
-            <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 'bold' }}>QUEST-HUB 管理者認証</h2>
-            <p style={{ margin: '8px 0 0', fontSize: '0.75rem', color: '#64748b' }}>管理者アカウントでログインしてください</p>
-          </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-            <input 
-              type="email" 
-              value={inputEmail} 
-              onChange={(e) => setInputEmail(e.target.value)} 
-              placeholder="メールアドレス" 
-              style={smallInput} 
-              autoComplete="username"
-              autoFocus
-            />
-            <input 
-              type="password" 
-              value={inputPass} 
-              onChange={(e) => setInputPass(e.target.value)} 
-              placeholder="パスワード" 
-              style={smallInput} 
-              autoComplete="current-password"
-            />
-            {authError && (
-              <div style={{ fontSize: '0.8rem', color: '#ef4444', fontWeight: 'bold', textAlign: 'center' }}>
-                {authError}
-              </div>
-            )}
-            <button type="submit" disabled={isProcessing} style={{ ...primaryBtn, background: isProcessing ? '#94a3b8' : '#1e293b' }}>
-              {isProcessing ? '認証中...' : '認証して入室'}
-            </button>
-          </div>
-        </form>
-      </div>
-    );
-  }
-  // 🚀 ここまで修正
+  // ⚠️ 2026/09/06：内蔵のログインフォームを撤去しました。
+  //    未認証・権限なしの場合は上の useEffect が「/」へリダイレクトします。
+  //    ここは、リダイレクトが完了するまでの一瞬に中身が見えないようにするための保険です。
+  if (!isAuthorized) return null;
 
   // --- レンダリングパーツ ---
   const renderShopList = () => (

@@ -54,17 +54,26 @@ const AdminDashboard = () => {
     //   （店舗側の auth_${shopId} は救済ルート利用者のために従来どおり残します）
 
     // 1. 店舗本人のバトン（従来どおり）
+    //    ⚠️ この値は sessionStorage 由来のため偽造可能です。
+    //       救済ルート（Authアカウントを持たない店舗）のために残していますが、
+    //       パスワードのハッシュ化（作業B）が済んだ段階でまとめて廃止します。
     const isShopAuth = sessionStorage.getItem(`auth_${shopId}`) === 'true';
 
-    // 2. 総括管理者の判定：セッションを取り、profiles.role をサーバーに問い合わせる
+    // 2. 総括管理者の判定：ログイン中のユーザーを検証し、profiles.role をサーバーに問い合わせる
+    //
+    // ⚠️ 2026/09/06：getSession() → getUser() へ変更。
+    //    getSession() はブラウザに保存された値をそのまま返すだけで、
+    //    トークンが有効かどうかを検証しない。profiles の SELECT が公開されている間は、
+    //    期限切れトークンでも role が読めてしまい「画面には入れるが
+    //    Edge Function では401」というズレが起きるため、getUser() を使う。
     let isSessionAuth = false;
     try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (!userError && user) {
         const { data: me } = await supabase
           .from('profiles')
           .select('id, role')
-          .eq('id', session.user.id)
+          .eq('id', user.id)
           .maybeSingle();
 
         // 総括管理者なら全店舗を閲覧可
@@ -78,7 +87,8 @@ const AdminDashboard = () => {
 
     // 「お店のバトン」も「セッションによる権限」も無い場合
     if (!isShopAuth && !isSessionAuth) {
-      navigate('/');
+      setIsLoading(false);
+      navigate('/', { replace: true });
       return;
     }
 
