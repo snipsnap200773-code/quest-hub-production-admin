@@ -110,7 +110,12 @@ function TimeSelectionCalendar() {
 
       // 4. 既存予約の取得（認証が確定しているため、RLSによる空配列問題を回避できます）
       const [resRes, visitRes, keepRes, connRes, exclRes, privRes] = await Promise.all([
-        supabase.from('reservations').select('start_time, end_time, staff_id, res_type, is_block, status').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
+        // ⚠️ 2026/09/07：reservations への直接アクセスを廃止し、公開ビュー
+        //    public_busy_slots に変更しました。reservations には customer_name /
+        //    customer_phone / options(visit_info.address) が入っており、誰でも
+        //    読める状態だったためです。1日貸切と臨時休業はビュー側の計算列
+        //    （is_full_day / is_temp_closed）を使います。
+        supabase.from('public_busy_slots').select('start_time, end_time, staff_id, res_type, is_block, status, is_full_day, is_temp_closed').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
         supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 date型カラムなのでそのままでOK
         supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 定期ルール
@@ -326,15 +331,14 @@ const checkAvailability = (date, timeStr) => {
     const isRegularKeep = checkIsRegularKeepDay(date); // 🏢 定期キープ（第n曜日のルール）
 
     // 🚀 🆕 追加：その日に「1日貸切」の予約が1件でも入っているかチェック
+    // ⚠️ 2026/09/07：options は公開ビューに含めていないため（visit_info.address が
+    //    入っており未ログインに出せない）、ビュー側の計算列 is_full_day を使います。
     const isFullDayReserved = existingReservations.some(r => {
       if (r.staff_id && !targetStaffIdsForMode.includes(r.staff_id)) return false; // 👈 🌟 追加：関係ない業種の予約は無視
 
       // その日の予約かチェック
       if (r.start_time.startsWith(dateStr) && r.status !== 'canceled') {
-        const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
-        const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
-        // options.isFullDay か、メニュー自体に is_full_day があるか
-        return opt.isFullDay === true || items.some(s => s.is_full_day === true);
+        return r.is_full_day === true;
       }
       return false;
     });
@@ -358,25 +362,25 @@ const checkAvailability = (date, timeStr) => {
     // 💡 開始時間が休憩中なら「休」
     if (isInsideRest(timeStr)) return { status: 'rest', label: '休', remaining: 0 };
 
-    // --- 5. 管理者による個別ブロック（is_block: true） ---
-    const currentSlotTime = new Date(`${dateStr}T${timeStr}:00`).getTime();
-    const isBlockedByAdmin = existingReservations.some(res => {
-      if (res.is_block !== true) return false;
-      if (res.staff_id && !targetStaffIdsForMode.includes(res.staff_id)) return false; // 👈 🌟 追加
-      const s = new Date(res.start_time).getTime();
-      const e = new Date(res.end_time).getTime();
-      return currentSlotTime >= s && currentSlotTime < e;
-    });
+    // --- 5. 店舗全体のブロック（staff_idが空のis_blockなど） ---
+const currentSlotTime = new Date(`${dateStr}T${timeStr}:00`).getTime();
 
-    // 🚀 🆕 追加：プライベート予定もブロック対象にする
-    const isPrivateBlocked = privateTasks.some(p => {
-      if (p.staff_id && !targetStaffIdsForMode.includes(p.staff_id)) return false; // 👈 🌟 追加
-      const s = new Date(p.start_time).getTime();
-      const e = new Date(p.end_time).getTime();
-      return currentSlotTime >= s && currentSlotTime < e;
-    });
+const isGlobalBlocked = existingReservations.some(res => {
+  if (res.is_block !== true) return false;
+  if (res.staff_id) return false; // 👈 個別スタッフの休み（ブロック）はスルーする
+  const s = new Date(res.start_time).getTime();
+  const e = new Date(res.end_time).getTime();
+  return currentSlotTime >= s && currentSlotTime < e;
+});
 
-    if (isBlockedByAdmin || isPrivateBlocked) return { status: 'booked', label: '×', remaining: 0 };
+const isGlobalPrivate = privateTasks.some(p => {
+  if (p.staff_id) return false; // 👈 個別スタッフのプライベート予定もスルーする
+  const s = new Date(p.start_time).getTime();
+  const e = new Date(p.end_time).getTime();
+  return currentSlotTime >= s && currentSlotTime < e;
+});
+
+if (isGlobalBlocked || isGlobalPrivate) return { status: 'booked', label: '×', remaining: 0 };
 
     /* ==========================================
        🚀 6. 以降、既存の貫通チェックや空き枠計算
@@ -486,27 +490,35 @@ const checkAvailability = (date, timeStr) => {
       minRemaining = Math.min(minRemaining, currentStoreMax - globalCount);
 
       // 💡 E. 個別の技術者が予約を受け入れられるか（指名またはフリー）をチェック
-      const anyStaffAvailable = workingStylists.some(staff => {
-        if (targetStaff && staff.id !== targetStaff.id) return false; // 指名がある場合はその人だけチェック
+const anyStaffAvailable = workingStylists.some(staff => {
+  if (targetStaff && staff.id !== targetStaff.id) return false; 
 
-        // 🚀 🆕 核心部：個人の上限をモードに合わせて決定する
-        let staffMax = staff.concurrent_capacity || 1;
-        if (!hasAssistant && shop?.restrict_stylist_without_assistant) {
-          staffMax = 1; // 🛡 平等モード：アシスタントがいない時間は強制的に「1名」に制限
-        }
+  let staffMax = staff.concurrent_capacity || 1;
+  if (!hasAssistant && shop?.restrict_stylist_without_assistant) {
+    staffMax = 1; 
+  }
 
-        const staffCurrentLoad = existingReservations.filter(res => {
-          // 🛡️ 修正：キャンセル済みの予約は空き枠計算から除外する
-          if (res.status === 'canceled') return false;
-          if (res.staff_id !== staff.id) return false;
-          const resStart = new Date(res.start_time).getTime();
-          const resEnd = new Date(res.end_time).getTime();
-          const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
-          return t >= resStart && t < blockedUntil;
-        }).length;
+  const staffCurrentLoad = existingReservations.filter(res => {
+    if (res.status === 'canceled') return false;
+    if (res.staff_id !== staff.id) return false;
+    const resStart = new Date(res.start_time).getTime();
+    const resEnd = new Date(res.end_time).getTime();
+    const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
+    // 💡 個人のブロック(休みにする等)はここに入っているため自動でカウントされる
+    return t >= resStart && t < blockedUntil;
+  }).length;
 
-        return staffCurrentLoad < staffMax;
-      });
+  // 👇 🌟 🆕 追加：個人のプライベート予定も負荷としてカウントする
+  const staffPrivateLoad = privateTasks.filter(p => {
+    if (p.staff_id !== staff.id) return false;
+    const s = new Date(p.start_time).getTime();
+    const e = new Date(p.end_time).getTime();
+    return t >= s && t < e; 
+  }).length;
+
+  // 💡 予約数＋プライベート予定の合計が、そのスタッフのキャパを超えていないか判定
+  return (staffCurrentLoad + staffPrivateLoad) < staffMax;
+});
 
       if (!anyStaffAvailable) return { status: 'booked', label: '×', remaining: 0 };
     }
@@ -537,11 +549,13 @@ const checkAvailability = (date, timeStr) => {
     if (checkIsRegularHoliday(date)) return "定休日";
 
     // 3. 臨時休業
+    // ⚠️ 2026/09/07：customer_name は公開ビューに含めていないため、
+    //    ビュー側の計算列 is_temp_closed を使います。
+    //    店舗全体の休みだけを対象にするため staff_id が無いものに限定します。
     const isTempClosed = existingReservations.some(r => 
       r.start_time.startsWith(dateStr) && 
-      r.res_type === 'blocked' && 
-      r.customer_name === '臨時休業' &&
-      (!r.staff_id || targetStaffIdsForMode.includes(r.staff_id)) // 👈 🌟 追加
+      r.is_temp_closed === true &&
+      !r.staff_id
     );
     if (isTempClosed) return "臨時休業";
 
@@ -564,10 +578,8 @@ const checkAvailability = (date, timeStr) => {
         const rEnd = new Date(r.end_time).getTime();
         // 予約時間内に重なっているか
         if (currentSlotStart >= rStart && currentSlotStart < rEnd) {
-          const opt = typeof r.options === 'string' ? JSON.parse(r.options) : (r.options || {});
-          const items = opt.people && Array.isArray(opt.people) ? opt.people.flatMap(p => p.services || []) : (opt.services || []);
-          // 貸切フラグを持っているか
-          return opt.isFullDay === true || items.some(s => s.is_full_day === true);
+          // ⚠️ 2026/09/07：options を使わず、ビュー側の計算列 is_full_day を参照します。
+          return r.is_full_day === true;
         }
         return false;
       });
@@ -778,7 +790,11 @@ const checkAvailability = (date, timeStr) => {
   ...existingReservations
     .filter(r => r.start_time.startsWith(dateStr) && r.status !== 'canceled')
     .filter(r => !r.staff_id || targetStaffIdsForMode.includes(r.staff_id)) // 👈 🌟 追加：関係ない予約は弾く！
-    .map(r => ({ 
+    // ⚠️ 2026/09/07 追加：指名予約のとき、他スタッフの予定は自動詰め（隙間防止）の
+    //    計算に含めない。含めると、他スタッフの終日ブロックが営業時間を覆った日に
+    //    指名した本人が空いていても枠が1つも出せなくなるため。
+    .filter(r => !targetStaff || !r.staff_id || r.staff_id === targetStaff.id)
+    .map(r => ({
       s: new Date(r.start_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }), 
       e: new Date(r.end_time).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }),
       type: 'res' // 🚀 予約

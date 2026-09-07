@@ -1194,7 +1194,7 @@ const handleSavePrivateTask = async () => {
 
     const insertData = {
       shop_id: shopId, 
-      customer_name: '臨時休業', 
+      customer_name: '✕',
       res_type: 'blocked',
       is_block: true, // 🚀 🆕 「これは売上ではない」という目印を追加！
       staff_id: targetStaffId, 
@@ -1203,7 +1203,7 @@ const handleSavePrivateTask = async () => {
       total_slots: slotsCount, 
       customer_email: null, 
       customer_phone: '---',
-      options: { isFullDay: true }
+       options: { type: 'admin_block' }
     };
     await supabase.from('reservations').insert([insertData]);
     setShowMenuModal(false); fetchData();

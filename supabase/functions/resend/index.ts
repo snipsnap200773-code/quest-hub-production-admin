@@ -3,6 +3,8 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
 // 🆕 プッシュ通知ライブラリを導入
 import webpush from "npm:web-push@3.6.7";
+// 🔐 パスワード照合用（フロント側 GeneralSettings.jsx と同じライブラリ・同じバージョン）
+import bcrypt from "npm:bcryptjs@3.0.3";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -974,44 +976,86 @@ if (type === 'inquiry') {
     // ==========================================
     if (type === 'REPAIR_AUTH') {
       const { shopId, email, password } = payload;
-      console.log(`[REPAIR_AUTH] 復旧開始: ${email} (ID: ${shopId})`);
+      console.log(`[REPAIR_AUTH] 復旧開始: ${email} (ID: ${shopId ?? '未指定'})`);
 
       // 🔐 権限チェック
       //    ルート1：super_admin が管理画面から実行 → 無条件で許可
       //    ルート2：店舗本人がログイン画面から実行 → サーバー側で資格情報を照合
       const isSuper = caller?.role === 'super_admin';
 
-      if (!shopId) return deny('shopId が指定されていません', 400);
+      // ⚠️ 2026/09/07：shopId 未指定の呼び出しに対応しました。
+      //    ログイン画面（FacilityLogin）は profiles を直接読まなくなったため、
+      //    店舗IDを知りません。email_contact からサーバー側で店舗を特定します。
+      //    ※ SuperAdmin からの呼び出しは従来どおり shopId を送ってきます。
+      if (!shopId && !email) return deny('shopId または email が必要です', 400);
 
-      const { data: target } = await supabaseAdmin
+      const lookup = supabaseAdmin
         .from('profiles')
-        .select('id, email_contact, admin_password, role')
-        .eq('id', shopId)
-        .maybeSingle();
+        .select('id, email_contact, admin_password, hashed_password, role');
 
-      if (!target) return deny('対象の店舗が見つかりません', 404);
+      const { data: target } = shopId
+        ? await lookup.eq('id', shopId).maybeSingle()
+        : await lookup.eq('email_contact', String(email).trim()).maybeSingle();
+
+      // 🔐 存在しない場合も、パスワード不一致と同じ文言を返す。
+      //    メールアドレスの存在有無を推測されないようにするため。
+      if (!target) {
+        if (isSuper) return deny('対象の店舗が見つかりません', 404);
+        return deny('メールアドレスまたはパスワードが一致しません');
+      }
       // 🚨 救済ルートで管理者アカウントを作らせない（権限昇格の防止）
       if (target.role === 'super_admin' && !isSuper) return deny('この操作は許可されていません');
+
+      // ⚠️ 2026/09/07：パスワード照合を bcrypt 対応にしました（ハイブリッド方式）。
+      //    ・hashed_password があれば bcrypt で比較する
+      //    ・無ければ従来どおり admin_password の平文比較を行い、
+      //      成功したその場でハッシュ化して移行する（B-5 の自動移行を兼ねる）
+      //    移行が完了すると admin_password は '********' になるため、
+      //    平文比較のルートは自然に使われなくなります。
+      let isPlainMatch = false;
 
       if (!isSuper) {
         // サーバー側で「メール＋パスワード」がDBの内容と一致するか照合する。
         // クライアントの申告を信用しない。
-        if (!target.admin_password) return deny('復旧に必要な情報が不足しています');
         if (String(target.email_contact ?? '').trim() !== String(email ?? '').trim()) {
           return deny('メールアドレスまたはパスワードが一致しません');
         }
-        if (String(target.admin_password) !== String(password ?? '')) {
-          return deny('メールアドレスまたはパスワードが一致しません');
+
+        const inputPassword = String(password ?? '');
+
+        if (target.hashed_password) {
+          // 移行済み：bcrypt で照合する
+          if (!bcrypt.compareSync(inputPassword, target.hashed_password)) {
+            return deny('メールアドレスまたはパスワードが一致しません');
+          }
+        } else if (target.admin_password && target.admin_password !== '********') {
+          // 未移行：平文で照合する（この経路は移行完了後に消える）
+          if (String(target.admin_password) !== inputPassword) {
+            return deny('メールアドレスまたはパスワードが一致しません');
+          }
+          isPlainMatch = true;
+        } else {
+          return deny('復旧に必要な情報が不足しています');
         }
       }
 
+      // 💡 Auth の作成に使うパスワードを決める。
+      //    ハッシュからは元のパスワードを復元できないため、
+      //    ・平文が残っていればそれを使う
+      //    ・移行済みの場合は、照合を通った payload のパスワードを採用する
+      //      （bcrypt.compareSync が通っている＝正しいパスワードだと確認済み）
+      const passwordForAuth = (target.admin_password && target.admin_password !== '********')
+        ? target.admin_password
+        : String(password ?? '');
+
+      if (!passwordForAuth) return deny('復旧に必要な情報が不足しています');
+
       // 💡 管理者権限（合鍵）を使って、IDを指定してAuthユーザーを作成
-      //    パスワードは payload ではなく DB に保存されている値を採用する
       const { data: _authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-        id: shopId,                      // 👈 これが最重要！DB側のProfilesと同じIDで作成します
-        email: target.email_contact,     // 👈 DB側の値を採用
-        password: target.admin_password, // 👈 DB側の値を採用
-        email_confirm: true              // 確認メールをスキップ
+        id: target.id,               // 👈 これが最重要！DB側のProfilesと同じIDで作成します
+        email: target.email_contact, // 👈 DB側の値を採用
+        password: passwordForAuth,
+        email_confirm: true          // 確認メールをスキップ
       });
 
       if (authError) {
@@ -1019,6 +1063,23 @@ if (type === 'inquiry') {
         return new Response(JSON.stringify({ error: authError.message }), { 
           status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } 
         });
+      }
+
+      // 🔐 平文で照合が通った場合、この機会にハッシュへ移行する（B-5 の自動移行）
+      //    admin_password を '********' で潰すことで、平文の残存をなくす。
+      if (isPlainMatch) {
+        try {
+          const salt = bcrypt.genSaltSync(10);
+          const hashed = bcrypt.hashSync(String(password ?? ''), salt);
+          await supabaseAdmin
+            .from('profiles')
+            .update({ hashed_password: hashed, admin_password: '********' })
+            .eq('id', target.id);
+          console.log(`[REPAIR_AUTH] パスワードをハッシュへ移行しました: ${email}`);
+        } catch (migErr) {
+          // 移行に失敗しても復旧自体は成功しているため、処理は続行する
+          console.error('[REPAIR_AUTH] ハッシュ移行に失敗:', migErr);
+        }
       }
 
       console.log(`[REPAIR_AUTH] 復旧成功: ${email}`);

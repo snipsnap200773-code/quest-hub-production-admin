@@ -119,7 +119,11 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled')
         .gte('scheduled_date', monthStartStr).lte('scheduled_date', monthEndStr), // 👈 追加
       // ⑥ この月の個人予約（開始・終了時間を取得）
-      supabase.from('reservations').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled')
+      // ⚠️ 2026/09/07：reservations への直接アクセスを廃止し、公開ビュー
+      //    public_busy_slots に変更しました。施設ユーザーは Auth を持たないため
+      //    anon でのアクセスになり、顧客名・電話・住所まで読めてしまう状態でした。
+      //    ここで使うのは時間とスタッフだけなのでビューで賄えます。
+      supabase.from('public_busy_slots').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled')
         .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
       // ⑦ この月のプライベート予定（開始・終了時間を取得）
       supabase.from('private_tasks').select('start_time, end_time, staff_id').eq('shop_id', shopId)

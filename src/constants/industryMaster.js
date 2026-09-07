@@ -60,6 +60,14 @@ export const INDUSTRY_PRESETS = {
 // 大カテゴリのラベル配列（Home画面のカテゴリ検索等に使用）
 export const INDUSTRY_LABELS = Object.values(INDUSTRY_PRESETS).map(item => item.label);
 
+// ⚠️ 2026/09/07 追加：店舗が自分で選ぶ画面（新規登録・店舗基本設定）で出す選択肢。
+//    test_new はテスト用のため除外します。
+//    ここの文字列は staffs.capable_categories / service_categories.target_industry と
+//    完全一致で照合されるため、既存店舗がある状態では変更しないでください。
+export const SELECTABLE_INDUSTRY_LABELS = Object.entries(INDUSTRY_PRESETS)
+  .filter(([key]) => key !== 'test_new')
+  .map(([, item]) => item.label);
+
 /**
  * 🆕 大カテゴリ名を受け取り、対応する小カテゴリの配列を返す関数
  * BasicSettings.jsx で二段目のプルダウンを作る時に呼び出します

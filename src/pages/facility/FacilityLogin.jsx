@@ -115,47 +115,81 @@ const FacilityLogin = () => {
         }
       }
 
-      const { data: shopUser } = await supabase
-        .from('profiles')
-        // 🚀 修正：is_timeline_default を読み取る
-        .select('id, business_name, role, admin_password, is_timeline_default')
-        .eq('email_contact', cleanLoginId)
-        .eq('admin_password', cleanPassword)
-        .maybeSingle();
+      // ⚠️ 2026/09/07：救済ルートを全面的に作り直しました。
+      //
+      //    【変更前の問題】
+      //    ・profiles を admin_password の平文一致で引いていたため、
+      //      ハッシュ化した店舗は救済ルートを通れなかった
+      //    ・照合のためにブラウザから profiles を直接読む必要があり、
+      //      公開SELECTを削除できない原因になっていた
+      //    ・sessionStorage にバトンを書くだけで Supabase のセッションを
+      //      持たないため、画面には入れるが Edge Function では401になっていた
+      //
+      //    【変更後】
+      //    照合は Edge Function（REPAIR_AUTH）がサーバー側で行います。
+      //    hashed_password があれば bcrypt、無ければ平文で照合し、
+      //    平文だった場合はその場でハッシュへ移行されます。
+      //    復旧後は必ず signInWithPassword をやり直し、正規のセッションを取得します。
+      console.log("🛠️ 認証のズレを検知。サーバー側で復旧を試みます...");
 
-      if (shopUser) {
-        console.log("🛠️ 認証のズレを検知。お引越し（または同期）を試みます...");
-        sessionStorage.setItem(`auth_${shopUser.id}`, 'true'); 
-
-        try {
-          // 🔐 invoke なら anon キーが自動付与され、URLも supabaseClient の設定が使われる。
-          //    サーバー側で email / admin_password の照合が行われます。
-          const { error: repairError } = await supabase.functions.invoke('resend', {
-            body: {
-              type: 'REPAIR_AUTH',
-              shopId: shopUser.id,
-              email: cleanLoginId,
-              password: cleanPassword,
-              shopName: shopUser.business_name
-            }
-          });
-
-          if (repairError) {
-            console.warn("Auth sync skipped or failed, but DB password matched.", repairError.message);
-          } else {
-            console.log("✅ Auth アカウントの復旧に成功しました");
+      try {
+        const { error: repairError } = await supabase.functions.invoke('resend', {
+          body: {
+            type: 'REPAIR_AUTH',
+            email: cleanLoginId,
+            password: cleanPassword
           }
-        } catch (err) {
-          console.error("Sync Error:", err);
+        });
+
+        if (repairError) {
+          console.warn("復旧に失敗しました:", repairError.message);
+          alert('ログインIDまたはパスワードが正しくありません。');
+          setIsProcessing(false);
+          return;
         }
 
+        // ✅ 復旧に成功したので、改めて正規のログインを行う。
+        //    ここで初めて Supabase のセッション（JWT）が手に入る。
+        const { data: retryData, error: retryError } = await supabase.auth.signInWithPassword({
+          email: cleanLoginId,
+          password: cleanPassword,
+        });
+
+        if (retryError || !retryData?.user) {
+          console.error("復旧後のログインに失敗しました:", retryError?.message);
+          alert('アカウントを復旧しましたが、ログインに失敗しました。\nお手数ですが、もう一度ログインをお試しください。');
+          setIsProcessing(false);
+          return;
+        }
+
+        const { data: repairedProfile } = await supabase
+          .from('profiles')
+          .select('id, role, is_timeline_default')
+          .eq('id', retryData.user.id)
+          .maybeSingle();
+
+        if (!repairedProfile) {
+          alert('ログインIDまたはパスワードが正しくありません。');
+          setIsProcessing(false);
+          return;
+        }
+
+        sessionStorage.setItem(`auth_${repairedProfile.id}`, 'true');
         setIsProcessing(false);
-        // 🚀 修正：設定がONならタイムライン、OFFならカレンダーへ飛ばす
-        navigate(shopUser.is_timeline_default ? `/admin/${shopUser.id}/timeline` : `/admin/${shopUser.id}/reservations`); 
+
+        if (repairedProfile.role === 'super_admin') {
+          setProfileData(repairedProfile);
+          setShowGmModal(true);
+        } else {
+          // 🚀 設定がONならタイムライン、OFFならカレンダーへ飛ばす
+          navigate(repairedProfile.is_timeline_default ? `/admin/${repairedProfile.id}/timeline` : `/admin/${repairedProfile.id}/reservations`);
+        }
         return;
-      } else {
+      } catch (err) {
+        console.error("Repair Error:", err);
         alert('ログインIDまたはパスワードが正しくありません。');
         setIsProcessing(false);
+        return;
       }
 
     } else {

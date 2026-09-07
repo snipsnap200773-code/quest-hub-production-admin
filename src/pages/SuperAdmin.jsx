@@ -5,6 +5,8 @@ import { INDUSTRY_PRESETS, INDUSTRY_LABELS, getSubCategories } from '../constant
 
 // ✅ supabase のインポートはここ1回だけにします
 import { supabase } from '../supabaseClient';
+// 🔐 パスワードのハッシュ化用（GeneralSettings.jsx と同じライブラリ）
+import bcrypt from 'bcryptjs';
 
 import { 
   MapPin, Plus, Trash2, Save, Image as ImageIcon, Bell, Search, 
@@ -443,8 +445,49 @@ function SuperAdmin() {
 const updateShopInfo = async (id) => {
     setIsProcessing(true); 
 
-    // 1. まずはDB（profiles）を更新
-    const { error: dbError } = await supabase.from('profiles').update({ 
+    // ⚠️ 2026/09/07：パスワードの扱いを全面的に変更しました。
+    //    ・従来は admin_password に平文をそのまま書き込んでいたため、
+    //      店舗情報を編集するたびに平文が復活していました
+    //    ・パスワード欄は「現在値の表示」ではなく「再設定」用の入力欄になり、
+    //      空欄なら何も変更しません
+    //    ・入力があった場合のみ、先に Auth を更新してから hashed_password を保存します
+    const wantsPasswordChange = !!(editPassword && editPassword.trim() !== '');
+
+    if (wantsPasswordChange && editPassword.trim().length < 8) {
+      alert('パスワードは8文字以上で入力してください。');
+      setIsProcessing(false);
+      return;
+    }
+
+    // 1. パスワードを変更する場合は、先に Auth 側を更新する。
+    //    先に DB を書くと、Auth 同期に失敗したときに店舗が締め出されるため。
+    if (wantsPasswordChange) {
+      try {
+        // 🚀 invoke なので、ログイン中の super_admin の JWT が自動で付きます
+        const { error: authError } = await supabase.functions.invoke('resend', {
+          body: {
+            type: 'UPDATE_PASSWORD',
+            shopId: id,
+            password: editPassword.trim()
+          }
+        });
+
+        if (authError) {
+          console.error('Auth パスワードの更新に失敗しました:', authError.message);
+          alert('ログイン用パスワードの更新に失敗したため、処理を中止しました。\n何も変更されていません。\n\n（詳細: ' + authError.message + '）');
+          setIsProcessing(false);
+          return;
+        }
+      } catch (err) {
+        console.error('Auth Sync Error:', err);
+        alert('通信に失敗したため、処理を中止しました。');
+        setIsProcessing(false);
+        return;
+      }
+    }
+
+    // 2. DB（profiles）を更新する
+    const updatePayload = {
       business_name: editName, 
       business_name_kana: editKana, 
       owner_name: editOwnerName, 
@@ -452,9 +495,18 @@ const updateShopInfo = async (id) => {
       business_type: Array.isArray(editBusinessType) ? editBusinessType.join(',') : editBusinessType, // 👈 🌟 修正：配列ならカンマ区切りに
       sub_business_type: editSubBusinessType,
       email_contact: editEmail,
-      phone: editPhone, 
-      admin_password: editPassword 
-    }).eq('id', id);
+      phone: editPhone
+    };
+
+    // 🔐 パスワードを変更する場合のみ、ハッシュを保存する。
+    //    admin_password には平文を入れず、'********' のままにする。
+    if (wantsPasswordChange) {
+      const salt = bcrypt.genSaltSync(10);
+      updatePayload.hashed_password = bcrypt.hashSync(editPassword.trim(), salt);
+      updatePayload.admin_password = '********';
+    }
+
+    const { error: dbError } = await supabase.from('profiles').update(updatePayload).eq('id', id);
 
     if (dbError) {
       alert('DB更新失敗: ' + dbError.message);
@@ -462,36 +514,11 @@ const updateShopInfo = async (id) => {
       return;
     }
 
-    // 2. 🚀 Auth（認証）側のパスワードも同期させる
-    //    ⚠️ 空欄や短すぎる値での上書き事故を防ぐため、8文字以上のときだけ同期する
-    if (editPassword && editPassword.length >= 8) {
-      try {
-        // 🚀 正しい命令(UPDATE_PASSWORD)と新しいパスワードを送ります
-        //    invoke なので、ログイン中の super_admin の JWT が自動で付きます
-        const { error } = await supabase.functions.invoke('resend', {
-          body: {
-            type: 'UPDATE_PASSWORD',
-            shopId: id,
-            password: editPassword
-          }
-        });
-
-        if (error) {
-          console.warn("Auth sync failed, but DB was updated.", error.message);
-          alert('DBは更新しましたが、ログイン用パスワードの同期に失敗しました。\n' + error.message);
-        }
-      } catch (err) {
-        console.error("Auth Sync Error:", err);
-      }
-    } else if (editPassword) {
-      alert('パスワードは8文字以上にしてください。\nDBのみ更新され、ログイン用パスワードは変更されていません。');
-    }
-
     // 3. 後処理
     setEditingShopId(null); 
     fetchCreatedShops(); 
     setIsProcessing(false);
-    alert('店舗情報および認証パスワードを更新しました');
+    alert(wantsPasswordChange ? '店舗情報とパスワードを更新しました' : '店舗情報を更新しました');
   };
 
   const toggleSuspension = async (shop) => {
@@ -1081,7 +1108,10 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
             editState.setEditSubBusinessType(shop.sub_business_type || "");
             editState.setEditEmail(shop.email_contact || "");
             editState.setEditPhone(shop.phone || "");
-            editState.setEditPassword(shop.admin_password || "");
+            // ⚠️ 2026/09/07：パスワードは読み込まない。
+            //    admin_password は '********' で潰してあり、現在値は取得できません。
+            //    この欄は「再設定」用なので、常に空欄から始めます。
+            editState.setEditPassword("");
           }} />
           <Trash2 size={16} color="#ef4444" style={{cursor:'pointer'}} onClick={() => onDelete(shop)} />
         </div>
@@ -1137,7 +1167,15 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
           )}          
                     <input value={editState.editEmail} onChange={(e) => editState.setEditEmail(e.target.value)} style={smallInput} placeholder="メールアドレス" />
           <input value={editState.editPhone} onChange={(e) => editState.setEditPhone(e.target.value)} style={smallInput} placeholder="電話番号" />
-          <input value={editState.editPassword} onChange={(e) => editState.setEditPassword(e.target.value)} style={smallInput} placeholder="PW" />
+          {/* 🔐 パスワードは再設定専用。空欄のままなら変更されない */}
+          <input 
+            type="password"
+            value={editState.editPassword} 
+            onChange={(e) => editState.setEditPassword(e.target.value)} 
+            style={smallInput} 
+            placeholder="パスワードを再設定する場合のみ入力（8文字以上）" 
+            autoComplete="new-password"
+          />
           
           <div style={{ display: 'flex', gap: '8px' }}>
             <button onClick={() => onUpdate(shop.id)} style={{ ...primaryBtn, background: '#10b981', flex: 1 }}>保存</button>
@@ -1147,7 +1185,15 @@ function ShopCard({ shop, index, editingShopId, setEditingShopId, editState, onU
       ) : (
         <div style={{ width: '100%', minWidth: 0, overflow: 'hidden' }}>
           <h4 style={{ margin: '0 0 5px 0', fontSize: '1rem', fontWeight: 'bold', color: '#1e293b' }}>{shop.business_name}</h4>
-          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '5px' }}>{shop.owner_name} / PW: <strong>{shop.admin_password}</strong></div>
+          {/* ⚠️ 2026/09/07：パスワードの表示を廃止しました。
+              hashed_password（bcrypt）で保管しており、平文は存在しません。
+              変更が必要な場合は編集画面から再設定します。 */}
+          <div style={{ fontSize: '0.75rem', color: '#64748b', marginBottom: '5px' }}>
+            {shop.owner_name}
+            <span style={{ marginLeft: '8px', fontSize: '0.65rem', color: '#94a3b8' }}>
+              🔒 パスワードは暗号化保管
+            </span>
+          </div>
           <div style={{ fontSize: '0.7rem', color: '#94a3b8', marginBottom: '15px' }}>
             業種: {
               !shop.business_type

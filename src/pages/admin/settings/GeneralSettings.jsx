@@ -202,11 +202,68 @@ const [initialDataStr, setInitialDataStr] = useState(null);
 
   const handleUpdatePassword = async () => {
     if (!newPassword || newPassword.length < 8) { alert("セキュリティのため、パスワードは8文字以上に設定してください。"); return; }
-    if (window.confirm("パスワードを更新します。新しいパスワードも安全な形式で保存され、運営者を含め誰にも見られることはありません。よろしいですか？")) {
+    if (!window.confirm("パスワードを更新します。新しいパスワードも安全な形式で保存され、運営者を含め誰にも見られることはありません。よろしいですか？")) return;
+
+    // ⚠️ 2026/09/07：Supabase Auth 側のパスワード更新を追加しました。
+    //    従来は profiles だけを書き換えていたため、
+    //      ・Auth のパスワードは古いまま
+    //      ・admin_password は '********' で潰れ、救済ルートも使えない
+    //    という状態になり、店舗が完全に締め出される事故が起きる実装でした。
+    //
+    //    順序が重要です。先に Auth を更新し、成功してから DB を書きます。
+    //    逆にすると、Auth 同期が失敗したときに admin_password が潰れた状態だけが残ります。
+    try {
+      // 1. まず Supabase Auth 側のパスワードを更新する（Edge Function 経由）
+      //    invoke なのでログイン中の JWT が自動で付き、サーバー側で
+      //    「本人または super_admin」であることが検証されます。
+      const { error: authError } = await supabase.functions.invoke('resend', {
+        body: {
+          type: 'UPDATE_PASSWORD',
+          shopId: shopId,
+          password: newPassword
+        }
+      });
+
+      if (authError) {
+        console.error('Auth パスワードの更新に失敗しました:', authError.message);
+        alert(
+          'ログイン用パスワードの更新に失敗したため、処理を中止しました。\n' +
+          'パスワードは変更されていません。\n\n' +
+          '一度ログアウトして入り直してから、再度お試しください。\n' +
+          '（詳細: ' + authError.message + '）'
+        );
+        return;
+      }
+
+      // 2. Auth の更新が成功したので、DB にハッシュを保存する
       const salt = bcrypt.genSaltSync(10);
       const hashed = bcrypt.hashSync(newPassword, salt);
-      const { error } = await supabase.from('profiles').update({ hashed_password: hashed, admin_password: '********' }).eq('id', shopId);
-      if (!error) { showMsg('パスワードを安全に更新しました！'); setNewPassword(''); setIsChangingPassword(false); }
+
+      const { error } = await supabase
+        .from('profiles')
+        .update({ hashed_password: hashed, admin_password: '********' })
+        .eq('id', shopId);
+
+      if (error) {
+        // ⚠️ ここに来た場合、Auth だけが新しいパスワードになっています。
+        //    ログインは新しいパスワードで可能なので締め出しは起きませんが、
+        //    DB とのズレが残るため、利用者に明示します。
+        console.error('パスワードのDB保存に失敗しました:', error.message);
+        alert(
+          'ログイン用パスワードは新しいものに変更されましたが、\n' +
+          '設定の保存に失敗しました。\n' +
+          '次回から新しいパスワードでログインしてください。\n\n' +
+          '（詳細: ' + error.message + '）'
+        );
+        return;
+      }
+
+      showMsg('パスワードを安全に更新しました！');
+      setNewPassword('');
+      setIsChangingPassword(false);
+    } catch (err) {
+      console.error('パスワード更新エラー:', err);
+      alert('エラーが発生しました: ' + (err.message || '通信に失敗しました'));
     }
   };
 
