@@ -27,8 +27,8 @@ const ShopSearch = () => {
     
     // 0. 🆕 自分の施設名を取得
     const { data: fData } = await supabase
-      .from('facility_users')
-      .select('facility_name')
+        .from('facility_users_public')
+        .select('facility_name')
       .eq('id', facilityId)
       .single();
     if (fData) setFacility(fData);

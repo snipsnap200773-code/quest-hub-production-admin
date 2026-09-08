@@ -287,7 +287,7 @@ const { data: resData, error: resError } = await supabase
     // 施設訪問依頼の取得
     const { data: visitData, error: visitError } = await supabase
       .from('visit_requests')
-      .select('*, facility_users(facility_name)')
+      .select('*, facility_users:facility_users_public!facility_user_id(facility_name)')
       .eq('shop_id', shopId)
       .neq('status', 'canceled') // 🚀 追記：キャンセルされた施設訪問を除外
       .eq('scheduled_date', dateStr);

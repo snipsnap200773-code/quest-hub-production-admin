@@ -26,7 +26,7 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
     setLoading(true);
     
     // 🚀 🆕 追加：自分の施設情報を取得（ふりがな含む）
-    const { data: fData } = await supabase.from('facility_users').select('facility_name, furigana, email').eq('id', facilityId).single();
+    const { data: fData } = await supabase.from('facility_users_public').select('facility_name, furigana, email').eq('id', facilityId).single();
     if (fData) setMyFacility(fData);
     
     // 🚀 1. 大カテゴリに「訪問」系が含まれていて、「施設検索公開ON」の店舗を取得

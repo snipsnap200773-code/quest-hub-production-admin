@@ -17,7 +17,9 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
   const fetchData = async () => {
     setLoading(true);
     // 1. 施設情報の取得
-    const { data: fData } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
+    // ⚠️ 2026/09/08：読み取りを facility_users_public（password を含まないビュー）に変更しました。
+    //    更新は引き続き本体テーブル（facility_users）に対して行います。
+    const { data: fData } = await supabase.from('facility_users_public').select('*').eq('id', facilityId).single();
     if (fData) setFacility(fData);
 
     // 🆕 2. 提携・申請中店舗の取得（リクエストパネル用）
@@ -32,7 +34,11 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
   };
 
   const updateStatus = async (column, value) => {
-    const { error } = await supabase.from('facility_users').update({ [column]: value }).eq('id', facilityId);
+    // ⚠️ 2026/09/08：更新先も facility_users_public（ビュー）に変更しました。
+    //    PostgREST の UPDATE は RETURNING を伴うため、本体テーブルの SELECT 権限も必要になり、
+    //    anon から SELECT を落とすと更新自体が 401 になるためです。
+    //    ビューには password が無いので、経由しても認証情報は書き換えられません。
+    const { error } = await supabase.from('facility_users_public').update({ [column]: value }).eq('id', facilityId);
     if (!error) setFacility(prev => ({ ...prev, [column]: value }));
   };
 
@@ -45,7 +51,7 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
       : currentList.filter(item => item !== catName);
 
     const { error } = await supabase
-      .from('facility_users')
+      .from('facility_users_public')
       .update({ allowed_categories: newList })
       .eq('id', facilityId);
 
@@ -218,12 +224,12 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
             onClick={async () => {
   setIsUpdating(true);
   try {
-    console.log("保存実行 ID:", facilityId); // 👈 IDが正しいかコンソールで確認
-    console.log("保存内容:", facility);      // 👈 送る直前のデータを確認
+    // ⚠️ 2026/09/08：施設データを丸ごと出力していたログを削除しました。
+    //    password を含む行がブラウザのコンソールに残るためです。
 
     // 1. facility_usersを更新し、そのまま更新後のデータを取得(.select())
     const { data, error } = await supabase
-      .from('facility_users')
+      .from('facility_users_public')
       .update({ 
         furigana: facility.furigana || null,
         contact_name: facility.contact_name || null, 
@@ -233,7 +239,7 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
         email: facility.email || null 
       })
       .eq('id', facilityId)
-      .select(); // 👈 これを追加！
+      .select();
 
     if (error) throw error;
 
@@ -244,7 +250,7 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
       return;
     }
 
-    console.log("DB更新成功:", data[0]);
+    // ⚠️ 2026/09/08：更新後の行を丸ごと出力していたログを削除しました。
     
     // 2. fetchData()を呼ばず、DBから返ってきた最新データをステートに入れる（確実！）
     setFacility(data[0]);

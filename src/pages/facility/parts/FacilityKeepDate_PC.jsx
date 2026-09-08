@@ -90,7 +90,7 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
     }
 
     // 🚀 🆕 自分（施設）のテストモード設定を取得してStateに入れる
-    const { data: fac } = await supabase.from('facility_users').select('is_test_mode').eq('id', facilityId).single();
+    const { data: fac } = await supabase.from('facility_users_public').select('is_test_mode').eq('id', facilityId).single();
     if (fac) setIsTestMode(fac.is_test_mode);
   };
 

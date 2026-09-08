@@ -126,11 +126,11 @@ const FacilityListUp_PC = ({
       setResidents([]);
 
       // 💡 修正ポイント：is_test_mode も一緒に取得するように変更
-      const { data: fac } = await supabase.from('facility_users').select('facility_name, is_test_mode').eq('id', facilityId).single();
+      const { data: fac } = await supabase.from('facility_users_public').select('facility_name, is_test_mode').eq('id', facilityId).single();
       if (fac) {
         setFacilityName(fac.facility_name);
         setIsTestMode(fac.is_test_mode); // 👈 ここでテストモード状態を保存！
-        await fetchData(fac.facility_name);
+        await fetchData();
       }
       setLoading(false);
     };
@@ -147,7 +147,7 @@ const FacilityListUp_PC = ({
   }, [searchTerm]);
 
   // 以降、既存の fetchData 関数へ続く
-  const fetchData = async (targetFacilityName) => {
+  const fetchData = async () => {
     try {
       const startOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-01`;
       const endOfMonth = `${year}-${String(month + 1).padStart(2, '0')}-${new Date(year, month + 1, 0).getDate()}`;
@@ -169,10 +169,14 @@ const FacilityListUp_PC = ({
 
       // 🚀 3. 残りの「日付で絞り込めるデータ」を Promise.all で取得（draftDataはここから外します）
       const [resData, connData, visitResidentsRes, visitDatesRes] = await Promise.all([
+        // ⚠️ 2026/09/08：照合キーを facility（施設名の文字列）から
+        //    facility_user_id に変更しました。
+        //    施設名を変更すると members.facility が古いまま残り、
+        //    この画面から入居者が一斉に消える事故が起きていたためです。
         supabase
           .from('members')
           .select('*')
-          .eq('facility', targetFacilityName)
+          .eq('facility_user_id', facilityId)
           .eq('is_active', true) // 👈 これを追加！
           .order('room'),
         
@@ -189,7 +193,8 @@ const FacilityListUp_PC = ({
           .select('*, members!inner(*), visit_requests!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .eq('visit_requests.shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者のメンバーが混ざるのを防ぐ
-          .eq('members.facility', targetFacilityName)
+          // ⚠️ 2026/09/08：members.facility → members.facility_user_id へ変更
+          .eq('members.facility_user_id', facilityId)
           .eq('members.is_active', true) // 🌟【超重要】これがFALSEの幽霊データを完全に成仏させるお札です！
           .neq('visit_requests.status', 'canceled') 
           .gte('visit_requests.scheduled_date', startOfMonth)
@@ -412,9 +417,8 @@ const FacilityListUp_PC = ({
 
         if (error) throw error;
         
-        // フロントの最新状態を完全に再リロードして右側に復活させる
-        const { data: fac } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
-        if (fac) await fetchData(fac.facility_name);
+        // ⚠️ 2026/09/08：施設名の再取得が不要になったため、直接 fetchData を呼びます。
+        await fetchData();
       } else {
         // 🚀 パターンB：通常通り、まったく新しい新規下書きとしてインサート
         const currentMonthKey = `${year}-${String(month + 1).padStart(2, '0')}`;

@@ -1234,7 +1234,7 @@ const sortedAllCustomers = useMemo(() => {
 
       // 🚩 2. 【施設判定】
       let facData = null;
-      const { data: facilityCheck } = await supabase.from('facility_users').select('*').eq('facility_name', currentCustomer.name).maybeSingle();
+      const { data: facilityCheck } = await supabase.from('facility_users_public').select('*').eq('facility_name', currentCustomer.name).maybeSingle();
       const isFac = currentCustomer.is_facility === true || res.task_type === 'facility' || !!facilityCheck;
       if (facilityCheck) facData = facilityCheck;
 

@@ -75,7 +75,7 @@ const FacilityStatus_PC = ({ facilityId, isMobile, selectedShopId }) => {
     const now = new Date();
 
     // 🚀 🆕 ここに差し込み：自分のテストモード設定を確認
-    const { data: fac } = await supabase.from('facility_users').select('is_test_mode').eq('id', facilityId).single();
+    const { data: fac } = await supabase.from('facility_users_public').select('is_test_mode').eq('id', facilityId).single();
     if (fac) setIsTestMode(fac.is_test_mode);
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toLocaleDateString('sv-SE');
 

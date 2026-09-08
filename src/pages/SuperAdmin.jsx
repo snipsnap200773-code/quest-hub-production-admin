@@ -161,8 +161,10 @@ function SuperAdmin() {
     let allData = [];
     let from = 0;
     while (true) {
+      // ⚠️ 2026/09/08：読み取りを facility_users_public に変更しました。
+      //    発行・更新・削除は引き続き本体テーブルに対して行います。
       const { data: page, error } = await supabase
-        .from('facility_users')
+        .from('facility_users_public')
         .select('*')
         .order('created_at', { ascending: false })
         .range(from, from + PAGE_SIZE - 1);
@@ -380,19 +382,27 @@ function SuperAdmin() {
   };
   // --- 🆕 施設情報を更新するロジック ---
   const updateFacilityInfo = async (id) => {
+    // ⚠️ 2026/09/08：パスワード欄は「再設定」用に変更しました。
+    //    空欄なら password には触れません（現在値がそのまま残ります）。
+    const wantsPasswordChange = !!(editFacilityPass && editFacilityPass.trim() !== '');
+
+    const updatePayload = {
+      facility_name: editFacilityName,
+      login_id: editFacilityLoginId
+    };
+    if (wantsPasswordChange) {
+      updatePayload.password = editFacilityPass.trim();
+    }
+
     const { error } = await supabase
       .from('facility_users')
-      .update({ 
-        facility_name: editFacilityName, 
-        login_id: editFacilityLoginId, 
-        password: editFacilityPass 
-      })
+      .update(updatePayload)
       .eq('id', id);
 
     if (!error) { 
       setEditingFacilityId(null); 
       fetchFacilities(); 
-      alert('施設情報を更新しました'); 
+      alert(wantsPasswordChange ? '施設情報とパスワードを更新しました' : '施設情報を更新しました'); 
     } else {
       alert('更新失敗: ' + error.message);
     }
@@ -902,8 +912,10 @@ const updateShopInfo = async (id) => {
                       setEditingFacilityId(f.id);
                       setEditFacilityName(f.facility_name);
                       setEditFacilityLoginId(f.login_id);
-                      setEditFacilityPass(f.password);
-                    }} 
+                      // ⚠️ 2026/09/08：現在値は読み込まない。この欄は「再設定」用。
+                      //    空欄のまま保存すればパスワードは変更されません。
+                      setEditFacilityPass('');
+                    }}
                   />
                   <Trash2 
                     size={16} 
@@ -919,7 +931,7 @@ const updateShopInfo = async (id) => {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <input value={editFacilityLoginId} onChange={e => setEditFacilityLoginId(e.target.value)} style={smallInput} placeholder="ID" />
-                    <input value={editFacilityPass} onChange={e => setEditFacilityPass(e.target.value)} style={smallInput} placeholder="PW" />
+                    <input value={editFacilityPass} onChange={e => setEditFacilityPass(e.target.value)} style={smallInput} placeholder="変更する場合のみ入力" />
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
                     <button onClick={() => updateFacilityInfo(f.id)} style={{ ...primaryBtn, background: '#10b981', flex: 1, padding: '10px' }}>保存</button>
@@ -935,9 +947,12 @@ const updateShopInfo = async (id) => {
                     onCopy={copyToClipboard} 
                   />
                   <div style={{ marginTop: '10px', borderTop: '1px solid #f1f5f9', paddingTop: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    {/* ⚠️ 2026/09/08：パスワードの表示を廃止しました。
+                        password 列は anon / authenticated から revoke するため、
+                        画面には届きません。変更は下の編集フォームから再設定します。 */}
                     <div style={{ display: 'flex', gap: '15px' }}>
                       <span style={{ fontSize: '0.7rem', color: '#64748b' }}>ID: <strong>{f.login_id}</strong></span>
-                      <span style={{ fontSize: '0.7rem', color: '#64748b' }}>PW: <strong>{f.password}</strong></span>
+                      <span style={{ fontSize: '0.7rem', color: '#94a3b8' }}>🔒 パスワードは非表示</span>
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>

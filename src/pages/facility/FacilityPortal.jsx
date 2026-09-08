@@ -124,7 +124,8 @@ const FacilityPortal = () => {
   const fetchFacilityData = async () => {
     setLoading(true);
     try {
-      const { data: fac } = await supabase.from('facility_users').select('*').eq('id', facilityId).single();
+      // ⚠️ 2026/09/08：読み取りを facility_users_public（password を含まないビュー）に変更しました。
+      const { data: fac } = await supabase.from('facility_users_public').select('*').eq('id', facilityId).single();
       if (fac) setFacility(fac);
 
       // 👇 🆕 ここに前倒しで移動（元は158行目にあったもの）

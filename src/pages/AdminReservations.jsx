@@ -601,9 +601,9 @@ const [editFields, setEditFields] = useState({
     const [resRes, privRes, connRes, visitRes, keepRes, exclRes] = await Promise.all([
   supabase.from('reservations').select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)').in('shop_id', targetShopIds).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
   supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
-  supabase.from('shop_facility_connections').select('*, facility_users(id, facility_name, furigana, address, tel, email)').eq('shop_id', shopId).eq('status', 'active'),
-  supabase.from('visit_requests').select('*, facility_users(facility_name), visit_request_residents(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
-  supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', finalStartDayStr).lte('date', finalEndDayStr),
+  supabase.from('shop_facility_connections').select('*, facility_users:facility_users_public!facility_user_id(id, facility_name, furigana, address, tel, email)').eq('shop_id', shopId).eq('status', 'active'),
+  supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name), visit_request_residents(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
+  supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId).gte('date', finalStartDayStr).lte('date', finalEndDayStr),
   // 🔧 修正：表示期間（finalStartDayStr〜finalEndDayStr）に絞り込み、全期間取得による1000件の壁を回避
   supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId).gte('excluded_date', finalStartDayStr).lte('excluded_date', finalEndDayStr),
 ]);
@@ -642,7 +642,7 @@ setSalesRecords(salesData || []);
     
     // アラート用に「今日以降のキープ・確定枠」を確実に全件取得
     const [allKeepRes, allVisitRes, allExclRes] = await Promise.all([
-      supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
+      supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId).gte('date', todayStr),
       supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
       // 🚀 修正：他施設の除外日に巻き込まれないよう facility_user_id も取得しておく
       // 🔧 修正：このデータは今日から90日先までのスキャンにしか使われないため、todayStr以降に絞り込んで全件取得を回避
@@ -832,7 +832,7 @@ setSalesRecords(salesData || []);
         // 🏢 施設訪問の場合：全期間の履歴を取得
         const { data: facHistory } = await supabase
           .from('visit_requests')
-          .select('*, facility_users(facility_name)')
+          .select('*, facility_users:facility_users_public!facility_user_id(facility_name)')
           .eq('shop_id', shopId)
           .neq('status', 'canceled')
           .or(`customer_name.eq.${searchName},facility_user_id.eq.${cust?.id || fullResData.facility_user_id}`);
@@ -918,7 +918,7 @@ setSalesRecords(salesData || []);
 
     let facData = null;
     if (latestCust.is_facility) {
-      const { data } = await supabase.from('facility_users').select('*').eq('facility_name', latestCust.name).maybeSingle();
+      const { data } = await supabase.from('facility_users_public').select('*').eq('facility_name', latestCust.name).maybeSingle();
       facData = data;
     }
 
@@ -991,13 +991,13 @@ setSalesRecords(salesData || []);
     if (isFac) {
       const targetFacId = res.facility_user_id || cust?.id;
       if (targetFacId && !String(targetFacId).startsWith('reg-')) {
-        const { data } = await supabase.from('facility_users').select('*').eq('id', targetFacId).maybeSingle();
+        const { data } = await supabase.from('facility_users_public').select('*').eq('id', targetFacId).maybeSingle();
         facData = data;
       }
       
       // 🌟 【ここが命綱】IDで一致しなくても、名前の「あいまい検索」で提携施設を執念で見つけ出す！
       if (!facData && searchName) {
-        const { data } = await supabase.from('facility_users')
+        const { data } = await supabase.from('facility_users_public')
           .select('*')
           .or(`facility_name.ilike.%${searchName}%`);
         if (data && data.length > 0) facData = data[0];
@@ -1032,7 +1032,7 @@ setSalesRecords(salesData || []);
         // 施設訪問の場合は全期間取得
         const { data: historyData } = await supabase
           .from('visit_requests')
-          .select('*, facility_users(facility_name)')
+          .select('*, facility_users:facility_users_public!facility_user_id(facility_name)')
           .eq('shop_id', shopId)
           .neq('status', 'canceled')
           .or(`customer_name.ilike.%${searchName}%,facility_user_id.eq.${res.facility_user_id || cust?.id || (facData ? facData.id : 'none')}`)

@@ -38,7 +38,7 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
       setLoading(true);
       try {
         // ① 施設名を取得
-        const { data: facUser } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
+        const { data: facUser } = await supabase.from('facility_users_public').select('facility_name').eq('id', facilityId).single();
         const fName = facUser?.facility_name || '';
         setFacilityName(fName);
 

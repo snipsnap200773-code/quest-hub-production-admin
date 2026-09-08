@@ -91,7 +91,7 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
 
       // 3. 施設自身の情報を取得
       const { data: facData } = await supabase
-        .from('facility_users')
+        .from('facility_users_public')
         .select('facility_name, email, furigana')
         .eq('id', facilityId)
         .maybeSingle();

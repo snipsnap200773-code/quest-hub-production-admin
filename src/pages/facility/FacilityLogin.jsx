@@ -54,8 +54,9 @@ const FacilityLogin = () => {
       }
 
       if (facilityId) {
+        // ⚠️ 2026/09/08：読み取りを facility_users_public に変更しました。
         const { data } = await supabase
-          .from('facility_users')
+          .from('facility_users_public')
           .select('facility_name, login_id')
           .eq('id', facilityId)
           .maybeSingle(); 
@@ -193,12 +194,19 @@ const FacilityLogin = () => {
       }
 
     } else {
-      const { data: facilityUser, error: facilityError } = await supabase
-        .from('facility_users')
-        .select('id, facility_name')
-        .eq('login_id', loginId)
-        .eq('password', password)
-        .maybeSingle();
+      // ⚠️ 2026/09/08：照合をサーバー側（verify_facility_login）へ移しました。
+      //    従来は facility_users を anon で直接 select し、
+      //    .eq('password', ...) で照合していたため、
+      //    password 列を anon から読める状態を維持する必要がありました。
+      //    RPC 化により、この列を revoke できるようになります。
+      //    ※ 前後の空白除去（btrim）と停止中施設の判定は関数側で行います。
+      const { data: facilityRows, error: facilityError } = await supabase
+        .rpc('verify_facility_login', {
+          p_login_id: cleanLoginId,
+          p_password: cleanPassword
+        });
+
+      const facilityUser = Array.isArray(facilityRows) ? facilityRows[0] : null;
 
       if (facilityUser && !facilityError) {
         localStorage.setItem('facility_user_id', facilityUser.id);
@@ -209,6 +217,7 @@ const FacilityLogin = () => {
         
         navigate(`/facility-portal/${facilityUser.id}/residents`);
       } else {
+        if (facilityError) console.error("施設ログインの照合に失敗:", facilityError.message);
         alert('施設ログインIDまたはパスワードが正しくありません。');
         setIsProcessing(false);
       }

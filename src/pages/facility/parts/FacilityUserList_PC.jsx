@@ -66,7 +66,7 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
   // --- 2. データ取得ロジック ---
   useEffect(() => { 
     const init = async () => {
-      const { data: fac } = await supabase.from('facility_users').select('facility_name').eq('id', facilityId).single();
+      const { data: fac } = await supabase.from('facility_users_public').select('facility_name').eq('id', facilityId).single();
       if (fac) {
         setFacilityName(fac.facility_name);
         fetchResidents();

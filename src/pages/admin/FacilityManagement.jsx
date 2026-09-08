@@ -227,11 +227,13 @@ const visitDates = allVisits.map(v => {
     }
     
     // 🆕 提携ステータスが 'active'（承認済み）のものだけを取得するように修正
+    // ⚠️ 2026/09/08：JOIN 先を facility_users_public に変更しました。
+    //    ビューには外部キーが無いため、明示的に結合キーを指定しています。
     const { data, error } = await supabase
       .from('shop_facility_connections')
       .select(`
         *,
-        facility_users (*)
+        facility_users:facility_users_public!facility_user_id (*)
       `)
       .eq('shop_id', shopId)
       .in('status', ['active', 'pending']) 
@@ -280,8 +282,8 @@ const [salesAll, customersAll, resData, privData, visitData, mData, exclData, st
   fetchAllRows(() => supabase.from('customers').select('id, name').eq('shop_id', shopId)),
   supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
   supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
-  supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
-  supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
+  supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
+  supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId).gte('date', kStartStr).lte('date', kEndStr),
   supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId),
   supabase.from('staffs').select('*').eq('shop_id', shopId)
 ]);
@@ -345,13 +347,13 @@ const handleSave = async (e) => {
       // --- ❶ 編集（既存データの更新） ---
       
       // ① 施設マスター（共通アカウント）情報を更新
+      // ⚠️ 2026/09/08：password と login_id の更新を外しました。
+      //    認証情報の変更は SuperAdmin に一本化します。
       const { error: userError } = await supabase
         .from('facility_users')
         .update({
           facility_name: formData.name,
           furigana: formData.furigana,
-          login_id: formData.login_id || formData.name, // ログインID（無ければ名前を代用）
-          password: formData.pw,
           email: formData.email,
           address: formData.address,
           tel: formData.tel
@@ -973,7 +975,11 @@ facilities.forEach(conn => {
   const openEdit = (f) => {
     setEditingId(f.id);
     setFormData({ 
-      name: f.facility_name || '', furigana: f.furigana || '', email: f.email || '', tel: f.tel || '', address: f.address || '', pw: f.password || '', login_id: f.login_id || '',
+      // ⚠️ 2026/09/08：pw（施設の平文パスワード）の読み込みを廃止しました。
+      //    画面には表示していませんでしたが、facility_users (*) で取得した平文が
+      //    State に入り、保存のたびに書き戻されていました。
+      //    施設のパスワードは SuperAdmin からのみ再設定します。
+      name: f.facility_name || '', furigana: f.furigana || '', email: f.email || '', tel: f.tel || '', address: f.address || '', login_id: f.login_id || '',
       regular_rules: f.regular_rules || [], advance_booking_days: f.advance_booking_days || 0, tenant_id: shopId,
       assigned_staff_id: f.assigned_staff_id || '' // 👈 🌟 🆕 追加
     });

@@ -519,10 +519,10 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
     // 👇 🌟 🆕 追加：5. 施設用のキープと確定予約を取得し、担当者を紐付ける
     const [keepRes, visitRes, connRes, exclResToday] = await Promise.all([
-      supabase.from('keep_dates').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('date', selectedDate),
-      supabase.from('visit_requests').select('*, facility_users(facility_name)').eq('shop_id', shopId).eq('scheduled_date', selectedDate).neq('status', 'canceled'),
+      supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(facility_name)').eq('shop_id', shopId).eq('date', selectedDate),
+      supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name)').eq('shop_id', shopId).eq('scheduled_date', selectedDate).neq('status', 'canceled'),
       // 🚀 アラート計算のために regular_rules と facility_users(*) を追加取得するように変更
-      supabase.from('shop_facility_connections').select('facility_user_id, assigned_staff_id, regular_rules, facility_users(*)').eq('shop_id', shopId),
+      supabase.from('shop_facility_connections').select('facility_user_id, assigned_staff_id, regular_rules, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId),
       // 🚀 🆕 修正：表示日の除外設定（定期キープ強制キャンセル分）も取得する
       supabase.from('regular_keep_exclusions').select('excluded_date, facility_user_id').eq('shop_id', shopId).eq('excluded_date', selectedDate)
     ]);
@@ -621,7 +621,7 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
     const today = new Date();
     const todayStr = getJapanDateStr(today);
     const [allKeepRes, allVisitRes, exclRes] = await Promise.all([
-      supabase.from('keep_dates').select('*, facility_users(*)').eq('shop_id', shopId).gte('date', todayStr),
+      supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId).gte('date', todayStr),
       supabase.from('visit_requests').select('scheduled_date, facility_user_id, status').eq('shop_id', shopId).gte('scheduled_date', todayStr).neq('status', 'canceled'),
       // 🔧 修正：このデータは今日から90日先までのスキャンにしか使われないため、todayStr以降に絞り込む（1000件の壁の予備軍対策）
       supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId).gte('excluded_date', todayStr)
