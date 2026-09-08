@@ -112,7 +112,7 @@ const AdminFacilityVisit_PC = () => {
       // 1. 訪問情報の取得
       const { data: vData } = await supabase
         .from('visit_requests')
-        .select('*, facility_users(facility_name), profiles(*)')
+        .select('*, facility_users:facility_users_public!facility_user_id(facility_name), profiles(*)')
         .eq('id', visitId)
         .single();
 
