@@ -34,12 +34,13 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
   };
 
   const updateStatus = async (column, value) => {
-    // ⚠️ 2026/09/08：更新先も facility_users_public（ビュー）に変更しました。
-    //    PostgREST の UPDATE は RETURNING を伴うため、本体テーブルの SELECT 権限も必要になり、
-    //    anon から SELECT を落とすと更新自体が 401 になるためです。
-    //    ビューには password が無いので、経由しても認証情報は書き換えられません。
     const { error } = await supabase.from('facility_users_public').update({ [column]: value }).eq('id', facilityId);
-    if (!error) setFacility(prev => ({ ...prev, [column]: value }));
+    if (error) {
+      console.error(`設定の更新に失敗しました（${column}）:`, error.message);
+      alert('設定の保存に失敗しました。時間をおいて再度お試しください。');
+      return;
+    }
+    setFacility(prev => ({ ...prev, [column]: value }));
   };
 
   // 🚀 🆕 許可カテゴリ配列（allowed_categories）を出し入れする関数
@@ -164,8 +165,11 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
         <section style={panelStyle}>
           <h3 style={panelTitle}><Mail size={20} /> 通知設定</h3>
           <div style={settingRow}>
+            {/* ⚠️ 2026/09/08：列名を email_notification → email_notifications_enabled に修正しました。
+                実際のカラム名と違っていたため、この設定は今まで一度も保存されていませんでした。
+                エラーは if (!error) で握り潰されており、画面上も無反応だったため気づけていませんでした。 */}
             <span style={{fontSize: '0.9rem'}}>メールでの新着通知</span>
-            <input type="checkbox" style={checkboxStyle} checked={facility?.email_notification ?? true} onChange={(e) => updateStatus('email_notification', e.target.checked)} />
+            <input type="checkbox" style={checkboxStyle} checked={facility?.email_notifications_enabled ?? true} onChange={(e) => updateStatus('email_notifications_enabled', e.target.checked)} />
           </div>
         </section>
 

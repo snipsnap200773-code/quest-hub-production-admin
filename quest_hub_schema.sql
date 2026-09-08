@@ -59,6 +59,301 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp" WITH SCHEMA "extensions";
 
 
 
+CREATE TYPE "public"."subscription_status" AS ENUM (
+    'trialing',
+    'active',
+    'past_due',
+    'canceled',
+    'incomplete',
+    'paused'
+);
+
+
+ALTER TYPE "public"."subscription_status" OWNER TO "postgres";
+
+SET default_tablespace = '';
+
+SET default_table_access_method = "heap";
+
+
+CREATE TABLE IF NOT EXISTS "public"."reservations" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "shop_id" "uuid",
+    "staff_id" "uuid",
+    "customer_name" "text" NOT NULL,
+    "customer_email" "text",
+    "customer_phone" "text",
+    "reservation_date" "date",
+    "start_time" timestamp with time zone NOT NULL,
+    "end_time" timestamp with time zone NOT NULL,
+    "total_price" integer DEFAULT 0,
+    "options" "jsonb" DEFAULT '{}'::"jsonb",
+    "status" "text" DEFAULT 'pending'::"text",
+    "memo" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "cancel_token" "text" DEFAULT ("gen_random_uuid"())::"text",
+    "remind_sent" boolean DEFAULT false,
+    "res_type" "text" DEFAULT 'normal'::"text",
+    "end_at" timestamp with time zone,
+    "last_arrival_at" timestamp with time zone,
+    "line_user_id" "text",
+    "menu_name" "text",
+    "total_slots" integer,
+    "start_at" timestamp with time zone,
+    "customer_id" "uuid",
+    "zip_code" "text",
+    "is_block" boolean DEFAULT false,
+    "biz_type" "text"
+);
+
+
+ALTER TABLE "public"."reservations" OWNER TO "postgres";
+
+
+COMMENT ON COLUMN "public"."reservations"."zip_code" IS '予約時の訪問先郵便番号（距離計算用）';
+
+
+
+CREATE OR REPLACE FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") RETURNS "public"."reservations"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_staff_count integer;
+  v_store_count integer;
+  v_new_row reservations;
+begin
+  -- 🔒 同じスタッフ宛のリクエストを順番待ちにする（指名なしなら店舗単位でロック）
+  if p_staff_id is not null then
+    perform pg_advisory_xact_lock(hashtext(p_staff_id::text));
+  else
+    perform pg_advisory_xact_lock(hashtext(p_shop_id::text));
+  end if;
+
+  if not p_bypass_check then
+    -- 指名スタッフの重複チェック（時間帯が重なっているものを数える）
+    if p_staff_id is not null then
+      select count(*) into v_staff_count
+      from reservations
+      where staff_id = p_staff_id
+        and res_type = 'normal'
+        and status <> 'canceled'
+        and start_time < p_end_time
+        and end_time > p_start_time;
+
+      if v_staff_count >= p_staff_max then
+        raise exception 'STAFF_FULL';
+      end if;
+    end if;
+
+    -- 店舗全体の重複チェック
+    select count(*) into v_store_count
+    from reservations
+    where shop_id = p_shop_id
+      and res_type = 'normal'
+      and status <> 'canceled'
+      and start_time < p_end_time
+      and end_time > p_start_time;
+
+    if v_store_count >= p_store_max then
+      raise exception 'STORE_FULL';
+    end if;
+  end if;
+
+  insert into reservations (
+    shop_id, staff_id, customer_id, reservation_date,
+    customer_name, customer_phone, customer_email, zip_code,
+    start_time, end_time, total_slots, res_type, biz_type,
+    line_user_id, cancel_token, menu_name, options
+  ) values (
+    p_shop_id, p_staff_id, p_customer_id, p_reservation_date,
+    p_customer_name, p_customer_phone, p_customer_email, p_zip_code,
+    p_start_time, p_end_time, p_total_slots, 'normal', p_biz_type,
+    p_line_user_id, p_cancel_token, p_menu_name, p_options
+  )
+  returning * into v_new_row;
+
+  return v_new_row;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") RETURNS TABLE("ok" boolean, "reason" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_uid uuid := auth.uid();
+  v_email text;
+  v_res public.reservations%rowtype;
+begin
+  if v_uid is null then
+    return query select false, 'not_logged_in'::text;
+    return;
+  end if;
+
+  select u.email into v_email from auth.users u where u.id = v_uid;
+
+  select * into v_res
+  from public.reservations r
+  where r.id = p_reservation_id
+    and r.res_type = 'normal'
+    and (
+      r.customer_id in (select c.id from public.customers c where c.auth_id = v_uid)
+      or (v_email is not null and r.customer_email = v_email)
+    )
+  for update;
+
+  if not found then
+    return query select false, 'not_found'::text;
+    return;
+  end if;
+
+  if v_res.status = 'completed' then
+    return query select false, 'completed'::text;
+    return;
+  end if;
+
+  if v_res.status = 'canceled' then
+    return query select false, 'canceled'::text;
+    return;
+  end if;
+
+  if (v_res.start_time at time zone 'Asia/Tokyo')::date
+     = (now() at time zone 'Asia/Tokyo')::date then
+    return query select false, 'today'::text;
+    return;
+  end if;
+
+  update public.reservations set status = 'canceled' where id = v_res.id;
+
+  if v_res.customer_id is not null then
+    update public.customers
+       set total_visits = greatest(0, coalesce(total_visits, 1) - 1)
+     where id = v_res.customer_id;
+  end if;
+
+  return query select true, 'ok'::text;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") RETURNS TABLE("ok" boolean, "reason" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_res public.reservations%rowtype;
+begin
+  select * into v_res
+  from public.reservations r
+  where r.cancel_token = p_token
+    and r.res_type = 'normal'
+  for update;
+
+  if not found then
+    return query select false, 'not_found'::text;
+    return;
+  end if;
+
+  if v_res.status = 'completed' then
+    return query select false, 'completed'::text;
+    return;
+  end if;
+
+  if v_res.status = 'canceled' then
+    return query select false, 'canceled'::text;
+    return;
+  end if;
+
+  -- ⚠️ 当日キャンセルはWebから受け付けない。ブラウザ側の判定は表示用であり、
+  --    実際の可否はここで決める。
+  if (v_res.start_time at time zone 'Asia/Tokyo')::date
+     = (now() at time zone 'Asia/Tokyo')::date then
+    return query select false, 'today'::text;
+    return;
+  end if;
+
+  update public.reservations
+     set status = 'canceled'
+   where id = v_res.id;
+
+  -- 来店回数を1つ戻す（名簿そのものは削除しない）
+  if v_res.customer_id is not null then
+    update public.customers
+       set total_visits = greatest(0, coalesce(total_visits, 1) - 1)
+     where id = v_res.customer_id;
+  end if;
+
+  return query select true, 'ok'::text;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."check_and_create_order"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+BEGIN
+  -- 在庫(stock)が発注点以下になったかを判定
+  IF NEW.stock <= NEW.reorder_point AND OLD.stock > NEW.reorder_point THEN
+    -- 既に未完了（発注待ち or 発注済）のデータがないか確認
+    IF NOT EXISTS (
+      SELECT 1 FROM orders
+      WHERE product_id = NEW.id AND status IN ('pending', 'ordered')
+    ) THEN
+      -- 条件を満たせば発注リストに追加
+      INSERT INTO orders (product_id, status)
+      VALUES (NEW.id, 'pending');
+    END IF;
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."check_and_create_order"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."check_stock_and_reorder"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+BEGIN
+    -- 在庫が発注点以下になったら
+    IF NEW.stock <= NEW.reorder_point THEN
+        -- まだ発注待ちリスト（pending）に同じ商品が存在しない場合のみ追加
+        IF NOT EXISTS (
+            SELECT 1 FROM public.orders 
+            WHERE shop_id = NEW.shop_id 
+              AND product_id = NEW.id 
+              AND status = 'pending'
+        ) THEN
+            INSERT INTO public.orders (shop_id, product_id, quantity, status)
+            VALUES (
+                NEW.shop_id, 
+                NEW.id, 
+                COALESCE(NEW.default_order_quantity, 1),
+                'pending'
+            );
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."check_stock_and_reorder"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."create_reservation_with_capacity"("p_store_id" "uuid", "p_user_id" "uuid", "p_reservation_time" timestamp with time zone) RETURNS boolean
     LANGUAGE "plpgsql"
     AS $$
@@ -121,6 +416,152 @@ $$;
 ALTER FUNCTION "public"."create_reservation_with_capacity"("p_shop_id" "uuid", "p_customer_name" "text", "p_res_type" "text", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_options" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."get_my_reservations"() RETURNS TABLE("id" "uuid", "shop_id" "uuid", "shop_name" "text", "start_time" timestamp with time zone, "menu_name" "text", "status" "text", "is_today" boolean)
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_uid uuid := auth.uid();
+  v_email text;
+begin
+  if v_uid is null then
+    return;
+  end if;
+
+  select u.email into v_email from auth.users u where u.id = v_uid;
+
+  return query
+  select
+    r.id,
+    r.shop_id,
+    p.business_name,
+    r.start_time,
+    r.menu_name,
+    r.status,
+    (r.start_time at time zone 'Asia/Tokyo')::date
+      = (now() at time zone 'Asia/Tokyo')::date
+  from public.reservations r
+  left join public.profiles p on p.id = r.shop_id
+  where r.res_type = 'normal'
+    and (
+      r.customer_id in (select c.id from public.customers c where c.auth_id = v_uid)
+      or (v_email is not null and r.customer_email = v_email)
+    )
+  order by r.start_time desc;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."get_my_reservations"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") RETURNS TABLE("id" "uuid", "shop_id" "uuid", "customer_name" "text", "start_time" timestamp with time zone, "menu_summary" "text", "shop_phone" "text", "is_today" boolean, "is_cancelable" boolean, "reason" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_res public.reservations%rowtype;
+  v_opt jsonb;
+  v_names text;
+begin
+  -- ⚠️ 管理者ブロック枠（res_type = 'blocked'）にも cancel_token が入っているため、
+  --    一般予約に限定する。
+  select * into v_res
+  from public.reservations r
+  where r.cancel_token = p_token
+    and r.res_type = 'normal';
+
+  if not found then
+    return query select null::uuid, null::uuid, null::text, null::timestamptz,
+                        null::text, null::text, false, false,
+                        'not_found'::text;
+    return;
+  end if;
+
+  v_opt := coalesce(v_res.options, '{}'::jsonb);
+
+  if jsonb_typeof(v_opt -> 'people') = 'array' then
+    select string_agg(s ->> 'name', ', ')
+      into v_names
+    from jsonb_array_elements(v_opt -> 'people') as p
+    cross join lateral jsonb_array_elements(
+      case when jsonb_typeof(p -> 'services') = 'array'
+           then p -> 'services' else '[]'::jsonb end) as s;
+  elsif jsonb_typeof(v_opt -> 'services') = 'array' then
+    select string_agg(s ->> 'name', ', ')
+      into v_names
+    from jsonb_array_elements(v_opt -> 'services') as s;
+  end if;
+
+  return query
+  select
+    v_res.id,
+    v_res.shop_id,
+    v_res.customer_name,
+    v_res.start_time,
+    coalesce(v_names, 'なし'),
+    (select p.phone from public.profiles p where p.id = v_res.shop_id),
+    (v_res.start_time at time zone 'Asia/Tokyo')::date
+      = (now() at time zone 'Asia/Tokyo')::date,
+    (v_res.status is distinct from 'completed'
+     and v_res.status is distinct from 'canceled'),
+    case
+      when v_res.status = 'completed' then 'completed'
+      when v_res.status = 'canceled'  then 'canceled'
+      else 'ok'
+    end;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_account_active"("profile_id" "uuid") RETURNS boolean
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    AS $$
+DECLARE
+    p_status subscription_status;
+    p_trial_ends timestamptz;
+    p_current_period_end timestamptz;
+BEGIN
+    SELECT subscription_status, trial_ends_at, current_period_end
+    INTO p_status, p_trial_ends, p_current_period_end
+    FROM profiles
+    WHERE id = profile_id;
+
+    -- トライアル中かつ期限内の場合
+    IF p_status = 'trialing' AND p_trial_ends > now() THEN
+        RETURN true;
+    END IF;
+
+    -- 有効な有料サブスクリプションの場合（または期間終了前のキャンセル待ち）
+    IF p_status = 'active' THEN
+        RETURN true;
+    END IF;
+
+    RETURN false;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."is_account_active"("profile_id" "uuid") OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."is_super_admin"() RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  select exists (
+    select 1 from public.profiles
+     where id = auth.uid() and role = 'super_admin'
+  );
+$$;
+
+
+ALTER FUNCTION "public"."is_super_admin"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."sync_facility_to_customers"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -142,6 +583,22 @@ $$;
 ALTER FUNCTION "public"."sync_facility_to_customers"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."update_product_stock"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    AS $$
+BEGIN
+  UPDATE products
+  -- 既存の stock カラムを利用（NULLの場合は0として計算）
+  SET stock = COALESCE(stock, 0) + NEW.change_amount
+  WHERE id = NEW.product_id;
+  RETURN NEW;
+END;
+$$;
+
+
+ALTER FUNCTION "public"."update_product_stock"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_updated_at_column"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -153,10 +610,6 @@ $$;
 
 
 ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
-
-SET default_tablespace = '';
-
-SET default_table_access_method = "heap";
 
 
 CREATE TABLE IF NOT EXISTS "public"."admin_adjustments" (
@@ -244,7 +697,8 @@ CREATE TABLE IF NOT EXISTS "public"."customers" (
     "admin_name" "text",
     "is_facility" boolean DEFAULT false,
     "cancel_count" integer DEFAULT 0,
-    "is_blocked" boolean DEFAULT false
+    "is_blocked" boolean DEFAULT false,
+    "cancel_alert_dismissed_at" timestamp with time zone
 );
 
 
@@ -253,6 +707,17 @@ ALTER TABLE "public"."customers" OWNER TO "postgres";
 
 COMMENT ON COLUMN "public"."customers"."zip_code" IS 'お客様の郵便番号（リピーター対応用）';
 
+
+
+CREATE TABLE IF NOT EXISTS "public"."dealers" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "shop_id" "uuid" NOT NULL,
+    "name" "text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"())
+);
+
+
+ALTER TABLE "public"."dealers" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."facilities" (
@@ -369,7 +834,8 @@ CREATE TABLE IF NOT EXISTS "public"."game_characters" (
     "skill_02" "text",
     "skill_03" "text",
     "job" "text",
-    "race" "text"
+    "race" "text",
+    "forgotten_skills" "text"[] DEFAULT '{}'::"text"[]
 );
 
 
@@ -377,6 +843,10 @@ ALTER TABLE "public"."game_characters" OWNER TO "postgres";
 
 
 COMMENT ON COLUMN "public"."game_characters"."party_index" IS '編成パーティのインデックス枠（0〜4）。NULLは未編成状態。';
+
+
+
+COMMENT ON COLUMN "public"."game_characters"."forgotten_skills" IS '三土手神仕様：忘却（キャパオーバー時）されたスキルIDのブラックリスト配列';
 
 
 
@@ -600,6 +1070,19 @@ CREATE TABLE IF NOT EXISTS "public"."inquiries" (
 ALTER TABLE "public"."inquiries" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."inventory_logs" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "product_id" "uuid",
+    "change_amount" integer NOT NULL,
+    "reason" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "shop_id" "uuid"
+);
+
+
+ALTER TABLE "public"."inventory_logs" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."keep_dates" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "date" "date" NOT NULL,
@@ -643,6 +1126,38 @@ ALTER TABLE "public"."members" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDE
     CACHE 1
 );
 
+
+
+CREATE TABLE IF NOT EXISTS "public"."orders" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "product_id" "uuid",
+    "status" "text" DEFAULT 'pending'::"text" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "shop_id" "uuid",
+    "quantity" integer DEFAULT 1 NOT NULL,
+    "dealer_name" "text",
+    "ordered_at" timestamp with time zone,
+    CONSTRAINT "orders_status_check" CHECK (("status" = ANY (ARRAY['pending'::"text", 'ordered'::"text", 'completed'::"text"])))
+);
+
+
+ALTER TABLE "public"."orders" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."payment_logs" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "profile_id" "uuid",
+    "stripe_event_id" "text",
+    "event_type" "text" NOT NULL,
+    "amount" integer,
+    "currency" "text" DEFAULT 'jpy'::"text",
+    "status" "text",
+    "metadata" "jsonb",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."payment_logs" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."portal_categories" (
@@ -698,7 +1213,14 @@ CREATE TABLE IF NOT EXISTS "public"."products" (
     "stock" integer DEFAULT 0,
     "sort_order" integer DEFAULT 0,
     "created_at" timestamp with time zone DEFAULT "now"(),
-    "category" "text"
+    "category" "text",
+    "usage_type" "text" DEFAULT '店販用'::"text",
+    "reorder_point" integer DEFAULT 0,
+    "supplier_id" "uuid",
+    "default_order_quantity" integer DEFAULT 1 NOT NULL,
+    "dealer_id" "uuid",
+    "manufacturer_name" "text",
+    "cost_price" integer DEFAULT 0
 );
 
 
@@ -769,7 +1291,7 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "display_id" "text",
     "display_name" "text",
     "special_holidays" "jsonb" DEFAULT '[]'::"jsonb",
-    "allow_multi_person_reservation" boolean DEFAULT true,
+    "allow_multi_person_reservation" boolean DEFAULT false,
     "service_plan" integer DEFAULT 2,
     "is_strict_fill_mode" boolean DEFAULT false,
     "use_travel_time_logic" boolean DEFAULT true,
@@ -790,7 +1312,43 @@ CREATE TABLE IF NOT EXISTS "public"."profiles" (
     "facility_visit_end" time without time zone DEFAULT '16:00:00'::time without time zone,
     "facility_visit_slots" "text"[] DEFAULT '{09:00,13:00}'::"text"[],
     "facility_lunch_start" time without time zone DEFAULT '12:00:00'::time without time zone,
-    "facility_lunch_end" time without time zone DEFAULT '13:00:00'::time without time zone
+    "facility_lunch_end" time without time zone DEFAULT '13:00:00'::time without time zone,
+    "catchphrase" "text",
+    "regular_holiday" "text",
+    "instagram_url" "text",
+    "x_url" "text",
+    "youtube_url" "text",
+    "owner_image_url" "text",
+    "owner_bio" "text",
+    "gallery_urls" "text"[],
+    "highlight_menus" "jsonb" DEFAULT '[]'::"jsonb",
+    "faqs" "jsonb" DEFAULT '[]'::"jsonb",
+    "menu_section_title" "text" DEFAULT 'おすすめメニュー・料金'::"text",
+    "menu_section_subtitle" "text" DEFAULT 'PRICE'::"text",
+    "gallery_section_title" "text" DEFAULT 'ギャラリー'::"text",
+    "weekly_schedule" "jsonb" DEFAULT '[]'::"jsonb",
+    "weekly_schedule_note" "text",
+    "display_business_hours" "text",
+    "is_timeline_default" boolean DEFAULT false,
+    "restrict_stylist_without_assistant" boolean DEFAULT false,
+    "default_admin_view" "text" DEFAULT 'reservations'::"text",
+    "stripe_customer_id" "text",
+    "stripe_subscription_id" "text",
+    "stripe_price_id" "text",
+    "subscription_status" "public"."subscription_status" DEFAULT 'trialing'::"public"."subscription_status" NOT NULL,
+    "subscription_plan" "text" DEFAULT 'standard'::"text",
+    "trial_started_at" timestamp with time zone DEFAULT "now"(),
+    "trial_ends_at" timestamp with time zone DEFAULT ("now"() + '30 days'::interval),
+    "current_period_end" timestamp with time zone,
+    "cancel_at_period_end" boolean DEFAULT false,
+    "is_tester" boolean DEFAULT false,
+    "is_multibrand_enabled" boolean DEFAULT false,
+    "is_strict_facility_block" boolean DEFAULT true,
+    "hide_price" boolean DEFAULT true,
+    "use_simple_layout" boolean DEFAULT true,
+    "show_category_image" boolean DEFAULT true,
+    "facility_feature_enabled" boolean DEFAULT false NOT NULL,
+    "hashed_password" "text"
 );
 
 
@@ -833,6 +1391,148 @@ COMMENT ON COLUMN "public"."profiles"."facility_lunch_end" IS '施設訪問時�
 
 
 
+COMMENT ON COLUMN "public"."profiles"."stripe_customer_id" IS 'Stripeの顧客ID (cus_xxx)';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."stripe_subscription_id" IS 'StripeのサブスクリプションID (sub_xxx)';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."subscription_status" IS '契約ステータス (trialing, active, past_due, canceled 等)';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."trial_ends_at" IS 'トライアル終了日時（デフォルト登録から30日間）';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."current_period_end" IS '現在の請求サイクルの終了日（次回更新日）';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."cancel_at_period_end" IS '現請求期間終了時に解約予定かどうか';
+
+
+
+COMMENT ON COLUMN "public"."profiles"."hashed_password" IS 'bcrypt ハッシュ。移行完了後は admin_password を ******** で上書きし、認証はこの列で行う';
+
+
+
+CREATE OR REPLACE VIEW "public"."public_booking_settings" WITH ("security_invoker"='true') AS
+ SELECT "id",
+    "business_name",
+    "business_name_kana",
+    "business_type",
+    "sub_business_type",
+    "description",
+    "address",
+    "phone",
+    "notes",
+    "theme_color",
+    "liff_id",
+    "is_suspended",
+    "is_tester",
+    "subscription_status",
+    "form_config",
+    "allow_multiple_services",
+    "allow_multi_person_reservation",
+    "hide_price",
+    "use_simple_layout",
+    "show_category_image",
+    "business_hours",
+    "special_holidays",
+    "slot_interval_min",
+    "buffer_preparation_min",
+    "min_lead_time_hours",
+    "max_capacity",
+    "auto_fill_logic",
+    "is_strict_fill_mode",
+    "restrict_stylist_without_assistant",
+    "use_travel_time_logic",
+    "minutes_per_km"
+   FROM "public"."profiles"
+  WHERE ("role" = 'shop'::"text");
+
+
+ALTER VIEW "public"."public_booking_settings" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_busy_slots" AS
+ SELECT "shop_id",
+    "start_time",
+    "end_time",
+    "staff_id",
+    "res_type",
+    "is_block",
+    "status",
+    COALESCE(((("options" ->> 'isFullDay'::"text") = 'true'::"text") OR (EXISTS ( SELECT 1
+           FROM "jsonb_array_elements"(
+                CASE
+                    WHEN ("jsonb_typeof"(("r"."options" -> 'services'::"text")) = 'array'::"text") THEN ("r"."options" -> 'services'::"text")
+                    ELSE '[]'::"jsonb"
+                END) "s"("value")
+          WHERE (("s"."value" ->> 'is_full_day'::"text") = 'true'::"text"))) OR (EXISTS ( SELECT 1
+           FROM ("jsonb_array_elements"(
+                CASE
+                    WHEN ("jsonb_typeof"(("r"."options" -> 'people'::"text")) = 'array'::"text") THEN ("r"."options" -> 'people'::"text")
+                    ELSE '[]'::"jsonb"
+                END) "p"("value")
+             CROSS JOIN LATERAL "jsonb_array_elements"(
+                CASE
+                    WHEN ("jsonb_typeof"(("p"."value" -> 'services'::"text")) = 'array'::"text") THEN ("p"."value" -> 'services'::"text")
+                    ELSE '[]'::"jsonb"
+                END) "s"("value"))
+          WHERE (("s"."value" ->> 'is_full_day'::"text") = 'true'::"text")))), false) AS "is_full_day",
+    COALESCE((("res_type" = 'blocked'::"text") AND ("customer_name" = '臨時休業'::"text")), false) AS "is_temp_closed"
+   FROM "public"."reservations" "r";
+
+
+ALTER VIEW "public"."public_busy_slots" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_shops" WITH ("security_invoker"='true') AS
+ SELECT "id",
+    "business_name",
+    "business_name_kana",
+    "business_type",
+    "sub_business_type",
+    "description",
+    "image_url",
+    "created_at",
+    "theme_color",
+    "catchphrase",
+    "intro_text",
+    "owner_name",
+    "owner_name_kana",
+    "owner_bio",
+    "owner_image_url",
+    "gallery_urls",
+    "gallery_section_title",
+    "highlight_menus",
+    "menu_section_title",
+    "menu_section_subtitle",
+    "faqs",
+    "weekly_schedule",
+    "weekly_schedule_note",
+    "business_hours",
+    "regular_holiday",
+    "address",
+    "phone",
+    "instagram_url",
+    "x_url",
+    "youtube_url",
+    "liff_id",
+    "line_official_url",
+    "official_url",
+    "notes"
+   FROM "public"."profiles"
+  WHERE (("role" = 'shop'::"text") AND ("is_suspended" = false) AND ("business_name" IS NOT NULL) AND (("is_tester" = true) OR ("subscription_status" = 'active'::"public"."subscription_status") OR ("subscription_status" = 'trialing'::"public"."subscription_status")));
+
+
+ALTER VIEW "public"."public_shops" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "shop_id" "uuid" NOT NULL,
@@ -868,44 +1568,6 @@ CREATE TABLE IF NOT EXISTS "public"."reservation_guests" (
 
 
 ALTER TABLE "public"."reservation_guests" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."reservations" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "shop_id" "uuid",
-    "staff_id" "uuid",
-    "customer_name" "text" NOT NULL,
-    "customer_email" "text",
-    "customer_phone" "text",
-    "reservation_date" "date",
-    "start_time" timestamp with time zone NOT NULL,
-    "end_time" timestamp with time zone NOT NULL,
-    "total_price" integer DEFAULT 0,
-    "options" "jsonb" DEFAULT '{}'::"jsonb",
-    "status" "text" DEFAULT 'pending'::"text",
-    "memo" "text",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "cancel_token" "text" DEFAULT ("gen_random_uuid"())::"text",
-    "remind_sent" boolean DEFAULT false,
-    "res_type" "text" DEFAULT 'normal'::"text",
-    "end_at" timestamp with time zone,
-    "last_arrival_at" timestamp with time zone,
-    "line_user_id" "text",
-    "menu_name" "text",
-    "total_slots" integer,
-    "start_at" timestamp with time zone,
-    "customer_id" "uuid",
-    "zip_code" "text",
-    "is_block" boolean DEFAULT false,
-    "biz_type" "text"
-);
-
-
-ALTER TABLE "public"."reservations" OWNER TO "postgres";
-
-
-COMMENT ON COLUMN "public"."reservations"."zip_code" IS '予約時の訪問先郵便番号（距離計算用）';
-
 
 
 CREATE TABLE IF NOT EXISTS "public"."residents" (
@@ -968,7 +1630,10 @@ CREATE TABLE IF NOT EXISTS "public"."service_categories" (
     "is_adjustment_cat" boolean DEFAULT false,
     "is_product_cat" boolean DEFAULT false,
     "is_facility_only" boolean DEFAULT false,
-    "biz_type" "text" DEFAULT 'all'::"text"
+    "biz_type" "text" DEFAULT 'all'::"text",
+    "target_industry" "text",
+    "description" "text",
+    "image_url" "text"
 );
 
 
@@ -1008,6 +1673,9 @@ CREATE TABLE IF NOT EXISTS "public"."services" (
     "is_sales_excluded" boolean DEFAULT false,
     "is_facility_only" boolean DEFAULT false,
     "show_on_print" boolean DEFAULT false,
+    "description" "text",
+    "image_url" "text",
+    "hide_price" boolean DEFAULT false,
     CONSTRAINT "services_slots_check" CHECK (("slots" >= 0))
 );
 
@@ -1031,7 +1699,8 @@ CREATE TABLE IF NOT EXISTS "public"."shop_facility_connections" (
     "created_at" timestamp with time zone DEFAULT "now"(),
     "regular_rules" "jsonb" DEFAULT '[]'::"jsonb",
     "created_by_type" "text" DEFAULT 'shop'::"text",
-    "advance_booking_days" integer DEFAULT 0
+    "advance_booking_days" integer DEFAULT 0,
+    "assigned_staff_id" "uuid"
 );
 
 
@@ -1063,11 +1732,25 @@ CREATE TABLE IF NOT EXISTS "public"."staffs" (
     "weekly_holidays" "jsonb" DEFAULT '[]'::"jsonb",
     "concurrent_capacity" integer DEFAULT 1,
     "role_type" "text" DEFAULT 'stylist'::"text",
-    "is_default_for_admin" boolean DEFAULT false
+    "is_default_for_admin" boolean DEFAULT false,
+    "custom_shifts" "jsonb" DEFAULT '{}'::"jsonb",
+    "capable_categories" "jsonb" DEFAULT '[]'::"jsonb"
 );
 
 
 ALTER TABLE "public"."staffs" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."suppliers" (
+    "id" "uuid" DEFAULT "extensions"."uuid_generate_v4"() NOT NULL,
+    "name" "text" NOT NULL,
+    "order_method" "text",
+    "contact_info" "text",
+    "created_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."suppliers" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."user_items" (
@@ -1174,6 +1857,11 @@ ALTER TABLE ONLY "public"."customers"
 
 
 
+ALTER TABLE ONLY "public"."dealers"
+    ADD CONSTRAINT "dealers_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."facilities"
     ADD CONSTRAINT "facilities_pkey" PRIMARY KEY ("id");
 
@@ -1249,6 +1937,11 @@ ALTER TABLE ONLY "public"."inquiries"
 
 
 
+ALTER TABLE ONLY "public"."inventory_logs"
+    ADD CONSTRAINT "inventory_logs_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."keep_dates"
     ADD CONSTRAINT "keep_dates_date_facility_user_id_shop_id_key" UNIQUE ("date", "facility_user_id", "shop_id");
 
@@ -1261,6 +1954,21 @@ ALTER TABLE ONLY "public"."keep_dates"
 
 ALTER TABLE ONLY "public"."members"
     ADD CONSTRAINT "members_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payment_logs"
+    ADD CONSTRAINT "payment_logs_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."payment_logs"
+    ADD CONSTRAINT "payment_logs_stripe_event_id_key" UNIQUE ("stripe_event_id");
 
 
 
@@ -1301,6 +2009,16 @@ ALTER TABLE ONLY "public"."profiles"
 
 ALTER TABLE ONLY "public"."profiles"
     ADD CONSTRAINT "profiles_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "profiles_stripe_customer_id_key" UNIQUE ("stripe_customer_id");
+
+
+
+ALTER TABLE ONLY "public"."profiles"
+    ADD CONSTRAINT "profiles_stripe_subscription_id_key" UNIQUE ("stripe_subscription_id");
 
 
 
@@ -1389,6 +2107,11 @@ ALTER TABLE ONLY "public"."staffs"
 
 
 
+ALTER TABLE ONLY "public"."suppliers"
+    ADD CONSTRAINT "suppliers_pkey" PRIMARY KEY ("id");
+
+
+
 ALTER TABLE ONLY "public"."game_character_cards"
     ADD CONSTRAINT "unique_character_slot_index" UNIQUE ("character_id", "slot_key", "slot_index");
 
@@ -1415,7 +2138,7 @@ ALTER TABLE ONLY "public"."user_items"
 
 
 ALTER TABLE ONLY "public"."visit_list_drafts"
-    ADD CONSTRAINT "visit_list_drafts_facility_member_month_unique" UNIQUE ("facility_user_id", "member_id", "scheduled_month");
+    ADD CONSTRAINT "visit_list_drafts_facility_shop_member_month_unique" UNIQUE ("facility_user_id", "shop_id", "member_id", "scheduled_month");
 
 
 
@@ -1442,7 +2165,23 @@ CREATE INDEX "idx_game_inventory_equipped" ON "public"."game_inventory" USING "b
 
 
 
+CREATE INDEX "idx_payment_logs_profile_id" ON "public"."payment_logs" USING "btree" ("profile_id");
+
+
+
 CREATE UNIQUE INDEX "idx_profiles_display_id" ON "public"."profiles" USING "btree" ("display_id");
+
+
+
+CREATE INDEX "idx_profiles_stripe_customer_id" ON "public"."profiles" USING "btree" ("stripe_customer_id");
+
+
+
+CREATE INDEX "idx_profiles_stripe_subscription_id" ON "public"."profiles" USING "btree" ("stripe_subscription_id");
+
+
+
+CREATE INDEX "idx_profiles_subscription_status" ON "public"."profiles" USING "btree" ("subscription_status");
 
 
 
@@ -1459,6 +2198,18 @@ CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."visit_requ
 
 
 CREATE OR REPLACE TRIGGER "trg_sync_facility_to_customers" AFTER UPDATE ON "public"."facility_users" FOR EACH ROW EXECUTE FUNCTION "public"."sync_facility_to_customers"();
+
+
+
+CREATE OR REPLACE TRIGGER "trigger_check_and_create_order" AFTER UPDATE OF "stock" ON "public"."products" FOR EACH ROW EXECUTE FUNCTION "public"."check_and_create_order"();
+
+
+
+CREATE OR REPLACE TRIGGER "trigger_check_stock" AFTER INSERT OR UPDATE OF "stock", "reorder_point" ON "public"."products" FOR EACH ROW EXECUTE FUNCTION "public"."check_stock_and_reorder"();
+
+
+
+CREATE OR REPLACE TRIGGER "trigger_update_product_stock" AFTER INSERT ON "public"."inventory_logs" FOR EACH ROW EXECUTE FUNCTION "public"."update_product_stock"();
 
 
 
@@ -1488,6 +2239,11 @@ ALTER TABLE ONLY "public"."customers"
 
 ALTER TABLE ONLY "public"."customers"
     ADD CONSTRAINT "customers_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."dealers"
+    ADD CONSTRAINT "dealers_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
 
 
@@ -1686,6 +2442,16 @@ ALTER TABLE ONLY "public"."inquiries"
 
 
 
+ALTER TABLE ONLY "public"."inventory_logs"
+    ADD CONSTRAINT "inventory_logs_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."inventory_logs"
+    ADD CONSTRAINT "inventory_logs_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."keep_dates"
     ADD CONSTRAINT "keep_dates_facility_user_id_fkey" FOREIGN KEY ("facility_user_id") REFERENCES "public"."facility_users"("id") ON DELETE CASCADE;
 
@@ -1701,6 +2467,21 @@ ALTER TABLE ONLY "public"."members"
 
 
 
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_product_id_fkey" FOREIGN KEY ("product_id") REFERENCES "public"."products"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."orders"
+    ADD CONSTRAINT "orders_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."payment_logs"
+    ADD CONSTRAINT "payment_logs_profile_id_fkey" FOREIGN KEY ("profile_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
 ALTER TABLE ONLY "public"."private_tasks"
     ADD CONSTRAINT "private_tasks_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
 
@@ -1712,7 +2493,17 @@ ALTER TABLE ONLY "public"."private_tasks"
 
 
 ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_dealer_id_fkey" FOREIGN KEY ("dealer_id") REFERENCES "public"."dealers"("id") ON DELETE SET NULL;
+
+
+
+ALTER TABLE ONLY "public"."products"
     ADD CONSTRAINT "products_shop_id_fkey" FOREIGN KEY ("shop_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."products"
+    ADD CONSTRAINT "products_supplier_id_fkey" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id");
 
 
 
@@ -1880,23 +2671,7 @@ CREATE POLICY "Allow all for visit_residents" ON "public"."visit_request_residen
 
 
 
-CREATE POLICY "Allow authenticated insert" ON "public"."profiles" FOR INSERT WITH CHECK (true);
-
-
-
-CREATE POLICY "Allow authenticated update" ON "public"."profiles" FOR UPDATE USING (true);
-
-
-
 CREATE POLICY "Allow individual select own customer" ON "public"."customers" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "auth_id"));
-
-
-
-CREATE POLICY "Allow public delete" ON "public"."reservations" FOR DELETE TO "anon" USING (true);
-
-
-
-CREATE POLICY "Allow public insert" ON "public"."reservations" FOR INSERT WITH CHECK (true);
 
 
 
@@ -1904,15 +2679,7 @@ CREATE POLICY "Allow public select" ON "public"."profiles" FOR SELECT USING (tru
 
 
 
-CREATE POLICY "Allow public select" ON "public"."reservations" FOR SELECT USING (true);
-
-
-
 CREATE POLICY "Allow public select staffs" ON "public"."staffs" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Allow public update" ON "public"."reservations" FOR UPDATE TO "anon" USING (true) WITH CHECK (true);
 
 
 
@@ -2032,10 +2799,6 @@ CREATE POLICY "Enable read access for own shop" ON "public"."sales" FOR SELECT U
 
 
 
-CREATE POLICY "Enable update for all" ON "public"."profiles" FOR UPDATE USING (true) WITH CHECK (true);
-
-
-
 CREATE POLICY "Enable update for authenticated users only" ON "public"."admin_adjustments" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
 
 
@@ -2065,6 +2828,14 @@ CREATE POLICY "Users can insert own profile" ON "public"."app_users" FOR INSERT 
 
 
 CREATE POLICY "Users can insert own profile" ON "public"."profiles" FOR INSERT WITH CHECK (("auth"."uid"() = "id"));
+
+
+
+CREATE POLICY "Users can manage their own shop dealers" ON "public"."dealers" USING (("shop_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "Users can manage their own shop orders" ON "public"."orders" USING (("shop_id" = "auth"."uid"())) WITH CHECK (("shop_id" = "auth"."uid"()));
 
 
 
@@ -2122,6 +2893,9 @@ CREATE POLICY "customers_select_test" ON "public"."customers" FOR SELECT TO "aut
 
 
 
+ALTER TABLE "public"."dealers" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."facilities" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2137,10 +2911,32 @@ ALTER TABLE "public"."holidays" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."inquiries" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."inventory_logs" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "inventory_logs_delete_policy" ON "public"."inventory_logs" FOR DELETE TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "inventory_logs_insert_policy" ON "public"."inventory_logs" FOR INSERT TO "authenticated" WITH CHECK (true);
+
+
+
+CREATE POLICY "inventory_logs_select_policy" ON "public"."inventory_logs" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "inventory_logs_update_policy" ON "public"."inventory_logs" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
+
+
+
 ALTER TABLE "public"."keep_dates" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."members" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "owner_all_customers" ON "public"."customers" TO "authenticated" USING (("auth"."uid"() = "shop_id"));
@@ -2163,6 +2959,9 @@ CREATE POLICY "owner_read_profile" ON "public"."profiles" FOR SELECT TO "authent
 
 
 
+ALTER TABLE "public"."payment_logs" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."portal_categories" ENABLE ROW LEVEL SECURITY;
 
 
@@ -2176,6 +2975,10 @@ ALTER TABLE "public"."products" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "public_insert_shop_only" ON "public"."profiles" FOR INSERT TO "authenticated", "anon" WITH CHECK (("role" = 'shop'::"text"));
+
 
 
 ALTER TABLE "public"."push_subscriptions" ENABLE ROW LEVEL SECURITY;
@@ -2226,6 +3029,13 @@ ALTER TABLE "public"."shop_ng_dates" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."staffs" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "super_admin_full_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+ALTER TABLE "public"."suppliers" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."user_items" ENABLE ROW LEVEL SECURITY;
@@ -2466,6 +3276,44 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."reservations" TO "anon";
+GRANT ALL ON TABLE "public"."reservations" TO "authenticated";
+GRANT ALL ON TABLE "public"."reservations" TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."cancel_reservation_by_token"("p_token" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."check_and_create_order"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_and_create_order"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_and_create_order"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."check_stock_and_reorder"() TO "anon";
+GRANT ALL ON FUNCTION "public"."check_stock_and_reorder"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."check_stock_and_reorder"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."create_reservation_with_capacity"("p_store_id" "uuid", "p_user_id" "uuid", "p_reservation_time" timestamp with time zone) TO "anon";
 GRANT ALL ON FUNCTION "public"."create_reservation_with_capacity"("p_store_id" "uuid", "p_user_id" "uuid", "p_reservation_time" timestamp with time zone) TO "authenticated";
 GRANT ALL ON FUNCTION "public"."create_reservation_with_capacity"("p_store_id" "uuid", "p_user_id" "uuid", "p_reservation_time" timestamp with time zone) TO "service_role";
@@ -2478,9 +3326,41 @@ GRANT ALL ON FUNCTION "public"."create_reservation_with_capacity"("p_shop_id" "u
 
 
 
+REVOKE ALL ON FUNCTION "public"."get_my_reservations"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "anon";
+GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_account_active"("profile_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."is_account_active"("profile_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_account_active"("profile_id" "uuid") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."is_super_admin"() TO "anon";
+GRANT ALL ON FUNCTION "public"."is_super_admin"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."is_super_admin"() TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."sync_facility_to_customers"() TO "anon";
 GRANT ALL ON FUNCTION "public"."sync_facility_to_customers"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."sync_facility_to_customers"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "anon";
+GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "service_role";
 
 
 
@@ -2532,6 +3412,12 @@ GRANT ALL ON TABLE "public"."business_settings" TO "service_role";
 GRANT ALL ON TABLE "public"."customers" TO "anon";
 GRANT ALL ON TABLE "public"."customers" TO "authenticated";
 GRANT ALL ON TABLE "public"."customers" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."dealers" TO "anon";
+GRANT ALL ON TABLE "public"."dealers" TO "authenticated";
+GRANT ALL ON TABLE "public"."dealers" TO "service_role";
 
 
 
@@ -2613,6 +3499,12 @@ GRANT ALL ON TABLE "public"."inquiries" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."inventory_logs" TO "anon";
+GRANT ALL ON TABLE "public"."inventory_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."inventory_logs" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."keep_dates" TO "anon";
 GRANT ALL ON TABLE "public"."keep_dates" TO "authenticated";
 GRANT ALL ON TABLE "public"."keep_dates" TO "service_role";
@@ -2628,6 +3520,18 @@ GRANT ALL ON TABLE "public"."members" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."orders" TO "anon";
+GRANT ALL ON TABLE "public"."orders" TO "authenticated";
+GRANT ALL ON TABLE "public"."orders" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."payment_logs" TO "anon";
+GRANT ALL ON TABLE "public"."payment_logs" TO "authenticated";
+GRANT ALL ON TABLE "public"."payment_logs" TO "service_role";
 
 
 
@@ -2661,6 +3565,24 @@ GRANT ALL ON TABLE "public"."profiles" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."public_booking_settings" TO "anon";
+GRANT ALL ON TABLE "public"."public_booking_settings" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_booking_settings" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."public_busy_slots" TO "anon";
+GRANT ALL ON TABLE "public"."public_busy_slots" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_busy_slots" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."public_shops" TO "anon";
+GRANT ALL ON TABLE "public"."public_shops" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_shops" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."push_subscriptions" TO "anon";
 GRANT ALL ON TABLE "public"."push_subscriptions" TO "authenticated";
 GRANT ALL ON TABLE "public"."push_subscriptions" TO "service_role";
@@ -2676,12 +3598,6 @@ GRANT ALL ON TABLE "public"."regular_keep_exclusions" TO "service_role";
 GRANT ALL ON TABLE "public"."reservation_guests" TO "anon";
 GRANT ALL ON TABLE "public"."reservation_guests" TO "authenticated";
 GRANT ALL ON TABLE "public"."reservation_guests" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."reservations" TO "anon";
-GRANT ALL ON TABLE "public"."reservations" TO "authenticated";
-GRANT ALL ON TABLE "public"."reservations" TO "service_role";
 
 
 
@@ -2730,6 +3646,12 @@ GRANT ALL ON TABLE "public"."shop_ng_dates" TO "service_role";
 GRANT ALL ON TABLE "public"."staffs" TO "anon";
 GRANT ALL ON TABLE "public"."staffs" TO "authenticated";
 GRANT ALL ON TABLE "public"."staffs" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."suppliers" TO "anon";
+GRANT ALL ON TABLE "public"."suppliers" TO "authenticated";
+GRANT ALL ON TABLE "public"."suppliers" TO "service_role";
 
 
 

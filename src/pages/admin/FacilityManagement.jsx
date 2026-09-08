@@ -346,23 +346,13 @@ const handleSave = async (e) => {
     if (editingId) {
       // --- ❶ 編集（既存データの更新） ---
       
-      // ① 施設マスター（共通アカウント）情報を更新
-      // ⚠️ 2026/09/08：password と login_id の更新を外しました。
-      //    認証情報の変更は SuperAdmin に一本化します。
-      const { error: userError } = await supabase
-        .from('facility_users')
-        .update({
-          facility_name: formData.name,
-          furigana: formData.furigana,
-          email: formData.email,
-          address: formData.address,
-          tel: formData.tel
-        })
-        .eq('id', editingId);
+      // ⚠️ 2026/09/08：facility_users への更新を廃止しました。
+      //    このモーダルの施設名・ふりがな・住所・電話・メールは readOnly であり、
+      //    編集する導線がないにもかかわらず update が走っていました。
+      //    施設情報の変更は SuperAdmin と施設本人（施設ポータル）に一本化します。
+      //    この画面で更新するのは提携ルールだけです。
 
-      if (userError) throw userError;
-
-      // ② 店舗との提携ルール（定期キープなど）を更新
+      // 店舗との提携ルール（定期キープなど）を更新
       const { error: connError } = await supabase
         .from('shop_facility_connections')
         .update({ 
