@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../../supabaseClient';
+// ⚠️ 2026/09/09：施設セッショントークンの保存用（Step 11-3）
+import { refreshFacilityClient, FACILITY_TOKEN_KEY } from '../../supabaseFacility';
 import { Building2, Lock, User, ArrowRight, ShieldCheck, Gamepad2, Settings, ArrowLeft } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 
@@ -209,6 +211,18 @@ const FacilityLogin = () => {
       const facilityUser = Array.isArray(facilityRows) ? facilityRows[0] : null;
 
       if (facilityUser && !facilityError) {
+        // ⚠️ 2026/09/09：verify_facility_login が発行したセッショントークンを保存します。
+        //    以降、施設ポータルの通信はこのトークンを x-facility-token ヘッダーに載せ、
+        //    RLS 側の current_facility_id() で施設を特定します。
+        if (!facilityUser.session_token) {
+          console.error("セッショントークンが発行されませんでした。RPCの戻り値を確認してください。");
+          alert('ログイン処理に失敗しました。もう一度お試しください。');
+          setIsProcessing(false);
+          return;
+        }
+        localStorage.setItem(FACILITY_TOKEN_KEY, facilityUser.session_token);
+        refreshFacilityClient();
+
         localStorage.setItem('facility_user_id', facilityUser.id);
         localStorage.setItem('facility_auth_active', 'true');
         

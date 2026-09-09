@@ -9,7 +9,11 @@ import bcrypt from "npm:bcryptjs@3.0.3";
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
   // 🆕 x-shop-id を追記（これがないとブラウザがエラーを出します）
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-shop-id',
+  // ⚠️ 2026/09/09：x-facility-token を追加しました（Step 11-3d）。
+  //    施設ポータルは施設用クライアント（supabaseFacility.js）を使うようになり、
+  //    全リクエストにこのヘッダーが付きます。許可リストに無いと
+  //    preflight で弾かれ、施設からの通知メールが一切送れません。
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-shop-id, x-facility-token',
 }
 // LINE通知用の定数
 const LINE_PUSH_URL = "https://api.line.me/v2/bot/message/push";

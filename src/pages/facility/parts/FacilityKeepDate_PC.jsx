@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react'; // 🚀 useRefを追加
-import { supabase } from '../../../supabaseClient';
+// ⚠️ 2026/09/09：施設用クライアントに切り替えました（Step 11-3d）。
+//    x-facility-token ヘッダーが付き、店舗オーナーの JWT は送られなくなります。
+import { supabase } from '../../../supabaseFacility';
 import { 
   ChevronLeft, ChevronRight, Store, ArrowRight, Info, 
   Clock, Users, CheckCircle2, Trash2, Calendar as CalIcon, AlertCircle

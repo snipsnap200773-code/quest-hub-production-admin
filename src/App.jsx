@@ -160,6 +160,10 @@ function App() {
         {/* 👆 ここまでが SubscriptionProvider の適用範囲 */}
 
         {/* --- 🏢 施設ポータル（施設側：shopIdを持たないルートは外に出す） --- */}
+        {/* ⚠️ 2026/09/09：施設IDつきのログインURLを追加しました。
+            FacilityPortal のガードが以前からこのパスへ navigate していましたが、
+            ルートが未定義のため常に "*" にマッチし、"/" へ落ちていました。 */}
+        <Route path="/facility-login/:facilityId" element={<FacilityLogin />} />
         <Route path="/facility-portal/:facilityId/residents" element={<FacilityPortal />} />
         <Route path="/facility-portal/:facilityId/find-shops" element={<ShopSearch />} />
 

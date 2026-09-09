@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { supabase } from '../../supabaseClient';
+// ⚠️ 2026/09/09：施設ポータルの通信を施設用クライアントに切り替えました（Step 11-3）。
+//    x-facility-token ヘッダーが付き、店舗オーナーの JWT は送られなくなります。
+import { supabase, clearFacilitySession } from '../../supabaseFacility';
 import { 
   Users, CalendarPlus, CheckSquare, Clock, History, Printer, 
   FileText, Settings, HelpCircle, LogOut, Building2, Search,
@@ -107,16 +109,28 @@ const FacilityPortal = () => {
       const params = new URLSearchParams(window.location.search);
       if (params.get('logout') === 'true') return;
 
-      const loggedInId = sessionStorage.getItem('facility_user_id') || localStorage.getItem('facility_user_id');
-      const isActive = sessionStorage.getItem('facility_auth_active') || localStorage.getItem('facility_auth_active');
+      // ⚠️ 2026/09/09：入場判定を localStorage からサーバー側の照合に変更しました。
+      //    従来は facility_auth_active を書き換えるだけで任意の施設に入れました。
+      //    current_facility_id() は x-facility-token を facility_sessions と
+      //    照合するため、トークンを持たない限り NULL が返ります。
+      const { data: sessionFacilityId, error } = await supabase.rpc('current_facility_id');
 
-      if (isActive === 'true' && loggedInId === facilityId) {
-        sessionStorage.setItem('facility_user_id', loggedInId);
-        sessionStorage.setItem('facility_auth_active', 'true');
-        fetchFacilityData();
-      } else {
+      if (error) {
+        console.error("施設セッションの確認に失敗:", error.message);
         navigate(`/facility-login/${facilityId}`);
+        return;
       }
+
+      if (!sessionFacilityId || sessionFacilityId !== facilityId) {
+        // トークンが無い / 期限切れ / 別施設のトークン
+        clearFacilitySession();
+        navigate(`/facility-login/${facilityId}`);
+        return;
+      }
+
+      sessionStorage.setItem('facility_user_id', facilityId);
+      sessionStorage.setItem('facility_auth_active', 'true');
+      fetchFacilityData();
     };
     checkAuth();
   }, [facilityId, navigate]);
@@ -408,13 +422,17 @@ const FacilityPortal = () => {
           <button 
             onClick={async () => { 
               if (window.confirm("ログアウトしますか？")) {
-                await supabase.auth.signOut();
+                // ⚠️ 2026/09/09：supabase.auth.signOut() を廃止しました。
+                //    施設ユーザーは Auth を持たないため不要であるうえ、
+                //    同じブラウザで店舗オーナーがログインしていると
+                //    そちらのセッションまで切れていました。
+                clearFacilitySession();
                 sessionStorage.clear(); 
                 localStorage.removeItem('facility_user_id');
                 localStorage.removeItem('facility_auth_active');
                 navigate('/login?logout=true', { replace: true }); 
               }
-            }} 
+            }}
             style={logoutBtnStyle}
           >
             <LogOut size={18} /> ログアウト

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { supabase } from '../../../supabaseClient';
+// ⚠️ 2026/09/09：施設用クライアントに切り替えました（Step 11-3d）。
+//    x-facility-token ヘッダーが付き、店舗オーナーの JWT は送られなくなります。
+import { supabase } from '../../../supabaseFacility';
 import { Printer, Building2, ChevronRight, Loader2, Square, ArrowLeft, CheckCircle2, AlertCircle } from 'lucide-react';
 
 // 🆕 追加：business_type（配列 or カンマ区切り文字列）を「、」区切りの読みやすい文字列に整形する
