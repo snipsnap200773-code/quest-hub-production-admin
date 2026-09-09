@@ -192,7 +192,10 @@ const FacilityListUp_PC = ({
         
         // ① この施設の予約メンバー（🚀 🆕 他のテスト施設のデータが混ざらないようにインナージョインで厳格化！）
         supabase.from('visit_request_residents')
-          .select('*, members!inner(*), visit_requests!inner(id, scheduled_date, status)')
+          // ⚠️ 2026/09/09：関係名（外部キー制約名）を明示しました。
+          //    visit_requests への経路が複数解釈されると PGRST201 になり、
+          //    try/catch に握り潰されて 0 件になります。
+          .select('*, members!inner(*), visit_requests!visit_request_residents_visit_request_id_fkey!inner(id, scheduled_date, status)')
           .eq('visit_requests.facility_user_id', facilityId)
           .eq('visit_requests.shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！他の業者のメンバーが混ざるのを防ぐ
           // ⚠️ 2026/09/08：members.facility → members.facility_user_id へ変更
@@ -215,7 +218,8 @@ const FacilityListUp_PC = ({
       // 🚀 4. 各メンバーの「一番新しい訪問日」を割り出す（履歴取得）
       const { data: allHistoryData } = await supabase
         .from('visit_request_residents')
-        .select('member_id, visit_requests!inner(scheduled_date)')
+        // ⚠️ 2026/09/09：関係名を明示（同上）
+        .select('member_id, visit_requests!visit_request_residents_visit_request_id_fkey!inner(scheduled_date)')
         .eq('status', 'completed')
         .eq('visit_requests.facility_user_id', facilityId)
         .eq('visit_requests.shop_id', selectedShopId); // 👈 追加

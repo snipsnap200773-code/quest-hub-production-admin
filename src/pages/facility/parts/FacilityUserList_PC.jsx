@@ -99,10 +99,14 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
       .eq('is_active', true); 
       
     // 2. 🚀 🆕 前回利用日を特定するために「全期間の完了履歴」を取得
+    // ⚠️ 2026/09/09：関係名（外部キー制約名）を明示しました。
+    //    visit_request_residents → visit_requests の経路が複数あると
+    //    PostgREST が PGRST201（関係を特定できない）を返して画面が止まります。
+    //    制約名まで書けば経路が1本に確定し、スキーマの状態に左右されません。
     const hData = await fetchAllRows(() =>
       supabase
         .from('visit_request_residents')
-        .select('member_id, visit_requests!inner(scheduled_date)')
+        .select('member_id, visit_requests!visit_request_residents_visit_request_id_fkey!inner(scheduled_date)')
         .eq('status', 'completed')
         .eq('visit_requests.facility_user_id', facilityId)
     );

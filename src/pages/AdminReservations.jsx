@@ -277,7 +277,12 @@ const [finalizedSale, setFinalizedSale] = useState(null); // 🆕 売上実績�
     // 🚀 2. 名簿、売上、そして「親予約の作成日時」を取得（新旧判定用）
     const [resRes, saleRes, masterRes] = await Promise.all([
       supabase.from('visit_request_residents')
-        .select('*, members (name, room, floor)')
+        // ⚠️ 2026/09/09：members に id を追加しました。
+        //    handleCarryoverVisit が r.members.id を参照していますが、
+        //    id を取得していなかったため undefined になり、
+        //    member_id が NULL の行が黙って作られる状態でした
+        //    （member_id は nullable のためエラーにならず気づけません）。
+        .select('*, members (id, name, room, floor)')
         .eq('visit_request_id', masterId) // 親に紐付く全員を取得
         .order('created_at', { ascending: true }),
       supabase.from('sales').select('*').eq('visit_request_id', visitId).maybeSingle(),
@@ -602,7 +607,7 @@ const [editFields, setEditFields] = useState({
   supabase.from('reservations').select('id, shop_id, customer_id, customer_name, customer_phone, customer_email, start_time, end_time, status, res_type, biz_type, menu_name, total_price, total_slots, staff_id, created_at, staffs(name), customers(id, name, furigana, is_blocked, cancel_count)').in('shop_id', targetShopIds).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
   supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', startRangeStr).lte('start_time', endRangeStr),
   supabase.from('shop_facility_connections').select('*, facility_users:facility_users_public!facility_user_id(id, facility_name, furigana, address, tel, email)').eq('shop_id', shopId).eq('status', 'active'),
-  supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name), visit_request_residents(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
+  supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name), visit_request_residents!visit_request_residents_visit_request_id_fkey(count)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', finalStartDayStr).lte('scheduled_date', finalEndDayStr),
   supabase.from('keep_dates').select('*, facility_users:facility_users_public!facility_user_id(*)').eq('shop_id', shopId).gte('date', finalStartDayStr).lte('date', finalEndDayStr),
   // 🔧 修正：表示期間（finalStartDayStr〜finalEndDayStr）に絞り込み、全期間取得による1000件の壁を回避
   supabase.from('regular_keep_exclusions').select('excluded_date').eq('shop_id', shopId).gte('excluded_date', finalStartDayStr).lte('excluded_date', finalEndDayStr),

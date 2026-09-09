@@ -117,7 +117,8 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
       // 🚀 🆕 追加：今月すでに予約が確定しているメンバー情報を取得
       const { data: reservedData } = await supabase
         .from('visit_request_residents')
-        .select('*, members(*), visit_requests!inner(id, scheduled_date, status, parent_id)')
+        // ⚠️ 2026/09/09：関係名を明示（同上）
+        .select('*, members(*), visit_requests!visit_request_residents_visit_request_id_fkey!inner(id, scheduled_date, status, parent_id)')
         .eq('visit_requests.facility_user_id', facilityId)
         .eq('visit_requests.shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！
         .neq('visit_requests.status', 'canceled') // ✅ 【ここを追加！】キャンセルされた日程のメンバーはカウントから除外します
@@ -373,14 +374,28 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
           .eq('scheduled_month', targetMonthKey);
       }
       
-      // ✨ 🛠️ 修正後：キープ枠のお掃除も、対象が存在する時だけ実行する（404エラー防止）
+      // ⚠️ 2026/09/09：.like() を範囲指定に変更しました。
+      //    keep_dates.date は date 型のため LIKE 演算子が適用できず、
+      //    PostgREST が 404 を返して DELETE が実行されていませんでした。
+      //    「404エラー防止」の判定自体は正しく働いていましたが、
+      //    DELETE が成立していなかったため、予約確定後もキープ枠が
+      //    カレンダーに「選択中」として残り続けていました。
+      //    ※ 月まるごと消してよいのは、その月の訪問日をひとまとめで扱う運用のため。
+      //      同月に「確定済み」と「未確定キープ」が混在しないことを実データで確認済み。
       const hasKeepsThisMonth = manualKeeps.some(k => k.date.startsWith(targetMonthKey));
       if (hasKeepsThisMonth) {
-        await supabase.from('keep_dates')
+        const monthStart = `${targetMonthKey}-01`;
+        const [ty, tm] = targetMonthKey.split('-').map(Number);
+        const monthEnd = `${targetMonthKey}-${String(new Date(ty, tm, 0).getDate()).padStart(2, '0')}`;
+
+        const { error: keepDelError } = await supabase.from('keep_dates')
           .delete()
           .eq('facility_user_id', facilityId)
-          .eq('shop_id', selectedShopId) // 👈 追加：他の業者のキープ枠を巻き込んで消さないように守る
-          .like('date', `${targetMonthKey}%`);
+          .eq('shop_id', selectedShopId) // 👈 他の業者のキープ枠を巻き込んで消さないように守る
+          .gte('date', monthStart)
+          .lte('date', monthEnd);
+
+        if (keepDelError) console.error("キープ枠の削除に失敗:", keepDelError.message);
       }
 
       alert(`予約の送信が完了しました！✨`);
