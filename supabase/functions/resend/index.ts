@@ -269,7 +269,9 @@ if (type === 'remind_all') {
     .gte('start_time', `${dateStr}T00:00:00.000Z`)
     .lte('start_time', `${dateStr}T23:59:59.999Z`)
     .eq('remind_sent', false)
-    .eq('res_type', 'normal');
+    .eq('res_type', 'normal')
+    .neq('status', 'canceled')  // 👈 追加：キャンセル済みを除外
+    .neq('status', 'completed'); // 👈 追加：完了済みを除外
 
   if (resError) throw resError;
   console.log(`[REMIND_DEBUG] 検索日: ${dateStr}, 取得: ${resList?.length || 0}件`);
