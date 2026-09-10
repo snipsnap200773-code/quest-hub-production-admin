@@ -137,7 +137,9 @@ const visitDates = allVisits.map(v => {
     .eq('visit_requests.shop_id', shopId)
     .eq('visit_requests.facility_user_id', worksheetTarget.facility_user_id) // 👈 追加：対象施設だけに絞る
     .order('completed_at', { ascending: false }),
-  supabase.from('members').select('*').eq('facility_user_id', worksheetTarget.facility_user_id).order('floor', { ascending: true }).order('room', { ascending: true })
+  // ⚠️ 2026/09/10：is_active フィルタを追加（同上）。
+  //    予備名簿に削除済みの入居者が印刷されていました。
+  supabase.from('members').select('*').eq('facility_user_id', worksheetTarget.facility_user_id).eq('is_active', true).order('floor', { ascending: true }).order('room', { ascending: true })
 ]);
 
       const visitMap = {};
@@ -669,7 +671,12 @@ const handleSave = async (e) => {
     }
 
     // ✕単発キープ・変更定期キープ（keep_dates）のチェック
-    const matchedManualKeep = keepList.find(k => k.date === dateStr && k.facility_user_id === keepTargetFacilityId);
+    // ⚠️ 2026/09/10：施設IDでの絞り込みを廃止しました。
+    //    従来は「今キープを入れようとしている施設」のキープしか ✕ にならず、
+    //    他施設が押さえている日が ○ のまま選択でき、ダブルブッキングを招いていました。
+    //    確定予約（visit_requests）は元から施設を問わず ✕ にしており、
+    //    そのため「キープ中は ○、確定したら ✕」という不整合が起きていました。
+    const matchedManualKeep = keepList.find(k => k.date === dateStr);
     if (matchedManualKeep) {
       const kTime = (matchedManualKeep.start_time || '09:00').substring(0, 5);
       const kName = matchedManualKeep.facility_users?.facility_name || '施設';
@@ -689,8 +696,10 @@ const handleSave = async (e) => {
 
       let regKeepData = null;
 facilities.forEach(conn => {
-  // 🚀 いまキープを入れようとしている施設以外の定期ルールは無視する（他施設のせいで✕になるのを防ぐ）
-  if (conn.id !== keepTargetFacilityId) return; 
+  // ⚠️ 2026/09/10：他施設の定期ルールを無視する処理を廃止しました。
+  //    他施設が定期で押さえている日も、店舗から見れば埋まっています。
+  //    （旧コメント「他施設のせいで✕になるのを防ぐ」は、
+  //      ダブルブッキングを許す方向に働いていました）
 
   conn.regular_rules?.forEach(rule => {
     const monthMatch = (rule.monthType === 0) || (rule.monthType === 1 && m % 2 !== 0) || (rule.monthType === 2 && m % 2 === 0);

@@ -270,6 +270,7 @@ const AdminFacilityVisit_PC = () => {
       .from('members')
       .select('*')
       .eq('facility_user_id', visit.facility_user_id)
+      .eq('is_active', true)
       .order('name');
 
     if (!error) {

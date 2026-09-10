@@ -123,7 +123,10 @@ function TimeSelectionCalendar() {
         // ルール除外日
         supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 🚀 🆕 追加：プライベート予定もデータベースから取ってくる
-        supabase.from('private_tasks').select('start_time, end_time').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO) // 👈 🚀 追加
+        // ⚠️ 2026/09/10：public_private_busy（定義者権限ビュー）に切り替えました。
+        //    private_tasks 本体は title / note を含むため未ログインには公開できません。
+        //    このビューは shop_id / staff_id / start_time / end_time の4列のみです。
+        supabase.from('public_private_busy').select('start_time, end_time').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO) // 👈 🚀 追加
       ]);
         
       setExistingReservations(resRes.data || []);

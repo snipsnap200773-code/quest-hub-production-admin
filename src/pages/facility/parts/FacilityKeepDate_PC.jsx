@@ -128,7 +128,9 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       supabase.from('public_busy_slots').select('start_time, end_time, staff_id').eq('shop_id', shopId).neq('status', 'canceled')
         .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
       // ⑦ この月のプライベート予定（開始・終了時間を取得）
-      supabase.from('private_tasks').select('start_time, end_time, staff_id').eq('shop_id', shopId)
+      // ⚠️ 2026/09/10：public_private_busy（定義者権限ビュー）に切り替えました。
+      //    施設は anon のため private_tasks 本体は読めなくなります。
+      supabase.from('public_private_busy').select('start_time, end_time, staff_id').eq('shop_id', shopId)
         .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
       // 👇 🌟 修正：休み情報（weekly_holidays, custom_shifts等）も含めて全て取得するため「*」に変更（マスターデータなので絞り込み不要）
       supabase.from('staffs').select('*').eq('shop_id', shopId)
