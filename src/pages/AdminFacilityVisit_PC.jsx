@@ -159,19 +159,15 @@ const AdminFacilityVisit_PC = () => {
           .select('name, is_facility_only, target_industry')
           .eq('shop_id', shopId);
         
-        // 🚀 修正：【施設専用】チェックだけでなく、「共通(指定なし)」や「訪問系業種」のカテゴリも許容する！
-        const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-        const facilityCatNames = cData?.filter(c => 
-          c.is_facility_only || 
-          !c.target_industry || 
-          VISIT_KEYWORDS.some(kw => (c.target_industry || '').includes(kw))
-        ).map(c => c.name) || [];
+        // 🚀 修正：【施設予約専用】にチェックが入っているカテゴリのメニューだけを厳密に抽出する！
+        const facilityCatNames = cData?.filter(c => c.is_facility_only).map(c => c.name) || [];
 
         // 💡 4. サービスマスターを取得
         const { data: sData } = await supabase
           .from('services')
           .select('*')
-          .eq('shop_id', shopId);
+          .eq('shop_id', shopId)
+          .order('sort_order'); // 👈 ここを追加！
         
         // 施設訪問で使えるメニューリストを生成（共通メニューも無事に含まれるようになります）
         const facilityServices = sData?.filter(s => facilityCatNames.includes(s.category)) || [];
@@ -1080,39 +1076,49 @@ const AdminFacilityVisit_PC = () => {
 
               {/* 施設用メニューの一覧を表示（2列タイル） */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                {services.map(s => (
-                  <button
-                    key={s.id}
-                    onClick={() => {
-                      // 💡 管理者専用の「枝メニュー」があるか判定
-                      const adminOptions = options.filter(opt => opt.service_id === s.id && opt.is_admin_only);
-                      
-                      if (adminOptions.length > 0) {
-                        // 枝があれば詳細選択ポップアップ（リタッチ等）へバトンタッチ
-                        setPendingSelection({ 
-                          residentId: targetResident.id, 
-                          service: s, 
-                          adminOptions, 
-                          originalMenuName: s.name 
-                        });
-                        setShowMenuSelector(false);
-                        setShowSubMenuModal(true);
-                      } else {
-                        // 枝がなければこのままメニュー名を更新して終了
-                        updateResidentMenu(targetResident.id, s.name);
-                        setShowMenuSelector(false);
-                      }
-                    }}
-                    style={{
-                      padding: '20px 10px', borderRadius: '18px', border: '1px solid #e2e8f0',
-                      background: (targetResident.menu_name || '').includes(s.name) ? `${themeColor}15` : '#f8fafc',
-                      color: (targetResident.menu_name || '').includes(s.name) ? themeColor : '#1e293b',
-                      fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer'
-                    }}
-                  >
-                    {s.name}
-                  </button>
-                ))}
+                {services.map(s => {
+                  // 🚀 🆕 枝メニュー（カッコ書き）を外した大元のメニュー名を取り出す
+                  const match = (targetResident?.menu_name || '').match(/^(.+?)（(.+?)）$/);
+                  const currentParentName = match ? match[1].trim() : (targetResident?.menu_name || '').trim();
+                  
+                  // 🚀 🆕 その大元メニュー名と、ボタンのメニュー名が完全に一致するか判定
+                  const isSelected = currentParentName === s.name.trim();
+
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => {
+                        // 💡 管理者専用の「枝メニュー」があるか判定
+                        const adminOptions = options.filter(opt => opt.service_id === s.id && opt.is_admin_only);
+                        
+                        if (adminOptions.length > 0) {
+                          // 枝があれば詳細選択ポップアップ（リタッチ等）へバトンタッチ
+                          setPendingSelection({ 
+                            residentId: targetResident.id, 
+                            service: s, 
+                            adminOptions, 
+                            originalMenuName: s.name 
+                          });
+                          setShowMenuSelector(false);
+                          setShowSubMenuModal(true);
+                        } else {
+                          // 枝がなければこのままメニュー名を更新して終了
+                          updateResidentMenu(targetResident.id, s.name);
+                          setShowMenuSelector(false);
+                        }
+                      }}
+                      style={{
+                        padding: '20px 10px', borderRadius: '18px', border: '1px solid #e2e8f0',
+                        // 🚀 🆕 修正：判定を isSelected に変更
+                        background: isSelected ? `${themeColor}15` : '#f8fafc',
+                        color: isSelected ? themeColor : '#1e293b',
+                        fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer'
+                      }}
+                    >
+                      {s.name}
+                    </button>
+                  );
+                })}
               </div>
 
               <button 

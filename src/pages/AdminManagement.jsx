@@ -253,7 +253,11 @@ function AdminManagement() {
         supabase.from('service_categories').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         supabase.from('services').select('*').eq('shop_id', cleanShopId).order('sort_order'),
         supabase.from('admin_adjustments').select('*').eq('shop_id', cleanShopId),
-        supabase.from('products').select('*').eq('shop_id', cleanShopId).order('sort_order'),
+        // ⚠️ 2026/09/11：usage_type による絞り込みを追加しました。
+        //    従来は全商品を取得していたため、在庫管理で「業務用」に設定した
+        //    商品までレジの店販リストに並んでいました。
+        //    ※ 実データは英語キーではなく日本語（業務用 / 店販用）で保存されています。
+        supabase.from('products').select('*').eq('shop_id', cleanShopId).in('usage_type', ['店販用', 'retail', 'both']).order('sort_order'),
         
         // 💰 売上データ：自分の店のみ
         supabase.from('sales')
@@ -543,6 +547,18 @@ const applyMenuChangeToLedger = () => {
       // 🆕 total_slots も更新対象に含める
       res.id === selectedRes.id ? { ...res, menu_name: fullDisplayName, total_price: finalPrice, total_slots: newTotalSlots } : res
     ));
+
+    // ⚠️ 2026/09/11：selectedRes も更新するようにしました。
+    //    従来は allReservations だけを書き換えていたため、
+    //    「メニュー(予定)」欄は変わるのに、その下の「施術内容」欄は
+    //    selectedRes を参照しているせいで古い内容のまま残っていました。
+    setSelectedRes(prev => prev ? {
+      ...prev,
+      menu_name: fullDisplayName,
+      total_price: finalPrice,
+      total_slots: newTotalSlots
+    } : prev);
+
     setIsMenuPopupOpen(false);
   };
 // 🚀 完成版：レジを開く際、その予約元の店舗マスターを読み込む
@@ -2586,7 +2602,12 @@ return (
       } 
 
       // ⚪ ケースB：1人予約の場合（メニューが複数あっても1つにまとめる）
-      const targetServices = (people.length > 0 && people[0].services) ? people[0].services : services;
+      // ⚠️ 2026/09/11：レジで編集中は checkoutServices を優先して表示します。
+      //    従来は DB 保存済みの details だけを見ていたため、
+      //    「完了して反映」でメニューを変えても、台帳の「メニュー(予定)」欄は
+      //    変わるのにこの施術内容欄は古いままでした。
+      const baseServices = (people.length > 0 && people[0].services) ? people[0].services : services;
+      const targetServices = (checkoutServices && checkoutServices.length > 0) ? checkoutServices : baseServices;
       const targetOptions = (people.length > 0 && people[0].options) ? people[0].options : (opt.options || {});
 
       if (targetServices.length > 0) {
@@ -2626,58 +2647,89 @@ return (
                 <div key={catName} style={{ marginBottom: '10px' }}><button onClick={() => setOpenAdjCategory(openAdjCategory === catName ? null : catName)} style={categoryToggleStyle}><span>{catName}</span><ChevronRight size={18} /></button>
                 {openAdjCategory === catName && (<div style={{display:'flex', flexWrap:'wrap', gap:'8px', padding:'10px'}}>{adjs.map(adj => (<button key={adj.id} onClick={() => toggleCheckoutAdj(adj)} style={adjBtnStyle(checkoutAdjustments.some(a => a.id === adj.id))}>{adj.name}</button>))}</div>)}</div>
               ))}
-              <div style={{ marginTop: '30px' }}><SectionTitle icon={<ShoppingBag size={16} />} title="店販商品" color="#008000" /><div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px', padding: '10px 0' }}>
-  {products.map(prod => {
-    const selected = checkoutProducts.find(p => p.id === prod.id);
-    const qty = selected?.quantity || 0;
+              <div style={{ marginTop: '30px' }}>
+  <SectionTitle icon={<ShoppingBag size={16} />} title="店販商品" color="#008000" />
+  
+  {/* 🚀 🆕 店販商品をカテゴリ（またはメーカー）ごとにグループ化 */}
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 0' }}>
+    {Object.entries(
+      products.reduce((acc, prod) => {
+        // 💡 カテゴリ分けの基準（カテゴリ名が空なら「未分類」に）
+        // ※もし店販だけ「メーカー名」で分けたい場合は `prod.manufacturer_name || '未分類'` に変更してください
+        const catName = prod.category || '未分類';
+        if (!acc[catName]) acc[catName] = [];
+        acc[catName].push(prod);
+        return acc;
+      }, {})
+    ).map(([catName, catProducts]) => (
+      <div key={catName}>
+        {/* 🌟 カテゴリ見出し */}
+        <div style={{ 
+          fontSize: '0.85rem', 
+          fontWeight: 'bold', 
+          color: '#008000', 
+          marginBottom: '10px', 
+          paddingLeft: '8px', 
+          borderLeft: '4px solid #008000' 
+        }}>
+          {catName}
+        </div>
+        
+        {/* 🌟 そのカテゴリに属する商品ボタン一覧 */}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '15px' }}>
+          {catProducts.map(prod => {
+            const selected = checkoutProducts.find(p => p.id === prod.id);
+            const qty = selected?.quantity || 0;
 
-    return (
-      <div key={prod.id} style={{ position: 'relative' }}>
-        {/* 🚀 【マイナスボタン】個数が1以上の時だけ左肩に表示（スマホ対応） */}
-        {qty > 0 && (
-          <button
-            onClick={(e) => { 
-              e.stopPropagation(); // 下のプラス判定が動かないようにブロック
-              removeCheckoutProduct(prod.id); 
-            }}
-            style={minusBtnBadge}
-          >
-            <Minus size={14} strokeWidth={3} />
-          </button>
-        )}
+            return (
+              <div key={prod.id} style={{ position: 'relative' }}>
+                {/* 🚀 【マイナスボタン】個数が1以上の時だけ左肩に表示 */}
+                {qty > 0 && (
+                  <button
+                    onClick={(e) => { 
+                      e.stopPropagation(); 
+                      removeCheckoutProduct(prod.id); 
+                    }}
+                    style={minusBtnBadge}
+                  >
+                    <Minus size={14} strokeWidth={3} />
+                  </button>
+                )}
 
-        {/* 🚀 【商品ボタン】タップで個数アップ */}
-        <button 
-          onClick={() => addCheckoutProduct(prod)}
-          onContextMenu={(e) => { e.preventDefault(); removeCheckoutProduct(prod.id); }} // PCなら右クリックでも減らせる
-          style={{ 
-            ...adjBtnStyle(qty > 0), 
-            borderColor: '#008000', 
-            color: qty > 0 ? '#fff' : '#008000', 
-            background: qty > 0 ? '#008000' : '#fff',
-            position: 'relative',
-            padding: '12px 25px',
-            minWidth: '130px',
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '2px'
-          }}
-        >
-          <span style={{ fontWeight: 'bold' }}>{prod.name}</span>
-          <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>¥{prod.price.toLocaleString()}</span>
-          
-          {/* 🔢 【個数バッジ】右肩に表示 */}
-          {qty > 0 && (
-            <span style={qtyBadgeStyle}>{qty}</span>
-          )}
-        </button>
+                {/* 🚀 【商品ボタン】タップで個数アップ */}
+                <button 
+                  onClick={() => addCheckoutProduct(prod)}
+                  onContextMenu={(e) => { e.preventDefault(); removeCheckoutProduct(prod.id); }} 
+                  style={{ 
+                    ...adjBtnStyle(qty > 0), 
+                    borderColor: '#008000', 
+                    color: qty > 0 ? '#fff' : '#008000', 
+                    background: qty > 0 ? '#008000' : '#fff',
+                    position: 'relative',
+                    padding: '12px 25px',
+                    minWidth: '130px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '2px'
+                  }}
+                >
+                  <span style={{ fontWeight: 'bold' }}>{prod.name}</span>
+                  <span style={{ fontSize: '0.7rem', opacity: 0.8 }}>¥{prod.price.toLocaleString()}</span>
+                  
+                  {/* 🔢 【個数バッジ】右肩に表示 */}
+                  {qty > 0 && (
+                    <span style={qtyBadgeStyle}>{qty}</span>
+                  )}
+                </button>
+              </div>
+            );
+          })}
+        </div>
       </div>
-    );
-  })}
+    ))}
+  </div>
 </div>
-                </div></div>
             </div>
 <div style={checkoutFooterStyle}>
               {/* 合計金額表示行 */}

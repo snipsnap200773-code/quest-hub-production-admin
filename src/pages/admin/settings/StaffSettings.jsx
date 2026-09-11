@@ -218,18 +218,57 @@ const StaffSettings = () => {
     }
   };
 
+  // ⚠️ 2026/09/11：削除の安全装置を追加しました。
+  //    ・従来は「過去の予約データには影響しません」と表示していましたが、
+  //      reservations.staff_id の外部キーが NO ACTION のため、
+  //      予約が1件でもあると削除は失敗します（説明が事実と逆でした）。
+  //    ・予約が無い新規スタッフは確認1回で即座に消えていたため、
+  //      施設の提携解消と同じく「名前の入力」を求めるようにしました。
   const deleteStaff = async (id) => {
     const targetStaff = staffs.find(s => s.id === id);
-    if (!window.confirm(`${targetStaff?.name} さんを削除しますか？\n（過去の予約データには影響しません）`)) {
+    if (!targetStaff) return;
+
+    // ① 先に予約件数を数え、消せないことを分かりやすく伝える
+    const { count, error: countError } = await supabase
+      .from('reservations')
+      .select('id', { count: 'exact', head: true })
+      .eq('staff_id', id);
+
+    if (countError) {
+      alert('予約履歴の確認に失敗しました。時間をおいてお試しください。');
       return;
     }
+
+    if (count > 0) {
+      alert(
+        `「${targetStaff.name}」さんには ${count} 件の予約履歴があるため、削除できません。\n\n` +
+        `退職された場合は、担当スタッフから「アシスタント」に変更するか、\n` +
+        `シフトをすべて休みに設定して運用してください。`
+      );
+      return;
+    }
+
+    // ② 予約が無い場合のみ、名前の入力を求めて削除
+    const input = window.prompt(
+      `「${targetStaff.name}」さんを完全に削除します。\n` +
+      `この操作は取り消せません。\n\n` +
+      `実行する場合は、確認のためスタッフ名を正確に入力してください：`
+    );
+
+    if (input === null) return;
+    if (input.trim() !== targetStaff.name.trim()) {
+      alert('スタッフ名が一致しません。処理を中断しました。');
+      return;
+    }
+
     try {
       const { error } = await supabase.from('staffs').delete().eq('id', id);
       if (error) throw error;
       setStaffs(staffs.filter(s => s.id !== id));
-      alert('スタッフを削除しました。');
+      alert(`「${targetStaff.name}」さんを削除しました。`);
     } catch (err) {
-      alert('削除に失敗しました: ' + err.message);
+      console.error('スタッフ削除エラー:', err);
+      alert('削除に失敗しました。この後に作られた予約がある可能性があります。画面を更新してお試しください。');
     }
   };
 

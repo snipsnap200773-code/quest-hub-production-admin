@@ -198,6 +198,38 @@ function AdminTimeline() {
     }
   };
 
+  // ⚠️ 2026/09/11：AdminReservations から移植（進捗ポップアップ）
+  const openVisitDetail = async (visitId, facilityName, visitData) => {
+    if (!visitId) return;
+    setLoading(true);
+    setFinalizedSale(null);
+
+    const masterId = visitData?.parent_id || visitId;
+
+    const [resRes, saleRes, masterRes] = await Promise.all([
+      supabase.from('visit_request_residents')
+        .select('*, members (id, name, room, floor)')
+        .eq('visit_request_id', masterId)
+        .order('created_at', { ascending: true }),
+      supabase.from('sales').select('*').eq('visit_request_id', visitId).maybeSingle(),
+      supabase.from('visit_requests').select('created_at').eq('id', masterId).single()
+    ]);
+
+    if (!resRes.error) {
+      const masterTime = new Date(masterRes.data?.created_at).getTime();
+      const enrichedResidents = (resRes.data || []).map(r => ({
+        ...r,
+        isNewAddition: (new Date(r.created_at).getTime() - masterTime) > 600000
+      }));
+
+      setVisitResidents(enrichedResidents);
+      setFinalizedSale(saleRes.data || null);
+      setSelectedRes({ ...visitData, id: visitId, customer_name: facilityName, res_type: 'facility_visit' });
+      setShowVisitDetailModal(true);
+    }
+    setLoading(false);
+  };
+
   // 👇 🌟 🆕 修正：施設ID（facility_user_id）も引き継ぐように機能強化！
   const handleDeleteVisit = async (visitId, dateStr, facilityName) => {
     setLoading(true);
@@ -360,6 +392,15 @@ function AdminTimeline() {
   // 🆕 重複予約リスト用
   const [showSlotListModal, setShowSlotListModal] = useState(false);
   const [selectedSlotReservations, setSelectedSlotReservations] = useState([]);
+
+  // ⚠️ 2026/09/11：施設訪問の進捗ポップアップを AdminReservations から移植しました。
+  //    従来はタイムラインから施設訪問をタップすると、完了者がいても
+  //    常にキャンセル確認モーダルが開き、進捗（残り○名）が見えませんでした。
+  //    ※ 引き継ぎ機能はカレンダー判定ロジック一式が必要なため未移植です。
+  //      引き継ぎはカレンダー画面から行ってください。
+  const [showVisitDetailModal, setShowVisitDetailModal] = useState(false);
+  const [visitResidents, setVisitResidents] = useState([]);
+  const [finalizedSale, setFinalizedSale] = useState(null);
 
   // ✅ 🆕 追加：プライベート予定用のState
   const [privateTasks, setPrivateTasks] = useState([]);
@@ -1246,7 +1287,30 @@ const handleCellClick = (slotMatches, time, staffId) => {
       if (dbRecords.length === 1) {
         if (activeTask.res_type === 'visit') {
           const facName = activeTask.customer_name.replace(/\[確定\]\s*/, '');
-          handleDeleteVisit(activeTask.id, selectedDate, facName);
+          // ⚠️ 2026/09/11：AdminReservations と同じ分岐に揃えました。
+          //    完了者が1人でもいれば進捗ポップアップ、0人ならキャンセル確認へ。
+          //    従来は常にキャンセル確認が開き、進捗が見えませんでした。
+          (async () => {
+            const rawId = String(activeTask.id).replace(/^visit_/, '');
+            const { data: v } = await supabase
+              .from('visit_requests')
+              .select('*')
+              .eq('id', rawId)
+              .maybeSingle();
+
+            const targetIdForCount = v?.parent_id || rawId;
+            const { count } = await supabase
+              .from('visit_request_residents')
+              .select('id', { count: 'exact', head: true })
+              .eq('visit_request_id', targetIdForCount)
+              .eq('status', 'completed');
+
+            if (count > 0 || v?.status === 'completed') {
+              openVisitDetail(rawId, facName, v);
+            } else {
+              handleDeleteVisit(rawId, selectedDate, facName);
+            }
+          })();
           return;
         }
         if (activeTask.res_type === 'keep') {
@@ -2984,6 +3048,113 @@ const timeSlots = useMemo(() => {
         </div>
       )}
       {/* 👆 アラート詳細モーダル追加ここまで */}
+
+      {/* ⚠️ 2026/09/11：AdminReservations から移植した進捗ポップアップ。
+          引き継ぎ機能は未移植のため、カレンダー画面へ誘導します。 */}
+      {showVisitDetailModal && (
+        <div style={overlayStyle} onClick={() => setShowVisitDetailModal(false)}>
+          <div onClick={(e) => e.stopPropagation()} style={{ ...modalContentStyle, maxWidth: '500px' }}>
+            <div style={{ textAlign: 'center', marginBottom: '20px' }}>
+              <div style={{ fontSize: '2.5rem', marginBottom: '15px' }}>🏢</div>
+              <h2 style={{ margin: 0, fontSize: '1.4rem', color: '#1e293b' }}>{selectedRes?.customer_name}</h2>
+              {selectedRes?.parent_id && <span style={{ fontSize: '0.7rem', color: '#64748b', fontWeight: 'bold' }}>※ 複数日訪問の継続分</span>}
+            </div>
+
+            {(() => {
+              const total = visitResidents.length;
+              const remaining = visitResidents.filter(r => r.status === 'pending').length;
+              const done = total - remaining;
+
+              return (
+                <div style={{ background: '#fcfaf7', padding: '15px', borderRadius: '15px', border: '1px solid #f0e6d2', marginBottom: '20px', textAlign: 'center' }}>
+                  <div style={{ fontSize: '0.8rem', color: '#948b83', fontWeight: 'bold', marginBottom: '5px' }}>施術の進捗状況</div>
+                  <div style={{ fontSize: '1.4rem', fontWeight: '900', color: '#3d2b1f' }}>
+                    残り <span style={{ color: '#c5a059', fontSize: '2rem' }}>{remaining}</span> 名 / 全体 {total} 名
+                  </div>
+
+                  {remaining > 0 && (
+                    <div style={{ marginTop: '15px', paddingTop: '15px', borderTop: '1px dashed #f0e6d2' }}>
+                      <div style={{ padding: '10px', background: '#f8fafc', borderRadius: '10px', color: '#64748b', fontSize: '0.8rem', fontWeight: 'bold', border: '1px solid #e2e8f0', lineHeight: '1.5' }}>
+                        ⏩ 終わらない分の引き継ぎは<br/>「カレンダー画面」から行ってください
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{ fontSize: '0.75rem', color: '#10b981', marginTop: '10px', fontWeight: 'bold' }}>
+                    （現在までに {done} 名が完了済み）
+                  </div>
+                </div>
+              );
+            })()}
+
+            {finalizedSale && finalizedSale.details?.members_list && (
+              <div style={{ marginBottom: '25px', background: '#f0fdf4', padding: '15px', borderRadius: '20px', border: '2px solid #10b981' }}>
+                <h4 style={{ margin: '0 0 12px 0', fontSize: '0.85rem', color: '#166534', display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 'bold' }}>
+                  <CheckCircle size={18} /> 本日の完了実績（確定済み）
+                </h4>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {finalizedSale.details.members_list.map((m, idx) => (
+                    <div key={idx} style={{ background: '#fff', padding: '10px 12px', borderRadius: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid #bbf7d0' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <span style={{ fontSize: '0.7rem', background: '#10b981', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold', minWidth: '35px', textAlign: 'center' }}>
+                          {m.floor ? (String(m.floor).includes('F') ? m.floor : `${m.floor}F`) : '-'}
+                        </span>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b' }}>{m.name} 様</span>
+                      </div>
+                      <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 'bold' }}>{m.menu}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ marginTop: '12px', textAlign: 'right', fontSize: '0.8rem', fontWeight: '900', color: '#166534' }}>
+                  完了分合計：{finalizedSale.details.members_list.length} 名 / ¥{finalizedSale.total_amount?.toLocaleString()}
+                </div>
+              </div>
+            )}
+
+            <p style={{ color: '#64748b', fontWeight: 'bold', marginBottom: '10px', fontSize: '0.85rem' }}>👥 本日の施術予定者（未完了の方）</p>
+            <div style={{ maxHeight: '250px', overflowY: 'auto', background: '#f8fafc', borderRadius: '15px', padding: '10px', border: '1px solid #eee' }}>
+              {visitResidents
+                .filter(r => r.status === 'pending')
+                .sort((a, b) => (a.isNewAddition === b.isNewAddition) ? 0 : a.isNewAddition ? -1 : 1)
+                .map((item, idx) => (
+                  <div key={idx} style={{ background: '#fff', padding: '10px 15px', borderRadius: '10px', marginBottom: '6px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: item.isNewAddition ? '2px solid #f59e0b' : '1px solid #e2e8f0' }}>
+                    <div>
+                      <div style={{ fontWeight: 'bold', fontSize: '0.9rem', color: '#1e293b', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        {item.members?.name} 様
+                        {item.isNewAddition && (
+                          <span style={{ fontSize: '0.6rem', background: '#f59e0b', color: '#fff', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>新規追加</span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '0.7rem', color: '#64748b' }}>
+                        {item.members?.floor ? `${String(item.members.floor).replace('F','')}F ` : ''}{item.members?.room}号室
+                      </div>
+                    </div>
+                    <span style={{ fontSize: '0.8rem', color: item.isNewAddition ? '#d97706' : themeColor, fontWeight: 'bold' }}>{item.menu_name}</span>
+                  </div>
+              ))}
+              {visitResidents.filter(r => r.status === 'pending').length === 0 && (
+                <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.85rem' }}>すべて完了しました！✨</div>
+              )}
+            </div>
+
+            <div style={{ marginTop: '20px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <button
+                onClick={() => {
+                  setShowVisitDetailModal(false);
+                  handleDeleteVisit(selectedRes.id, selectedRes.scheduled_date || selectedDate, selectedRes.customer_name);
+                }}
+                style={{ width: '100%', padding: '12px', background: '#fff', color: '#ef4444', border: '1px solid #fee2e2', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '0.85rem' }}
+              >
+                🗑 この日の訪問をキャンセル（枠を解放）
+              </button>
+
+              <button onClick={() => setShowVisitDetailModal(false)} style={{ width: '100%', padding: '15px', background: '#3d2b1f', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer' }}>
+                詳細を閉じる
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 👇 🌟 🆕 ここから追加：施設予約キャンセル確認モーダル（画像①の完全再現） */}
       {showFacCancelModal && facCancelTarget && (
