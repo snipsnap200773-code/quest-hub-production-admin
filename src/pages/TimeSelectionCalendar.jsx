@@ -116,12 +116,16 @@ function TimeSelectionCalendar() {
         //    読める状態だったためです。1日貸切と臨時休業はビュー側の計算列
         //    （is_full_day / is_temp_closed）を使います。
         supabase.from('public_busy_slots').select('start_time, end_time, staff_id, res_type, is_block, status, is_full_day, is_temp_closed').in('shop_id', targetShopIds).gte('start_time', todayJstMidnightISO), // 👈 🚀 追加
-        supabase.from('visit_requests').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 date型カラムなのでそのままでOK
-        supabase.from('keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 date型カラムなのでそのままでOK
+        // ⚠️ 2026/09/11：以下4本を定義者権限ビューに切り替えました（Step 11-6）。
+        //    未ログインの予約サイトは anon のため、RLS を閉じると元のテーブルは読めなくなります。
+        //    ビューは日付・ルールだけを返し、施設IDは置き換えた値、開始時間は隠れます。
+        //    （この画面は施設IDも定期ルールの time も使っていないため、判定は変わりません）
+        supabase.from('public_visit_dates').select('scheduled_date').in('shop_id', targetShopIds).neq('status', 'canceled').gte('scheduled_date', todayStr), // 👈 date型カラムなのでそのままでOK
+        supabase.from('public_keep_dates').select('date').in('shop_id', targetShopIds).gte('date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 定期ルール
-        supabase.from('shop_facility_connections').select('regular_rules').in('shop_id', targetShopIds).eq('status', 'active'),
+        supabase.from('public_connection_rules').select('regular_rules').in('shop_id', targetShopIds).eq('status', 'active'),
         // ルール除外日
-        supabase.from('regular_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 date型カラムなのでそのままでOK
+        supabase.from('public_keep_exclusions').select('excluded_date').in('shop_id', targetShopIds).gte('excluded_date', todayStr), // 👈 date型カラムなのでそのままでOK
         // 🚀 🆕 追加：プライベート予定もデータベースから取ってくる
         // ⚠️ 2026/09/10：public_private_busy（定義者権限ビュー）に切り替えました。
         //    private_tasks 本体は title / note を含むため未ログインには公開できません。

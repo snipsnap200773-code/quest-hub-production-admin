@@ -109,16 +109,23 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       // ① この施設の予約（🚀 修正：status を追加）
       supabase.from('visit_requests').select('scheduled_date, start_time, status').eq('shop_id', shopId).eq('facility_user_id', facilityId).neq('status', 'canceled')
         .gte('scheduled_date', monthStartStr).lte('scheduled_date', monthEndStr), // 👈 追加
+      // ⚠️ 2026/09/11：②〜⑤を定義者権限ビューに切り替えました（Step 11-6）。
+      //    この4本は同じ店舗の「他施設の行」も読むため、RLS で自施設に閉じると
+      //    他施設のキープ・予約が見えず、カレンダーが「空き」になってしまいます。
+      //    ビューでは他施設の facility_user_id は置き換えた値になり、
+      //    開始時間・担当スタッフは自施設の行だけ返ります。
+      //    自施設かどうかの比較（=== facilityId）はこれまでどおり動きます。
+      //    書き込みは元のテーブル（keep_dates など）のままです。
       // ② この月のキープ日程
-      supabase.from('keep_dates').select('*').eq('shop_id', shopId)
+      supabase.from('public_keep_dates').select('date, start_time, facility_user_id').eq('shop_id', shopId)
         .gte('date', monthStartStr).lte('date', monthEndStr), // 👈 追加
       // ③ 提携ルール（マスターデータなので絞り込み不要）
-      supabase.from('shop_facility_connections').select('facility_user_id, regular_rules, assigned_staff_id').eq('shop_id', shopId),
+      supabase.from('public_connection_rules').select('facility_user_id, regular_rules, assigned_staff_id').eq('shop_id', shopId),
       // ④ この月の定期除外
-      supabase.from('regular_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId)
+      supabase.from('public_keep_exclusions').select('facility_user_id, excluded_date').eq('shop_id', shopId)
         .gte('excluded_date', monthStartStr).lte('excluded_date', monthEndStr), // 👈 追加
       // ⑤ 他施設の予約（他施設名義の visit_requests）
-      supabase.from('visit_requests').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled')
+      supabase.from('public_visit_dates').select('scheduled_date').eq('shop_id', shopId).neq('facility_user_id', facilityId).neq('status', 'canceled')
         .gte('scheduled_date', monthStartStr).lte('scheduled_date', monthEndStr), // 👈 追加
       // ⑥ この月の個人予約（開始・終了時間を取得）
       // ⚠️ 2026/09/07：reservations への直接アクセスを廃止し、公開ビュー
