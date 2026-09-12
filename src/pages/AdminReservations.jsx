@@ -2333,6 +2333,8 @@ return (
 
   {/* 🚀 🆕 【追加】フェーズ1: トライアル終了間近の警告バナー */}
   {(() => {
+    // ⚠️ 2026/09/12：テスター（永久無料）の店舗にはトライアル警告を出さない。
+    if (shop?.is_tester) return null;
     if (shop?.subscription_status !== 'trialing' || !shop?.trial_ends_at) return null;
     const endsAt = new Date(shop.trial_ends_at);
     const now = new Date();
