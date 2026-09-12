@@ -38,7 +38,12 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
   };
 
   const updateStatus = async (column, value) => {
-    const { error } = await supabase.from('facility_users_public').update({ [column]: value }).eq('id', facilityId);
+    // ⚠️ 2026/09/12：ビュー経由の更新をやめ、RPC に切り替えました。
+    //    定義者権限ビューは RLS を通らず、誰でも全施設を書き換えられる状態でした。
+    //    update_facility_self は施設トークンから本人を特定し、更新できる列も限定します。
+    const { error } = await supabase.rpc('update_facility_self', {
+      p_patch: { [column]: value }
+    });
     if (error) {
       console.error(`設定の更新に失敗しました（${column}）:`, error.message);
       alert('設定の保存に失敗しました。時間をおいて再度お試しください。');
@@ -55,10 +60,10 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
       ? [...currentList, catName] 
       : currentList.filter(item => item !== catName);
 
-    const { error } = await supabase
-      .from('facility_users_public')
-      .update({ allowed_categories: newList })
-      .eq('id', facilityId);
+    // ⚠️ 2026/09/12：ビュー経由の更新をやめ、RPC に切り替えました。
+    const { error } = await supabase.rpc('update_facility_self', {
+      p_patch: { allowed_categories: newList }
+    });
 
     if (!error) {
       // 👇 修正：関数更新にして、直前の別の変更を上書きしないようにする
@@ -235,33 +240,28 @@ const outgoingRequests = connectedShops.filter(con => con.status === 'pending' &
     // ⚠️ 2026/09/08：施設データを丸ごと出力していたログを削除しました。
     //    password を含む行がブラウザのコンソールに残るためです。
 
-    // 1. facility_usersを更新し、そのまま更新後のデータを取得(.select())
-    const { data, error } = await supabase
-      .from('facility_users_public')
-      .update({ 
+    // ⚠️ 2026/09/12：ビュー経由の更新をやめ、RPC に切り替えました。
+    //    RPC は更新後の行を返さないため、保存後に読み直します。
+    const { error } = await supabase.rpc('update_facility_self', {
+      p_patch: {
         furigana: facility.furigana || null,
-        contact_name: facility.contact_name || null, 
-        address: facility.address || null, 
-        tel: facility.tel || null, 
-        official_url: facility.official_url || null, 
-        email: facility.email || null 
-      })
-      .eq('id', facilityId)
-      .select();
+        contact_name: facility.contact_name || null,
+        address: facility.address || null,
+        tel: facility.tel || null,
+        official_url: facility.official_url || null,
+        email: facility.email || null
+      }
+    });
 
     if (error) throw error;
 
-    if (!data || data.length === 0) {
-      // 🚩 IDが見つからなかった場合はここに入る
-      console.error("更新対象のIDが見つかりませんでした。IDを確認してください。");
-      alert("保存に失敗しました。この施設のデータが見つかりません（ID不一致）。");
-      return;
-    }
-
-    // ⚠️ 2026/09/08：更新後の行を丸ごと出力していたログを削除しました。
-    
-    // 2. fetchData()を呼ばず、DBから返ってきた最新データをステートに入れる（確実！）
-    setFacility(data[0]);
+    // 保存後の内容を読み直して画面に反映する
+    const { data: fresh } = await supabase
+      .from('facility_users_public')
+      .select('*')
+      .eq('id', facilityId)
+      .single();
+    if (fresh) setFacility(fresh);
     alert('施設情報を保存しました！✨');
 
   } catch (err) {

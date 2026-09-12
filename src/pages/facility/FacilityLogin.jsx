@@ -57,11 +57,14 @@ const FacilityLogin = () => {
 
       if (facilityId) {
         // ⚠️ 2026/09/08：読み取りを facility_users_public に変更しました。
+        // ⚠️ 2026/09/12：login_id の読み取りをやめました（【AE】）。
+        //    このビューは行を絞っていないため、未ログインでも全施設のログインIDが
+        //    読める状態でした。この画面は施設名しか表示していません。
         const { data } = await supabase
           .from('facility_users_public')
-          .select('facility_name, login_id')
+          .select('facility_name')
           .eq('id', facilityId)
-          .maybeSingle(); 
+          .maybeSingle();
         
         if (data) {
           setFacilityMetadata(data);
