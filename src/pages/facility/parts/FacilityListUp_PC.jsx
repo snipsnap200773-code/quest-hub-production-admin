@@ -183,8 +183,9 @@ const FacilityListUp_PC = ({
           .order('room'),
         
         // 🚀 🆕 修正：limit(1)をやめて、親画面から渡された selectedShopId でピンポイント検索！
-        supabase.from('shop_facility_connections')
-          .select('shop_id, regular_rules, profiles(*)')
+        // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+          supabase.from('shop_facility_connections')
+            .select('shop_id, regular_rules, profiles:public_partner_shops!shop_id(id, business_name)')
           .eq('facility_user_id', facilityId)
           .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
           .eq('status', 'active')

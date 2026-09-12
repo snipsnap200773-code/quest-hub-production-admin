@@ -75,7 +75,22 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
   const [isTestMode, setIsTestMode] = useState(false);
 
   const fetchInitialData = async () => {
-    const { data } = await supabase.from('shop_facility_connections').select(`*, profiles (*)`).eq('facility_user_id', facilityId).eq('status', 'active');
+    // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+    //    この画面は店舗の営業時間・訪問設定をカレンダーの判定に使うため、
+    //    必要な13列を明示的に指定しています。列を減らすと、値が undefined になり
+    //    エラーにならないまま初期値（昼休み12:00-13:00 など）で計算されるので注意。
+    const { data } = await supabase
+      .from('shop_facility_connections')
+      .select(`*, profiles:public_partner_shops!shop_id(
+        id, business_name, theme_color, subscription_plan,
+        business_hours, special_holidays,
+        facility_visit_slots, facility_visit_end,
+        facility_lunch_start, facility_lunch_end,
+        facility_staff_count, hourly_capacity_per_staff,
+        is_strict_facility_block
+      )`)
+      .eq('facility_user_id', facilityId)
+      .eq('status', 'active');
     
     // 🚀 無料プランの業者を一番下に並び替え
     const sorted = (data || []).sort((a, b) => {
@@ -253,6 +268,10 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       const [h, m] = t.split(':').map(Number);
       return h * 60 + m;
     };
+
+    // ⚠️ 2026/09/12：bHours がこの関数内で未定義だったため追加しました（【AO】）。
+    //    facility_visit_end が未設定の店舗では ReferenceError で画面が止まっていました。
+    const bHours = selectedShop?.business_hours || {};
 
     const startMin = toMin(startTimeStr);
     const endMin = toMin(selectedShop.facility_visit_end || bHours[dayKey]?.close || '17:00');

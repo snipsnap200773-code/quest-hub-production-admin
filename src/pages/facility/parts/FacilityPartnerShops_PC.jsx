@@ -22,7 +22,8 @@ const FacilityPartnerShops_PC = ({ facilityId, isMobile }) => {
     setLoading(true);
     const { data } = await supabase
       .from('shop_facility_connections')
-      .select(`*, profiles (*)`)
+      // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+      .select(`*, profiles:public_partner_shops!shop_id(id, business_name, subscription_plan)`)
       .eq('facility_user_id', facilityId)
       .eq('status', 'active');
     

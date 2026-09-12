@@ -85,7 +85,9 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
       // 🚀 🆕 修正： targetShopIdの推測をやめて直接指定！
       const { data: connData } = await supabase 
         .from('shop_facility_connections')
-        .select('shop_id, regular_rules, profiles(*)')
+        // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+        //    profiles には LINE のアクセストークンやパスワードのハッシュが含まれます。
+        .select('shop_id, regular_rules, profiles:public_partner_shops!shop_id(id, business_name)')
         .eq('facility_user_id', facilityId)
         .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
         .eq('status', 'active')
@@ -347,8 +349,9 @@ const FacilityBooking_PC = ({ facilityId, setActiveTab, sharedDate, selectedShop
         body: {
           // 🚀 🆕 type を条件によって切り替える
           type: isUpdate ? 'facility_booking_update' : 'facility_booking',
+          // ⚠️ 2026/09/12：shopEmail の送信をやめました。
+          //    Edge Function が shopId から宛先を引くようになったためです。
           shopName: shopInfo.business_name,
-          shopEmail: shopInfo.email_contact,
           facilityName: facilityName,
           facilityFurigana: facilityFurigana,
           facilityEmail: facilityEmail,

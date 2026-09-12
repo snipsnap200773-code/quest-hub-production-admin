@@ -1,3 +1,4 @@
+// deploy-test 2026-09-12
 // deno-lint-ignore-file no-import-prefix no-unversioned-import
 import "jsr:@supabase/functions-js/edge-runtime.d.ts"
 import { createClient } from 'jsr:@supabase/supabase-js@2'
@@ -134,6 +135,7 @@ Deno.serve(async (req) => {
     //    権限判定は各 type の処理ブロック冒頭で個別に行っています。
     const allowedTypes = [
       'remind_all', 'auto_sales_batch', 'signup_otp', 'partnership_approved', 
+      'partnership_requested',
       'facility_booking', 'facility_booking_update', 'facility_nudge', 'inquiry', 
       'welcome', 'booking', 'cancel',
       'CREATE_SHOP_FULL', 'REPAIR_AUTH', 'UPDATE_PASSWORD', 'DELETE_SHOP_FULL'
@@ -469,23 +471,30 @@ const otpRes = await fetch('https://api.resend.com/emails', {
 // 🆕 【ここを新しく追加！】パターンH：提携完了（承認）通知 
 // ==========================================
 if (type === 'partnership_approved') {
-  const { 
-    shopName, 
-    facilityName, 
-    shopEmail, 
-    facilityEmail,
-    shopId,
-    facilityId
-  } = payload;
+  // ⚠️ 2026/09/12：宛先と名前をブラウザからの値ではなくDBから引くように変更しました。
+  //    従来は payload の shopEmail / facilityEmail をそのまま宛先にしていたため、
+  //    anon キーを持つ誰もが、運営ドメインから任意の宛先へメールを送れる状態でした。
+  const { shopId, facilityId } = payload;
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
   const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') ?? "";
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
   const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
 
-  // 1. 両方の通知設定（フラグ）をDBから取得
-  const { data: sData } = await supabaseAdmin.from('profiles').select('email_notifications_enabled').eq('id', shopId).single();
-  const { data: fData } = await supabaseAdmin.from('facility_users').select('email_notifications_enabled').eq('id', facilityId).single();
+  // 1. 通知設定・宛先・名前をすべてDBから取得する
+  const { data: sData } = await supabaseAdmin
+    .from('profiles')
+    .select('email_notifications_enabled, email_contact, business_name')
+    .eq('id', shopId).single();
+  const { data: fData } = await supabaseAdmin
+    .from('facility_users')
+    .select('email_notifications_enabled, email, facility_name')
+    .eq('id', facilityId).single();
+
+  const shopEmail = sData?.email_contact ?? '';
+  const shopName = sData?.business_name ?? '店舗';
+  const facilityEmail = fData?.email ?? '';
+  const facilityName = fData?.facility_name ?? '施設';
 
   // メール送信用の共通テンプレート関数
   const sendEmail = async (to: string, roleName: string, partnerName: string, targetUrl: string) => {
@@ -527,14 +536,73 @@ if (type === 'partnership_approved') {
 }
 
 // ==========================================
+// 🆕 2026/09/12 追加：提携リクエスト通知（施設 → 店舗）
+//    FacilityFindShops_PC が type: 'partnership_requested' で呼んでいたが、
+//    許可リストにも分岐にも無く、店舗に申請が通知されていなかった。
+// ==========================================
+if (type === 'partnership_requested') {
+  const { shopId, facilityId } = payload;
+
+  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+
+  // 宛先・名前はすべてDBから引く（ブラウザからの値は使わない）
+  const { data: sData } = await supabaseAdmin
+    .from('profiles')
+    .select('email_notifications_enabled, email_contact, business_name')
+    .eq('id', shopId).single();
+  const { data: fData } = await supabaseAdmin
+    .from('facility_users')
+    .select('facility_name, furigana')
+    .eq('id', facilityId).single();
+
+  const shopEmail = sData?.email_contact ?? '';
+  const shopName = sData?.business_name ?? '店舗';
+  const facilityName = fData?.facility_name ?? '施設';
+  const facilityFurigana = fData?.furigana ?? '';
+
+  if (sData?.email_notifications_enabled !== false && shopEmail) {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: 'QUEST HUB 通知センター <infec@snipsnap.biz>',
+        to: [shopEmail],
+        subject: `【提携リクエスト】${facilityName} 様から申請が届いています`,
+        html: `
+          <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #f59e0b;">
+            <h2 style="color: #b45309; margin-top: 0;">🤝 新しい提携リクエスト</h2>
+            <p><strong>${shopName} 様</strong></p>
+            <p>施設より提携のリクエストが届いています。内容をご確認のうえ、承認または見送りのご対応をお願いいたします。</p>
+
+            <div style="background: #fffbeb; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #fde68a;">
+              <p style="margin: 0;"><b>■ 申請元の施設:</b> ${facilityName} 様${facilityFurigana ? `（${facilityFurigana}）` : ''}</p>
+            </div>
+
+            <p style="font-size: 0.9rem;">管理画面の「施設連携」から承認できます。承認すると、施設の入居者名簿の共有と訪問予約が可能になります。</p>
+
+            <div style="text-align: center; margin-top: 20px;">
+              <a href="${ADMIN_URL}/admin/${shopId}/facilities" style="display: inline-block; background: #b45309; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面で確認する</a>
+            </div>
+
+            <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px;">
+              ※本メールは送信専用のシステムより自動送信されています。
+            </p>
+          </div>`
+      })
+    });
+  }
+
+  return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+}
+
+// ==========================================
 // 🆕 【ここから追加】パターンI：施設訪問予約完了通知（一括予約対応）
 // ==========================================
 if (type === 'facility_booking') {
+  // ⚠️ 2026/09/12：宛先と名前を、ブラウザからの値ではなくDBから引くように変更しました。
+  //    従来は payload の shopEmail / facilityEmail をそのまま宛先にしていたため、
+  //    anon キーを持つ誰もが、運営ドメインから任意の宛先へメールを送れる状態でした。
   const { 
-    shopName, 
-    shopEmail, 
-    facilityName, 
-    facilityEmail,
     scheduledDates, // 配列: ["2026-03-27", "2026-03-28"]
     residentCount,
     residentListText,
@@ -544,6 +612,20 @@ if (type === 'facility_booking') {
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
+  const { data: sData } = await supabaseAdmin
+    .from('profiles')
+    .select('email_contact, business_name')
+    .eq('id', shopId).single();
+  const { data: fData } = await supabaseAdmin
+    .from('facility_users')
+    .select('email, facility_name')
+    .eq('id', facilityId).single();
+
+  const shopEmail = sData?.email_contact ?? '';
+  const shopName = sData?.business_name ?? '店舗';
+  const facilityEmail = fData?.email ?? '';
+  const facilityName = fData?.facility_name ?? '施設';
+
   // 日付リストを読みやすく整形
   const dateListHtml = scheduledDates.map((d: string) => {
     // 🚀 秒数（:00）を削除し、ハイフンをスラッシュに変換
@@ -552,6 +634,7 @@ if (type === 'facility_booking') {
   }).join(' ');
 
   // 1. 店舗様への通知（新着予約確定）
+  if (shopEmail) {
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
@@ -582,6 +665,7 @@ if (type === 'facility_booking') {
         </div>`
     })
   });
+  }
 
   // 2. 施設様への通知（サンクスメール）
   if (facilityEmail) {
@@ -627,12 +711,27 @@ if (type === 'facility_booking') {
 
 // 🚀 🆕 ここに差し込みます！！ ==========================================
 if (type === 'facility_booking_update') {
+  // ⚠️ 2026/09/12：宛先と名前を、ブラウザからの値ではなくDBから引くように変更しました。
+  //    理由は facility_booking と同じです。
   const { 
-    shopName, shopEmail, facilityName, facilityEmail,
     scheduledDates, residentCount, addedCount, residentListText, shopId, facilityId
   } = payload;
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
+
+  const { data: sData } = await supabaseAdmin
+    .from('profiles')
+    .select('email_contact, business_name')
+    .eq('id', shopId).single();
+  const { data: fData } = await supabaseAdmin
+    .from('facility_users')
+    .select('email, facility_name')
+    .eq('id', facilityId).single();
+
+  const shopEmail = sData?.email_contact ?? '';
+  const shopName = sData?.business_name ?? '店舗';
+  const facilityEmail = fData?.email ?? '';
+  const facilityName = fData?.facility_name ?? '施設';
 
   // 日付リストを整形（既存のロジックと同じ）
   const dateListHtml = scheduledDates.map((d: string) => {
@@ -641,6 +740,7 @@ if (type === 'facility_booking_update') {
   }).join(' ');
 
   // 1. 店舗様への通知（名簿の追加・修正）
+  if (shopEmail) {
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
@@ -672,6 +772,7 @@ if (type === 'facility_booking_update') {
         </div>`
     })
   });
+  }
 
   // 2. 施設様への通知（修正受付メール）
   if (facilityEmail) {

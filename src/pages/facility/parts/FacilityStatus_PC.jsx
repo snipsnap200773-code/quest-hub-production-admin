@@ -83,7 +83,8 @@ const FacilityStatus_PC = ({ facilityId, isMobile, selectedShopId }) => {
 
     const { data: visitsData } = await supabase
       .from('visit_requests')
-      .select(`id, scheduled_date, start_time, status, parent_id, profiles (business_name, theme_color)`)
+      // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+      .select(`id, scheduled_date, start_time, status, parent_id, profiles:public_partner_shops!shop_id(business_name, theme_color)`)
       .eq('facility_user_id', facilityId)
       .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！親画面で選んだ業者だけに絞り込む
       // 🚀 🆕 【超重要】訪問予定日自体がキャンセル（削除）された日程はここで完全に弾きます！

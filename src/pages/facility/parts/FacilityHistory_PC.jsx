@@ -39,7 +39,7 @@ const FacilityHistory_PC = ({ facilityId, sharedDate, setSharedDate, selectedSho
       .from('visit_requests')
       .select(`
         id, scheduled_date, start_time, status, parent_id, shop_id,
-        profiles (id, business_name, theme_color, business_type)
+        profiles:public_partner_shops!shop_id(id, business_name, theme_color, business_type)
       `)
       .eq('facility_user_id', facilityId)
       .eq('shop_id', selectedShopId) // 👈 🚀 🆕 ここに追加！選択中の業者のみを取得

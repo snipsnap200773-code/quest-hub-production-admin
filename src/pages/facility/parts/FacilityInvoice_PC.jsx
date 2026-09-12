@@ -45,9 +45,11 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
         setFacilityName(fName);
 
         // ② 🚀 🆕 選択された業者のみを取得
+        // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+        //    明細書に店舗の連絡先（郵便番号・住所・電話）を印刷するため、その列を含めます。
         const { data: connection } = await supabase
           .from('shop_facility_connections')
-          .select('profiles(*)')
+          .select('profiles:public_partner_shops!shop_id(id, business_name, subscription_plan, zip_code, address, phone)')
           .eq('facility_user_id', facilityId)
           .eq('shop_id', selectedShopId)
           .single();

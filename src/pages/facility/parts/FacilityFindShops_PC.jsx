@@ -32,13 +32,15 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
     if (fData) setMyFacility(fData);
     
     // 🚀 1. 大カテゴリに「訪問」系が含まれていて、「施設検索公開ON」の店舗を取得
+    // ⚠️ 2026/09/12：profiles を直接読むのをやめ、公開用ビュー public_shops に切り替えました。
+    //    profiles には LINE のアクセストークンやパスワードのハッシュが含まれ、
+    //    さらに未提携の店舗の連絡先まで施設に渡っていたためです。
+    //    「休止でない／店舗名あり／有料・トライアル・テスター」の絞り込みは
+    //    ビュー側で行っているため、ここでは施設検索の公開フラグだけを見ます。
     const { data: profiles, error: pError } = await supabase
-      .from('profiles')
+      .from('public_shops')
       .select('*')
-      .eq('is_facility_searchable', true)
-      .not('business_name', 'is', null)
-      // 👇 🌟 🆕 有料プラン・トライアル中・テスターのいずれかの店舗だけに絞り込む（無料版を弾く）
-      .or('is_tester.eq.true,subscription_status.eq.active,subscription_status.eq.trialing');
+      .eq('is_facility_searchable', true);
 
     if (pError) console.error("店舗データの取得に失敗:", pError);
 
@@ -80,24 +82,17 @@ const FacilityFindShops_PC = ({ facilityId, isMobile }) => {
       if (error) throw error;
 
       // 🚀 2. 店舗さんへ通知メールを送信（★ここにふりがなを含める）
-      const targetEmail = targetShop?.email_contact || targetShop?.email;
-      
-      if (targetEmail) {
-        await supabase.functions.invoke('resend', {
-          body: {
-            type: 'partnership_requested', 
-            shopName: targetShop?.business_name,
-            shopEmail: targetEmail,
-            facilityName: myFacility?.facility_name,
-            facilityFurigana: myFacility?.furigana, 
-            facilityEmail: myFacility?.email,
-            shopId: shopId,
-            facilityId: facilityId
-          }
-        });
-      } else {
-        console.warn("⚠️ 店舗のメールアドレスが未登録のため、通知メールの送信をスキップしました。");
-      }
+      // 🚀 2. 店舗さんへ通知メールを送信
+      // ⚠️ 2026/09/12：宛先・店舗名・施設名の送信をやめました。
+      //    Edge Function が shopId / facilityId から DB を引いて宛先を決めます。
+      //    メールアドレスが未登録の店舗は、Edge Function 側で送信をスキップします。
+      await supabase.functions.invoke('resend', {
+        body: {
+          type: 'partnership_requested',
+          shopId: shopId,
+          facilityId: facilityId
+        }
+      });
 
       alert("リクエストを送信しました！店舗さんからの返信をお待ちください。");
       fetchShops(); // 表示を更新（申請中に変わる）

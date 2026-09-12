@@ -75,7 +75,8 @@ export default function FacilityUserList_PC({ facilityId, isMobile }) {
         
         // 🚀 追加: 提携業者のプラン状況を確認
         const { data: conns } = await supabase.from('shop_facility_connections')
-          .select('profiles(subscription_plan)')
+            // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+            .select('profiles:public_partner_shops!shop_id(subscription_plan)')
           .eq('facility_user_id', facilityId)
           .eq('status', 'active');
         

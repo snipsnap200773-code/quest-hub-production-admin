@@ -47,7 +47,8 @@ const FacilityPrintList_PC = ({ facilityId, isMobile, selectedShopId }) => {
     // 1. まず選ばれている業者の情報（プロファイル）を取得
     const { data: connData } = await supabase
       .from('shop_facility_connections')
-      .select(`profiles (id, business_name, theme_color, business_type, subscription_plan)`)
+      // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+      .select(`profiles:public_partner_shops!shop_id(id, business_name, theme_color, business_type, subscription_plan)`)
       .eq('facility_user_id', facilityId)
       .eq('shop_id', selectedShopId)
       .single();

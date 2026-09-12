@@ -147,7 +147,8 @@ const FacilityPortal = () => {
 
       const [connRes, draftRes, pendingReqRes] = await Promise.all([
         // 🚀 🆕 修正：maybeSingle()を外し、全てのアクティブな提携業者を取得する
-        supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles(*)').eq('facility_user_id', facilityId).eq('status', 'active'),
+        // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+        supabase.from('shop_facility_connections').select('shop_id, regular_rules, profiles:public_partner_shops!shop_id(id, business_name, subscription_plan)').eq('facility_user_id', facilityId).eq('status', 'active'),
         supabase.from('visit_list_drafts').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId),
         // 🚀 🆕 訪問業者（shop）からこの施設宛に届いている「承認待ち」の件数をDBから直接カウント！
         supabase.from('shop_facility_connections').select('*', { count: 'exact', head: true }).eq('facility_user_id', facilityId).eq('status', 'pending').eq('created_by_type', 'shop')

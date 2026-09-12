@@ -27,7 +27,9 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
     // 🆕 2. 提携・申請中店舗の取得（リクエストパネル用）
     const { data: shopData } = await supabase
       .from('shop_facility_connections')
-      .select(`*, profiles (*)`)
+      // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+      //    email_contact は外しています（通知の宛先は Edge Function が DB から引くため）。
+      .select(`*, profiles:public_partner_shops!shop_id(id, business_name, business_type, owner_name, address)`)
       .eq('facility_user_id', facilityId)
       .in('status', ['active', 'pending']);
     setConnectedShops(shopData || []);
@@ -89,10 +91,10 @@ const FacilitySettings_PC = ({ facilityId, isMobile }) => {
             await supabase.functions.invoke('resend', {
               body: {
                 type: 'partnership_approved',
-                shopName: req.profiles?.business_name,
-                facilityName: facility?.facility_name,
-                shopEmail: req.profiles?.email_contact || req.profiles?.email,
-                facilityEmail: facility?.email,
+                // ⚠️ 2026/09/12：shopEmail の送信をやめました（Edge Function が DB から引きます）。
+                  shopName: req.profiles?.business_name,
+                  facilityName: facility?.facility_name,
+                  facilityEmail: facility?.email,
                 shopId: req.shop_id,
                 facilityId: facilityId
               }
