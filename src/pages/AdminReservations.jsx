@@ -103,6 +103,63 @@ const parseReservationDetails = (res) => {
   };
 };
 
+/* ==========================================
+   🚀 🆕 追加：来店間隔（前回から何日あいたか）を計算する道具一式
+   ========================================== */
+
+// 日本時間の「その日の0時」に揃えた数値を返す（時刻のズレで1日ずれるのを完全に防ぐ）
+const toJstMidnight = (value) => {
+  const s = new Date(value).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+  const [y, m, d] = s.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+};
+
+// 履歴リスト全体を古い順に並べ直し、1件ずつ「前回からの日数」を割り出してMapで返す
+// ※キャンセルは来店としてカウントしない
+const buildVisitIntervals = (list) => {
+  const map = new Map();
+  const valid = (list || [])
+    .filter(h => h && h.start_time && h.status !== 'canceled')
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+  let prevTime = null;
+  valid.forEach(h => {
+    if (prevTime === null) {
+      map.set(h.id, { days: null, isFirst: true });
+    } else {
+      const days = Math.round((toJstMidnight(h.start_time) - toJstMidnight(prevTime)) / 86400000);
+      map.set(h.id, { days, isFirst: false });
+    }
+    prevTime = h.start_time;
+  });
+  return map;
+};
+
+// チップに出す文言を作る
+const getIntervalLabel = (gap, isFuture) => {
+  if (!gap) return null;
+  if (gap.isFirst) return '🗓 初回';
+  if (gap.days === 0) return '🗓 同日 2件目';
+  if (isFuture) return `🗓 前回から ${gap.days}日後（予定）`;
+  return `🗓 前回から ${gap.days}日`;
+};
+
+// チップの見た目（4パターン）
+const intervalChipStyle = (variant) => {
+  const palette = {
+    first:  { bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0' },
+    normal: { bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+    long:   { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+    future: { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' }
+  };
+  const p = palette[variant] || palette.normal;
+  return {
+    fontSize: '0.6rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
+    background: p.bg, color: p.color, border: `1px solid ${p.border}`, whiteSpace: 'nowrap'
+  };
+};
+/* ========================================== */
+
 function AdminReservations() {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -239,6 +296,10 @@ const resIndexStyle = (color) => ({
   // --- ✨ 修正後：現在時刻保持用のStateを追加 ---
   const [selectedSlotReservations, setSelectedSlotReservations] = useState([]);
   const [customerHistory, setCustomerHistory] = useState([]);
+
+  // 🚀 🆕 追加：来店履歴が入れ替わるたびに「前回からの日数」を一括計算しておく
+  const visitIntervals = useMemo(() => buildVisitIntervals(customerHistory), [customerHistory]);
+
   // 🚀 🆕 追加：現在時刻を管理するState
   const [now, setNow] = useState(new Date());
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -3564,6 +3625,15 @@ else if (
                               const isToday = getJapanDateStr(hDate) === getJapanDateStr(new Date());
                               const isDone  = h.status === 'completed'; // お会計済みか
 
+                              // 🚀 🆕 追加：前回からの経過日数チップの準備
+                              const gap = visitIntervals.get(h.id);
+                              const isFuture = !isToday && hDate.getTime() > Date.now();
+                              let gapVariant = 'normal';
+                              if (gap?.isFirst) gapVariant = 'first';
+                              else if (isFuture) gapVariant = 'future';
+                              else if (gap && gap.days >= 90) gapVariant = 'long';
+                              const gapLabel = getIntervalLabel(gap, isFuture);
+
                               return (
                                 <div 
                                   key={h.id} 
@@ -3596,7 +3666,8 @@ else if (
                                 >
                                   {/* 1行目：日付と金額 */}
                                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    {/* 🚀 🆕 修正：チップが増えたので flexWrap で折り返せるようにする */}
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                                       <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : (isToday ? themeColor : '#1e293b') }}>
                                         {hDate.toLocaleDateString('ja-JP')}
                                       </b>
@@ -3606,6 +3677,11 @@ else if (
                                         <span style={todayBadgeStyle(themeColor)}>★ 本日</span>
                                       )}
 
+                                      {/* 🚀 🆕 追加：前回からの経過日数チップ */}
+                                      {gapLabel && !isCanceled && (
+                                        <span style={intervalChipStyle(gapVariant)}>{gapLabel}</span>
+                                      )}
+
                                       {categoryMap[h.biz_type] && (
                                         <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
                                           {categoryMap[h.biz_type].slice(0, 4)}
@@ -3613,7 +3689,7 @@ else if (
                                       )}
                                       {isCanceled && <span style={{ fontSize: '0.6rem', background: '#fee2e2', color: '#ef4444', padding: '2px 6px', borderRadius: '4px', fontWeight: 'bold' }}>キャンセル</span>}
                                     </div>
-                                    <span style={{ color: isCanceled ? '#94a3b8' : '#d34817', fontWeight: 'bold', textDecoration: isCanceled ? 'line-through' : 'none' }}>
+                                    <span style={{ flexShrink: 0, marginLeft: '8px', color: isCanceled ? '#94a3b8' : '#d34817', fontWeight: 'bold', textDecoration: isCanceled ? 'line-through' : 'none' }}>
                                       ¥{(h.sale_record?.total_amount || h.total_price || d.totalPrice).toLocaleString()}
                                     </span>
                                   </div>

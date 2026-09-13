@@ -118,6 +118,63 @@ const getKanaGroup = (kana) => {
   return "その他";
 };
 
+/* ==========================================
+   🚀 🆕 追加：来店間隔（前回から何日あいたか）を計算する道具一式
+   ========================================== */
+
+// 日本時間の「その日の0時」に揃えた数値を返す（時刻のズレで1日ずれるのを完全に防ぐ）
+const toJstMidnight = (value) => {
+  const s = new Date(value).toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
+  const [y, m, d] = s.split('-').map(Number);
+  return Date.UTC(y, m - 1, d);
+};
+
+// 履歴リスト全体を古い順に並べ直し、1件ずつ「前回からの日数」を割り出してMapで返す
+// ※キャンセルは来店としてカウントしない
+const buildVisitIntervals = (list) => {
+  const map = new Map();
+  const valid = (list || [])
+    .filter(h => h && h.start_time && h.status !== 'canceled')
+    .sort((a, b) => new Date(a.start_time) - new Date(b.start_time));
+
+  let prevTime = null;
+  valid.forEach(h => {
+    if (prevTime === null) {
+      map.set(h.id, { days: null, isFirst: true });
+    } else {
+      const days = Math.round((toJstMidnight(h.start_time) - toJstMidnight(prevTime)) / 86400000);
+      map.set(h.id, { days, isFirst: false });
+    }
+    prevTime = h.start_time;
+  });
+  return map;
+};
+
+// チップに出す文言を作る
+const getIntervalLabel = (gap, isFuture) => {
+  if (!gap) return null;
+  if (gap.isFirst) return '🗓 初回';
+  if (gap.days === 0) return '🗓 同日 2件目';
+  if (isFuture) return `🗓 前回から ${gap.days}日後（予定）`;
+  return `🗓 前回から ${gap.days}日`;
+};
+
+// チップの見た目（4パターン）
+const intervalChipStyle = (variant) => {
+  const palette = {
+    first:  { bg: '#f1f5f9', color: '#64748b', border: '#e2e8f0' },
+    normal: { bg: '#f1f5f9', color: '#475569', border: '#e2e8f0' },
+    long:   { bg: '#fff7ed', color: '#c2410c', border: '#fed7aa' },
+    future: { bg: '#eff6ff', color: '#1d4ed8', border: '#bfdbfe' }
+  };
+  const p = palette[variant] || palette.normal;
+  return {
+    fontSize: '0.6rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
+    background: p.bg, color: p.color, border: `1px solid ${p.border}`, whiteSpace: 'nowrap'
+  };
+};
+/* ========================================== */
+
 function AdminTimeline() {
   const { shopId } = useParams();
   const navigate = useNavigate();
@@ -410,8 +467,11 @@ function AdminTimeline() {
   const [privateTaskFields, setPrivateTaskFields] = useState({ title: '', note: '' });
 
   // 👤 顧客詳細用（ここがコメントアウトされていました）
-const [selectedCustomer, setSelectedCustomer] = useState(null); 
+  const [selectedCustomer, setSelectedCustomer] = useState(null); 
   const [customerHistory, setCustomerHistory] = useState([]);
+
+  // 🚀 🆕 追加：来店履歴が入れ替わるたびに「前回からの日数」を一括計算しておく
+  const visitIntervals = useMemo(() => buildVisitIntervals(customerHistory), [customerHistory]);
 
   // 👇 🌟 🆕 ここから追加：ハイブリッド店舗用のフィルターロジック
   const [activeFilter, setActiveFilter] = useState('all'); 
@@ -2479,6 +2539,15 @@ const timeSlots = useMemo(() => {
                 const isToday = getJapanDateStr(hDate) === getJapanDateStr(new Date());
                 const isDone  = h.status === 'completed'; // お会計済みか
 
+                // 🚀 🆕 追加：前回からの経過日数チップの準備
+                const gap = visitIntervals.get(h.id);
+                const isFuture = !isToday && hDate.getTime() > Date.now();
+                let gapVariant = 'normal';
+                if (gap?.isFirst) gapVariant = 'first';
+                else if (isFuture) gapVariant = 'future';
+                else if (gap && gap.days >= 90) gapVariant = 'long';
+                const gapLabel = getIntervalLabel(gap, isFuture);
+
                 return (
                   <div 
                     key={h.id} 
@@ -2503,7 +2572,8 @@ const timeSlots = useMemo(() => {
                     }}
                   >
                     <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', alignItems: 'center' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {/* 🚀 🆕 修正：チップが増えたので flexWrap で折り返せるようにする */}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', flex: 1, minWidth: 0 }}>
                         <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isCanceled ? '#94a3b8' : (isToday ? themeColor : '#1e293b') }}>
                           {hDate.toLocaleDateString('ja-JP')}
                         </span>
@@ -2512,8 +2582,13 @@ const timeSlots = useMemo(() => {
                         {isToday && !isCanceled && (
                           <span style={todayBadgeStyle(themeColor)}>★ 本日</span>
                         )}
+
+                        {/* 🚀 🆕 追加：前回からの経過日数チップ */}
+                        {gapLabel && !isCanceled && (
+                          <span style={intervalChipStyle(gapVariant)}>{gapLabel}</span>
+                        )}
                       </div>
-                      <span style={{ color: isCanceled ? '#cbd5e1' : '#e11d48', fontWeight: 'bold', fontSize: '0.85rem' }}>
+                      <span style={{ flexShrink: 0, marginLeft: '8px', color: isCanceled ? '#cbd5e1' : '#e11d48', fontWeight: 'bold', fontSize: '0.85rem' }}>
                         ¥{d.totalPrice.toLocaleString()}
                       </span>
                     </div>
