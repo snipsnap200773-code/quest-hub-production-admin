@@ -138,10 +138,10 @@ const buildVisitIntervals = (list) => {
 // チップに出す文言を作る
 const getIntervalLabel = (gap, isFuture) => {
   if (!gap) return null;
-  if (gap.isFirst) return '🗓 初回';
-  if (gap.days === 0) return '🗓 同日 2件目';
-  if (isFuture) return `🗓 前回から ${gap.days}日後（予定）`;
-  return `🗓 前回から ${gap.days}日`;
+  if (gap.isFirst) return '↩ 初回';
+  if (gap.days === 0) return '↩ 同日';
+  if (isFuture) return `↪ ${gap.days}日`;   // 未来の予約は矢印を逆向きにして区別
+  return `↩ ${gap.days}日`;
 };
 
 // チップの見た目（4パターン）
@@ -154,7 +154,7 @@ const intervalChipStyle = (variant) => {
   };
   const p = palette[variant] || palette.normal;
   return {
-    fontSize: '0.6rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
+    fontSize: '0.78rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
     background: p.bg, color: p.color, border: `1px solid ${p.border}`, whiteSpace: 'nowrap'
   };
 };
@@ -966,11 +966,11 @@ setSalesRecords(salesData || []);
       // 先にここでお取り寄せした全期間の重い履歴データをバチッと流し込んでおきます！
       setCustomerHistory(allHistory);
 
-      finalizeOpenDetail(fullResData, cust);
+      // 🚀 🆕 修正：すでに上で全期間の履歴を取得済みなので、
+      // finalizeOpenDetail 側の重複した取得をスキップさせる（通信が半分になり、表示が速くなります）
+      finalizeOpenDetail(fullResData, cust, true);
       
-      // 🚀 🆕 呼び出し先の finalizeOpenDetail 側でせっかくの全期間履歴が上書き消去されないよう、
-      // ほんの少しだけタイミングを遅らせて全履歴データをStateに確実に固定します！
-      setTimeout(() => setCustomerHistory(allHistory), 50);
+      // 🚀 🆕 削除：二重取得をやめたので、上書き対策の setTimeout は不要になりました
 
     } catch (err) {
       console.error("Open Detail Error:", err);
@@ -1052,7 +1052,8 @@ setSalesRecords(salesData || []);
   };
 
   // 🚀 ❸【finalizeOpenDetail：施設情報の同期 ＆ 履歴復活】
-  const finalizeOpenDetail = async (res, cust) => {
+  // 🚀 🆕 修正：skipHistory が true の時は、呼び出し元がすでに履歴を取得済みなので取りに行かない
+  const finalizeOpenDetail = async (res, cust, skipHistory = false) => {
     // 💡 1. プライベート予定（休憩など）の場合は専用の処理
     if (res.res_type === 'private_task') {
       setSelectedCustomer(null);
@@ -1113,6 +1114,12 @@ setSalesRecords(salesData || []);
     setSelectedCustomer(cust || null);
 
     // 3. 過去〜未来の全データをSupabaseから直接読み込む
+    // 🚀 🆕 追加：呼び出し元(openDetail)が取得済みなら、ここは丸ごと省略して即座にモーダルを開く
+    if (skipHistory) {
+      setShowDetailModal(true);
+      return;
+    }
+
     setLoading(true);
     try {
       if (finalIsFacility) {

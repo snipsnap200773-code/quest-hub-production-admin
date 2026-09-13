@@ -153,10 +153,10 @@ const buildVisitIntervals = (list) => {
 // チップに出す文言を作る
 const getIntervalLabel = (gap, isFuture) => {
   if (!gap) return null;
-  if (gap.isFirst) return '🗓 初回';
-  if (gap.days === 0) return '🗓 同日 2件目';
-  if (isFuture) return `🗓 前回から ${gap.days}日後（予定）`;
-  return `🗓 前回から ${gap.days}日`;
+  if (gap.isFirst) return '↩ 初回';
+  if (gap.days === 0) return '↩ 同日';
+  if (isFuture) return `↪ ${gap.days}日`;   // 未来の予約は矢印を逆向きにして区別
+  return `↩ ${gap.days}日`;
 };
 
 // チップの見た目（4パターン）
@@ -169,7 +169,7 @@ const intervalChipStyle = (variant) => {
   };
   const p = palette[variant] || palette.normal;
   return {
-    fontSize: '0.6rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
+    fontSize: '0.78rem', fontWeight: '900', padding: '3px 8px', borderRadius: '6px',
     background: p.bg, color: p.color, border: `1px solid ${p.border}`, whiteSpace: 'nowrap'
   };
 };
@@ -1003,6 +1003,11 @@ const finalizeOpenDetail = async (res, cust) => {
       setEditFields(allFields);
     }
 
+    // 🚀 🆕 修正：先にモーダルを開いてしまい、重い履歴取得は裏側で進める
+    // （タップした瞬間にカルテが出るので、待たされる感じが消えます）
+    setCustomerHistory([]);   // 前のお客様の履歴が一瞬ちらつかないよう空にする
+    setShowDetailModal(true);
+
     const { data: history } = await supabase
       .from('reservations')
       .select('*, staffs(name)')
@@ -1013,7 +1018,6 @@ const finalizeOpenDetail = async (res, cust) => {
       .order('start_time', { ascending: false });
 
     setCustomerHistory(history || []);
-    setShowDetailModal(true);
     };
 
   // --- 顧客情報の更新 ---
@@ -2502,6 +2506,11 @@ const timeSlots = useMemo(() => {
     padding: '5px' 
   }}>
     {(() => {
+      // 🚀 🆕 追加：履歴を裏側で読み込んでいる間の表示
+      if (loading && customerHistory.length === 0) {
+        return <div style={{ textAlign: 'center', padding: '20px', color: '#94a3b8', fontSize: '0.8rem' }}>履歴を読み込んでいます...</div>;
+      }
+
       // 1. 年ごとにグループ化
       const groups = customerHistory.reduce((acc, h) => {
         const year = new Date(h.start_time).getFullYear();
