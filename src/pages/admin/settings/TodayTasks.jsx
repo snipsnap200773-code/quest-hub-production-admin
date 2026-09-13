@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from "../../../supabaseClient";
 import { 
   CheckCircle2, Clock, User, ArrowLeft, 
@@ -70,6 +70,15 @@ const getJSTDateStr = (d = new Date()) => {
 const TodayTasks = () => {
   const { shopId } = useParams();
   const navigate = useNavigate();
+
+  // 🚀 🆕 追加：予約管理画面／タイムラインの「来店履歴」から飛んできた時の情報を受け取る
+  const location = useLocation();
+  const jumpState = location.state || {};
+  const returnTo   = jumpState.returnTo || null;           // 戻り先URL（カレンダー or タイムライン）
+  const jumpResId  = jumpState.openCheckoutResId || null;  // 自動でレジを開く予約ID
+  const [hasAutoOpened, setHasAutoOpened] = useState(false); // 自動起動は1回だけ
+  const [isMasterLoaded, setIsMasterLoaded] = useState(false); // マスター読込完了フラグ
+
   const [showCalendar, setShowCalendar] = useState(false);
   const [viewMonth, setViewMonth] = useState(new Date());
   const [loading, setLoading] = useState(true);
@@ -107,7 +116,8 @@ const TodayTasks = () => {
   const [isSavingMemo, setIsSavingMemo] = useState(false);
 
   const [tasks, setTasks] = useState([]);
-  const [targetDate, setTargetDate] = useState(getJSTDateStr());
+  // 🚀 🆕 修正：他画面から日付指定で飛んできた場合はその日を初期表示にする
+  const [targetDate, setTargetDate] = useState(jumpState.targetDate || getJSTDateStr());
   const [oldestIncompleteDate, setOldestIncompleteDate] = useState(null);
   const [shopData, setShopData] = useState(null);
   const [isAutoProcessing, setIsAutoProcessing] = useState(false);
@@ -206,6 +216,9 @@ const fetchMasterData = async () => {
       optData = data || [];
     }
     setServiceOptions(optData);
+
+    // 🚀 🆕 追加：マスター読み込み完了の合図（自動レジ起動の待ち合わせに使う）
+    setIsMasterLoaded(true);
 };
   // 画面サイズ管理
   const [windowWidth, setWindowWidth] = useState(window.innerWidth);
@@ -352,6 +365,49 @@ const { data: resData, error: resError } = await supabase
 
     
 const showMsg = (txt) => { setMessage(txt); setTimeout(() => setMessage(''), 3000); };
+
+/* ==========================================
+   🚀 🆕 追加：来店履歴から飛んできた時の「自動レジ起動」＆「元の画面へ戻る」
+   ========================================== */
+
+// 飛んできた元の画面（カレンダー／タイムライン）へ戻る
+const backToOrigin = () => {
+  if (returnTo) navigate(returnTo);
+  else navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`);
+};
+
+// レジを閉じる（履歴から飛んできた場合は、そのまま元の画面へ戻す）
+const closeCheckout = () => {
+  setIsCheckoutOpen(false);
+  if (returnTo) backToOrigin();
+};
+
+// 指定された予約のレジ（お会計確定）を自動で開く
+useEffect(() => {
+  if (!jumpResId || hasAutoOpened) return;
+  if (loading || !isMasterLoaded) return; // 予約リストとマスターが揃うまで待つ
+
+  const target = tasks.find(t => String(t.id) === String(jumpResId));
+  setHasAutoOpened(true); // 何が起きても1回で打ち止め（無限ループ防止）
+
+  if (!target) {
+    showMsg("対象の予約が見つかりませんでした");
+    return;
+  }
+
+  if (target.task_type === 'facility') {
+    // 施設訪問の場合はポチポチ画面へ
+    navigate(`/admin/${shopId}/visit-requests/${target.id}`);
+  } else if (target.status === 'completed') {
+    // すでにお会計済みなら「内容確認」の明細を開く
+    setSelectedTask(target);
+    setShowSummaryModal(true);
+  } else {
+    // 通常はレジ（お会計確定）を開く
+    openQuickCheckout(target);
+  }
+}, [jumpResId, hasAutoOpened, loading, isMasterLoaded, tasks]);
+/* ========================================== */
 
 // 👇 🚀 🆕 追加：ここから ------------------------------------
   // プレビューモード専用のダミーデータ生成と強制ポップアップ
@@ -694,6 +750,9 @@ const openQuickCheckout = (task) => { // 💡 asyncを削除してOK
     showMsg("お会計を完了しました！✨");
     setIsCheckoutOpen(false);
     fetchTodayTasks(); 
+
+    // 🚀 🆕 追加：来店履歴から飛んできた場合は、完了メッセージを見せてから元の画面へ戻る
+    if (returnTo) setTimeout(() => backToOrigin(), 900);
 
   } catch (err) {
     alert("確定失敗: " + err.message);
@@ -1057,6 +1116,23 @@ const handleSaveMemo = async () => {
         </div>
       )}
 
+      {/* 🚀 🆕 追加：来店履歴から飛んできた時だけ出る「戻る」バー */}
+      {returnTo && (
+        <div style={{ marginBottom: '15px' }}>
+          <button
+            onClick={backToOrigin}
+            style={{ 
+              display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', 
+              border: '1px solid #cbd5e1', color: '#475569', padding: '10px 16px', 
+              borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', 
+              boxShadow: '0 2px 4px rgba(0,0,0,0.05)' 
+            }}
+          >
+            <ArrowLeft size={16} /> 予約台帳に戻る
+          </button>
+        </div>
+      )}
+
       {/* 🚀 2. 【ここが復活させるべきアラートバナー】 */}
       {oldestIncompleteDate && (
         <div style={{ marginBottom: '20px', padding: '20px', background: '#fff1f2', borderRadius: '15px', border: '1px solid #fecdd3', color: '#be123c', fontWeight: 'bold', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1309,7 +1385,7 @@ const handleSaveMemo = async () => {
 {/* ✅ 修正：外側タップで閉じる機能を追加 [cite: 2026-03-08] */}
       {isCheckoutOpen && (
         <div 
-          onClick={() => setIsCheckoutOpen(false)} // 💡 外側をタップしたら閉じる
+          onClick={closeCheckout} // 💡 外側タップで閉じる（履歴から来た場合は元の画面へ戻る）
           style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 2000, display: 'flex', alignItems: 'flex-end' }}
         >
           <div 
@@ -1329,7 +1405,7 @@ const handleSaveMemo = async () => {
       )}
     </div>
   </div>
-              <button onClick={() => setIsCheckoutOpen(false)} style={{ background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }}>✕</button>
+              <button onClick={closeCheckout} style={{ background: '#f1f5f9', border: 'none', width: '40px', height: '40px', borderRadius: '50%', cursor: 'pointer' }}>✕</button>
             </div>
 
 {/* 🆕 カテゴリごとに整理してボタンを表示 [cite: 2026-03-08] */}
@@ -2041,7 +2117,7 @@ const handleSaveMemo = async () => {
                     </div>
                   )}
                 </div>
-                <button onClick={() => { setShowSummaryModal(false); setFacilityResidents([]); }} style={{ background: '#f1f5f9', border: 'none', width: '48px', height: '48px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <button onClick={() => { setShowSummaryModal(false); setFacilityResidents([]); if (returnTo) backToOrigin(); }} style={{ background: '#f1f5f9', border: 'none', width: '48px', height: '48px', borderRadius: '50%', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <X size={28} color="#94a3b8"/>
                 </button>
               </div>
@@ -2223,7 +2299,7 @@ const handleSaveMemo = async () => {
           </div>
 
           <button 
-            onClick={() => navigate(`/admin/${shopId}/${shopData?.is_timeline_default ? 'timeline' : 'reservations'}`)} 
+            onClick={backToOrigin} 
             style={{ ...navSwitchBtnStyle, color: '#4b2c85', flexShrink: 0 }}
           >
             <ArrowLeft size={14} /> 戻る

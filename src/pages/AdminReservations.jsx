@@ -77,13 +77,15 @@ const parseReservationDetails = (res) => {
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
   const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
+  const baseAmount = basePrice + optPrice; // 👈 🌟 🆕 追加：割引計算のベース金額
+
   let adjAmount = 0;
   adjustments.forEach(a => {
-    if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    if (a.is_percent) adjAmount -= baseAmount * (Number(a.price) / 100);
     else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
   });
 
-  let calculatedTotal = Math.round(basePrice + optPrice + productPrice + adjAmount);
+  let calculatedTotal = Math.round(baseAmount + productPrice + adjAmount);
 
   // 🚀 🆕 もし計算が0円になってしまっても、DBの確定金額(res.total_price)があるならそちらを採用する
   if (calculatedTotal === 0 && res.total_price > 0) {
@@ -96,7 +98,8 @@ const parseReservationDetails = (res) => {
     items, 
     subItems,
     products,
-    adjustments
+    adjustments,
+    baseAmount // 👈 🌟 🆕 追加：計算したベース金額を返す
   };
 };
 
@@ -562,6 +565,23 @@ const [editFields, setEditFields] = useState({
   setShowHistoryDetail(true);
 };
 
+  /* ==========================================
+     🚀 🆕 追加：来店履歴の「本日」枠から、タスク画面のレジ（お会計確定）へジャンプする
+     戻り先として今の画面と表示中の日付を持たせておくので、戻れば必ずここへ帰ってきます
+     ========================================== */
+  const goToCheckout = (h) => {
+    const dateStr = getJapanDateStr(new Date(h.start_time));
+    const returnTo = `/admin/${shopId}/reservations?date=${selectedDate}`;
+
+    // 開いているポップアップを閉じてから移動
+    setShowDetailModal(false);
+    setShowCustomerModal(false);
+
+    navigate(`/admin/${shopId}/today-tasks`, {
+      state: { openCheckoutResId: h.id, targetDate: dateStr, returnTo }
+    });
+  };
+
 // 🚀 🆕 【小分け通信の仕掛け】表示されている日付に応じて賢く追加ロードするツインエンジン版
   const fetchData = async (customTargetDate = null) => {
     setLoading(true);
@@ -866,7 +886,8 @@ setSalesRecords(salesData || []);
           .from('reservations')
           .select('*, staffs(name)')
           .eq('shop_id', shopId)
-          .in('status', ['completed', 'confirmed', 'canceled'])
+          .eq('res_type', 'normal') // 👈 念のため通常予約だけに絞る
+          .in('status', ['pending', 'completed', 'confirmed', 'canceled']) // 👈 🌟 修正：'pending'（未来の予約）を追加！
           .order('start_time', { ascending: false });
           
         if (cust?.id) {
@@ -3539,19 +3560,36 @@ else if (
                               // 🚀 個人用の詳細情報解析
                               const d = parseReservationDetails(h); 
 
+                              // 🚀 🆕 追加：この履歴が「今日」かどうかの判定（日本時間で比較）
+                              const isToday = getJapanDateStr(hDate) === getJapanDateStr(new Date());
+                              const isDone  = h.status === 'completed'; // お会計済みか
+
                               return (
                                 <div 
                                   key={h.id} 
-                                  onClick={() => !isCanceled && openHistoryDetail(h)}
+                                  // 🚀 🆕 修正：今日の枠だけは「タスク画面のレジ」へジャンプさせる
+                                  onClick={() => {
+                                    if (isCanceled) return;
+                                    if (isToday) { goToCheckout(h); return; }
+                                    openHistoryDetail(h);
+                                  }}
                                   style={{ 
                                     padding: '12px', 
-                                    borderBottom: '1px solid #f1f5f9', 
-                                    background: isCanceled ? '#fcfcfc' : '#fff', 
+                                    // 🚀 🆕 今日の枠は独立したカードに見せるので下線は消す
+                                    borderBottom: isToday ? 'none' : '1px solid #f1f5f9', 
+                                    background: isCanceled ? '#fcfcfc' : (isToday ? '#fffbeb' : '#fff'), 
                                     opacity: isCanceled ? 0.7 : 1, 
                                     position: 'relative',
                                     cursor: isCanceled ? 'default' : 'pointer',
                                     transition: 'all 0.1s',
-                                    boxShadow: isCanceled ? 'none' : '0 2px 4px rgba(0,0,0,0.02)'
+                                    // 🚀 🆕 今日の枠：左の太い色帯 ＋ 枠線 ＋ 角丸 ＋ 浮き影で一目瞭然に
+                                    border: isToday ? `2px solid ${themeColor}` : 'none',
+                                    borderLeft: isToday ? `6px solid ${themeColor}` : 'none',
+                                    borderRadius: isToday ? '14px' : '0',
+                                    margin: isToday ? '8px 4px' : '0',
+                                    boxShadow: isToday 
+                                      ? `0 6px 16px ${themeColor}33` 
+                                      : (isCanceled ? 'none' : '0 2px 4px rgba(0,0,0,0.02)')
                                   }}
                                   onMouseDown={e => !isCanceled && (e.currentTarget.style.transform = 'scale(0.98)')}
                                   onMouseUp={e => !isCanceled && (e.currentTarget.style.transform = 'scale(1)')}
@@ -3559,9 +3597,15 @@ else if (
                                   {/* 1行目：日付と金額 */}
                                   <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px', alignItems: 'center' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                      <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
+                                      <b style={{ textDecoration: isCanceled ? 'line-through' : 'none', color: isCanceled ? '#94a3b8' : (isToday ? themeColor : '#1e293b') }}>
                                         {hDate.toLocaleDateString('ja-JP')}
                                       </b>
+
+                                      {/* 🚀 🆕 追加：本日バッジ（ゆっくり点滅します） */}
+                                      {isToday && !isCanceled && (
+                                        <span style={todayBadgeStyle(themeColor)}>★ 本日</span>
+                                      )}
+
                                       {categoryMap[h.biz_type] && (
                                         <span style={{ fontSize: '0.55rem', padding: '1px 5px', borderRadius: '4px', background: h.biz_type === 'foot' ? '#4285f4' : '#d34817', color: '#fff', fontWeight: '900' }}>
                                           {categoryMap[h.biz_type].slice(0, 4)}
@@ -3574,9 +3618,14 @@ else if (
                                     </span>
                                   </div>
                                   <p style={{ margin: 0, fontSize: '0.8rem', color: isCanceled ? '#cbd5e1' : '#475569', textDecoration: isCanceled ? 'line-through' : 'none' }}>
-                                    <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>👤 {h.staffs?.name || 'フリー'}</span>
-                                    {d.menuName}
-                                  </p>
+  {/* 🚀 🆕 修正：技術スタッフが2人以上いる時だけ「担当：〇〇」と表示する */}
+  {staffs.length > 1 && (
+    <span style={{ fontWeight: 'bold', color: isCanceled ? '#cbd5e1' : '#4b2c85', marginRight: '8px' }}>
+      👤 担当：{h.staffs?.name || 'フリー'}
+    </span>
+  )}
+  {d.menuName}
+</p>
 
                                   {/* 🛍 商品リスト */}
                                   {d.products.length > 0 && (
@@ -3590,6 +3639,21 @@ else if (
                                   {d.adjustments.length > 0 && (
                                     <div style={{ marginTop: '3px', fontSize: '0.7rem', color: isCanceled ? '#cbd5e1' : '#ef4444', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '4px' }}>
                                       <span>⚙️ 調整: {d.adjustments.map(a => `${a.name}${a.is_percent ? `(${a.price}%)` : ''}`).join(', ')}</span>
+                                    </div>
+                                  )}
+
+                                  {/* 🚀 🆕 追加：今日の枠だけに出る「レジへ進む」案内 */}
+                                  {isToday && !isCanceled && (
+                                    <div style={{ 
+                                      marginTop: '10px', padding: '10px', borderRadius: '10px', 
+                                      background: isDone ? '#f0fdf4' : themeColor, 
+                                      color: isDone ? '#166534' : '#fff', 
+                                      border: isDone ? '1px solid #bbf7d0' : 'none',
+                                      fontSize: '0.8rem', fontWeight: '900', textAlign: 'center' 
+                                    }}>
+                                      {isDone 
+                                        ? '✓ お会計済み（タップで内容を確認）' 
+                                        : '💰 タップして「レジ・お会計確定」へ進む →'}
                                     </div>
                                   )}
                                 </div>
@@ -4526,6 +4590,12 @@ else if (
             box-shadow: 0 0 0px transparent;
           }
         }
+
+        /* 🚀 🆕 追加：来店履歴の「★ 本日」バッジをゆっくり点滅させる */
+        @keyframes todayPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.75; transform: scale(1.06); }
+        }
       `}</style>
       
       {/* 🚀 🆕 ここから差し込む！：過去の履歴・詳細内訳ポップアップ本体 */}
@@ -4644,12 +4714,19 @@ else if (
                           ))}
 
                           {/* ③ 調整（割引・加算） */}
-                          {d.adjustments.map((adj, i) => (
-                            <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
-                              <span>└ {adj.name}</span>
-                              <span>{adj.is_minus ? '-' : '+'}¥{Number(adj.price).toLocaleString()}</span>
-                            </div>
-                          ))}
+                          {d.adjustments.map((adj, i) => {
+                            // 🚀 🆕 追加：%割引の場合は実際の割引額を計算する
+                            const adjPrice = adj.is_percent 
+                              ? Math.round(d.baseAmount * (Number(adj.price) / 100))
+                              : Number(adj.price);
+
+                            return (
+                              <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
+                                <span>└ {adj.name}</span>
+                                <span>{adj.is_minus || adj.is_percent ? '-' : '+'}¥{adjPrice.toLocaleString()}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
@@ -4747,6 +4824,21 @@ const badgeStyle = (color) => ({
   boxShadow: `0 2px 4px ${color}33`,
   marginLeft: '10px' // お名前の横に少し隙間を作る
 });
+
+// 🚀 🆕 追加：来店履歴の「★ 本日」バッジ用スタイル
+const todayBadgeStyle = (color) => ({
+  fontSize: '0.6rem',
+  background: color,
+  color: '#fff',
+  padding: '3px 8px',
+  borderRadius: '6px',
+  fontWeight: '900',
+  letterSpacing: '0.5px',
+  whiteSpace: 'nowrap',
+  boxShadow: `0 2px 6px ${color}55`,
+  animation: 'todayPulse 1.8s ease-in-out infinite'
+});
+
 const tdStyle = { 
   padding: '10px', 
   borderBottom: '1px solid #eee' 

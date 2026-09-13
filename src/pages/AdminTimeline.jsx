@@ -56,16 +56,18 @@ const parseReservationDetails = (res) => {
   const optPrice = subItems.reduce((sum, o) => sum + (Number(o.additional_price) || 0), 0);
   const productPrice = products.reduce((sum, p) => sum + (Number(p.price || 0) * (p.quantity || 1)), 0);
 
+  const baseAmount = basePrice + optPrice; // 👈 🌟 🆕 追加
+
   let adjAmount = 0;
   adjustments.forEach(a => {
-    if (a.is_percent) adjAmount -= (basePrice + optPrice) * (Number(a.price) / 100);
+    if (a.is_percent) adjAmount -= baseAmount * (Number(a.price) / 100);
     else adjAmount += a.is_minus ? -Number(a.price) : Number(a.price);
   });
 
   return { 
     menuName: fullMenuName, 
-    totalPrice: Math.max(0, Math.round(basePrice + optPrice + productPrice + adjAmount)), 
-    items, subItems, products, adjustments 
+    totalPrice: Math.max(0, Math.round(baseAmount + productPrice + adjAmount)), 
+    items, subItems, products, adjustments, baseAmount // 👈 🌟 🆕 追加
   };
 };
 
@@ -515,6 +517,21 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
     setShowHistoryDetail(true);
   };
 
+  /* ==========================================
+     🚀 🆕 追加：来店履歴の「本日」枠から、タスク画面のレジ（お会計確定）へジャンプする
+     戻り先としてタイムラインと表示中の日付を渡すので、戻れば必ずここへ帰ってきます
+     ========================================== */
+  const goToCheckout = (h) => {
+    const dateStr = getJapanDateStr(new Date(h.start_time));
+    const returnTo = `/admin/${shopId}/timeline?date=${selectedDate}`;
+
+    setShowDetailModal(false); // 開いているカルテを閉じてから移動
+
+    navigate(`/admin/${shopId}/today-tasks`, {
+      state: { openCheckoutResId: h.id, targetDate: dateStr, returnTo }
+    });
+  };
+
   const fetchData = async () => {
     setLoading(true);
     // 1. 店舗プロフィール取得
@@ -775,6 +792,8 @@ const [selectedCustomer, setSelectedCustomer] = useState(null);
 
     // 🛡️ この関数は検索結果一覧から選ばれた「IDが確定済み」の顧客なので、IDのみで絞り込む
     const { data } = await supabase.from('reservations').select('*, staffs(name)').eq('shop_id', shopId)
+      .eq('res_type', 'normal') // 👈 念のため通常予約だけに絞る
+      .in('status', ['pending', 'completed', 'confirmed', 'canceled']) // 👈 🌟 修正：'pending'（未来の予約）を追加！
       .eq('customer_id', latestCust.id).order('start_time', { ascending: false });
       
     setCustomerHistory(data || []);
@@ -929,6 +948,7 @@ const finalizeOpenDetail = async (res, cust) => {
       .select('*, staffs(name)')
       .eq('shop_id', shopId)
       .eq('res_type', 'normal')
+      .in('status', ['pending', 'completed', 'confirmed', 'canceled']) // 👈 🌟 修正：'pending'（未来の予約）を追加！
       .or(cust?.id ? `customer_id.eq.${cust.id}` : `customer_name.eq."${res.customer_name}"`)
       .order('start_time', { ascending: false });
 
@@ -2455,20 +2475,44 @@ const timeSlots = useMemo(() => {
                 const isCanceled = h.status === 'canceled';
                 const d = parseReservationDetails(h); // 詳細解析
 
+                // 🚀 🆕 追加：この履歴が「今日」かどうかの判定（日本時間で比較）
+                const isToday = getJapanDateStr(hDate) === getJapanDateStr(new Date());
+                const isDone  = h.status === 'completed'; // お会計済みか
+
                 return (
                   <div 
                     key={h.id} 
-                    onClick={() => !isCanceled && (setSelectedHistory(h), setShowHistoryDetail(true))}
+                    // 🚀 🆕 修正：今日の枠だけは「タスク画面のレジ」へジャンプさせる
+                    onClick={() => {
+                      if (isCanceled) return;
+                      if (isToday) { goToCheckout(h); return; }
+                      setSelectedHistory(h); setShowHistoryDetail(true);
+                    }}
                     style={{ 
-                      padding: '12px', borderBottom: '1px solid #f1f5f9', 
-                      background: isCanceled ? '#fcfcfc' : '#fff', 
-                      opacity: isCanceled ? 0.6 : 1, cursor: isCanceled ? 'default' : 'pointer'
+                      padding: '12px', 
+                      borderBottom: isToday ? 'none' : '1px solid #f1f5f9', 
+                      background: isCanceled ? '#fcfcfc' : (isToday ? '#fffbeb' : '#fff'), 
+                      opacity: isCanceled ? 0.6 : 1, 
+                      cursor: isCanceled ? 'default' : 'pointer',
+                      // 🚀 🆕 今日の枠：左の太い色帯 ＋ 枠線 ＋ 角丸 ＋ 浮き影
+                      border: isToday ? `2px solid ${themeColor}` : 'none',
+                      borderLeft: isToday ? `6px solid ${themeColor}` : 'none',
+                      borderRadius: isToday ? '14px' : '0',
+                      margin: isToday ? '8px 4px' : '0',
+                      boxShadow: isToday ? `0 6px 16px ${themeColor}33` : 'none'
                     }}
                   >
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
-                      <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isCanceled ? '#94a3b8' : '#1e293b' }}>
-                        {hDate.toLocaleDateString('ja-JP')}
-                      </span>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px', alignItems: 'center' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{ fontWeight: 'bold', fontSize: '0.85rem', color: isCanceled ? '#94a3b8' : (isToday ? themeColor : '#1e293b') }}>
+                          {hDate.toLocaleDateString('ja-JP')}
+                        </span>
+
+                        {/* 🚀 🆕 追加：本日バッジ */}
+                        {isToday && !isCanceled && (
+                          <span style={todayBadgeStyle(themeColor)}>★ 本日</span>
+                        )}
+                      </div>
                       <span style={{ color: isCanceled ? '#cbd5e1' : '#e11d48', fontWeight: 'bold', fontSize: '0.85rem' }}>
                         ¥{d.totalPrice.toLocaleString()}
                       </span>
@@ -2476,11 +2520,27 @@ const timeSlots = useMemo(() => {
                     <div style={{ fontSize: '0.85rem', color: '#334155', marginBottom: '4px' }}>{h.menu_name}</div>
                     
                     {/* 詳細情報（商品・調整・担当者） */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', color: '#64748b' }}>
-                      {d.products.length > 0 && <div>🛍 {d.products.map(p => `${p.name}(x${p.quantity})`).join(', ')}</div>}
-                      {d.adjustments.length > 0 && <div style={{ color: '#ef4444' }}>⚙️ {d.adjustments.map(a => a.name).join(', ')}</div>}
-                      {h.staffs?.name && <div style={{ fontWeight: 'bold', color: '#4b2c85' }}>👤 {h.staffs.name}</div>}
-                    </div>
+<div style={{ display: 'flex', flexDirection: 'column', gap: '2px', fontSize: '0.75rem', color: '#64748b' }}>
+  {d.products.length > 0 && <div>🛍 {d.products.map(p => `${p.name}(x${p.quantity})`).join(', ')}</div>}
+  {d.adjustments.length > 0 && <div style={{ color: '#ef4444' }}>⚙️ {d.adjustments.map(a => a.name).join(', ')}</div>}
+  {/* 🚀 🆕 修正：技術スタッフが2人以上いる時だけ「担当：〇〇」と表示する */}
+  {staffs.length > 1 && h.staffs?.name && <div style={{ fontWeight: 'bold', color: '#4b2c85' }}>👤 担当：{h.staffs.name}</div>}
+</div>
+
+                    {/* 🚀 🆕 追加：今日の枠だけに出る「レジへ進む」案内 */}
+                    {isToday && !isCanceled && (
+                      <div style={{ 
+                        marginTop: '10px', padding: '10px', borderRadius: '10px', 
+                        background: isDone ? '#f0fdf4' : themeColor, 
+                        color: isDone ? '#166534' : '#fff', 
+                        border: isDone ? '1px solid #bbf7d0' : 'none',
+                        fontSize: '0.8rem', fontWeight: '900', textAlign: 'center' 
+                      }}>
+                        {isDone 
+                          ? '✓ お会計済み（タップで内容を確認）' 
+                          : '💰 タップして「レジ・お会計確定」へ進む →'}
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -2700,23 +2760,30 @@ const timeSlots = useMemo(() => {
 
                           {/* ③ メニュー調整（割引・加算） */}
                           {/* 🚀 🆕 修正：.map の前に ? を追加 */}
-                          {d.savedAdjustments?.map((adj, i) => (
-                            <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
-                              <span>└ {adj.name}</span>
-                              <span>{adj.is_minus ? '-' : '+'}¥{Number(adj.price).toLocaleString()}</span>
-                            </div>
-                          ))}
+                          {d.adjustments?.map((adj, i) => {
+                            // 🚀 🆕 追加：%割引の場合は実際の割引額を計算する
+                            const adjPrice = adj.is_percent 
+                              ? Math.round(d.baseAmount * (Number(adj.price) / 100))
+                              : Number(adj.price);
+
+                            return (
+                              <div key={`adj-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: '#ef4444', paddingLeft: '15px' }}>
+                                <span>└ {adj.name}</span>
+                                <span>{adj.is_minus || adj.is_percent ? '-' : '+'}¥{adjPrice.toLocaleString()}</span>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
                       {/* 🛍 店販商品セクション（ある場合のみ） */}
-                      {d.savedProducts?.length > 0 && (
+                      {d.products?.length > 0 && (
                         <div style={{ marginBottom: '25px' }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#008000', fontWeight: 'bold', borderBottom: '1px solid #eee', paddingBottom: '8px', marginBottom: '12px' }}>
                             <ShoppingBag size={16} /> 店販商品
                           </div>
                           {/* 🚀 🆕 修正：ここも .map の前に ? を追加 */}
-                          {d.savedProducts?.map((p, i) => (
+                          {d.products?.map((p, i) => (
                             <div key={`prod-${i}`} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.95rem', marginBottom: '8px', paddingLeft: '5px' }}>
                               <span style={{ fontWeight: 'bold' }}>{p.name} <small style={{ color: '#94a3b8' }}>x{p.quantity}</small></span>
                               <span style={{ fontWeight: '900' }}>¥{(p.price * p.quantity).toLocaleString()}</span>
@@ -3344,6 +3411,14 @@ const timeSlots = useMemo(() => {
         </div>
       )}
 
+      {/* 🚀 🆕 追加：来店履歴の「★ 本日」バッジ用アニメーション */}
+      <style>{`
+        @keyframes todayPulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.75; transform: scale(1.06); }
+        }
+      `}</style>
+
     </div>
   );
 }
@@ -3388,6 +3463,20 @@ const badgeStyle = (color) => ({
   boxShadow: `0 2px 4px ${color}33`, // ボタンの色に合わせた薄い影
   transition: 'transform 0.1s active',
   cursor: 'pointer'
+});
+
+// 🚀 🆕 追加：来店履歴の「★ 本日」バッジ用スタイル
+const todayBadgeStyle = (color) => ({
+  fontSize: '0.6rem',
+  background: color,
+  color: '#fff',
+  padding: '3px 8px',
+  borderRadius: '6px',
+  fontWeight: '900',
+  letterSpacing: '0.5px',
+  whiteSpace: 'nowrap',
+  boxShadow: `0 2px 6px ${color}55`,
+  animation: 'todayPulse 1.8s ease-in-out infinite'
 });
 
 const navBtnStyle = { background: '#f1f5f9', border: 'none', padding: '8px 14px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' };
