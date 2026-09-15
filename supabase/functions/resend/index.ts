@@ -137,7 +137,7 @@ Deno.serve(async (req) => {
       'remind_all', 'auto_sales_batch', 'signup_otp', 'partnership_approved', 
       'partnership_requested',
       'facility_booking', 'facility_booking_update', 'facility_nudge', 'inquiry', 
-      'welcome', 'booking', 'cancel',
+      'welcome', 'booking', 'cancel', 'test',
       'CREATE_SHOP_FULL', 'REPAIR_AUTH', 'UPDATE_PASSWORD', 'DELETE_SHOP_FULL'
     ];
 
@@ -998,6 +998,43 @@ if (type === 'inquiry') {
   }
 
   return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+}
+
+// ==========================================
+// 🆕 2026/09/15 追加：LINE連携のテスト送信
+//    LineSettings.jsx が type: 'test' で呼んでいたが、許可リストにも
+//    分岐にも無く、常に 400（Invalid request type）を返していた。
+//    ★宛先・トークン・本文はすべてDBから引く（payload の値は使わない）。
+// ==========================================
+if (type === 'test') {
+  const { shopId } = payload;
+  if (!shopId) return deny('shopId が指定されていません', 400);
+
+  const { data: sData } = await supabaseAdmin
+    .from('profiles')
+    .select('business_name, line_admin_user_id, line_channel_access_token')
+    .eq('id', shopId).maybeSingle();
+
+  if (!sData) return deny('店舗情報が見つかりません', 404);
+
+  const lineToken = sData.line_channel_access_token ?? '';
+  const adminId = sData.line_admin_user_id ?? '';
+
+  if (!lineToken || !adminId) {
+    return new Response(JSON.stringify({
+      success: false,
+      message: 'アクセストークンまたは Admin User ID が保存されていません。先に「連携設定を保存する」を押してください。'
+    }), { status: 400, headers: corsHeaders });
+  }
+
+  const text = `✅ QUEST HUB：LINE連携テスト成功！\n店舗名: ${sData.business_name ?? ''}\n送信日時: ${new Date().toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' })}`;
+
+  const ok = await safePushToLine(adminId, text, lineToken, "TEST");
+
+  return new Response(JSON.stringify({
+    success: ok === true,
+    message: ok === true ? '送信しました' : 'LINE への送信に失敗しました。トークンが正しいか確認してください。'
+  }), { status: ok === true ? 200 : 400, headers: corsHeaders });
 }
 
 // ==========================================
