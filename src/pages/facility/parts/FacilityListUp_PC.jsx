@@ -184,8 +184,11 @@ const FacilityListUp_PC = ({
         
         // 🚀 🆕 修正：limit(1)をやめて、親画面から渡された selectedShopId でピンポイント検索！
         // ⚠️ 2026/09/12：profiles を直接読むのをやめ、施設向けビューに切り替えました。
+        // ⚠️ 2026/09/16：calculateCapacity が使う列を追加しました。
+        //    id, business_name しか取っていなかったため、キャパ計算が
+        //    初期値（1人1時間2人・スタッフ1人・17時終了）で行われていました。
           supabase.from('shop_facility_connections')
-            .select('shop_id, regular_rules, profiles:public_partner_shops!shop_id(id, business_name)')
+            .select('shop_id, regular_rules, profiles:public_partner_shops!shop_id(id, business_name, business_hours, facility_visit_end, facility_lunch_start, facility_lunch_end, hourly_capacity_per_staff, facility_staff_count)')
           .eq('facility_user_id', facilityId)
           .eq('shop_id', selectedShopId) // 👈 🚀 ここに追加！
           .eq('status', 'active')
