@@ -167,50 +167,13 @@ useEffect(() => {
       setTimeout(() => setShowAutoFillToast(false), 3000); // 3秒後に消す
     }
 
-    // 2. 🆕 DB検索条件の構築（Google ID または LINE ID）
-    const orConditions = [];
-    if (authUserProfile?.id) orConditions.push(`auth_id.eq.${authUserProfile.id}`);
-    if (lineUser?.userId) orConditions.push(`line_user_id.eq.${lineUser.userId}`);
-
-    if (orConditions.length > 0) {
-      // データベースから「三土手 大道」など過去に保存した全情報を探す
-      const { data: cust } = await supabase
-        .from('customers')
-        .select('*')
-        .or(orConditions.join(','))
-        .eq('shop_id', shopId)
-        .maybeSingle();
-
-// 🏆 DBに店舗別の顧客データが見つかった場合
-      if (cust) {
-        console.log("✅ DBから過去の顧客データを反映:", cust.name);
-        setCustomerData(prev => ({
-          ...prev,
-          // 🆕 マイページから入れた情報(prev)を優先し、なければ過去データ(cust)を使う [cite: 2025-12-01]
-          name: prev.name || cust.name, 
-          furigana: cust.furigana || '',
-          phone: prev.phone || cust.phone,
-          email: prev.email || cust.email,
-          // 🆕 郵便番号と住所も、マイページの最新(prev)を最優先にする [cite: 2025-12-01]
-          zip_code: prev.zip_code || cust.zip_code || visitorZip || '', 
-          address: prev.address || cust.address || visitorAddress || '', 
-          parking: cust.parking || '', 
-          building_type: cust.building_type || '',
-          care_notes: cust.care_notes || '',
-          company_name: cust.company_name || '',
-          symptoms: cust.symptoms || '', 
-          request_details: cust.request_details || '',
-          notes: cust.notes || '',
-          custom_answers: cust.custom_answers || {} 
-        }));
-        setSelectedCustomerId(cust.id);
-      }
-    } else if (lineUser?.displayName) {
-      // IDがどちらもない場合のフォールバック
+    // ⚠️ 2026/09/16：LINE ID による customers の検索（過去の入力内容の自動入力）を廃止しました（【AX】）。
+    //    LINE の userId はブラウザから送られる値で本人確認にならず、
+    //    他人の userId を送るとその人の症状・住所などが読めてしまうためです。
+    if (lineUser?.displayName) {
       setCustomerData(prev => ({ ...prev, name: prev.name || lineUser.displayName }));
     }
   };
-
   checkUserAndStore();
   fetchShop();
   fetchStaffName();
@@ -450,8 +413,9 @@ const handleReserve = async () => {
 
       const menuLabel = getDetailedMenuLabel();
 
-      const cancelToken = crypto.randomUUID();
-      const cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
+      // ⚠️ 2026/09/16：一般客の予約ではトークンをサーバーが発行します（下で上書き）。
+      let cancelToken = crypto.randomUUID();
+      let cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
 
       let finalStaffId = staffId;
       let finalStaffName = staffName;
@@ -465,186 +429,168 @@ const handleReserve = async () => {
         }
       }
 
-// 既存顧客の検索（名寄せ）
-      let finalCustomerId = selectedCustomerId;
-      let existingCust = null;
-
-      if (!finalCustomerId) {
-        const orConditions = [];
-
-        // ✅ a. Googleログイン済みなら、前の画面から引き継いだIDで探す（getUserを呼ばなくてOK！）
-        if (authUserProfile?.id) {
-          orConditions.push(`auth_id.eq.${authUserProfile.id}`);
+      // ⚠️ 2026/09/16：一般客の予約は RPC book_public_reservation に一本化しました（【AX】）。
+      //    既存客の検索・顧客名簿の更新・予約登録をサーバー側で行い、
+      //    ブラウザには顧客情報を一切返しません。
+      //    店舗のねじ込み（isAdminEntry）は従来どおりです。
+      const handleBookError = (err) => {
+        const msg = err?.message || '';
+        if (msg.includes('STAFF_FULL')) {
+          alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
+          navigate(`/shop/${shopId}/reserve`);
+          return true;
         }
-        
-        // b. LINE ID で探す
-        if (lineUser?.userId) {
-          orConditions.push(`line_user_id.eq.${lineUser.userId}`);
+        if (msg.includes('STORE_FULL')) {
+          alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
+          navigate(`/shop/${shopId}/reserve`);
+          return true;
         }
-        
-// c. 電話番号で探す（数字のみを抽出して比較） [cite: 2025-12-01]
-        const cleanPhone = customerData.phone?.replace(/[^0-9]/g, '');
-        if (cleanPhone && cleanPhone !== '') {
-          orConditions.push(`phone.eq.${cleanPhone}`);
+        if (msg.includes('SHOP_UNAVAILABLE')) {
+          alert('現在、この店舗はWeb予約を受け付けていません。');
+          return true;
         }
-
-        // 🛡️ 修正：auth_id・line_user_id・電話番号のいずれも無い場合、
-        // 「名前の完全一致」だけを頼りに他人の顧客レコードへ紐付けると、
-        // 同姓同名の別人の情報を上書きしてしまう危険があるため、
-        // その場合は既存顧客とはみなさず、常に新規顧客として扱う。
-        if (orConditions.length > 0) {
-          const { data: matched } = await supabase
-            .from('customers')
-            .select('*') // 👈 '*' にすることで、既存のふりがな等もすべて把握します
-            .or(orConditions.join(','))
-            .eq('shop_id', shopId)
-            .maybeSingle();
-
-          if (matched) {
-            finalCustomerId = matched.id;
-            existingCust = matched;
-          }
+        if (msg.includes('INVALID_STAFF') || msg.includes('INVALID_INPUT')) {
+          alert('予約情報が正しく読み込めていません。もう一度最初からやり直してください。');
+          return true;
         }
-      }
-
-// --- 4. 顧客名簿（customers）の保存・更新 ---
-      const customerPayload = {
-        shop_id: shopId,
-        name: customerData.name,
-        auth_id: authUserProfile?.id || null,
-        furigana: customerData.furigana || null,
-        phone: customerData.phone?.replace(/[^0-9]/g, '') || null,
-        email: customerData.email || null,
-        // 🆕 修正：前画面から渡された visitorZip より、フォームで実際に入力・編集された
-        // customerData.zip_code を優先して保存する（visitorZip はフォールバック）
-        zip_code: customerData.zip_code || visitorZip || null, 
-        address: customerData.address || null,
-        // 🆕 業種別項目を追加
-        parking: customerData.parking || null,
-        building_type: customerData.building_type || null,
-        care_notes: customerData.care_notes || null,
-        company_name: customerData.company_name || null,
-        symptoms: customerData.symptoms || null,
-        request_details: customerData.request_details || null,
-        notes: customerData.notes || null,
-        // 🆕 カスタム質問（もしあれば）
-        custom_answers: customerData.custom_answers || null,
-        
-        line_user_id: lineUser?.userId || null,
-        total_visits: (existingCust?.total_visits || 0) + 1,
-        last_arrival_at: startDateTime.toISOString(),
-        updated_at: new Date().toISOString()
+        return false;
       };
 
-// --- 298行目付近：修正版 ---
-      if (finalCustomerId) {
-        // 1. まず共通の更新（来店回数など）を作成
-        const updatePayload = {
-          total_visits: (existingCust?.total_visits || 0) + 1,
-          last_arrival_at: startDateTime.toISOString(),
-          updated_at: new Date().toISOString()
-        };
+      let existingCust = null;
+      let finalDisplayName = customerData.name;
 
-        // 🚀 🆕 修正：店舗ねじ込み予約（isAdminEntry）の場合の保護ロジック
-        // 「入力ボックスが空文字でない」かつ「既存データと違う」場合のみ、上書きを許可します
-        
-        // ふりがなの保護
-        if (customerData.furigana && customerData.furigana.trim() !== "") {
-          updatePayload.furigana = customerData.furigana;
-        }
-        
-        // 電話番号の保護（ねじ込みで空欄にしても、既存の番号が消えないようにする）
-        if (customerData.phone && customerData.phone.trim() !== "") {
-          const cleanPhone = customerData.phone.replace(/[^0-9]/g, '');
-          if (cleanPhone !== "") updatePayload.phone = cleanPhone;
-        }
-
-        // メールアドレスの保護
-        if (customerData.email && customerData.email.trim() !== "") {
-          updatePayload.email = customerData.email;
-        }
-
-        // 住所の保護
-        if (customerData.address && customerData.address.trim() !== "") {
-          updatePayload.address = customerData.address;
-        }
-
-        // 🆕 追加：郵便番号の保護（既存客が新しい郵便番号を入力した場合のみ上書き）
-        if (customerData.zip_code && customerData.zip_code.trim() !== "") {
-          updatePayload.zip_code = customerData.zip_code;
-        }
-
-        if (authUserProfile?.id && !existingCust?.auth_id) {
-          updatePayload.auth_id = authUserProfile.id;
-        }
-        if (lineUser?.userId && !existingCust?.line_user_id) {
-          updatePayload.line_user_id = lineUser.userId;
-        }
-
-        // 2. 構築した「変更があった項目だけ」をDBに送る
-        await supabase.from('customers').update(updatePayload).eq('id', finalCustomerId);
-
-      } else {
-        // 全くの新規客（finalCustomerIdがない）の場合のみ、入力された全項目を名簿に新規作成
-        const { data: newCust, error: insError } = await supabase.from('customers').insert([customerPayload]).select().single();
-        if (insError) throw insError;
-        finalCustomerId = newCust.id;
-      }
-      
-      // 修正箇所：customer_name の決定ロジック
-      const finalDisplayName = existingCust?.admin_name || existingCust?.name || customerData.name;
-
-      // 🛡️ 修正：確認と保存を1つの不可分な処理（DB側の関数）にまとめて呼び出す
-      const { data: newReservation, error: dbError } = await supabase.rpc('book_reservation_safely', {
-        p_shop_id: shopId,
-        p_staff_id: finalStaffId,
-        p_start_time: startDateTime.toISOString(),
-        p_end_time: endDateTime.toISOString(),
-        p_staff_max: finalStaffMax,
-        p_store_max: finalStoreMax,
-        p_bypass_check: isAdminEntry, // 管理者ねじ込みなら容量チェックをスキップ
-        p_customer_id: finalCustomerId,
-        p_reservation_date: targetDate,
-        p_customer_name: finalDisplayName,
-        p_customer_phone: customerData.phone || '---',
-        p_customer_email: customerData.email || null,
-        p_zip_code: customerData.zip_code || null,
-        p_total_slots: totalSlotsNeeded,
-        p_biz_type: location.state?.bizType || null,
-        p_line_user_id: lineUser?.userId || null,
-        p_cancel_token: cancelToken,
-        p_menu_name: menuLabel,
-        p_options: { 
-          people: people,
-          applied_shop_name: customShopName || shop.business_name,
-          // 🆕 重要：ここに「売上対象外」という印を刻む！
-          is_sales_excluded: isSalesExcluded, 
-          visit_info: {
+      if (!isAdminEntry) {
+        const { data: booked, error: bookError } = await supabase.rpc('book_public_reservation', {
+          p_shop_id: shopId,
+          p_staff_id: finalStaffId || null,
+          p_start_time: startDateTime.toISOString(),
+          p_end_time: endDateTime.toISOString(),
+          p_staff_max: finalStaffMax,
+          p_store_max: finalStoreMax,
+          p_reservation_date: targetDate,
+          p_total_slots: totalSlotsNeeded,
+          p_biz_type: location.state?.bizType || null,
+          p_line_user_id: lineUser?.userId || null,
+          p_menu_name: menuLabel,
+          p_options: {
+            people: people,
+            applied_shop_name: customShopName || shop.business_name,
+            is_sales_excluded: isSalesExcluded,
+            visit_info: {
+              address: customerData.address,
+              parking: customerData.parking,
+              custom_answers: customAnswers
+            }
+          },
+          p_customer: {
+            name: customerData.name,
+            furigana: customerData.furigana,
+            phone: customerData.phone,
+            email: customerData.email,
+            zip_code: customerData.zip_code || visitorZip || '',
             address: customerData.address,
             parking: customerData.parking,
-            custom_answers: customAnswers 
+            building_type: customerData.building_type,
+            care_notes: customerData.care_notes,
+            company_name: customerData.company_name,
+            symptoms: customerData.symptoms,
+            request_details: customerData.request_details,
+            notes: customerData.notes,
+            custom_answers: customAnswers
+          }
+        });
+
+        if (bookError) {
+          if (handleBookError(bookError)) { setIsSubmitting(false); return; }
+          throw bookError;
+        }
+
+        cancelToken = booked.cancel_token;
+        cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
+
+      } else {
+        // --- 店舗のねじ込み（従来どおり） ---
+        let finalCustomerId = selectedCustomerId;
+
+        if (!finalCustomerId) {
+          const cleanPhone = customerData.phone?.replace(/[^0-9]/g, '');
+          if (cleanPhone) {
+            const { data: matched } = await supabase
+              .from('customers')
+              .select('*')
+              .eq('phone', cleanPhone)
+              .eq('shop_id', shopId)
+              .maybeSingle();
+            if (matched) {
+              finalCustomerId = matched.id;
+              existingCust = matched;
+            }
           }
         }
-      });
 
-      if (dbError) {
-        // 🛡️ DB関数側が投げた「満席」エラーを、これまでと同じ文言のアラートに変換する
-        if (dbError.message?.includes('STAFF_FULL')) {
-          alert('申し訳ありません！タッチの差で指名スタッフの予約枠が埋まってしまいました。');
-          setIsSubmitting(false);
-          navigate(`/shop/${shopId}/reserve`);
-          return;
+        if (finalCustomerId) {
+          const updatePayload = {
+            total_visits: (existingCust?.total_visits || 0) + 1,
+            last_arrival_at: startDateTime.toISOString(),
+            updated_at: new Date().toISOString()
+          };
+          if (customerData.furigana?.trim()) updatePayload.furigana = customerData.furigana;
+          const cleanPhone = customerData.phone?.replace(/[^0-9]/g, '');
+          if (cleanPhone) updatePayload.phone = cleanPhone;
+          if (customerData.email?.trim()) updatePayload.email = customerData.email;
+          await supabase.from('customers').update(updatePayload).eq('id', finalCustomerId);
+        } else {
+          const { data: newCust, error: insError } = await supabase.from('customers').insert([{
+            shop_id: shopId,
+            name: customerData.name,
+            furigana: customerData.furigana || null,
+            phone: customerData.phone?.replace(/[^0-9]/g, '') || null,
+            email: customerData.email || null,
+            total_visits: 1,
+            last_arrival_at: startDateTime.toISOString(),
+            updated_at: new Date().toISOString()
+          }]).select().single();
+          if (insError) throw insError;
+          finalCustomerId = newCust.id;
         }
-        if (dbError.message?.includes('STORE_FULL')) {
-          alert('申し訳ありません！タッチの差でお店全体の予約が埋まってしまいました。もう一度時間を選び直してください。');
-          setIsSubmitting(false);
-          navigate(`/shop/${shopId}/reserve`);
-          return;
+
+        finalDisplayName = existingCust?.admin_name || existingCust?.name || customerData.name;
+
+        const { error: dbError } = await supabase.rpc('book_reservation_safely', {
+          p_shop_id: shopId,
+          p_staff_id: finalStaffId,
+          p_start_time: startDateTime.toISOString(),
+          p_end_time: endDateTime.toISOString(),
+          p_staff_max: finalStaffMax,
+          p_store_max: finalStoreMax,
+          p_bypass_check: true,
+          p_customer_id: finalCustomerId,
+          p_reservation_date: targetDate,
+          p_customer_name: finalDisplayName,
+          p_customer_phone: customerData.phone || '---',
+          p_customer_email: customerData.email || null,
+          p_zip_code: customerData.zip_code || null,
+          p_total_slots: totalSlotsNeeded,
+          p_biz_type: location.state?.bizType || null,
+          p_line_user_id: null,
+          p_cancel_token: cancelToken,
+          p_menu_name: menuLabel,
+          p_options: {
+            people: people,
+            applied_shop_name: customShopName || shop.business_name,
+            is_sales_excluded: isSalesExcluded,
+            visit_info: { address: customerData.address, parking: customerData.parking, custom_answers: customAnswers }
+          }
+        });
+
+        if (dbError) {
+          if (handleBookError(dbError)) { setIsSubmitting(false); return; }
+          throw dbError;
         }
-        throw dbError;
       }
 
-// 🚀 🆕 【ガード2】isAdminEntryでない、かつ名前・日付・時間が揃っている時だけ通知を送る
+      // 🚀 🆕 【ガード2】isAdminEntryでない、かつ名前・日付・時間が揃っている時だけ通知を送る
+
       if (!isAdminEntry && finalDisplayName && targetDate && targetTime) {
         // 🆕 名簿(existingCust)に名前があればそちらを、なければ入力された名前(customerData.name)を使用
         const displayNameForEmail = (existingCust && existingCust.name) 

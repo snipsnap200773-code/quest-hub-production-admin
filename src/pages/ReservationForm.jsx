@@ -287,29 +287,9 @@ if (servRes.data) {
     } // shopRes.data の閉じ
     setLoading(false);
   };
-  // ✅ 追加：リピーター対応（LINEログイン後に名簿から前回の住所を自動セット）
-  useEffect(() => {
-    const fetchPreviousAddress = async () => {
-      // 訪問型サービス かつ LINEユーザーが判明している かつ 住所がまだ空 の場合
-      // 👇 🌟 修正：isVisitService を serviceMode === 'visit' に変更
-      if (serviceMode === 'visit' && lineUser?.userId && !visitorAddress) {
-        const { data: cust } = await supabase
-          .from('customers')
-          .select('address')
-          .eq('shop_id', shopId)
-          .eq('line_user_id', lineUser.userId)
-          .maybeSingle();
-
-        if (cust?.address) {
-          console.log("🏠 前回の住所を自動セットしました:", cust.address);
-          setVisitorAddress(cust.address);
-          setIsAddressFixed(true); // 住所があれば最初からメニューを表示状態にする
-        }
-      }
-    };
-fetchPreviousAddress();
-  // 👇 🌟 修正：依存配列の isVisitService も serviceMode に変更
-  }, [lineUser, serviceMode, visitorAddress, shopId]);
+  // ⚠️ 2026/09/16：LINE ID による前回住所の自動セットを廃止しました（【AX】）。
+  //    LINE の userId では本人確認ができず、他人の住所が読めてしまうためです。
+  //    同じ端末では localStorage に保存した住所が引き続き復元されます。
 
   // 🆕 【ここに追加！】郵便番号から住所を自動取得する関数
   const handleZipSearch = async () => {
