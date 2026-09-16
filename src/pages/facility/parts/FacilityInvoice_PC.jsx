@@ -25,7 +25,6 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
   const [loading, setLoading] = useState(true);
   const [facilityName, setFacilityName] = useState('');
   const [salesRecords, setSalesRecords] = useState([]);
-  const [allCustomers, setAllCustomers] = useState([]);
 
   // --- 状態管理用 ---
   // 🚀 🆕 ポップアップは廃止するので showInvoiceModal と connectedShops は削除
@@ -59,13 +58,19 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
 
         if (shop) {
           // ③ 🚀 🆕 選択された業者だけの売上と顧客名簿を取得（1000件の壁対策済み）
-          const [salesAll, customersAll] = await Promise.all([
-            fetchAllRows(() => supabase.from('sales').select('*').eq('shop_id', selectedShopId)),
-            fetchAllRows(() => supabase.from('customers').select('id, name, shop_id').eq('shop_id', selectedShopId))
-          ]);
+          // ⚠️ 2026/09/16：sales / customers の全件取得を廃止し、施設向けビューに切り替えました（【AP】）。
+          //    以前は店舗の全売上・全顧客名を受け取り、施設名の一致で絞っていました。
+          //    ビューは「売上 → 訪問予約 → 自施設」でサーバー側が絞るため、
+          //    他の客の情報は届かず、同名の顧客が混ざることもありません。
+          const salesAll = await fetchAllRows(() =>
+            supabase
+              .from('public_facility_sales')
+              .select('id, shop_id, visit_request_id, sale_date, total_amount, details, created_at')
+              .eq('shop_id', selectedShopId)
+              .order('id')
+          );
 
           setSalesRecords(salesAll);
-          setAllCustomers(customersAll);
         }
       } catch (err) {
         console.error("Fetch Error:", err);
@@ -76,23 +81,16 @@ const FacilityInvoice_PC = ({ facilityId, selectedShopId }) => {
     fetchData();
   }, [facilityId, selectedShopId]);
 
-  // 🚀 選択された業者 ＆ 施設名に一致する顧客IDを特定
-  const targetCustomerIds = useMemo(() => {
-    if (!selectedShop) return [];
-    return allCustomers
-      .filter(c => c.name === facilityName && c.shop_id === selectedShop.id)
-      .map(c => c.id);
-  }, [allCustomers, facilityName, selectedShop]);
-
   // 🚀 選択された業者 ＆ 年月でフィルタ
+  // ⚠️ 2026/09/16：自施設の判定はビュー側で行うため、顧客名での絞り込みを削除しました（【AP】）。
   const filteredSales = useMemo(() => {
     if (!selectedShop) return [];
     return salesRecords.filter(s => {
       if (!s.sale_date || s.shop_id !== selectedShop.id) return false;
       const [y, m] = s.sale_date.split('-').map(Number); // 👈 修正：Dateを経由せず文字列から直接年月を取り出す
-      return y === invoiceYear && m === invoiceMonth && targetCustomerIds.includes(s.customer_id);
+      return y === invoiceYear && m === invoiceMonth;
     });
-  }, [salesRecords, targetCustomerIds, invoiceYear, invoiceMonth, selectedShop]);
+  }, [salesRecords, invoiceYear, invoiceMonth, selectedShop]);
 
   const totalAmount = filteredSales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
 
