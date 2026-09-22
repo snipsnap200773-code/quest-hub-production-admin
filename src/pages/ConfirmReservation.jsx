@@ -643,9 +643,15 @@ const handleReserve = async () => {
       
       console.log("👤 確定したログインユーザーID ➔:", finalUserId);
 
-      let resChar = null;
+            let resChar = null;
 
-      if (finalUserId) {
+      // ⚠️ 2026/09/22：ゲームは開発中で未公開のため、キャラ付与は開発者のアカウントだけにしました。
+      //    以前は「今ログインしている人」全員に付与していたため、店舗オーナーが
+      //    ねじ込みをするとオーナー自身にキャラクターが作られていました。
+      //    公開時にこの条件を外し、「予約したお客様本人」に付与する形へ作り直すこと。
+      const GAME_DEV_USER_ID = 'd1669717-95f4-4f80-932f-d412576d55a7';
+
+      if (finalUserId && finalUserId === GAME_DEV_USER_ID) {
         try {
           console.log("⚙️ ユーザーIDを正常に掴みました。gameServices.grantCharacterFromReservation を実行！");
           // 💡 非同期（await）で確実にインサートを完了させてから画面を遷移させる鉄壁の同期
@@ -653,8 +659,6 @@ const handleReserve = async () => {
         } catch (gameErr) {
           console.error("🚨 ゲーム支給関数がクラッシュしました:", gameErr);
         }
-      } else {
-        console.warn("⚠️ 警告: 予約は成功しましたが、セッションからもユーザーIDが取得できなかったため支給をスキップしました。");
       }
 
       // 🚀 ここから画面遷移ロジックへ
