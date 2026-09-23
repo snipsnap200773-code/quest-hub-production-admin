@@ -134,10 +134,10 @@ Deno.serve(async (req) => {
     //    下記4つは呼び出し元の認証チェック（JWT検証）を実装したうえで復活させました。
     //    権限判定は各 type の処理ブロック冒頭で個別に行っています。
     const allowedTypes = [
-      'remind_all', 'auto_sales_batch', 'signup_otp', 'partnership_approved', 
+      'remind_all', 'auto_sales_batch', 'partnership_approved', 
       'partnership_requested',
       'facility_booking', 'facility_booking_update', 'facility_nudge', 'inquiry', 
-      'welcome', 'booking', 'cancel', 'test',
+      'booking', 'cancel', 'test',
       'CREATE_SHOP_FULL', 'REPAIR_AUTH', 'UPDATE_PASSWORD', 'DELETE_SHOP_FULL'
     ];
 
@@ -199,48 +199,64 @@ Deno.serve(async (req) => {
     let {
               shopId, customerEmail, customerName, shopName, 
               startTime, services, shopEmail, cancelUrl, lineUserId, 
-              notifyLineEnabled, owner_email, dashboard_url, reservations_url, 
-              reserve_url, password, ownerName,
+              notifyLineEnabled, reserve_url,
               staffName, furigana, address, parking, buildingType, careNotes, 
               companyName, symptoms, requestDetails, notes, allOptions, custom_answers,
               serviceMode // 👈 🌟 🆕 追加：来店か訪問かのモードを受け取る
             } = payload;
 
-    // 🚀 🆕 【ここを追加！】キャンセル時は reservation の中身を外に展開する
-    if (type === 'cancel' && payload.reservation) {
-      const res = payload.reservation;
+    // ⚠️ 2026/09/23【BH】：キャンセル通知の内容を、ブラウザからの値ではなく
+    //    DB から引くように変更しました。従来は payload.reservation を丸ごと信じており、
+    //    ・任意の宛先へ運営ドメインからメールを送れる
+    //    ・status を書き換えれば会計済みブロックを素通りできる
+    //    ・任意の LINE ID へその店舗のトークンでメッセージを送れる
+    //    状態でした。受け取るのは予約を特定する鍵（cancelToken / reservationId）だけです。
+    let cancelRow: Record<string, unknown> | null = null;
 
-      // 🚨 【超重要：会計済みブロック】ステータスがすでに 'completed' (完了) なら一発退場！
-      if (res.status === 'completed') {
-        console.log(`[GUARD] 会計処理済み(completed)の予約に対するキャンセルをブロックしました。お客様: ${res.customer_name}`);
-        return new Response(JSON.stringify({ 
-          success: false, 
-          message: "この予約はすでに施術・会計処理が完了しているため、キャンセルできません。" 
+    if (type === 'cancel') {
+      const cancelToken = payload.cancelToken ?? payload.cancel_token ?? null;
+      const reservationId = payload.reservationId ?? payload.reservation_id ?? null;
+
+      if (!cancelToken && !reservationId) {
+        return deny('cancelToken または reservationId が必要です', 400);
+      }
+
+      const q = supabaseAdmin
+        .from('reservations')
+        .select('id, shop_id, customer_name, customer_email, line_user_id, start_time, status, menu_name, options');
+
+      const { data: row } = cancelToken
+        ? await q.eq('cancel_token', String(cancelToken)).maybeSingle()
+        : await q.eq('id', String(reservationId)).maybeSingle();
+
+      if (!row) return deny('予約が見つかりません', 404);
+
+      // 🚨 会計済みブロック。DB の値で判定する
+      if (row.status === 'completed') {
+        console.log(`[GUARD] 会計処理済み(completed)の予約に対するキャンセル通知をブロックしました。予約ID: ${row.id}`);
+        return new Response(JSON.stringify({
+          success: false,
+          message: "この予約はすでに施術・会計処理が完了しているため、キャンセルできません。"
         }), { status: 400, headers: corsHeaders });
       }
 
-      // 🚀 1. 先に shopId を確定させる（URL生成に使うため）
-      shopId = shopId || res.shop_id;
+      cancelRow = row;
 
-      customerEmail = customerEmail || res.customer_email;
-      customerName = customerName || res.customer_name;
-      startTime = startTime || res.start_time;
-      // 🆕 【ここを追加！】LINE予約のお客様を判定するため line_user_id も復元する
-      lineUserId = lineUserId || res.line_user_id;
+      // 宛先・表示内容はすべて DB の行から取る（payload の値は使わない）
+      shopId        = row.shop_id;
+      customerEmail = row.customer_email;
+      customerName  = row.customer_name;
+      startTime     = row.start_time;
+      lineUserId    = row.line_user_id;
+      reserve_url   = `${PORTAL_URL}/shop/${row.shop_id}/reserve`;
 
-      // 🚀 2. 【ここを追加！】新しい予約を入れるためのURLを自動生成
-      // これにより、メール内のリンクが正しく予約ページを向くようになります
-      reserve_url = reserve_url || `${PORTAL_URL}/shop/${shopId}/reserve`;
-
-      // メニュー名は services に入っているものを復元
-      if (!services) {
-        if (res.options?.people) {
-      services = res.options.people.map((p: { services: Array<{ name: string }> }) => p.services.map((s: { name: string }) => s.name).join(', ')).join(' / ');
-    } else if (res.options?.services) {
-      services = res.options.services.map((s: { name: string }) => s.name).join(', ');
-    } else {
-      services = "メニューなし";
-    }
+      const opt = row.options as { people?: Array<{ services?: Array<{ name: string }> }>; services?: Array<{ name: string }> } | null;
+      if (opt?.people) {
+        services = opt.people.map((p) => (p.services || []).map((s) => s.name).join(', ')).join(' / ');
+      } else if (opt?.services) {
+        services = opt.services.map((s) => s.name).join(', ');
+      } else {
+        services = row.menu_name || "メニューなし";
       }
     }
 
@@ -428,44 +444,11 @@ if (type === 'auto_sales_batch') {
   return new Response(JSON.stringify({ success: true, results }), { status: 200, headers: corsHeaders });
 }
 
-// 🆕 ここから追記：パターンF（新規登録用OTP）
-if (type === 'signup_otp') {
-  const { otpCode } = payload; // Home.jsx側で作った数字を受け取る
-  
-  const subject = `【SOLO】認証コード：${otpCode}`;
-  const html = `
-    <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 500px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
-      <h2 style="color: #07aadb; margin-top: 0;">ご登録ありがとうございます</h2>
-      <p>本人確認のため、以下の認証コードを画面に入力してください。</p>
-      <div style="background: #f8fafc; padding: 20px; text-align: center; border-radius: 10px; border: 1px solid #e2e8f0; margin: 20px 0;">
-        <span style="font-size: 2rem; font-weight: 900; letter-spacing: 10px; color: #1e293b;">${otpCode}</span>
-      </div>
-      <p style="font-size: 0.8rem; color: #64748b;">※このコードの有効期限は10分間です。</p>
-    </div>`;
-
-const otpRes = await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-    body: JSON.stringify({ 
-    from: 'SOLO 運営事務局 <infec@snipsnap.biz>', 
-    to: [customerEmail], 
-    subject, 
-    html 
-    })
-  });
-
-  // ResendからのレスポンスをJSONとして解析
-  const resData = await otpRes.json();
-
-  // 🆕 status 200番台なら成功として、ブラウザが使いやすいJSONを返す
-  return new Response(JSON.stringify({ 
-    success: otpRes.ok, 
-    data: resData 
-  }), { 
-    status: 200, 
-    headers: corsHeaders 
-  });
-}
+// ⚠️ 2026/09/23【BH】【BM】：type 'signup_otp' を廃止しました。
+//    認証コードをブラウザが作り、ブラウザで照合していたため本人確認になっておらず、
+//    宛先とコードをブラウザが指定できたため、運営ドメインから任意の宛先へ
+//    「認証コード」を装ったメールを送れる状態でした。
+//    新規登録の本人確認は Supabase Auth のメール確認（Confirm email）で行います。
 
 // ==========================================
 // 🆕 【ここを新しく追加！】パターンH：提携完了（承認）通知 
@@ -1307,49 +1290,12 @@ if (type === 'test') {
     }
     // 🆕 ここまで追加！
 
-    // ==========================================
-    // 🚀 パターンA：店主様への歓迎メール ＆ 三土手さんへの通知送信 (本家ロジック完全維持)
-    // ==========================================
-    if (type === 'welcome') {
-      const welcomeRes = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({
-          from: 'SOLO 運営事務局 <infec@snipsnap.biz>',
-          to: [owner_email],
-          subject: `【SOLO】ベータ版へのご登録ありがとうございます!`,
-          html: `
-            <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 30px; border-radius: 12px;">
-              <h1 style="color: #2563eb; font-size: 1.5rem; margin-top: 0;">${shopName} 様</h1>
-              <p>この度は <strong>SOLO</strong> にお申し込みいただき、誠にありがとうございます。</p>
-              <div style="background: #f1f5f9; padding: 20px; border-radius: 10px; margin: 25px 0;">
-                <h2 style="font-size: 1rem; margin-top: 0; color: #1e293b; border-bottom: 2px solid #cbd5e1; padding-bottom: 8px;">🔑 管理者用ログイン情報</h2>
-                <p style="margin: 15px 0 5px 0;"><strong>● 設定画面</strong><br><a href="${dashboard_url}">${dashboard_url}</a></p>
-                <p style="margin: 15px 0 5px 0;"><strong>● 予約台帳</strong><br><a href="${reservations_url}">${reservations_url}</a></p>
-                <p style="margin: 15px 0 5px 0;"><strong>● パスワード</strong><br><span style="color: #e11d48; font-weight: bold;">${password}</span></p>
-              </div>
-              <div style="background: #f0fdf4; padding: 20px; border-radius: 10px; margin: 25px 0; border: 1px solid #bbf7d0;">
-                <h2 style="font-size: 1rem; margin-top: 0; color: #166534; border-bottom: 2px solid #bbf7d0; padding-bottom: 8px;">📅 お客様用 予約URL</h2>
-                <p><a href="${reserve_url}" style="color: #15803d; font-weight: bold;">${reserve_url}</a></p>
-              </div>
-            </div>`,
-        }),
-      });
-
-      await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({
-          from: 'SOLO システム通知 <infec@snipsnap.biz>',
-          to: ['snipsnap.2007.7.3@gmail.com'],
-          subject: `【新規申込】${shopName} 様がベータ版の利用を開始しました`,
-          html: `<div style="padding: 20px; border: 2px solid #2563eb; border-radius: 12px;"><h2>🚀 新規登録通知</h2><p>店舗名: ${shopName} 様</p><p>代表者: ${ownerName} 様</p></div>`,
-        }),
-      });
-
-      const welcomeData = await welcomeRes.json();
-      return new Response(JSON.stringify(welcomeData), { status: 200, headers: corsHeaders });
-    }
+    // ⚠️ 2026/09/23【BH】：type 'welcome' を廃止しました。
+    //    呼び出し元（旧 TrialRegistration）が無くなったうえ、
+    //    宛先・パスワード・URL をすべてブラウザが指定でき、
+    //    権限チェックも無かったため（誰でも運営ドメインから
+    //    「ログイン情報」を装ったメールを送れる状態でした）。
+    //    アカウント発行時のメールは CREATE_SHOP_FULL が送ります。
 
     // ==========================================
     // 🚀 パターンB・D・E：予約完了 ＆ キャンセル通知 (三土手さん指定の5パターン)
@@ -1374,11 +1320,11 @@ if (type === 'test') {
     const currentAdminId = profile?.line_admin_user_id;
 
 const sendMail = async (to: string, isOwner: boolean) => {
-      // 🚀 🆕 キャンセル時は payload.reservation からデータを補填する
-      const resData = type === 'cancel' ? payload.reservation : {};
-      const targetName = customerName || resData.customer_name;
-      const targetTime = startTime || resData.start_time;
-      const targetServices = services || resData.options?.services?.map((s: { name: string }) => s.name).join(', ')
+      // ⚠️ 2026/09/23【BH】：キャンセル時のデータは DB から引いた cancelRow を使う
+      const resData = (cancelRow ?? {}) as Record<string, unknown>;
+      const targetName = customerName || (resData.customer_name as string);
+      const targetTime = startTime || (resData.start_time as string);
+      const targetServices = services;
 
       // ✅ 置換用データセット
       const placeholderData = { 
@@ -1387,9 +1333,9 @@ const sendMail = async (to: string, isOwner: boolean) => {
         startTime: targetTime, 
         services: targetServices, 
         cancelUrl, 
-        staffName: staffName || resData.staff_name || "店舗スタッフ",
-        furigana: furigana || resData.options?.visit_info?.furigana || "", 
-        address: address || resData.options?.visit_info?.address || "",
+        staffName: staffName || "店舗スタッフ",
+        furigana: furigana || "", 
+        address: address || "",
         parking, 
         buildingType, 
         careNotes,
@@ -1408,10 +1354,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
       let finalHtml = "";
 
       if (type === 'cancel') {
-      // 🚀 🆕 【ここを追加！】送られてきたデータの中身をログに出力して確認する
-      console.log("🔍 キャンセルリクエスト受信データ:", JSON.stringify({ payload, reservation: payload?.reservation }));
-
-      // --- 🚀 🆕 キャンセル通知（デザイン版） ---
+      // --- キャンセル通知（デザイン版） ---
       const d = new Date(targetTime);
       // 🚀 🆕 サーバーの時間ではなく、強制的に「日本時間」として整形する
       const dateStr = d.toLocaleString('ja-JP', {
@@ -1458,7 +1401,7 @@ const sendMail = async (to: string, isOwner: boolean) => {
 
           // 🚀 🆕 【ここから追加】お客様へのLINEキャンセル通知処理
           // フロントから渡された reservation データと、店舗設定(profile)を使用
-          const targetLineId = payload?.reservation?.line_user_id || payload?.line_user_id;
+          const targetLineId = lineUserId;
 
         if (
           targetLineId && 
