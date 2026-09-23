@@ -480,6 +480,20 @@ const handleReserve = async () => {
               address: customerData.address,
               parking: customerData.parking,
               custom_answers: customAnswers
+            },
+            // ⚠️ 2026/09/23【BH】：予約ごとの入力内容を予約の行に残します。
+            //    既存客の場合、customers は空の項目しか更新しないため、
+            //    今回の備考・症状などが DB のどこにも残っていませんでした。
+            //    resend（booking）はここから読んで店舗に通知します。
+            form_input: {
+              furigana: customerData.furigana || '',
+              building_type: customerData.building_type || '',
+              care_notes: customerData.care_notes || '',
+              company_name: customerData.company_name || '',
+              symptoms: customerData.symptoms || '',
+              request_details: customerData.request_details || '',
+              notes: customerData.notes || '',
+              service_mode: location.state?.serviceMode || 'salon'
             }
           },
           p_customer: {
@@ -602,6 +616,11 @@ const handleReserve = async () => {
         await supabaseAnon.functions.invoke('resend', {
           body: {
             type: 'booking', 
+            // ⚠️ 2026/09/23【BH】：予約を特定する鍵を送ります。
+            //    新しい resend はこの値だけで予約を DB から読み、
+            //    宛先・内容はすべてサーバー側で決めます。
+            //    下の項目は、resend の切り替えが終わったら削除します。
+            cancelToken: cancelToken,
             shopId,
             customerName: finalDisplayName, // ✅ 書き換えられた名前を送る
             staffName: finalStaffName || staffName,
