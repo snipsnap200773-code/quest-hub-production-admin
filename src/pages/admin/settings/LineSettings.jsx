@@ -23,7 +23,9 @@ const LineSettings = () => {
   const [isLineBlocked, setIsLineBlocked] = useState(false); // 👈 🌟 🆕 LINE連携ブロック判定用
   const [message, setMessage] = useState('');
   // ① 店主様への通知（新着予約など）
-  const [notifyLineEnabled, setNotifyLineEnabled] = useState(true);
+  // ⚠️ 2026/09/23【BT】：初期値を false に。resend は notify_line_enabled === true の店舗だけに送るため、
+  //    画面の表示を実際の動作にそろえる（LINE の無料枠を意図せず使わないようにする）。
+  const [notifyLineEnabled, setNotifyLineEnabled] = useState(false);
   // ② お客様への自動通知（予約完了時）
   const [customerLineBookingEnabled, setCustomerLineBookingEnabled] = useState(true);
   // ③ お客様へのリマインド通知（24時間前）
@@ -51,7 +53,7 @@ if (data) {
         return; // これ以下の既存の設定読み込みをスキップ
       }
 
-      setNotifyLineEnabled(data.notify_line_enabled ?? true);
+      setNotifyLineEnabled(data.notify_line_enabled ?? false);
       // カラムが未作成の場合に備え、初期値を確実にセットします
       setCustomerLineBookingEnabled(data.customer_line_booking_enabled ?? true);
       setCustomerLineRemindEnabled(data.customer_line_remind_enabled ?? false);

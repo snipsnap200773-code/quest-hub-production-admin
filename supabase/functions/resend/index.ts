@@ -42,28 +42,45 @@ const STORE_DEFAULTS = {
 const PORTAL_URL = "https://questhub-portal.vercel.app";
 const ADMIN_URL  = "https://quest-hub-admin.vercel.app";
 
+// ⚠️ 2026/09/23【BH】：HTML に埋め込む値のエスケープ。
+//    お客様の入力値（名前・備考など）にタグを書かれても、ただの文字として表示されるようにする。
+function escapeHtml(value: unknown): string {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // 💡 プレースホルダー置換用の共通関数（全項目対応版）
-function applyPlaceholders(template: string, data: Record<string, unknown> = {}) {
+// ⚠️ 2026/09/23：escape = true のときは、差し込む値を HTML エスケープする（メール本文用）。
+//    件名はテキストなので escape = false のまま使う（&amp; などが件名に出ないようにするため）。
+function applyPlaceholders(template: string, data: Record<string, unknown> = {}, escape = false) {
   if (!template) return "";
   const d = data as Record<string, string | undefined>;
+  const v = (value: string | undefined, fallback = "") => {
+    const s = value || fallback;
+    return escape ? escapeHtml(s) : s;
+  };
   return template
-    .replace(/{name}/g, d.customerName || "")
-    .replace(/{furigana}/g, d.furigana || "")
-    .replace(/{shop_name}/g, d.shopName || "")
-    .replace(/{start_time}/g, d.startTime || "")
-    .replace(/{staff_name}/g, d.staffName || "担当者なし")
-    .replace(/{services}/g, d.services || "")
-    .replace(/{address}/g, d.address || "")
-    .replace(/{parking}/g, d.parking || "")
-    .replace(/{building_type}/g, d.buildingType || "")
-    .replace(/{care_notes}/g, d.careNotes || "")
-    .replace(/{company_name}/g, d.companyName || "")
-    .replace(/{symptoms}/g, d.symptoms || "")
-    .replace(/{request_details}/g, d.requestDetails || "")
-    .replace(/{notes}/g, d.notes || "")
-    .replace(/{details}/g, d.details || "")
-    .replace(/{cancel_url}/g, d.cancelUrl || "")
-    .replace(/{official_url}/g, d.officialUrl || "");
+    .replace(/{name}/g, v(d.customerName))
+    .replace(/{furigana}/g, v(d.furigana))
+    .replace(/{shop_name}/g, v(d.shopName))
+    .replace(/{start_time}/g, v(d.startTime))
+    .replace(/{staff_name}/g, v(d.staffName, "担当者なし"))
+    .replace(/{services}/g, v(d.services))
+    .replace(/{address}/g, v(d.address))
+    .replace(/{parking}/g, v(d.parking))
+    .replace(/{building_type}/g, v(d.buildingType))
+    .replace(/{care_notes}/g, v(d.careNotes))
+    .replace(/{company_name}/g, v(d.companyName))
+    .replace(/{symptoms}/g, v(d.symptoms))
+    .replace(/{request_details}/g, v(d.requestDetails))
+    .replace(/{notes}/g, v(d.notes))
+    .replace(/{details}/g, v(d.details))
+    .replace(/{cancel_url}/g, v(d.cancelUrl))
+    .replace(/{official_url}/g, v(d.officialUrl));
 }
 // 💡 LINE送信用の共通関数（三土手さん本家ロジック）
 async function safePushToLine(to: string, text: string, token: string, targetName: string) {
@@ -199,8 +216,8 @@ Deno.serve(async (req) => {
     let {
               shopId, customerEmail, customerName, shopName, 
               startTime, services, shopEmail, cancelUrl, lineUserId, 
-              notifyLineEnabled, reserve_url,
-              staffName, furigana, address, parking, buildingType, careNotes, 
+              reserve_url,
+              staffName, furigana, address, parking, buildingType, careNotes,
               companyName, symptoms, requestDetails, notes, allOptions, custom_answers,
               serviceMode // 👈 🌟 🆕 追加：来店か訪問かのモードを受け取る
             } = payload;
@@ -258,6 +275,92 @@ Deno.serve(async (req) => {
       } else {
         services = row.menu_name || "メニューなし";
       }
+    }
+
+    // ⚠️ 2026/09/23【BH】：予約完了通知（booking）も、ブラウザからの値ではなく
+    //    DB から引くように変更しました。従来は宛先（メール・LINE ID）や
+    //    入力内容をすべてブラウザが指定でき、予約を作らなくても
+    //    任意の宛先へ運営ドメインから「予約確定」を装ったメールを送れる状態でした。
+    //    受け取るのは予約を特定する鍵（cancelToken）だけです。
+    //    ・作成から10分を過ぎた予約には送らない（同じ予約で何度も送らせないため）
+    //    ・キャンセル済みの予約には送らない
+    let customerPhone = '';            // 店舗宛ての電話ボタン・LINE 用
+    let customerNameForCustomer = '';  // お客様宛ての名前（店舗の呼び名 admin_name を出さない）
+
+    if (type === 'booking') {
+      const bookingToken = payload.cancelToken ?? null;
+      if (!bookingToken) return deny('cancelToken が必要です', 400);
+
+      const { data: row } = await supabaseAdmin
+        .from('reservations')
+        .select('id, shop_id, staff_id, customer_id, customer_name, customer_email, customer_phone, line_user_id, start_time, status, menu_name, options, created_at')
+        .eq('cancel_token', String(bookingToken))
+        .maybeSingle();
+
+      if (!row) return deny('予約が見つかりません', 404);
+      if (row.status === 'canceled') return deny('キャンセル済みの予約です', 400);
+
+      const createdMs = new Date(row.created_at).getTime();
+      if (!Number.isFinite(createdMs) || Date.now() - createdMs > 10 * 60 * 1000) {
+        return deny('通知の受付期間を過ぎています', 400);
+      }
+
+      type BookingOptions = {
+        applied_shop_name?: string;
+        people?: Array<{ options?: Record<string, unknown> }>;
+        visit_info?: { address?: string; parking?: string; custom_answers?: Record<string, unknown> };
+        form_input?: {
+          furigana?: string; building_type?: string; care_notes?: string; company_name?: string;
+          symptoms?: string; request_details?: string; notes?: string; service_mode?: string;
+        };
+      };
+      const opt = (row.options ?? {}) as BookingOptions;
+      const vi = opt.visit_info ?? {};
+      const fi = opt.form_input ?? {};
+
+      // 宛先・表示内容はすべて DB の行から取る（payload の値は使わない）
+      shopId         = row.shop_id;
+      customerName   = row.customer_name || '';          // 店舗宛て（呼び名があれば呼び名）
+      customerEmail  = row.customer_email || '';
+      customerPhone  = (row.customer_phone && row.customer_phone !== '---') ? row.customer_phone : '';
+      lineUserId     = row.line_user_id || null;
+      services       = row.menu_name || 'メニューなし';
+      shopName       = opt.applied_shop_name || '';      // 空なら後段で profiles.business_name を使う
+      startTime      = new Date(row.start_time).toLocaleString('ja-JP', {
+                         timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit',
+                         day: '2-digit', hour: '2-digit', minute: '2-digit'
+                       });
+      cancelUrl      = `${PORTAL_URL}/cancel?token=${encodeURIComponent(String(bookingToken))}`;
+      allOptions     = (opt.people ?? [])
+                         .flatMap((p) => Object.values(p.options ?? {}).flat())
+                         .filter(Boolean);
+      address        = vi.address || '';
+      parking        = vi.parking || '';
+      custom_answers = vi.custom_answers || {};
+      furigana       = fi.furigana || '';
+      buildingType   = fi.building_type || '';
+      careNotes      = fi.care_notes || '';
+      companyName    = fi.company_name || '';
+      symptoms       = fi.symptoms || '';
+      requestDetails = fi.request_details || '';
+      notes          = fi.notes || '';
+      serviceMode    = fi.service_mode || 'salon';
+
+      // 担当者名は staffs から引く
+      staffName = '';
+      if (row.staff_id) {
+        const { data: st } = await supabaseAdmin
+          .from('staffs').select('name').eq('id', row.staff_id).maybeSingle();
+        staffName = st?.name || '';
+      }
+
+      // お客様宛ての名前は customers.name から引く
+      if (row.customer_id) {
+        const { data: cu } = await supabaseAdmin
+          .from('customers').select('name').eq('id', row.customer_id).maybeSingle();
+        customerNameForCustomer = cu?.name || '';
+      }
+      if (!customerNameForCustomer) customerNameForCustomer = row.customer_name || '';
     }
 
     // ⚠️ SUPABASE_URL / SERVICE_ROLE_KEY / RESEND_API_KEY / supabaseAdmin は
@@ -1302,18 +1405,25 @@ if (type === 'test') {
     // ==========================================
     const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).single();
     
+    // ⚠️ 2026/09/23【BH】：キャンセル通知の店舗名も、予約の行（applied_shop_name）から取る。
+    //    従来はブラウザからの値を使っており、差出人名と本文の店舗名を書き換えられた。
+    //    （booking は上の DB 読み取りで設定済み）
+    if (type === 'cancel') {
+      const cOpt = (cancelRow?.options ?? {}) as { applied_shop_name?: string };
+      shopName = cOpt.applied_shop_name || '';
+    }
+
     // 🚀 🆕 【ここを追加！】不足している店舗情報を補完する
     if (profile) {
-      // ⚠️ shopName はブラウザからの値を優先する。
-      //    マルチブランド（専用屋号）機能で customShopName が渡されるため、
-      //    ここをサーバー優先にすると別ブランドの予約に本体の店名が出てしまう。
+      // ⚠️ 2026/09/23：マルチブランドの屋号は予約の行（applied_shop_name）から取るようにしたため、
+      //    ブラウザからの値は使わない。空のときだけ本体の店名を使う。
       shopName = shopName || profile.business_name;
 
-      // ⚠️ 2026/09/06：shopEmail をサーバー側（DB）優先に変更しました。
-      //    店舗の連絡先メールアドレスをブラウザに渡す必要をなくすためです。
-      //    ブラウザからの値は、DB に登録がない場合のフォールバックとしてのみ使います。
-      //    ※ profiles に 'email' カラムは存在しないため参照をやめました。
-      shopEmail = profile.email_contact || shopEmail;
+      // ⚠️ 2026/09/23【BH】：店舗の宛先は DB の値だけにしました。
+      //    従来は DB に登録が無いとブラウザからの shopEmail を宛先にしており、
+      //    任意の宛先へ予約・キャンセル通知を送れる状態でした。
+      //    ※ profiles に 'email' カラムは存在しないため参照をやめました（09/06）。
+      shopEmail = profile.email_contact || '';
     }
 
     const currentToken = profile?.line_channel_access_token;
@@ -1322,7 +1432,11 @@ if (type === 'test') {
 const sendMail = async (to: string, isOwner: boolean) => {
       // ⚠️ 2026/09/23【BH】：キャンセル時のデータは DB から引いた cancelRow を使う
       const resData = (cancelRow ?? {}) as Record<string, unknown>;
-      const targetName = customerName || (resData.customer_name as string);
+      // ⚠️ 2026/09/23【BH】：お客様宛ては customers.name（booking で設定）を使い、
+      //    店舗の呼び名（admin_name）がお客様に届かないようにする。店舗宛ては予約の名前のまま。
+      const targetName = (!isOwner && customerNameForCustomer)
+        ? customerNameForCustomer
+        : (customerName || (resData.customer_name as string));
       const targetTime = startTime || (resData.start_time as string);
       const targetServices = services;
 
@@ -1366,18 +1480,23 @@ const sendMail = async (to: string, isOwner: boolean) => {
         minute: '2-digit',
       }).replace(/\//g, '年').replace(' ', '日 ');
 
+      // ⚠️ 2026/09/23【BH】：HTML に入れる値はエスケープしたものを使う（件名はそのまま）
+      const hName = escapeHtml(targetName);
+      const hServices = escapeHtml(targetServices);
+      const hShop = escapeHtml(shopName);
+
         if (isOwner) {
           // 🏪 店舗様向け通知
           finalSubject = `【予約キャンセル】${targetName} 様 (${dateStr})`;
           finalHtml = `
             <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #ef4444;">
               <h2 style="color: #ef4444; margin-top: 0;">⚠️ 予約キャンセル通知</h2>
-              <p><strong>${shopName} 管理者様</strong></p>
+              <p><strong>${hShop} 管理者様</strong></p>
               <p>お客様により、以下の予約がキャンセルされました。</p>
               <div style="background: #fff5f5; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #feb2b2;">
-                <p style="margin: 0;">👤 <b>お客様:</b> ${targetName} 様</p>
+                <p style="margin: 0;">👤 <b>お客様:</b> ${hName} 様</p>
                 <p style="margin: 5px 0 0;">📅 <b>予約日時:</b> ${dateStr}</p>
-                <p style="margin: 5px 0 0;">📋 <b>メニュー:</b> ${targetServices}</p>
+                <p style="margin: 5px 0 0;">📋 <b>メニュー:</b> ${hServices}</p>
               </div>
               <p style="font-size: 0.9rem; color: #64748b;">※予約枠が開放されました。必要に応じてカレンダーをご確認ください。</p>
             </div>`;
@@ -1387,11 +1506,11 @@ const sendMail = async (to: string, isOwner: boolean) => {
           finalHtml = `
             <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #94a3b8;">
               <h2 style="color: #475569; margin-top: 0;">キャンセル完了のお知らせ</h2>
-              <p>${targetName} 様</p>
+              <p>${hName} 様</p>
               <p>下記のご予約キャンセルを承りました。ご確認をお願いいたします。</p>
               <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #e2e8f0;">
                 <p style="margin: 0;">📅 <b>日時:</b> ${dateStr}</p>
-                <p style="margin: 5px 0 0;">🏨 <b>店舗名:</b> ${shopName}</p>
+                <p style="margin: 5px 0 0;">🏨 <b>店舗名:</b> ${hShop}</p>
               </div>
               <p>またのご利用をスタッフ一同、心よりお待ちしております。</p>
               <div style="text-align: center; margin-top: 25px;">
@@ -1445,9 +1564,9 @@ const sendMail = async (to: string, isOwner: boolean) => {
                <ul style="margin: 0; padding-left: 18px; font-size: 0.9rem; color: #1e293b; line-height: 1.5;">
                  ${allOptions.map((o: { option_name: string; additional_price?: number }) => `
                    <li style="margin-bottom: 2px;">
-                     ${o.option_name} 
+                     ${escapeHtml(o.option_name)} 
                      <span style="color: #d34817; font-weight: bold; font-size: 0.85rem;">
-                       (+¥${(o.additional_price || 0).toLocaleString()})
+                       (+¥${Number(o.additional_price || 0).toLocaleString()})
                      </span>
                    </li>
                  `).join('')}
@@ -1459,23 +1578,23 @@ const sendMail = async (to: string, isOwner: boolean) => {
         finalHtml = `
           <div lang="ja" style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05);">
             <h2 style="color: #2563eb; margin-top: 0; font-size: 1.3rem; border-bottom: 2px solid #2563eb; padding-bottom: 10px;">新着予約のお知らせ（店舗控え）</h2>
-            <p style="margin: 20px 0 10px 0;">${shopName} 管理者様</p>
+            <p style="margin: 20px 0 10px 0;">${escapeHtml(shopName)} 管理者様</p>
             
             <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0;">
-              <p style="margin: 5px 0;">👤 <b>お客様:</b> ${customerName} 様 ${furigana ? `(${furigana})` : ''}</p>
-              <p style="margin: 5px 0;">📅 <b>日時:</b> ${startTime}</p>
-              <p style="margin: 5px 0;">👤 <b>担当:</b> ${staffName || '指名なし'}</p>
-              <p style="margin: 5px 0;">📋 <b>メニュー:</b> ${services}</p>
+              <p style="margin: 5px 0;">👤 <b>お客様:</b> ${escapeHtml(customerName)} 様 ${furigana ? `(${escapeHtml(furigana)})` : ''}</p>
+              <p style="margin: 5px 0;">📅 <b>日時:</b> ${escapeHtml(startTime)}</p>
+              <p style="margin: 5px 0;">👤 <b>担当:</b> ${escapeHtml(staffName || '指名なし')}</p>
+              <p style="margin: 5px 0;">📋 <b>メニュー:</b> ${escapeHtml(services)}</p>
               
               ${optionsListHtml} 
 
               <div style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 15px; display: flex; gap: 10px; flex-wrap: wrap;">
-                ${payload.phone ? `
-                  <a href="tel:${payload.phone}" style="display: inline-block; background: #10b981; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">📞 電話をかける</a>
+                ${customerPhone ? `
+                  <a href="tel:${customerPhone}" style="display: inline-block; background: #10b981; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">📞 電話をかける</a>
                 ` : ''}
                 
                 ${(customerEmail && customerEmail !== 'admin@example.com') ? `
-                  <a href="mailto:${customerEmail}" style="display: inline-block; background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">✉️ お客様へメール返信</a>
+                  <a href="mailto:${escapeHtml(customerEmail)}" style="display: inline-block; background: #2563eb; color: #fff; padding: 10px 18px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">✉️ お客様へメール返信</a>
                 ` : ''}
               </div>
             </div>
@@ -1484,25 +1603,25 @@ const sendMail = async (to: string, isOwner: boolean) => {
               <h3 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #64748b;">📝 お客様の入力内容</h3>
               <div style="font-size: 0.9rem; color: #1e293b;">
                 ${(isVisit && address) ? `
-                  <p style="margin: 4px 0;">📍 <b>住所:</b> ${address}</p>
+                  <p style="margin: 4px 0;">📍 <b>住所:</b> ${escapeHtml(address)}</p>
                   <div style="margin: 8px 0 15px 0;">
                     <a href="https://www.google.co.jp/maps/search/${encodeURIComponent(address)}" target="_blank" style="display: inline-block; background: #3b82f6; color: #fff; padding: 8px 16px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 0.85rem;">🗺 Googleマップで場所を確認</a>
                   </div>
                 ` : ''}
                 
-                ${parking ? `<p style="margin: 4px 0;">🅿️ <b>駐車場:</b> ${parking}</p>` : ''}
+                ${parking ? `<p style="margin: 4px 0;">🅿️ <b>駐車場:</b> ${escapeHtml(parking)}</p>` : ''}
 
                 ${custom_answers && Object.keys(custom_answers).length > 0 ? `
                   <div style="margin-top: 15px; padding: 12px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0;">
                     <p style="margin: 0 0 8px 0; font-size: 0.8rem; color: #64748b; font-weight: bold;">🙋 カスタム質問への回答:</p>
                     ${Object.entries(custom_answers).map(([qid, answer]) => {
                       const question = profile.form_config?.custom_questions?.find((q: { id: string; label?: string }) => q.id === qid);
-                      return `<p style="margin: 4px 0; font-size: 0.9rem;">・<b>${question?.label || '質問'}:</b> ${answer}</p>`;
+                      return `<p style="margin: 4px 0; font-size: 0.9rem;">・<b>${escapeHtml(question?.label || '質問')}:</b> ${escapeHtml(answer)}</p>`;
                     }).join('')}
                   </div>
                 ` : ''}
 
-                ${notes ? `<p style="margin: 15px 0 4px 0; border-top: 1px dashed #eee; padding-top: 10px;">💬 <b>備考:</b><br>${notes.replace(/\n/g, '<br>')}</p>` : ''}
+                ${notes ? `<p style="margin: 15px 0 4px 0; border-top: 1px dashed #eee; padding-top: 10px;">💬 <b>備考:</b><br>${escapeHtml(notes).replace(/\n/g, '<br>')}</p>` : ''}
               </div>
             </div>
 
@@ -1515,7 +1634,9 @@ const sendMail = async (to: string, isOwner: boolean) => {
           const subTemplate = profile.mail_sub_customer_booking || defaults.booking_sub;
           const bodyTemplate = profile.mail_body_customer_booking || defaults.booking_body;
           finalSubject = applyPlaceholders(subTemplate, placeholderData);
-          const body = applyPlaceholders(bodyTemplate, placeholderData).replace(/\n/g, '<br>');
+          // ⚠️ 2026/09/23【BH】：本文は HTML なので、差し込む値をエスケープする（第3引数 true）。
+          //    件名はテキストなのでエスケープしない。
+          const body = applyPlaceholders(bodyTemplate, placeholderData, true).replace(/\n/g, '<br>');
           
           /* 🚀 🆕 来店型(isVisitがfalse)の場合のみ、店舗へのアクセスマップを表示 */
           const shopMapHtml = (!isVisit && profile.address) ? `
@@ -1557,10 +1678,18 @@ const sendMail = async (to: string, isOwner: boolean) => {
           }
         }
 
+        // ⚠️ 2026/09/23【BH】：差出人名から、メールのヘッダーを壊す文字（改行・" < > \）を取り除き、
+        //    長さも40文字までにする。件名からも改行を取り除く。
+        const senderName = String(shopName || profile?.business_name || '')
+          .replace(/[\r\n"<>\\]/g, '')
+          .trim()
+          .slice(0, 40) || '予約通知';
+        const safeSubject = String(finalSubject || '').replace(/[\r\n]+/g, ' ');
+
         return await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-        body: JSON.stringify({ from: `${shopName} <infec@snipsnap.biz>`, to: [to], subject: finalSubject, html: finalHtml }),
+        body: JSON.stringify({ from: `${senderName} <infec@snipsnap.biz>`, to: [to], subject: safeSubject, html: finalHtml }),
       });
     };
 // 🆕 1. 予約の入り口を判定 (payloadにLINE IDが含まれているか)
@@ -1589,9 +1718,11 @@ const sendMail = async (to: string, isOwner: boolean) => {
           ? `\n\n📍 訪問先\n${address}` 
           : '';
 
+        // ⚠️ 2026/09/23【BH】：お客様宛ては customers.name を使う（店舗の呼び名を出さない）
+        const nameForCustomer = customerNameForCustomer || customerName;
         const customerMsg = type === 'cancel' 
-          ? `【キャンセル完了】\n${customerName} 様、キャンセル手続きが完了いたしました。`
-          : `${customerName}様\n${isVisit ? 'ご指定の場所へお伺いいたします。' : 'ご予約ありがとうございます。'}\n\n🏨 店名：${shopName}\n👤 担当：${staffName || '店舗スタッフ'}\n📅 日時：${startTime}〜\n\n📋 内容：\n${services}${visitAddressText}${shopMapUrlText}\n\n■予約確認・キャンセル\n${cancelUrl}`;
+          ? `【キャンセル完了】\n${nameForCustomer} 様、キャンセル手続きが完了いたしました。`
+          : `${nameForCustomer}様\n${isVisit ? 'ご指定の場所へお伺いいたします。' : 'ご予約ありがとうございます。'}\n\n🏨 店名：${shopName}\n👤 担当：${staffName || '店舗スタッフ'}\n📅 日時：${startTime}〜\n\n📋 内容：\n${services}${visitAddressText}${shopMapUrlText}\n\n■予約確認・キャンセル\n${cancelUrl}`;
         
         customerLineSent = Boolean(await safePushToLine(lineUserId, customerMsg, currentToken, "CUSTOMER"));
       }
@@ -1613,10 +1744,13 @@ const sendMail = async (to: string, isOwner: boolean) => {
     }
 
     // B. 【LINE通知】LineSettingsで「新着通知を受け取る」がチェックされている場合のみ送る
-    if (notifyLineEnabled === true && currentToken && currentAdminId) {
+    // ⚠️ 2026/09/23【BT】：判定を DB の設定（profiles.notify_line_enabled）に変更しました。
+    //    従来はブラウザからの notifyLineEnabled を見ていたが、どの画面も送っておらず、
+    //    設定に関係なく一度も送られていなかった。明示的に ON（true）の店舗だけに送る。
+    if (profile?.notify_line_enabled === true && currentToken && currentAdminId) {
       let detailsText = address ? `\n📍 住: ${address}` : "";
       if (notes) detailsText += `\n💬 備: ${notes}`;
-      const phoneUrl = payload.phone ? `\n📞 呼: tel:${payload.phone}` : "";
+      const phoneUrl = customerPhone ? `\n📞 呼: tel:${customerPhone}` : "";
       const mapUrl = address ? `\n🗺 地: https://www.google.co.jp/maps/search/${encodeURIComponent(address)}` : "";
 
       const shopMsg = type === 'cancel' 
