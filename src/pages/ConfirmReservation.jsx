@@ -606,43 +606,14 @@ const handleReserve = async () => {
       // 🚀 🆕 【ガード2】isAdminEntryでない、かつ名前・日付・時間が揃っている時だけ通知を送る
 
       if (!isAdminEntry && finalDisplayName && targetDate && targetTime) {
-        // 🆕 名簿(existingCust)に名前があればそちらを、なければ入力された名前(customerData.name)を使用
-        const displayNameForEmail = (existingCust && existingCust.name) 
-                                      ? existingCust.name 
-                                      : customerData.name;
-
-        const allFlattenedOptions = people.flatMap(p => Object.values(p.options || {}).flat()).filter(Boolean);
-
+        // ⚠️ 2026/09/23【BH】：予約を特定する鍵（cancelToken）だけを送ります。
+        //    resend はこの値で予約を DB から読み、宛先・名前・入力内容・店舗名は
+        //    すべてサーバー側で決めます（ブラウザの値は使いません）。
+        //    予約ごとの入力内容は、上の book_public_reservation で options.form_input に保存済みです。
         await supabaseAnon.functions.invoke('resend', {
           body: {
-            type: 'booking', 
-            // ⚠️ 2026/09/23【BH】：予約を特定する鍵を送ります。
-            //    新しい resend はこの値だけで予約を DB から読み、
-            //    宛先・内容はすべてサーバー側で決めます。
-            //    下の項目は、resend の切り替えが終わったら削除します。
-            cancelToken: cancelToken,
-            shopId,
-            customerName: finalDisplayName, // ✅ 書き換えられた名前を送る
-            staffName: finalStaffName || staffName,
-            shopName: customShopName || shop.business_name, // 🆕 追加
-            startTime: `${targetDate.replace(/-/g, '/')} ${targetTime}`,
-            services: menuLabel,
-            allOptions: allFlattenedOptions,
-            customerEmail: customerData.email, // 🆕 これがないとお客様に届きません！
-            // ⚠️ 2026/09/06：shopEmail の送信を廃止しました。
-            //    店舗の連絡先メールアドレスは Edge Function 側が
-            //    shopId から profiles.email_contact を引くようになったため、
-            //    ブラウザに持たせる必要がなくなりました。
-            lineUserId: lineUser?.userId || null,
-            cancelUrl: cancelUrl,
-            // 🆕 フォームの全入力データを送る
-            ...customerData, 
-            custom_answers: customAnswers,
-            buildingType: customerData.building_type, // 変数名の微調整
-            careNotes: customerData.care_notes,
-            requestDetails: customerData.request_details,
-            // 👇 🌟 🆕 追加：今回の予約が来店か訪問かのモードを裏側に伝える！
-            serviceMode: location.state?.serviceMode || 'salon' 
+            type: 'booking',
+            cancelToken: cancelToken
           }
         });
       } else if (!isAdminEntry) {
