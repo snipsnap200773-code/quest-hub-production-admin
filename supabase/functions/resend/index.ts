@@ -290,8 +290,14 @@ Deno.serve(async (req) => {
         if (!isFacilityCaller) bvReason = '施設本人からの呼び出しではありません';
         else if (conn?.status !== 'active') bvReason = '提携が有効ではありません';
       } else if (type === 'partnership_requested') {
-        if (!isFacilityCaller) bvReason = '施設本人からの呼び出しではありません';
-        else if (!(conn?.status === 'pending' && conn?.created_by_type === 'facility')) bvReason = '施設からの申請が見つかりません';
+        // ⚠️ 2026/09/24【BW】：施設 → 店舗の申請は施設が、店舗 → 施設の申請は店舗が呼ぶ
+        if (isFacilityCaller) {
+          if (!(conn?.status === 'pending' && conn?.created_by_type === 'facility')) bvReason = '施設からの申請が見つかりません';
+        } else if (isShopCaller) {
+          if (!(conn?.status === 'pending' && conn?.created_by_type === 'shop')) bvReason = '店舗からの申請が見つかりません';
+        } else {
+          bvReason = '当事者からの呼び出しではありません';
+        }
       } else if (type === 'partnership_approved') {
         if (!isFacilityCaller && !isShopCaller) bvReason = '当事者からの呼び出しではありません';
         else if (conn?.status !== 'active') bvReason = '提携が承認されていません';
@@ -753,7 +759,7 @@ if (type === 'partnership_requested') {
     .eq('id', shopId).single();
   const { data: fData } = await supabaseAdmin
     .from('facility_users')
-    .select('facility_name, furigana')
+    .select('facility_name, furigana, email, email_notifications_enabled')
     .eq('id', facilityId).single();
 
   const shopEmail = sData?.email_contact ?? '';
@@ -765,6 +771,53 @@ if (type === 'partnership_requested') {
   const hShop = escapeHtml(shopName);
   const hFacility = escapeHtml(facilityName);
   const hFurigana = escapeHtml(facilityFurigana);
+
+  // ⚠️ 2026/09/24【BW】：申請の向きは DB の提携の行（created_by_type）で決める。
+  //    店舗 → 施設の申請（admin の FacilitySearch.jsx）なら、施設へ通知する。
+  //    従来はフロントが存在しない type（partnership_request）で呼んでおり、施設に通知が届いていなかった。
+  const { data: reqConn } = await supabaseAdmin
+    .from('shop_facility_connections')
+    .select('created_by_type')
+    .eq('shop_id', shopId)
+    .eq('facility_user_id', facilityId)
+    .limit(1)
+    .maybeSingle();
+
+  if (reqConn?.created_by_type === 'shop') {
+    const facilityEmail = fData?.email ?? '';
+    if (fData?.email_notifications_enabled !== false && facilityEmail) {
+      await fetch('https://api.resend.com/emails', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+        body: JSON.stringify({
+          from: 'QUEST HUB 通知センター <infec@snipsnap.biz>',
+          to: [facilityEmail],
+          subject: safeSubject(`【提携リクエスト】${shopName} 様から提携の申請が届いています`),
+          html: `
+            <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #f59e0b;">
+              <h2 style="color: #b45309; margin-top: 0;">🤝 新しい提携リクエスト</h2>
+              <p><strong>${hFacility} 様</strong></p>
+              <p>店舗より提携のリクエストが届いています。内容をご確認のうえ、承認または見送りのご対応をお願いいたします。</p>
+
+              <div style="background: #fffbeb; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #fde68a;">
+                <p style="margin: 0;"><b>■ 申請元の店舗:</b> ${hShop}</p>
+              </div>
+
+              <p style="font-size: 0.9rem;">ポータルの「受付・通知設定」から承認できます。承認すると、入居者名簿の共有と訪問予約が可能になります。</p>
+
+              <div style="text-align: center; margin-top: 20px;">
+                <a href="${ADMIN_URL}/facility-login/${facilityId}" style="display: inline-block; background: #b45309; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">ポータルで確認する</a>
+              </div>
+
+              <p style="font-size: 0.8rem; color: #94a3b8; margin-top: 25px; border-top: 1px solid #eee; padding-top: 15px;">
+                ※本メールは送信専用のシステムより自動送信されています。
+              </p>
+            </div>`
+        })
+      });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200, headers: corsHeaders });
+  }
 
   if (sData?.email_notifications_enabled !== false && shopEmail) {
     await fetch('https://api.resend.com/emails', {
