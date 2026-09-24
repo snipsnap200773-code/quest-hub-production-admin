@@ -231,6 +231,84 @@ Deno.serve(async (req) => {
       }
     }
 
+    // ⚠️ 2026/09/24【BV】：施設まわりの通知は、呼び出した人が本当にその施設・店舗かを確かめる。
+    //    従来は施設ID・店舗ID（どちらも URL に出ている）を知っていれば誰でも呼べ、
+    //    その施設と店舗に任意の名簿の文章を書いたメールを送れた。
+    //    ・施設からの呼び出し … x-facility-token を facility_sessions と照合
+    //    ・店舗からの呼び出し … JWT（resolveCaller）で uid = shopId を確認
+    //    ・どちらも、その施設と店舗の提携の状態を確認
+    //    段階1：BV_ENFORCE = false（ログを出すだけで通す）。本番で確認後に true にする。
+    const FACILITY_NOTIFY_TYPES = [
+      'facility_booking', 'facility_booking_update', 'facility_nudge',
+      'partnership_requested', 'partnership_approved'
+    ];
+    const BV_ENFORCE = false;
+
+    if (FACILITY_NOTIFY_TYPES.includes(type)) {
+      const reqShopId = String(payload.shopId ?? '');
+      const reqFacilityId = String(payload.facilityId ?? '');
+
+      // 施設トークン → 施設ID（有効期限内のものだけ）
+      const facToken = req.headers.get('x-facility-token') ?? '';
+      let tokenFacilityId: string | null = null;
+      if (facToken) {
+        const { data: sess } = await supabaseAdmin
+          .from('facility_sessions')
+          .select('facility_user_id')
+          .eq('token', facToken)
+          .gt('expires_at', new Date().toISOString())
+          .limit(1)
+          .maybeSingle();
+        tokenFacilityId = sess?.facility_user_id ?? null;
+      }
+
+      // 施設トークンが通らなかったときだけ、店舗の JWT を見る
+      let shopCaller: { userId: string; role: string | null } | null = null;
+      if (!tokenFacilityId) shopCaller = await resolveCaller();
+
+      const isFacilityCaller = !!tokenFacilityId && tokenFacilityId === reqFacilityId;
+      const isShopCaller = !!shopCaller && shopCaller.role === 'shop' && shopCaller.userId === reqShopId;
+
+      // 提携の状態
+      let conn: { status: string | null; created_by_type: string | null } | null = null;
+      if (reqShopId && reqFacilityId) {
+        const { data } = await supabaseAdmin
+          .from('shop_facility_connections')
+          .select('status, created_by_type')
+          .eq('shop_id', reqShopId)
+          .eq('facility_user_id', reqFacilityId)
+          .limit(1)
+          .maybeSingle();
+        conn = data;
+      }
+
+      let bvReason = '';
+      if (!reqShopId || !reqFacilityId) {
+        bvReason = 'shopId / facilityId がありません';
+      } else if (type === 'facility_booking' || type === 'facility_booking_update') {
+        if (!isFacilityCaller) bvReason = '施設本人からの呼び出しではありません';
+        else if (conn?.status !== 'active') bvReason = '提携が有効ではありません';
+      } else if (type === 'partnership_requested') {
+        if (!isFacilityCaller) bvReason = '施設本人からの呼び出しではありません';
+        else if (!(conn?.status === 'pending' && conn?.created_by_type === 'facility')) bvReason = '施設からの申請が見つかりません';
+      } else if (type === 'partnership_approved') {
+        if (!isFacilityCaller && !isShopCaller) bvReason = '当事者からの呼び出しではありません';
+        else if (conn?.status !== 'active') bvReason = '提携が承認されていません';
+      } else if (type === 'facility_nudge') {
+        if (!isShopCaller) bvReason = '店舗本人からの呼び出しではありません';
+        else if (conn?.status !== 'active') bvReason = '提携が有効ではありません';
+      }
+
+      // ログにはトークンの値を出さない（有無だけ）
+      const bvInfo = `shop=${reqShopId} facility=${reqFacilityId} facToken=${facToken ? 'あり' : 'なし'} tokenOk=${!!tokenFacilityId} shopCaller=${shopCaller?.userId ?? 'なし'} conn=${conn?.status ?? 'なし'}`;
+      if (bvReason) {
+        if (BV_ENFORCE) return deny(bvReason, 401);
+        console.log(`[FAC_GUARD] would reject ${type}: ${bvReason} (${bvInfo})`);
+      } else {
+        console.log(`[FAC_GUARD] ok ${type} by ${isFacilityCaller ? 'facility' : 'shop'} (${bvInfo})`);
+      }
+    }
+
     let caller: { userId: string; role: string | null } | null = null;
     if (PRIVILEGED_TYPES.includes(type)) {
       caller = await resolveCaller();
