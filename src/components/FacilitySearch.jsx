@@ -36,17 +36,19 @@ const FacilitySearch = () => {
     const { data: cData } = await supabase.from('shop_facility_connections').select('*').eq('shop_id', shopId);
     setConnections(cData || []);
 
-    // 3. 施設を取得（自分を制限していない施設のみ）
-    // 🚀 🆕 自分のカテゴリが 施設側の allowed_categories（制限リスト）に含まれていないものを抽出
-    let query = supabase.from('facility_users').select('*').order('facility_name', { ascending: true });
-    
-    if (pData?.sub_business_type) {
-      // 🚀 🆕 allowed_categories（配列）の中に自分の業種が「含まれていない(not contains)」施設を探す
-      query = query.not('allowed_categories', 'cs', `{"${pData.sub_business_type}"}`);
-    }
-
-    const { data: fData } = await query;
-    setFacilities(fData || []);
+    // 3. 施設を取得
+    // ⚠️ 2026/09/24【BW】：本体（facility_users）を直接読むのをやめ、公開用ビューに切り替えました。
+    //    9/8 に本体を閉じてから、店舗からは施設が1件も読めず、この画面は常に空でした。
+    //    （本体は select('*') だったため、開いていた頃は施設の平文パスワードまで店舗に渡っていました）
+    //    業種の絞り込みは下の filteredFacilities で行います。
+    //    従来の DB 側の条件は「受け付ける業種に含まれていない施設」を出す逆の判定でした。
+    const { data: fData, error: fError } = await supabase
+      .from('facility_users_public')
+      .select('id, facility_name, address, tel, contact_name, official_url, allowed_categories, is_suspended')
+      .order('facility_name', { ascending: true });
+    if (fError) console.error('施設一覧の取得に失敗:', fError.message);
+    // 停止中の施設は出さない
+    setFacilities((fData || []).filter(f => !f.is_suspended));
     
     setLoading(false);
   };
@@ -96,17 +98,28 @@ const FacilitySearch = () => {
     setLoading(false);
   };
 
-  // 🔍 industryMasterに基づいたフィルタリングロジック
+  // ⚠️ 2026/09/24【BW】：自分の業種（sub_business_type）を配列にそろえる
+  //    （配列・カンマ区切りの文字列のどちらでも扱えるようにする）
+  const mySubTypes = (() => {
+    const v = myProfile?.sub_business_type;
+    if (Array.isArray(v)) return v;
+    if (typeof v === 'string' && v) return v.split(/,|、/).map(s => s.trim()).filter(Boolean);
+    return [];
+  })();
+
+  // 🔍 絞り込み
   const filteredFacilities = facilities.filter(f => {
     // 検索ワードに一致するか
-    const matchSearch = f.facility_name.includes(searchTerm);
-    
-    // 🚀 🆕 施設側の拒否設定（allowed_categories）に自分の業種が含まれて「いない」かチェック
-    // ※ DB取得時にフィルタしていますが、念のためUI側でもチェックします。
-    const isRestricted = f.allowed_categories?.includes(myProfile?.sub_business_type);
+    const matchSearch = (f.facility_name || '').includes(searchTerm);
 
-    return matchSearch && !isRestricted;
-  });
+    // ⚠️ 2026/09/24【BW】：allowed_categories は施設が「受け付ける業種」のリスト。
+    //    自分の業種が含まれていれば表示する。未設定（null）は全業種OK（施設の設定画面と同じ扱い）。
+    //    従来は判定が逆で、受け付けてくれる施設ほど一覧から消えていました。
+    const allowed = f.allowed_categories;
+    const isAllowed = !Array.isArray(allowed) || mySubTypes.some(t => allowed.includes(t));
+
+    return matchSearch && isAllowed;
+  });
 
   if (loading) return <div style={centerStyle}>募集中の施設を探しています...</div>;
 
