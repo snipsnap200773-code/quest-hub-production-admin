@@ -224,7 +224,7 @@ function AdminManagement() {
           .order('start_time', { ascending: true }),
         
         supabase.from('visit_requests')
-          .select('*, facility_data:facility_user_id(facility_name)')
+          .select('*, facility_data:facility_users_public!facility_user_id(facility_name)')
           .eq('shop_id', cleanShopId) 
           .neq('status', 'canceled') // 🚀 追記：施設予約のキャンセル分を除外
           .gte('scheduled_date', startOfYear)
@@ -238,7 +238,7 @@ function AdminManagement() {
           .lt('start_time', startOfYearISO),
 
         supabase.from('visit_requests')
-          .select('*, facility_data:facility_user_id(facility_name)')
+          .select('*, facility_data:facility_users_public!facility_user_id(facility_name)')
           .eq('shop_id', cleanShopId)
           .not('status', 'in', '(completed,canceled)')
           .lt('scheduled_date', startOfYear)
