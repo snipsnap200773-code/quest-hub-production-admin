@@ -237,12 +237,13 @@ Deno.serve(async (req) => {
     //    ・施設からの呼び出し … x-facility-token を facility_sessions と照合
     //    ・店舗からの呼び出し … JWT（resolveCaller）で uid = shopId を確認
     //    ・どちらも、その施設と店舗の提携の状態を確認
-    //    段階1：BV_ENFORCE = false（ログを出すだけで通す）。本番で確認後に true にする。
+    //    2026/09/24 本番で5経路すべて ok を確認したうえで必須化（BV_ENFORCE = true）。
+    //    戻すときは false にしてデプロイすれば、ログだけ出して通す状態に戻る。
     const FACILITY_NOTIFY_TYPES = [
       'facility_booking', 'facility_booking_update', 'facility_nudge',
       'partnership_requested', 'partnership_approved'
     ];
-    const BV_ENFORCE = false;
+    const BV_ENFORCE = true;
 
     if (FACILITY_NOTIFY_TYPES.includes(type)) {
       const reqShopId = String(payload.shopId ?? '');
@@ -695,18 +696,21 @@ if (type === 'partnership_approved') {
 
   // メール送信用の共通テンプレート関数
   const sendEmail = async (to: string, roleName: string, partnerName: string, targetUrl: string) => {
+    // ⚠️ 2026/09/24【BV】：名前は HTML に入れる前にエスケープする（件名は改行だけ取り除く）
+    const hRole = escapeHtml(roleName);
+    const hPartner = escapeHtml(partnerName);
     return await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
       body: JSON.stringify({
         from: 'QUEST HUB 通知センター <infec@snipsnap.biz>',
         to: [to],
-        subject: `【提携成立】${partnerName} 様との提携が完了しました！`,
+        subject: safeSubject(`【提携成立】${partnerName} 様との提携が完了しました！`),
         html: `
           <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #4f46e5; padding: 25px; border-radius: 12px; border-top: 8px solid #4f46e5;">
             <h2 style="color: #4f46e5; margin-top: 0; text-align: center;">🎉 提携おめでとうございます！</h2>
-            <p><strong>${roleName} 様</strong></p>
-            <p><strong>${partnerName} 様</strong> との提携が正式に完了しました。</p>
+            <p><strong>${hRole} 様</strong></p>
+            <p><strong>${hPartner} 様</strong> との提携が正式に完了しました。</p>
             <div style="background: #f5f3ff; padding: 20px; border-radius: 10px; margin: 20px 0; text-align: center;">
               <p style="margin-bottom: 15px; font-size: 0.9rem; color: #4338ca;">これから名簿の共有や、システムを通じた訪問予約が可能になります。</p>
               <a href="${targetUrl}" style="display: inline-block; background: #4f46e5; color: #fff; padding: 12px 25px; border-radius: 8px; text-decoration: none; font-weight: bold;">管理画面を確認する</a>
@@ -757,6 +761,11 @@ if (type === 'partnership_requested') {
   const facilityName = fData?.facility_name ?? '施設';
   const facilityFurigana = fData?.furigana ?? '';
 
+  // ⚠️ 2026/09/24【BV】：HTML に入れる値はエスケープする
+  const hShop = escapeHtml(shopName);
+  const hFacility = escapeHtml(facilityName);
+  const hFurigana = escapeHtml(facilityFurigana);
+
   if (sData?.email_notifications_enabled !== false && shopEmail) {
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -764,15 +773,15 @@ if (type === 'partnership_requested') {
       body: JSON.stringify({
         from: 'QUEST HUB 通知センター <infec@snipsnap.biz>',
         to: [shopEmail],
-        subject: `【提携リクエスト】${facilityName} 様から申請が届いています`,
+        subject: safeSubject(`【提携リクエスト】${facilityName} 様から申請が届いています`),
         html: `
           <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #f59e0b;">
             <h2 style="color: #b45309; margin-top: 0;">🤝 新しい提携リクエスト</h2>
-            <p><strong>${shopName} 様</strong></p>
+            <p><strong>${hShop} 様</strong></p>
             <p>施設より提携のリクエストが届いています。内容をご確認のうえ、承認または見送りのご対応をお願いいたします。</p>
 
             <div style="background: #fffbeb; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #fde68a;">
-              <p style="margin: 0;"><b>■ 申請元の施設:</b> ${facilityName} 様${facilityFurigana ? `（${facilityFurigana}）` : ''}</p>
+              <p style="margin: 0;"><b>■ 申請元の施設:</b> ${hFacility} 様${facilityFurigana ? `（${hFurigana}）` : ''}</p>
             </div>
 
             <p style="font-size: 0.9rem;">管理画面の「施設連携」から承認できます。承認すると、施設の入居者名簿の共有と訪問予約が可能になります。</p>
