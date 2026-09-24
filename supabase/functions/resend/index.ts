@@ -215,6 +215,22 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: false, message: msg }), { status, headers: corsHeaders });
     };
 
+    // ⚠️ 2026/09/24【BP】：定期処理（リマインド一斉送信・深夜の自動売上確定）は、
+    //    合言葉（x-cron-secret ヘッダー）が一致する呼び出しだけを通す。
+    //    従来は誰でも好きなときに実行できた。
+    //    呼び出し元：
+    //      remind_all       … Vercel Cron（admin の vercel.json）→ api/cron/remind.ts
+    //      auto_sales_batch … pg_cron（jobid 8）。合言葉は Vault の cron_secret から読む
+    //    合言葉は Edge Function の CRON_SECRET・Vercel の CRON_SECRET・Vault の cron_secret の3か所で同じ値。
+    const CRON_TYPES = ['remind_all', 'auto_sales_batch'];
+    if (CRON_TYPES.includes(type)) {
+      const expectedSecret = Deno.env.get('CRON_SECRET') ?? '';
+      const givenSecret = req.headers.get('x-cron-secret') ?? '';
+      if (!expectedSecret || givenSecret !== expectedSecret) {
+        return deny('定期処理の合言葉が一致しません', 401);
+      }
+    }
+
     let caller: { userId: string; role: string | null } | null = null;
     if (PRIVILEGED_TYPES.includes(type)) {
       caller = await resolveCaller();
@@ -401,8 +417,9 @@ if (type === 'remind_all') {
   const { data: resList, error: resError } = await supabaseAdmin
     .from('reservations')
     .select('*, profiles(*), staffs(name)')
-    .gte('start_time', `${dateStr}T00:00:00.000Z`)
-    .lte('start_time', `${dateStr}T23:59:59.999Z`)
+    // ⚠️ 2026/09/24【BP】：日本時間の「明日 0:00〜23:59」で比べる（従来は UTC で、明日 9:00〜明後日 8:59 になっていた）
+    .gte('start_time', `${dateStr}T00:00:00+09:00`)
+    .lte('start_time', `${dateStr}T23:59:59.999+09:00`)
     .eq('remind_sent', false)
     .eq('res_type', 'normal')
     .neq('status', 'canceled')  // 👈 追加：キャンセル済みを除外
@@ -463,22 +480,22 @@ if (res.line_user_id) {
       // Web予約の場合（メールアドレスがあればメールを送る）
       if (shop.notify_mail_remind_enabled !== false && res.customer_email) {
         // 👇 🌟 修正：actionTextとplaceLabelを使って文面を動的に変える
-        const subject = applyPlaceholders(shop.mail_sub_customer_remind || `【リマインド】明日、${actionText}（${shop.business_name}）`, placeholderData);
+        const subject = safeSubject(applyPlaceholders(shop.mail_sub_customer_remind || `【リマインド】明日、${actionText}（${shop.business_name}）`, placeholderData));
         const html = `
           <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 600px; margin: 0 auto; border: 1px solid #e2e8f0; padding: 25px; border-radius: 12px;">
             <h2 style="color: #2563eb;">明日、${actionText}</h2>
-            <p>${res.customer_name} 様</p>
+            <p>${escapeHtml(res.customer_name)} 様</p>
             <div style="background: #f8fafc; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; margin: 20px 0;">
               <p style="margin: 5px 0;">📅 <strong>日時:</strong> ${dateStr.replace(/-/g, '/')} ${resTime}〜</p>
-              <p style="margin: 5px 0;">📋 <strong>内容:</strong><br>${menuDisplayText}</p>
-              <p style="margin: 5px 0;">${placeLabel}<strong>:</strong> ${placeValue}</p>
+              <p style="margin: 5px 0;">📋 <strong>内容:</strong><br>${escapeHtml(menuDisplayText).replace(/\n/g, '<br>')}</p>
+              <p style="margin: 5px 0;">${placeLabel}<strong>:</strong> ${escapeHtml(placeValue)}</p>
             </div>
           </div>`;
 
 const mRes = await fetch('https://api.resend.com/emails', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-              body: JSON.stringify({ from: `${shop.business_name} <infec@snipsnap.biz>`, to: [res.customer_email], subject, html })
+              body: JSON.stringify({ from: `${safeSenderName(shop.business_name)} <infec@snipsnap.biz>`, to: [res.customer_email], subject, html })
             });
             mailOk = mRes.ok;
           }
@@ -518,7 +535,8 @@ if (type === 'auto_sales_batch') {
       .from('reservations')
       .select('*')
       .eq('shop_id', shop.id)
-      .lt('start_time', `${todayStr}T00:00:00.000Z`) // 今日より前のデータ
+      // ⚠️ 2026/09/24【BP】：日本時間の「今日 0:00」より前（＝昨日まで）で比べる（従来は UTC で、今日の 8:59 までが対象になっていた）
+      .lt('start_time', `${todayStr}T00:00:00+09:00`) // 今日より前のデータ
       .neq('status', 'completed')
       .neq('status', 'canceled')
       .or('is_block.is.null,is_block.eq.false')
@@ -543,7 +561,8 @@ if (type === 'auto_sales_batch') {
         reservation_id: task.id,
         customer_id: task.customer_id,
         total_amount: finalPrice,
-        sale_date: task.start_time.split('T')[0], // 予約日の日付で計上
+        // ⚠️ 2026/09/24【BP】：売上日は日本時間の日付にする（従来は UTC の日付で、0:00〜8:59 の予約が前日扱いになっていた）
+        sale_date: new Date(new Date(task.start_time).getTime() + 9 * 60 * 60 * 1000).toISOString().split('T')[0], // 予約日の日付で計上
         details: { ...opt, note: 'Edge Functionによる深夜自動確定' }
       }, { onConflict: 'reservation_id' });
 
