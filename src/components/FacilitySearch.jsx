@@ -69,23 +69,21 @@ const FacilitySearch = () => {
     ]);
 
     if (!error) {
-      // 2. 🆕 Edge Function を呼び出して施設へメール通知を送る
+      // 2. Edge Function を呼び出して施設へメール通知を送る
+      // ⚠️ 2026/09/24【BW】：通知の呼び出しを作り直しました。
+      //    従来は存在しない type（partnership_request）で呼んでいたため常に 400 で、
+      //    施設に通知が届いていませんでした。宛先（施設のメール）もブラウザの値を送っていました。
+      //    今は shopId / facilityId だけを送り、resend が DB から宛先と名前を引きます。
+      //    ログイン中の店舗の JWT が付くので、resend 側で「店舗本人か」を確認できます。
       try {
-        await fetch("https://vcfndmyxypgoreuykwij.supabase.co/functions/v1/resend", {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`
-          },
-          body: JSON.stringify({
-            type: 'partnership_request',
-            senderName: myProfile?.business_name || "ある店舗",
-            receiverEmail: facility.email, // 施設の登録メールアドレス
-            receiverId: facilityId,
-            receiverType: 'facility',
-            targetUrl: `https://quest-hub-five.vercel.app/facility-login/${facilityId}` // 施設側のログイン/受付設定画面へ
-          })
+        const { error: mailErr } = await supabase.functions.invoke('resend', {
+          body: {
+            type: 'partnership_requested',
+            shopId: shopId,
+            facilityId: facilityId
+          }
         });
+        if (mailErr) console.error("通知メール送信失敗:", mailErr);
       } catch (mailErr) {
         console.error("通知メール送信失敗:", mailErr);
       }
