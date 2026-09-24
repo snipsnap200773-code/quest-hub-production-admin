@@ -53,6 +53,20 @@ function escapeHtml(value: unknown): string {
     .replace(/'/g, '&#39;');
 }
 
+// ⚠️ 2026/09/24【BH】：差出人名（from の表示名）から、メールのヘッダーを壊す文字
+//    （改行・" < > \）を取り除き、40文字までにする。空になったら fallback を使う。
+function safeSenderName(value: unknown, fallback = 'QUEST HUB'): string {
+  return String(value ?? '')
+    .replace(/[\r\n"<>\\]/g, '')
+    .trim()
+    .slice(0, 40) || fallback;
+}
+
+// ⚠️ 2026/09/24【BH】：件名から改行を取り除く（件名はテキストなのでエスケープはしない）
+function safeSubject(value: unknown): string {
+  return String(value ?? '').replace(/[\r\n]+/g, ' ');
+}
+
 // 💡 プレースホルダー置換用の共通関数（全項目対応版）
 // ⚠️ 2026/09/23：escape = true のときは、差し込む値を HTML エスケープする（メール本文用）。
 //    件名はテキストなので escape = false のまま使う（&amp; などが件名に出ないようにするため）。
@@ -690,11 +704,12 @@ if (type === 'facility_booking') {
   //    anon キーを持つ誰もが、運営ドメインから任意の宛先へメールを送れる状態でした。
   const { 
     scheduledDates, // 配列: ["2026-03-27", "2026-03-28"]
-    residentCount,
     residentListText,
     shopId,
     facilityId
   } = payload;
+  // ⚠️ 2026/09/24【BH】：人数は数値にしてから使う（HTML への差し込み対策）
+  const residentCount = Number(payload.residentCount) || 0;
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
@@ -715,7 +730,7 @@ if (type === 'facility_booking') {
   // 日付リストを読みやすく整形
   const dateListHtml = scheduledDates.map((d: string) => {
     // 🚀 秒数（:00）を削除し、ハイフンをスラッシュに変換
-    const cleanedDate = d.replace(/-/g, '/');
+    const cleanedDate = escapeHtml(String(d).replace(/-/g, '/'));
     return `<span style="display:inline-block; background:#3d2b1f; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
   }).join(' ');
 
@@ -742,7 +757,7 @@ if (type === 'facility_booking') {
 
           <div style="margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; border-radius: 8px;">
             <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #948b83; font-weight: bold;">利用者様リスト:</p>
-            <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #3d2b1f;">${residentListText}</pre>
+            <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #3d2b1f;">${escapeHtml(residentListText)}</pre>
           </div>
 
           <div style="text-align: center;">
@@ -759,7 +774,7 @@ if (type === 'facility_booking') {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
       body: JSON.stringify({
-        from: `${shopName} <infec@snipsnap.biz>`,
+        from: `${safeSenderName(shopName)} <infec@snipsnap.biz>`,
         to: [facilityEmail],
         subject: `【QUEST HUB】訪問予約（${scheduledDates.length}日間）を承りました`,
         html: `
@@ -800,8 +815,11 @@ if (type === 'facility_booking_update') {
   // ⚠️ 2026/09/12：宛先と名前を、ブラウザからの値ではなくDBから引くように変更しました。
   //    理由は facility_booking と同じです。
   const { 
-    scheduledDates, residentCount, addedCount, residentListText, shopId, facilityId
+    scheduledDates, residentListText, shopId, facilityId
   } = payload;
+  // ⚠️ 2026/09/24【BH】：人数は数値にしてから使う（HTML への差し込み対策）
+  const residentCount = Number(payload.residentCount) || 0;
+  const addedCount = Number(payload.addedCount) || 0;
 
   const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
 
@@ -821,7 +839,7 @@ if (type === 'facility_booking_update') {
 
   // 日付リストを整形（既存のロジックと同じ）
   const dateListHtml = scheduledDates.map((d: string) => {
-    const cleanedDate = d.replace(/-/g, '/');
+    const cleanedDate = escapeHtml(String(d).replace(/-/g, '/'));
     return `<span style="display:inline-block; background:#0ea5e9; color:#fff; padding:4px 10px; border-radius:4px; margin:2px; font-weight:bold;">${cleanedDate}</span>`;
   }).join(' ');
 
@@ -848,7 +866,7 @@ if (type === 'facility_booking_update') {
 
           <div style="margin-bottom: 20px; padding: 15px; background: #fff; border: 1px solid #eee; border-radius: 8px;">
             <p style="margin: 0 0 8px 0; font-size: 0.85rem; color: #64748b; font-weight: bold;">更新後の最新名簿（内訳）:</p>
-            <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #1e293b;">${residentListText}</pre>
+            <pre style="margin: 0; font-family: inherit; font-size: 0.9rem; color: #1e293b;">${escapeHtml(residentListText)}</pre>
           </div>
 
           <div style="text-align: center;">
@@ -866,7 +884,7 @@ if (type === 'facility_booking_update') {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
       body: JSON.stringify({
-        from: `${shopName} <infec@snipsnap.biz>`,
+        from: `${safeSenderName(shopName)} <infec@snipsnap.biz>`,
         to: [facilityEmail],
         subject: `【QUEST HUB】予約内容の追加・修正を承りました`,
         html: `
@@ -907,7 +925,8 @@ if (type === 'facility_booking_update') {
 // ==========================================
 if (type === 'facility_nudge') {
   // ペイロードから shopName と ownerName を直接受け取ります
-  const { shopId, facilityId, keepDate, shopName: payloadShopName, ownerName: payloadOwnerName } = payload;
+  // ⚠️ 2026/09/24【BH】：店舗名・店主名はブラウザの値を受け取らず、DB の値だけを使う
+  const { shopId, facilityId, keepDate } = payload;
 
   const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
   const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') ?? "";
@@ -927,24 +946,33 @@ if (type === 'facility_nudge') {
 
   if (!facility?.email) throw new Error('施設側のメールアドレスが登録されていません');
 
-  const displayDate = keepDate.replace(/-/g, '/');
+  const displayDate = String(keepDate ?? '').replace(/-/g, '/');
   
-  // 🚀 🆕 優先順位：1.送られてきた名前 2.DBの名前 3.デフォルト
-  const finalShopName = payloadShopName || shop?.business_name || "店舗管理者";
-  const finalOwnerName = payloadOwnerName || shop?.owner_name || "担当者";
+  // ⚠️ 2026/09/24【BH】：名前は DB の値だけを使う（従来はブラウザの値を優先していた）
+  const finalShopName = shop?.business_name || "店舗管理者";
+  const finalOwnerName = shop?.owner_name || "担当者";
 
-  const subject = `【重要】${displayDate} 訪問予約の名簿作成と確定のお願い`;
+  // HTML に入れる値（エスケープ済み）
+  const hDate = escapeHtml(displayDate);
+  const hShop = escapeHtml(finalShopName);
+  const hOwner = escapeHtml(finalOwnerName);
+  const hFacility = escapeHtml(facility.facility_name);
+  // ⚠️ 2026/09/24【BH】：店舗の連絡先は DB の値だけ（ブラウザの shopEmail は使わない）
+  const shopContact = shop?.email_contact || '';
+  const hShopContact = escapeHtml(shopContact);
+
+  const subject = safeSubject(`【重要】${displayDate} 訪問予約の名簿作成と確定のお願い`);
   const html = `
     <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #be123c;">
       <h2 style="color: #be123c; margin-top: 0;">⚠️ 確定期限が近づいています</h2>
-      <p><strong>${facility.facility_name} 様</strong></p>
-      <p>いつも大変お世話になっております。<strong>${finalShopName}</strong> の ${finalOwnerName} です。</p>
+      <p><strong>${hFacility} 様</strong></p>
+      <p>いつも大変お世話になっております。<strong>${hShop}</strong> の ${hOwner} です。</p>
       
       <p>確保いただいております以下の日程につきまして、まだ名簿の作成と予約確定が完了しておりません。</p>
       
       <div style="background: #fff5f5; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #feb2b2; text-align: center;">
         <p style="margin: 0; font-size: 0.9rem; color: #be123c;">訪問予定日</p>
-        <p style="margin: 5px 0; font-size: 1.5rem; font-weight: 900; color: #3d2b1f;">${displayDate}</p>
+        <p style="margin: 5px 0; font-size: 1.5rem; font-weight: 900; color: #3d2b1f;">${hDate}</p>
       </div>
 
       <p>スタッフ手配の兼ね合いもございますので、お忙しいところ恐縮ですが、至急ポータル画面よりお手続きをお願いいたします。</p>
@@ -955,8 +983,8 @@ if (type === 'facility_nudge') {
 
       <div style="margin-top: 30px; padding-top: 15px; border-top: 1px solid #eee; font-size: 0.8rem; color: #64748b; line-height: 1.5;">
         <p style="margin: 0 0 5px 0;">⚠️ ※本メールは送信専用アドレスより自動送信されています。このままご返信いただいても店舗には届きません。</p>
-        <p style="margin: 0;">✉️ <b>本件に関するお問い合わせ（${finalShopName}）：</b><br>
-          👉 <a href="mailto:${shop?.email_contact || shopEmail}" style="color: #3d2b1f; font-weight: bold; text-decoration: underline;">${shop?.email_contact || shopEmail}</a>
+        <p style="margin: 0;">✉️ <b>本件に関するお問い合わせ（${hShop}）：</b><br>
+          👉 <a href="mailto:${hShopContact}" style="color: #3d2b1f; font-weight: bold; text-decoration: underline;">${hShopContact}</a>
         </p>
       </div>
     </div>`;
@@ -966,7 +994,7 @@ if (type === 'facility_nudge') {
     headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
     body: JSON.stringify({
       // 🚀 🆕 送信者名(from)を店舗名（SnipSnapなど）に変更しました
-      from: `${finalShopName} <infec@snipsnap.biz>`,
+      from: `${safeSenderName(finalShopName)} <infec@snipsnap.biz>`,
       to: [facility.email],
       reply_to: shop?.email_contact,
       subject,
@@ -991,25 +1019,39 @@ if (type === 'inquiry') {
     custom_answers 
   } = payload;
 
-  const SUPABASE_URL = Deno.env.get('SUPABASE_URL') ?? "";
-  const SERVICE_ROLE_KEY = Deno.env.get('SERVICE_ROLE_KEY') ?? "";
-  const RESEND_API_KEY = Deno.env.get('RESEND_API_KEY');
-  const supabaseAdmin = createClient(SUPABASE_URL, SERVICE_ROLE_KEY);
+  // ⚠️ 2026/09/24【BH】：お問い合わせ通知の安全対策
+  //    ・差出人名と件名を safeSenderName / safeSubject で整える（ヘッダーの改ざん防止）
+  //    ・HTML に入れる値はすべてエスケープする
+  //    ・お客様への自動返信には「お問い合わせ内容」を載せない。
+  //      宛先（email）をブラウザが決められるため、内容を載せると
+  //      他人のアドレスへ店舗名で任意の文章を送れてしまう（フィッシングの踏み台）。
+  //    ・SUPABASE_URL などは冒頭で宣言済みのため、ここでの再宣言は削除した。
+  if (!shopId) return deny('shopId が指定されていません', 400);
+  if (!name || !content) return deny('お名前と内容は必須です', 400);
 
   // 1. 店舗の設定（profile）を取得
-  const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).single();
-  if (!profile) throw new Error('店舗情報が見つかりません');
+  const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).maybeSingle();
+  if (!profile) return deny('店舗情報が見つかりません', 404);
 
   // 🚀 🆕 重要：題名や送信者に使う名前を決定（届いた屋号があれば最優先、なければ店舗名）
-  const displayShopName = reqShopName || profile.business_name;
+  //    ※ 屋号をブラウザが決められる問題は【BU】で別途対応する
+  const displayShopName = safeSenderName(reqShopName || profile.business_name, profile.business_name || 'QUEST HUB');
+
+  // HTML に入れる値（エスケープ済み）
+  const hShop = escapeHtml(displayShopName);
+  const hName = escapeHtml(name);
+  const hEmail = escapeHtml(customerEmail);
+  const hPhone = escapeHtml(customerPhone);
+  const hContent = escapeHtml(content).replace(/\n/g, '<br>');
 
   const config = profile.form_config || {};
 
   // --- 🚀 🆕 スイッチ(inquiry_enabled)の状態をチェックして項目を作る ---
-  let fieldsHtml = `<p style="margin: 0 0 10px 0;"><b>■ お名前:</b> ${name} 様</p>`;
-  if (config.email?.inquiry_enabled && customerEmail) fieldsHtml += `<p style="margin: 0 0 10px 0;"><b>■ メール:</b> ${customerEmail}</p>`;
-  if (config.phone?.inquiry_enabled && customerPhone) fieldsHtml += `<p style="margin: 0 0 10px 0;"><b>■ 電話番号:</b> ${customerPhone}</p>`;
+  let fieldsHtml = `<p style="margin: 0 0 10px 0;"><b>■ お名前:</b> ${hName} 様</p>`;
+  if (config.email?.inquiry_enabled && customerEmail) fieldsHtml += `<p style="margin: 0 0 10px 0;"><b>■ メール:</b> ${hEmail}</p>`;
+  if (config.phone?.inquiry_enabled && customerPhone) fieldsHtml += `<p style="margin: 0 0 10px 0;"><b>■ 電話番号:</b> ${hPhone}</p>`;
 
+  // LINE はテキストなのでエスケープしない
   let lineFieldsText = `👤 客: ${name} 様`;
   if (config.email?.inquiry_enabled && customerEmail) lineFieldsText += `\n✉️ メ: ${customerEmail}`;
   if (config.phone?.inquiry_enabled && customerPhone) lineFieldsText += `\n📞 呼: ${customerPhone}`;
@@ -1026,19 +1068,20 @@ if (type === 'inquiry') {
         return `${q?.label || '質問'}: ${answer}`;
       }).join('\n');
   }
+  const hCustomAnswers = escapeHtml(customAnswersText).replace(/\n/g, '<br>');
 
   // --- ✉️ 店舗様への通知（メール） ---
   // 🚀 🆕 件名に決定した屋号（フットケアラボ等）を入れる
-  const shopSubject = `【${displayShopName}】新着お問い合わせ（${name} 様）`;
+  const shopSubject = safeSubject(`【${displayShopName}】新着お問い合わせ（${name} 様）`);
   const shopHtml = `
     <div style="font-family: sans-serif; color: #333; line-height: 1.6; max-width: 550px; margin: 0 auto; border: 1px solid #eee; padding: 25px; border-radius: 12px; border-top: 8px solid #4f46e5;">
       <h2 style="color: #4f46e5; margin-top: 0;">📩 新しいお問い合わせ</h2>
-      <p><strong>${displayShopName} 様</strong></p>
+      <p><strong>${hShop} 様</strong></p>
       
       <div style="background: #f8fafc; padding: 20px; border-radius: 10px; margin: 20px 0; border: 1px solid #e2e8f0;">
         ${fieldsHtml}
-        <p style="margin: 0 0 10px 0;"><b>■ 内容:</b><br>${content.replace(/\n/g, '<br>')}</p>
-        ${customAnswersText ? `<p style="margin: 15px 0 0 0; border-top: 1px dashed #cbd5e1; padding-top: 10px;"><b>■ カスタム項目の回答:</b><br>${customAnswersText.replace(/\n/g, '<br>')}</p>` : ''}
+        <p style="margin: 0 0 10px 0;"><b>■ 内容:</b><br>${hContent}</p>
+        ${customAnswersText ? `<p style="margin: 15px 0 0 0; border-top: 1px dashed #cbd5e1; padding-top: 10px;"><b>■ カスタム項目の回答:</b><br>${hCustomAnswers}</p>` : ''}
       </div>
 
       <div style="text-align: center;">
@@ -1046,19 +1089,23 @@ if (type === 'inquiry') {
 </div>
     </div>`;
 
-  await fetch('https://api.resend.com/emails', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
-    body: JSON.stringify({
-      from: `${displayShopName} 通知 <infec@snipsnap.biz>`, // 🚀 送信者名を屋号に
-      to: [profile.email_contact || profile.email],
-      subject: shopSubject,
-      html: shopHtml
-    })
-  });
+  if (profile.email_contact) {
+    await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
+      body: JSON.stringify({
+        from: `${displayShopName} 通知 <infec@snipsnap.biz>`, // 🚀 送信者名を屋号に（safeSenderName で整形済み）
+        to: [profile.email_contact],
+        subject: shopSubject,
+        html: shopHtml
+      })
+    });
+  }
 
   // --- ✉️ お客様への自動返信 ---
+  //    ⚠️ 宛先をブラウザが決められるため、内容は載せない。名前も30文字までにする。
   if (customerEmail) {
+    const hNameShort = escapeHtml(String(name).slice(0, 30));
     await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${RESEND_API_KEY}` },
@@ -1066,12 +1113,11 @@ if (type === 'inquiry') {
         // 🚀 🆕 送信者名と題名を屋号に書き換え
         from: `${displayShopName} <infec@snipsnap.biz>`,
         to: [customerEmail],
-        subject: `【送信完了】${displayShopName} へのお問い合わせ`,
+        subject: safeSubject(`【送信完了】${displayShopName} へのお問い合わせ`),
         html: `<div style="font-family: sans-serif; padding: 25px;">
-                <p>${name} 様</p>
-                <p>お問い合わせを承りました。内容を確認次第、ご連絡いたします。</p>
-                <hr />
-                <p style="font-size: 0.9rem; color: #666;">${content.replace(/\n/g, '<br>')}</p>
+                <p>${hNameShort} 様</p>
+                <p>${hShop} へのお問い合わせを承りました。内容を確認次第、ご連絡いたします。</p>
+                <p style="font-size: 0.85rem; color: #666;">※本メールは送信専用です。このメールに返信することはできません。</p>
               </div>`
       })
     });
