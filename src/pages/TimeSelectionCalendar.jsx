@@ -85,7 +85,8 @@ function TimeSelectionCalendar() {
       setAllShopServices(servicesData || []);
 
       // 2. スタッフ情報の取得
-      const { data: staffsData } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
+      // ⚠️ 2026/09/25：staffs への直接アクセスを廃止し、公開用ビュー public_booking_staffs に変更（memo などを出さないため）
+      const { data: staffsData } = await supabase.from('public_booking_staffs').select('*').eq('shop_id', shopId);
       setAllStaffs(staffsData || []);
 
       if (effectiveStaffId) {

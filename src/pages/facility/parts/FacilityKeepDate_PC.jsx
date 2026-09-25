@@ -155,7 +155,8 @@ const FacilityKeepDate_PC = ({ facilityId, isMobile, setActiveTab, sharedDate: c
       supabase.from('public_private_busy').select('start_time, end_time, staff_id').eq('shop_id', shopId)
         .gte('start_time', `${monthStartStr}T00:00:00`).lte('start_time', `${monthEndStr}T23:59:59`), // 👈 追加
       // 👇 🌟 修正：休み情報（weekly_holidays, custom_shifts等）も含めて全て取得するため「*」に変更（マスターデータなので絞り込み不要）
-      supabase.from('staffs').select('*').eq('shop_id', shopId)
+      // ⚠️ 2026/09/25：staffs への直接アクセスを廃止し、公開用ビュー public_booking_staffs に変更（memo などを出さないため）
+      supabase.from('public_booking_staffs').select('*').eq('shop_id', shopId)
     ]);
 
     // 👇 🌟 修正：訪問対応可能なスタッフの「データ丸ごと」と「IDリスト」を作る

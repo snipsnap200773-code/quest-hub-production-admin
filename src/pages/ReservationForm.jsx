@@ -161,7 +161,8 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
         setIsAddressFixed(true);
       } else if (isVisitOnly) {
         setServiceMode('visit');
-        setIsAddressFixed(false);
+        // 端末に保存した住所があれば、確定済みのまま始める
+        setIsAddressFixed(!!localStorage.getItem('guest_addr'));
       } else {
         setServiceMode('salon');
         setIsAddressFixed(true);
@@ -180,7 +181,8 @@ const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃
 
       // 🆕 管理者モード：ねじ込み対象スタッフの名前を取得
       if (isAdminMode && adminStaffId) {
-        const { data: sData } = await supabase.from('staffs').select('name').eq('id', adminStaffId).single();
+        // ⚠️ 2026/09/25：staffs への直接アクセスを廃止し、公開用ビュー public_booking_staffs に変更（memo などを出さないため）
+        const { data: sData } = await supabase.from('public_booking_staffs').select('name').eq('id', adminStaffId).single();
         if (sData) setTargetStaffName(sData.name);
       } else if (isAdminMode && !adminStaffId) {
         setTargetStaffName('フリー（担当なし）');
@@ -243,7 +245,7 @@ if (servRes.data) {
 }
 
         // ✅ スタッフが一人なら自動セットするロジック（State版）
-        const { data: staffList } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
+        const { data: staffList } = await supabase.from('public_booking_staffs').select('*').eq('shop_id', shopId);
         if (staffList) {
           // 役割が stylist（技術者）の人だけを抽出
           const onlyStylists = staffList.filter(s => s.role_type === 'stylist' && s.name);
@@ -478,6 +480,16 @@ if (servRes.data) {
     });
   }, [stylists, serviceMode, visitIndustries, salonIndustries]);
 
+  // 来店／訪問の切り替え（切り替えたら、選択中のメニューをリセットする）
+  const switchMode = (mode) => {
+    if (mode === serviceMode) return;
+    setServiceMode(mode);
+    setSelectedServices([]);
+    setSelectedOptions({});
+    setPeople([]);
+    setIsAddressFixed(mode === 'salon');
+  };
+
 const handleNextStep = (input = null) => {
     // 🚀 🆕 引数が「クリックイベント」の場合は無視して null 扱いにする（エラー防止）
     const selectedStaffId = (typeof input === 'string') ? input : null;
@@ -608,13 +620,13 @@ const handleNextStep = (input = null) => {
         {!isAdminMode && visitIndustries.length > 0 && salonIndustries.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: '#f1f5f9', padding: '6px', borderRadius: '16px' }}>
             <button 
-              onClick={() => { setServiceMode('salon'); setIsAddressFixed(true); setVisitorZip(''); setVisitorAddress(''); }}
+              onClick={() => switchMode('salon')}
               style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: serviceMode === 'salon' ? themeColor : 'transparent', color: serviceMode === 'salon' ? '#fff' : '#64748b', fontWeight: 'bold', transition: '0.2s', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
               🏢 店舗へ行く
             </button>
             <button 
-              onClick={() => { setServiceMode('visit'); setIsAddressFixed(false); }}
+              onClick={() => switchMode('visit')}
               style={{ flex: 1, padding: '12px', borderRadius: '12px', border: 'none', background: serviceMode === 'visit' ? themeColor : 'transparent', color: serviceMode === 'visit' ? '#fff' : '#64748b', fontWeight: 'bold', transition: '0.2s', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px' }}
             >
               🚗 訪問してもらう
@@ -1050,7 +1062,7 @@ const handleNextStep = (input = null) => {
           <h3 style={{ fontSize: '1rem', fontWeight: 'bold', color: '#1e293b', marginBottom: '10px' }}>メニューを表示します</h3>
           <p style={{ fontSize: '0.85rem', color: '#64748b', lineHeight: '1.6', margin: 0 }}>
             訪問先までの移動時間を計算するため、<br />
-            まずは**一番上のフォームに住所を入力**し、<br />
+            まずは<strong>一番上のフォームに住所を入力</strong>し、<br />
             確定ボタンを押してください。
           </p>
         </div>

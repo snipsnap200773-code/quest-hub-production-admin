@@ -154,11 +154,12 @@ const fetchStaffName = async () => {
     try {
       if (staffId) {
         // 1. 指名（staffId）がある場合はその人を優先
-        const { data } = await supabase.from('staffs').select('name').eq('id', staffId).single();
+        // ⚠️ 2026/09/25：staffs への直接アクセスを廃止し、公開用ビュー public_booking_staffs に変更（memo などを出さないため）
+        const { data } = await supabase.from('public_booking_staffs').select('name').eq('id', staffId).single();
         if (data) setStaffName(data.name);
       } else {
         // 🆕 2. 指名がない場合、店舗の全スタッフを確認
-        const { data: staffs } = await supabase.from('staffs').select('name').eq('shop_id', shopId);
+        const { data: staffs } = await supabase.from('public_booking_staffs').select('name').eq('shop_id', shopId);
         
         if (staffs && staffs.length === 1) {
           // 🏆 スタッフが1人しかいないなら、その人を自動的に担当者にセット
@@ -451,7 +452,7 @@ const handleReserve = async () => {
 
       if (!isAdminEntry) {
         // 1. 店舗の全スタッフの最新シフトを取得
-        const { data: allStaffs } = await supabase.from('staffs').select('*').eq('shop_id', shopId);
+        const { data: allStaffs } = await supabase.from('public_booking_staffs').select('*').eq('shop_id', shopId);
         if (allStaffs) {
           // 🆕 修正：曜日判定も日本時間基準に統一する
           const dObj = new Date(`${targetDate}T00:00:00+09:00`);
@@ -519,7 +520,7 @@ const handleReserve = async () => {
 
       // スタッフ自動特定（1名のみの場合）
       if (!finalStaffId) {
-        const { data: staffs } = await supabase.from('staffs').select('id, name').eq('shop_id', shopId);
+        const { data: staffs } = await supabase.from('public_booking_staffs').select('id, name').eq('shop_id', shopId);
         if (staffs && staffs.length === 1) {
           finalStaffId = staffs[0].id;
           finalStaffName = staffs[0].name;
