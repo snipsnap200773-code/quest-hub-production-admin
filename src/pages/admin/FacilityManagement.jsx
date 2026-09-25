@@ -188,6 +188,8 @@ const visitDates = allVisits.map(v => {
   const [invoiceMonth, setInvoiceMonth] = useState(new Date().getMonth() + 1);
   const [salesRecords, setSalesRecords] = useState([]); 
   const [allCustomers, setAllCustomers] = useState([]); 
+  // ⚠️ 2026/09/25【BO】：訪問予約ID → 施設ID の対応表（請求書の集計に使う）
+  const [visitFacilityMap, setVisitFacilityMap] = useState({}); 
 
   // 👇 🌟 🆕 追加：訪問対応スタッフのリストを保持する
   const [visitStaffs, setVisitStaffs] = useState([]);
@@ -279,9 +281,11 @@ const kEndStr = kFuture.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' });
 };
 
 // fetchFacilities内
-const [salesAll, customersAll, resData, privData, visitData, mData, exclData, staffsRes] = await Promise.all([
+const [salesAll, customersAll, visitAll, resData, privData, visitData, mData, exclData, staffsRes] = await Promise.all([
   fetchAllRows(() => supabase.from('sales').select('*').eq('shop_id', shopId)),
   fetchAllRows(() => supabase.from('customers').select('id, name').eq('shop_id', shopId)),
+  // ⚠️ 2026/09/25【BO】：請求書の集計用。この店舗の全訪問予約の「ID → 施設ID」
+  fetchAllRows(() => supabase.from('visit_requests').select('id, facility_user_id').eq('shop_id', shopId)),
   supabase.from('reservations').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
   supabase.from('private_tasks').select('*').eq('shop_id', shopId).gte('start_time', kStartStrT).lte('start_time', kEndStrT),
   supabase.from('visit_requests').select('*, facility_users:facility_users_public!facility_user_id(facility_name)').eq('shop_id', shopId).neq('status', 'canceled').gte('scheduled_date', kStartStr).lte('scheduled_date', kEndStr),
@@ -303,6 +307,10 @@ const [salesAll, customersAll, resData, privData, visitData, mData, exclData, st
 
       setSalesRecords(salesAll);
 setAllCustomers(customersAll);
+      // ⚠️ 2026/09/25【BO】：訪問予約ID → 施設ID の対応表を作る
+      const vfMap = {};
+      (visitAll || []).forEach(v => { vfMap[v.id] = v.facility_user_id; });
+      setVisitFacilityMap(vfMap);
 
       // ○△✕判定用のデータをStateへガッチリ蓄積
       // 👇 🌟 修正：訪問スタッフに関係ない予約・予定は弾いてStateに入れる！
@@ -1635,12 +1643,10 @@ facilities.forEach(conn => {
               </div>
 
 {(() => {
-                // 🚀 🆕 最強の名寄せロジック：
-                // この施設名（例：マリアの丘）と一致するすべての顧客IDをリストアップ
-                const targetCustomerIds = allCustomers
-                  .filter(c => c.name === invoiceTarget.name)
-                  .map(c => c.id);
-
+                // ⚠️ 2026/09/25【BO】：集計を「売上 → 訪問予約（この店舗）→ 施設」でたどる形に変更しました。
+                //    従来は顧客名簿で施設名と同じ名前の顧客を探し、その customer_id で売上を拾っていたため、
+                //    customer_id が空の売上（例：清風園デイサービス 2026/06/02 の 17,300円）が漏れていました。
+                //    施設側の利用明細（public_facility_sales）と同じ判定なので、金額が一致します。
                 const filteredSales = salesRecords.filter(s => {
                   if (!s.sale_date) return false;
                   const d = new Date(s.sale_date);
@@ -1649,8 +1655,8 @@ facilities.forEach(conn => {
                   const isMatchMonth = d.getFullYear() === invoiceYear && (d.getMonth() + 1) === invoiceMonth;
                   if (!isMatchMonth) return false;
 
-                  // ② 🚀 🆕 売上の customer_id が、リストアップしたIDのどれかに一致すれば採用
-                  return targetCustomerIds.includes(s.customer_id);
+                  // ② 売上の訪問予約が、この施設の訪問予約なら採用
+                  return !!s.visit_request_id && visitFacilityMap[s.visit_request_id] === invoiceTarget.facility_user_id;
                 });
 
                 const total = filteredSales.reduce((sum, s) => sum + (Number(s.total_amount) || 0), 0);
