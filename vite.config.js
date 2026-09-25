@@ -12,7 +12,11 @@ export default defineConfig({
         enabled: true
       },
       workbox: {
-        maximumFileSizeToCacheInBytes: 3145728
+        maximumFileSizeToCacheInBytes: 3145728,
+        // ⚠️ 2026/09/25【BR③】：/api/... へのページ遷移を Service Worker が横取りして
+        //    アプリの画面（index.html）を返していたため、除外する。
+        //    （例：ブラウザで /api/cron/remind を開くと、API ではなく管理画面が出ていた）
+        navigateFallbackDenylist: [/^\/api\//]
       },
       manifest: {
         name: 'QUEST HUB Admin',
