@@ -387,9 +387,15 @@ function SuperAdmin() {
     const wantsPasswordChange = !!(editFacilityPass && editFacilityPass.trim() !== '');
 
     const updatePayload = {
-      facility_name: editFacilityName,
-      login_id: editFacilityLoginId
+      facility_name: editFacilityName
     };
+    // ⚠️ 2026/09/25：ログインIDも「変更する場合のみ」にしました。
+    //    一覧は facility_users_public（login_id を含まない）から読むため、欄は常に空で始まります。
+    //    従来は一度入力して消すと、空のログインIDで上書きされ、その施設がログインできなくなりました。
+    const newLoginId = (editFacilityLoginId || '').trim();
+    if (newLoginId) {
+      updatePayload.login_id = newLoginId;
+    }
     if (wantsPasswordChange) {
       updatePayload.password = editFacilityPass.trim();
     }
@@ -911,7 +917,8 @@ const updateShopInfo = async (id) => {
                     onClick={() => {
                       setEditingFacilityId(f.id);
                       setEditFacilityName(f.facility_name);
-                      setEditFacilityLoginId(f.login_id);
+                      // ⚠️ 2026/09/25：login_id はビューに無いため読み込まない。この欄は「変更する場合のみ」。
+                      setEditFacilityLoginId('');
                       // ⚠️ 2026/09/08：現在値は読み込まない。この欄は「再設定」用。
                       //    空欄のまま保存すればパスワードは変更されません。
                       setEditFacilityPass('');
@@ -930,7 +937,7 @@ const updateShopInfo = async (id) => {
                 /* 編集モードの入力エリア */
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                   <div style={{ display: 'flex', gap: '8px' }}>
-                    <input value={editFacilityLoginId} onChange={e => setEditFacilityLoginId(e.target.value)} style={smallInput} placeholder="ID" />
+                    <input value={editFacilityLoginId} onChange={e => setEditFacilityLoginId(e.target.value)} style={smallInput} placeholder="ログインIDを変更する場合のみ入力" />
                     <input value={editFacilityPass} onChange={e => setEditFacilityPass(e.target.value)} style={smallInput} placeholder="変更する場合のみ入力" />
                   </div>
                   <div style={{ display: 'flex', gap: '8px' }}>
