@@ -494,8 +494,14 @@ const handleNextStep = (input = null) => {
     // 🚀 🆕 引数が「クリックイベント」の場合は無視して null 扱いにする（エラー防止）
     const selectedStaffId = (typeof input === 'string') ? input : null;
     
+    // 🆕 2026/09/25：カレンダーからのねじ込みで担当が決まっていないときも、担当を選んでもらう。
+    //    担当なしで登録すると、スタッフ個人の枠に数えられず、同じ時間にネット予約で
+    //    そのスタッフの指名が入ってしまうため（ダブルブッキング）。
+    //    タイムラインは押した列（スタッフ or 担当なし）を店主が選んでいるので出さない。
+    const needsAdminStaffPick = isAdminMode && fromView === 'calendar' && !adminStaffId;
+
     // 👇 🌟 修正：全体の stylists ではなく、対応可能な availableStylists で判定する
-    if (!isAdminMode && !staffIdFromUrl && availableStylists.length > 1 && !selectedStaffId) {
+    if ((!isAdminMode || needsAdminStaffPick) && !staffIdFromUrl && availableStylists.length > 1 && !selectedStaffId) {
       setShowStaffModal(true); // 指名画面（モーダル）を表示
       return; 
     }
@@ -1138,7 +1144,7 @@ const handleNextStep = (input = null) => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
                 {/* 指名なし（フリー） */}
                 <button onClick={() => handleNextStep('free')} style={staffCardStyle(false, themeColor)}>
-                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>指名なし（最短時間で予約）</div>
+                  <div style={{ fontWeight: 'bold', fontSize: '0.95rem' }}>{isAdminMode ? '担当なし（フリー）' : '指名なし（最短時間で予約）'}</div>
                   <ChevronRight size={18} opacity={0.5} />
                 </button>
 

@@ -900,8 +900,11 @@ return (
         
         <p style={{ margin: '0 0 12px 0' }}>📅 <b>日時：</b> {displayDate} {displayTime} 〜</p>
         
-        {staffName && (
+        {staffName ? (
           <p style={{ margin: '0 0 12px 0' }}>👤 <b>担当：</b> {staffName}</p>
+        ) : (isAdminEntry && !staffId) && (
+          // 🆕 ねじ込みで担当なしのときも、そうと分かるように表示する
+          <p style={{ margin: '0 0 12px 0' }}>👤 <b>担当：</b> フリー（担当なし）</p>
         )}
 
         <p style={{ margin: '0 0 8px 0' }}>📋 <b>選択メニュー：</b></p>
