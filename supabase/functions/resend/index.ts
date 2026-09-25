@@ -215,6 +215,40 @@ Deno.serve(async (req) => {
       return new Response(JSON.stringify({ success: false, message: msg }), { status, headers: corsHeaders });
     };
 
+    // ⚠️ 2026/09/25【BU】：マルチブランドの屋号は、ブラウザの値ではなく DB（service_categories）で決める。
+    //    従来は予約の options.applied_shop_name（ブラウザが作った値）をそのまま差出人名と本文に使っており、
+    //    「QUEST HUB 運営事務局」などの紛らわしい名前でメール・LINE を送らせることができた。
+    //    ・resolveBrandName … 店舗ID と識別キー（予約の biz_type ＝ url_key）から屋号を引く
+    //    ・pickAllowedBrandName … 届いた屋号が、その店舗の登録済み屋号のどれかと一致するときだけ返す
+    //    どちらも見つからなければ '' を返し、呼び出し側で本体の店名（business_name）を使う。
+    //    9/25 に既存の予約707件で「DB から引いた屋号＝保存済みの屋号」を確認済み（不一致0件）。
+    const resolveBrandName = async (sid: unknown, bizType: unknown): Promise<string> => {
+      const shopKey = String(sid ?? '').trim();
+      const key = String(bizType ?? '').trim();
+      if (!shopKey || !key) return '';
+      const { data } = await supabaseAdmin
+        .from('service_categories')
+        .select('custom_shop_name')
+        .eq('shop_id', shopKey)
+        .eq('url_key', key)
+        .limit(1)
+        .maybeSingle();
+      return String(data?.custom_shop_name ?? '').trim();
+    };
+
+    const pickAllowedBrandName = async (sid: unknown, requested: unknown): Promise<string> => {
+      const shopKey = String(sid ?? '').trim();
+      const want = String(requested ?? '').trim();
+      if (!shopKey || !want) return '';
+      const { data } = await supabaseAdmin
+        .from('service_categories')
+        .select('custom_shop_name')
+        .eq('shop_id', shopKey);
+      const ok = (data ?? []).some((c: { custom_shop_name?: string | null }) =>
+        String(c.custom_shop_name ?? '').trim() === want);
+      return ok ? want : '';
+    };
+
     // ⚠️ 2026/09/24【BP】：定期処理（リマインド一斉送信・深夜の自動売上確定）は、
     //    合言葉（x-cron-secret ヘッダー）が一致する呼び出しだけを通す。
     //    従来は誰でも好きなときに実行できた。
@@ -355,7 +389,7 @@ Deno.serve(async (req) => {
 
       const q = supabaseAdmin
         .from('reservations')
-        .select('id, shop_id, customer_name, customer_email, line_user_id, start_time, status, menu_name, options');
+        .select('id, shop_id, customer_name, customer_email, line_user_id, start_time, status, menu_name, options, biz_type');
 
       const { data: row } = cancelToken
         ? await q.eq('cancel_token', String(cancelToken)).maybeSingle()
@@ -408,7 +442,7 @@ Deno.serve(async (req) => {
 
       const { data: row } = await supabaseAdmin
         .from('reservations')
-        .select('id, shop_id, staff_id, customer_id, customer_name, customer_email, customer_phone, line_user_id, start_time, status, menu_name, options, created_at')
+        .select('id, shop_id, staff_id, customer_id, customer_name, customer_email, customer_phone, line_user_id, start_time, status, menu_name, options, created_at, biz_type')
         .eq('cancel_token', String(bookingToken))
         .maybeSingle();
 
@@ -440,7 +474,8 @@ Deno.serve(async (req) => {
       customerPhone  = (row.customer_phone && row.customer_phone !== '---') ? row.customer_phone : '';
       lineUserId     = row.line_user_id || null;
       services       = row.menu_name || 'メニューなし';
-      shopName       = opt.applied_shop_name || '';      // 空なら後段で profiles.business_name を使う
+      // ⚠️ 2026/09/25【BU】：屋号は予約の biz_type から DB で引く（options.applied_shop_name は使わない）
+      shopName       = await resolveBrandName(row.shop_id, row.biz_type); // 空なら後段で profiles.business_name を使う
       startTime      = new Date(row.start_time).toLocaleString('ja-JP', {
                          timeZone: 'Asia/Tokyo', year: 'numeric', month: '2-digit',
                          day: '2-digit', hour: '2-digit', minute: '2-digit'
@@ -1192,9 +1227,11 @@ if (type === 'inquiry') {
   const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).maybeSingle();
   if (!profile) return deny('店舗情報が見つかりません', 404);
 
-  // 🚀 🆕 重要：題名や送信者に使う名前を決定（届いた屋号があれば最優先、なければ店舗名）
-  //    ※ 屋号をブラウザが決められる問題は【BU】で別途対応する
-  const displayShopName = safeSenderName(reqShopName || profile.business_name, profile.business_name || 'QUEST HUB');
+  // ⚠️ 2026/09/25【BU】：届いた屋号は、その店舗が登録した屋号（service_categories.custom_shop_name）の
+  //    どれかと一致するときだけ使う。一致しなければ本体の店名を使う。
+  //    お問い合わせ画面（InquiryForm）は「登録済みの屋号」か「本体の店名」しか送らないため、本物の利用では結果は変わらない。
+  const allowedBrand = await pickAllowedBrandName(shopId, reqShopName);
+  const displayShopName = safeSenderName(allowedBrand || profile.business_name, profile.business_name || 'QUEST HUB');
 
   // HTML に入れる値（エスケープ済み）
   const hShop = escapeHtml(displayShopName);
@@ -1610,12 +1647,12 @@ if (type === 'test') {
     // ==========================================
     const { data: profile } = await supabaseAdmin.from('profiles').select('*').eq('id', shopId).single();
     
-    // ⚠️ 2026/09/23【BH】：キャンセル通知の店舗名も、予約の行（applied_shop_name）から取る。
+    // ⚠️ 2026/09/23【BH】：キャンセル通知の店舗名も、予約の行から決める。
     //    従来はブラウザからの値を使っており、差出人名と本文の店舗名を書き換えられた。
     //    （booking は上の DB 読み取りで設定済み）
+    // ⚠️ 2026/09/25【BU】：屋号は予約の biz_type から DB で引く（options.applied_shop_name は使わない）
     if (type === 'cancel') {
-      const cOpt = (cancelRow?.options ?? {}) as { applied_shop_name?: string };
-      shopName = cOpt.applied_shop_name || '';
+      shopName = await resolveBrandName(cancelRow?.shop_id, cancelRow?.biz_type);
     }
 
     // 🚀 🆕 【ここを追加！】不足している店舗情報を補完する

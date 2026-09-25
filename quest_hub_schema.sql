@@ -31,6 +31,12 @@ CREATE EXTENSION IF NOT EXISTS "pg_net" WITH SCHEMA "public";
 
 
 
+CREATE SCHEMA IF NOT EXISTS "private";
+
+
+ALTER SCHEMA "private" OWNER TO "postgres";
+
+
 CREATE EXTENSION IF NOT EXISTS "pg_stat_statements" WITH SCHEMA "extensions";
 
 
@@ -70,6 +76,198 @@ CREATE TYPE "public"."subscription_status" AS ENUM (
 
 
 ALTER TYPE "public"."subscription_status" OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") RETURNS "jsonb"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $_$
+#variable_conflict use_column
+declare
+  v_name      text := nullif(btrim(p_customer->>'name'), '');
+  v_name_key  text;
+  v_phone     text := regexp_replace(coalesce(p_customer->>'phone', ''), '[^0-9]', '', 'g');
+  v_phone_ok  boolean;
+  v_line      text := nullif(btrim(coalesce(p_line_user_id, '')), '');
+  v_furigana  text := nullif(btrim(p_customer->>'furigana'), '');
+  v_email     text := nullif(btrim(p_customer->>'email'), '');
+  v_zip       text := nullif(btrim(p_customer->>'zip_code'), '');
+  v_address   text := nullif(btrim(p_customer->>'address'), '');
+  v_parking   text := nullif(btrim(p_customer->>'parking'), '');
+  v_building  text := nullif(btrim(p_customer->>'building_type'), '');
+  v_care      text := nullif(btrim(p_customer->>'care_notes'), '');
+  v_company   text := nullif(btrim(p_customer->>'company_name'), '');
+  v_symptoms  text := nullif(btrim(p_customer->>'symptoms'), '');
+  v_request   text := nullif(btrim(p_customer->>'request_details'), '');
+  v_notes     text := nullif(btrim(p_customer->>'notes'), '');
+  v_answers   jsonb;
+  v_cnt       integer;
+  v_cust_id   public.customers.id%type;
+  v_cust_name text;
+  v_admin     text;
+  v_display   text;
+  v_staff_cnt integer;
+  v_store_cnt integer;
+  v_res_id    public.reservations.id%type;
+  v_token     text := gen_random_uuid()::text;
+  v_auth      uuid := auth.uid();
+begin
+  -- ⚠️ 9/16：店舗オーナー（profiles にいる人）がログイン中なら auth_id は付けない
+  if v_auth is not null and exists (select 1 from public.profiles p where p.id = v_auth) then
+    v_auth := null;
+  end if;
+
+  if v_name is null or p_start_time is null or p_end_time is null
+     or p_end_time <= p_start_time or p_reservation_date is null then
+    raise exception 'INVALID_INPUT';
+  end if;
+
+  if not exists (
+    select 1 from public.profiles p
+    where p.id = p_shop_id
+      and p.role = 'shop'
+      and coalesce(p.is_suspended, false) = false
+      and (coalesce(p.is_tester, false)
+           or p.subscription_status in ('active', 'trialing'))
+  ) then
+    raise exception 'SHOP_UNAVAILABLE';
+  end if;
+
+  if p_staff_id is not null and not exists (
+    select 1 from public.staffs s
+    where s.id = p_staff_id and s.shop_id = p_shop_id
+  ) then
+    raise exception 'INVALID_STAFF';
+  end if;
+
+  if p_staff_id is not null then
+    perform pg_advisory_xact_lock(hashtext(p_staff_id::text));
+  else
+    perform pg_advisory_xact_lock(hashtext(p_shop_id::text));
+  end if;
+
+  if p_staff_id is not null then
+    select count(*) into v_staff_cnt
+    from public.reservations r
+    where r.staff_id = p_staff_id
+      and r.res_type = 'normal'
+      and r.status <> 'canceled'
+      and r.start_time < p_end_time
+      and r.end_time > p_start_time;
+    if v_staff_cnt >= p_staff_max then
+      raise exception 'STAFF_FULL';
+    end if;
+  end if;
+
+  select count(*) into v_store_cnt
+  from public.reservations r
+  where r.shop_id = p_shop_id
+    and r.res_type = 'normal'
+    and r.status <> 'canceled'
+    and r.start_time < p_end_time
+    and r.end_time > p_start_time;
+  if v_store_cnt >= p_store_max then
+    raise exception 'STORE_FULL';
+  end if;
+
+  v_phone_ok := length(v_phone) between 10 and 11 and v_phone !~ '^(\d)\1*$';
+  v_name_key := regexp_replace(v_name, '[[:space:]　]', '', 'g');
+
+  if v_line is not null then
+    select c.id, c.name, c.admin_name into v_cust_id, v_cust_name, v_admin
+    from public.customers c
+    where c.shop_id = p_shop_id
+      and c.line_user_id = v_line
+      and coalesce(c.is_facility, false) = false
+    order by c.last_arrival_at desc nulls last, c.created_at desc
+    limit 1;
+  end if;
+
+  if v_cust_id is null and v_phone_ok then
+    select count(*) into v_cnt
+    from public.customers c
+    where c.shop_id = p_shop_id
+      and coalesce(c.is_facility, false) = false
+      and regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') = v_phone;
+
+    if v_cnt = 1 then
+      select c.id, c.name, c.admin_name into v_cust_id, v_cust_name, v_admin
+      from public.customers c
+      where c.shop_id = p_shop_id
+        and coalesce(c.is_facility, false) = false
+        and regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') = v_phone;
+    elsif v_cnt > 1 then
+      select c.id, c.name, c.admin_name into v_cust_id, v_cust_name, v_admin
+      from public.customers c
+      where c.shop_id = p_shop_id
+        and coalesce(c.is_facility, false) = false
+        and regexp_replace(coalesce(c.phone, ''), '[^0-9]', '', 'g') = v_phone
+        and regexp_replace(coalesce(c.name, ''), '[[:space:]　]', '', 'g') = v_name_key
+      order by c.last_arrival_at desc nulls last, c.created_at desc
+      limit 1;
+    end if;
+  end if;
+
+  if v_cust_id is not null then
+    update public.customers c set
+      furigana        = coalesce(nullif(c.furigana, ''),        v_furigana),
+      phone           = coalesce(nullif(c.phone, ''),           nullif(v_phone, '')),
+      email           = coalesce(nullif(c.email, ''),           v_email),
+      zip_code        = coalesce(nullif(c.zip_code, ''),        v_zip),
+      address         = coalesce(nullif(c.address, ''),         v_address),
+      parking         = coalesce(nullif(c.parking, ''),         v_parking),
+      building_type   = coalesce(nullif(c.building_type, ''),   v_building),
+      care_notes      = coalesce(nullif(c.care_notes, ''),      v_care),
+      company_name    = coalesce(nullif(c.company_name, ''),    v_company),
+      symptoms        = coalesce(nullif(c.symptoms, ''),        v_symptoms),
+      request_details = coalesce(nullif(c.request_details, ''), v_request),
+      notes           = coalesce(nullif(c.notes, ''),           v_notes),
+      total_visits    = coalesce(c.total_visits, 0) + 1,
+      last_arrival_at = p_start_time,
+      updated_at      = now()
+    where c.id = v_cust_id;
+
+    v_display := coalesce(nullif(v_admin, ''), nullif(v_cust_name, ''), v_name);
+  else
+    if jsonb_typeof(p_customer->'custom_answers') = 'object' then
+      v_answers := p_customer->'custom_answers';
+    end if;
+
+    insert into public.customers (
+      shop_id, name, auth_id, furigana, phone, email, zip_code, address,
+      parking, building_type, care_notes, company_name, symptoms,
+      request_details, notes, custom_answers, line_user_id,
+      total_visits, last_arrival_at, updated_at
+    ) values (
+      p_shop_id, v_name, v_auth, v_furigana, nullif(v_phone, ''), v_email, v_zip, v_address,
+      v_parking, v_building, v_care, v_company, v_symptoms,
+      v_request, v_notes, v_answers, v_line,
+      1, p_start_time, now()
+    )
+    returning id into v_cust_id;
+
+    v_display := v_name;
+  end if;
+
+  insert into public.reservations (
+    shop_id, staff_id, customer_id, reservation_date,
+    customer_name, customer_phone, customer_email, zip_code,
+    start_time, end_time, total_slots, res_type, biz_type,
+    line_user_id, cancel_token, menu_name, options
+  ) values (
+    p_shop_id, p_staff_id, v_cust_id, p_reservation_date,
+    v_display, coalesce(nullif(v_phone, ''), '---'), v_email, v_zip,
+    p_start_time, p_end_time, p_total_slots, 'normal', p_biz_type,
+    v_line, v_token, p_menu_name, p_options
+  )
+  returning id into v_res_id;
+
+  return jsonb_build_object('reservation_id', v_res_id, 'cancel_token', v_token);
+end;
+$_$;
+
+
+ALTER FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") OWNER TO "postgres";
 
 SET default_tablespace = '';
 
@@ -123,6 +321,27 @@ declare
   v_store_count integer;
   v_new_row reservations;
 begin
+  -- 🔐 2026/09/22【BI】【BJ】：店舗のねじ込み専用になったため、呼び出し元を確認する。
+  --    一般客の予約は book_public_reservation を使う。
+  --    auth.uid() が null（未ログイン）でもすり抜けないよう is distinct from を使う。
+  if auth.uid() is distinct from p_shop_id
+     and not coalesce(public.is_super_admin(), false) then
+    raise exception 'NOT_ALLOWED';
+  end if;
+
+  -- 🔐 スタッフ・顧客がその店舗のものか確認する（他店のIDを渡させない）
+  if p_staff_id is not null and not exists (
+    select 1 from staffs s where s.id = p_staff_id and s.shop_id = p_shop_id
+  ) then
+    raise exception 'INVALID_STAFF';
+  end if;
+
+  if p_customer_id is not null and not exists (
+    select 1 from customers c where c.id = p_customer_id and c.shop_id = p_shop_id
+  ) then
+    raise exception 'INVALID_CUSTOMER';
+  end if;
+
   -- 🔒 同じスタッフ宛のリクエストを順番待ちにする（指名なしなら店舗単位でロック）
   if p_staff_id is not null then
     perform pg_advisory_xact_lock(hashtext(p_staff_id::text));
@@ -416,6 +635,22 @@ $$;
 ALTER FUNCTION "public"."create_reservation_with_capacity"("p_shop_id" "uuid", "p_customer_name" "text", "p_res_type" "text", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_options" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."current_facility_id"() RETURNS "uuid"
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  select s.facility_user_id
+  from public.facility_sessions s
+  where s.token = nullif(
+        nullif(current_setting('request.headers', true), '')::json ->> 'x-facility-token', '')
+    and s.expires_at > now()
+  limit 1;
+$$;
+
+
+ALTER FUNCTION "public"."current_facility_id"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_my_reservations"() RETURNS TABLE("id" "uuid", "shop_id" "uuid", "shop_name" "text", "start_time" timestamp with time zone, "menu_name" "text", "status" "text", "is_today" boolean)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -517,6 +752,127 @@ $$;
 ALTER FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."guard_connection_update"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
+    AS $$
+begin
+  -- SQL Editor（postgres）や service_role はチェックしない
+  if current_user not in ('anon', 'authenticated') then
+    return new;
+  end if;
+  if public.is_super_admin() then
+    return new;
+  end if;
+
+  -- 誰と誰の提携か・どちらが申請したかは変更できない
+  if new.shop_id is distinct from old.shop_id
+     or new.facility_user_id is distinct from old.facility_user_id
+     or new.created_by_type is distinct from old.created_by_type then
+    raise exception '提携の当事者・申請者は変更できません';
+  end if;
+
+  -- status の変更は「pending → active」だけ、申請を受けた側だけ
+  if new.status is distinct from old.status then
+    if not (old.status = 'pending' and new.status = 'active') then
+      raise exception '提携の状態はこの操作では変更できません';
+    end if;
+    if old.created_by_type = 'facility' then
+      if auth.uid() is distinct from old.shop_id then
+        raise exception '施設からの申請は店舗だけが承認できます';
+      end if;
+    elsif old.created_by_type = 'shop' then
+      if public.current_facility_id() is distinct from old.facility_user_id then
+        raise exception '店舗からの申請は施設だけが承認できます';
+      end if;
+    else
+      raise exception '申請者が不明な提携は承認できません';
+    end if;
+  end if;
+
+  -- 店舗以外（＝施設）は、承認以外の項目を変更できない
+  if auth.uid() is distinct from old.shop_id then
+    if new.regular_rules is distinct from old.regular_rules
+       or new.advance_booking_days is distinct from old.advance_booking_days
+       or new.assigned_staff_id is distinct from old.assigned_staff_id then
+      raise exception '定期ルール等は店舗だけが変更できます';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."guard_connection_update"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."guard_facility_self_update"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
+    AS $$
+begin
+  if current_user not in ('anon', 'authenticated') then
+    return new;
+  end if;
+  if public.is_super_admin() then
+    return new;
+  end if;
+
+  -- 施設本人が変更してよいのは、連絡先と通知まわりの8列だけ
+  if new.id                          is distinct from old.id
+     or new.login_id                 is distinct from old.login_id
+     or new.password                 is distinct from old.password
+     or new.facility_name            is distinct from old.facility_name
+     or new.is_suspended             is distinct from old.is_suspended
+     or new.is_test_mode             is distinct from old.is_test_mode
+     or new.created_at               is distinct from old.created_at
+     or new.accept_salon             is distinct from old.accept_salon
+     or new.accept_dentist           is distinct from old.accept_dentist
+     or new.accept_massage           is distinct from old.accept_massage then
+    raise exception 'この項目は変更できません';
+  end if;
+
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."guard_facility_self_update"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."guard_profile_role"() RETURNS "trigger"
+    LANGUAGE "plpgsql"
+    SET "search_path" TO 'public'
+    AS $$
+begin
+  -- SQL Editor（postgres）や service_role、Auth の内部処理はチェックしない
+  if current_user not in ('anon', 'authenticated') then
+    return new;
+  end if;
+  -- SuperAdmin は role を変更・作成できる
+  if public.is_super_admin() then
+    return new;
+  end if;
+
+  if tg_op = 'INSERT' then
+    if new.role = 'super_admin' then
+      raise exception 'この権限（role）では作成できません';
+    end if;
+  elsif tg_op = 'UPDATE' then
+    if new.role is distinct from old.role then
+      raise exception '権限（role）は変更できません';
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."guard_profile_role"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_account_active"("profile_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -583,6 +939,55 @@ $$;
 ALTER FUNCTION "public"."sync_facility_to_customers"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."update_facility_self"("p_patch" "jsonb") RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  fid uuid;
+  allowed text[] := array[
+    'furigana', 'contact_name', 'address', 'tel',
+    'official_url', 'email',
+    'email_notifications_enabled', 'allowed_categories'
+  ];
+  k text;
+begin
+  -- 施設トークンから本人を特定する（呼び出し元の申告は信用しない）
+  fid := public.current_facility_id();
+  if fid is null then
+    raise exception '施設として認証されていません';
+  end if;
+
+  -- 許可した列以外が含まれていたら拒否する
+  for k in select jsonb_object_keys(p_patch) loop
+    if not (k = any(allowed)) then
+      raise exception 'この項目は変更できません: %', k;
+    end if;
+  end loop;
+
+  update public.facility_users f
+  set
+    furigana                    = coalesce(p_patch->>'furigana', f.furigana),
+    contact_name                = coalesce(p_patch->>'contact_name', f.contact_name),
+    address                     = coalesce(p_patch->>'address', f.address),
+    tel                         = coalesce(p_patch->>'tel', f.tel),
+    official_url                = coalesce(p_patch->>'official_url', f.official_url),
+    email                       = coalesce(p_patch->>'email', f.email),
+    email_notifications_enabled = coalesce((p_patch->>'email_notifications_enabled')::boolean,
+                                           f.email_notifications_enabled),
+    allowed_categories          = case
+                                    when p_patch ? 'allowed_categories'
+                                    then (select array_agg(x) from jsonb_array_elements_text(p_patch->'allowed_categories') x)
+                                    else f.allowed_categories
+                                  end
+  where f.id = fid;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."update_facility_self"("p_patch" "jsonb") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."update_product_stock"() RETURNS "trigger"
     LANGUAGE "plpgsql"
     AS $$
@@ -610,6 +1015,62 @@ $$;
 
 
 ALTER FUNCTION "public"."update_updated_at_column"() OWNER TO "postgres";
+
+
+CREATE OR REPLACE FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") RETURNS TABLE("id" "uuid", "facility_name" "text", "session_token" "text")
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_facility public.facility_users%rowtype;
+  v_token    text;
+begin
+  select f.* into v_facility
+  from public.facility_users f
+  where f.login_id = btrim(p_login_id)
+    and f.password = btrim(p_password)
+    and f.is_suspended = false
+  limit 1;
+
+  if not found then
+    return;
+  end if;
+
+  delete from public.facility_sessions s
+  where s.facility_user_id = v_facility.id
+    and s.expires_at <= now();
+
+  v_token := replace(gen_random_uuid()::text, '-', '')
+          || replace(gen_random_uuid()::text, '-', '');
+
+  insert into public.facility_sessions (token, facility_user_id, expires_at)
+  values (v_token, v_facility.id, now() + interval '30 days');
+
+  return query select v_facility.id, v_facility.facility_name, v_token;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "private"."app_secrets" (
+    "name" "text" NOT NULL,
+    "value" "text" NOT NULL
+);
+
+
+ALTER TABLE "private"."app_secrets" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "private"."bk_customers_auth_20260916" (
+    "id" "uuid",
+    "auth_id" "uuid",
+    "backed_up_at" timestamp with time zone
+);
+
+
+ALTER TABLE "private"."bk_customers_auth_20260916" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."admin_adjustments" (
@@ -739,6 +1200,18 @@ CREATE TABLE IF NOT EXISTS "public"."facilities" (
 ALTER TABLE "public"."facilities" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."facility_sessions" (
+    "token" "text" NOT NULL,
+    "facility_user_id" "uuid" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "now"() NOT NULL,
+    "expires_at" timestamp with time zone NOT NULL,
+    "last_seen_at" timestamp with time zone
+);
+
+
+ALTER TABLE "public"."facility_sessions" OWNER TO "postgres";
+
+
 CREATE TABLE IF NOT EXISTS "public"."facility_users" (
     "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
     "login_id" "text" NOT NULL,
@@ -770,6 +1243,29 @@ COMMENT ON COLUMN "public"."facility_users"."is_suspended" IS '施設アカウ�
 
 COMMENT ON COLUMN "public"."facility_users"."is_test_mode" IS 'テストモードフラグ（trueで過去予約を許可）';
 
+
+
+CREATE OR REPLACE VIEW "public"."facility_users_public" AS
+ SELECT "id",
+    "facility_name",
+    "email",
+    "address",
+    "tel",
+    "created_at",
+    "accept_salon",
+    "accept_dentist",
+    "accept_massage",
+    "email_notifications_enabled",
+    "contact_name",
+    "official_url",
+    "allowed_categories",
+    "furigana",
+    "is_suspended",
+    "is_test_mode"
+   FROM "public"."facility_users";
+
+
+ALTER VIEW "public"."facility_users_public" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."favorites" (
@@ -1117,6 +1613,16 @@ CREATE TABLE IF NOT EXISTS "public"."members" (
 ALTER TABLE "public"."members" OWNER TO "postgres";
 
 
+CREATE TABLE IF NOT EXISTS "public"."members_facility_backup_20260908" (
+    "id" bigint,
+    "facility" "text",
+    "facility_user_id" "uuid"
+);
+
+
+ALTER TABLE "public"."members_facility_backup_20260908" OWNER TO "postgres";
+
+
 ALTER TABLE "public"."members" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."members_id_seq"
     START WITH 1
@@ -1419,7 +1925,7 @@ COMMENT ON COLUMN "public"."profiles"."hashed_password" IS 'bcrypt ハッシュ�
 
 
 
-CREATE OR REPLACE VIEW "public"."public_booking_settings" WITH ("security_invoker"='true') AS
+CREATE OR REPLACE VIEW "public"."public_booking_settings" WITH ("security_invoker"='false') AS
  SELECT "id",
     "business_name",
     "business_name_kana",
@@ -1491,7 +1997,202 @@ CREATE OR REPLACE VIEW "public"."public_busy_slots" AS
 ALTER VIEW "public"."public_busy_slots" OWNER TO "postgres";
 
 
-CREATE OR REPLACE VIEW "public"."public_shops" WITH ("security_invoker"='true') AS
+CREATE TABLE IF NOT EXISTS "public"."shop_facility_connections" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "shop_id" "uuid",
+    "facility_user_id" "uuid",
+    "status" "text" DEFAULT 'pending'::"text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "regular_rules" "jsonb" DEFAULT '[]'::"jsonb",
+    "created_by_type" "text" DEFAULT 'shop'::"text",
+    "advance_booking_days" integer DEFAULT 0,
+    "assigned_staff_id" "uuid"
+);
+
+
+ALTER TABLE "public"."shop_facility_connections" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_connection_rules" AS
+ SELECT "c"."shop_id",
+        CASE
+            WHEN ("c"."facility_user_id" = "public"."current_facility_id"()) THEN "c"."facility_user_id"
+            ELSE ("md5"((("s"."value" || ("c"."facility_user_id")::"text") || ("c"."shop_id")::"text")))::"uuid"
+        END AS "facility_user_id",
+        CASE
+            WHEN ("c"."facility_user_id" = "public"."current_facility_id"()) THEN "c"."regular_rules"
+            WHEN ("jsonb_typeof"("c"."regular_rules") = 'array'::"text") THEN COALESCE(( SELECT "jsonb_agg"(("r"."value" - 'time'::"text")) AS "jsonb_agg"
+               FROM "jsonb_array_elements"("c"."regular_rules") "r"("value")), '[]'::"jsonb")
+            ELSE "c"."regular_rules"
+        END AS "regular_rules",
+    "c"."status",
+        CASE
+            WHEN ("c"."facility_user_id" = "public"."current_facility_id"()) THEN "c"."assigned_staff_id"
+            ELSE NULL::"uuid"
+        END AS "assigned_staff_id"
+   FROM ("public"."shop_facility_connections" "c"
+     CROSS JOIN ( SELECT "app_secrets"."value"
+           FROM "private"."app_secrets"
+          WHERE ("app_secrets"."name" = 'facility_mask_salt'::"text")) "s");
+
+
+ALTER VIEW "public"."public_connection_rules" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."sales" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "shop_id" "uuid",
+    "customer_id" "uuid",
+    "sale_date" "date" DEFAULT CURRENT_DATE,
+    "total_amount" integer DEFAULT 0,
+    "payment_method" "text" DEFAULT '現金'::"text",
+    "memo" "text",
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()),
+    "reservation_id" "uuid",
+    "service_amount" integer DEFAULT 0,
+    "product_amount" integer DEFAULT 0,
+    "details" "jsonb" DEFAULT '{}'::"jsonb",
+    "tax_amount" integer DEFAULT 0,
+    "discount_amount" integer DEFAULT 0,
+    "visit_note" "text",
+    "visit_request_id" "uuid"
+);
+
+
+ALTER TABLE "public"."sales" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."visit_requests" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "facility_id" "uuid",
+    "shop_id" "uuid",
+    "request_date" "date" DEFAULT CURRENT_DATE,
+    "scheduled_date" "date",
+    "status" "text" DEFAULT 'pending'::"text",
+    "is_list_confirmed" boolean DEFAULT false,
+    "memo" "text",
+    "created_at" timestamp with time zone DEFAULT "now"(),
+    "facility_user_id" "uuid",
+    "end_date" "date",
+    "visit_date_list" "jsonb",
+    "start_time" time without time zone DEFAULT '09:00:00'::time without time zone,
+    "parent_id" "uuid",
+    "updated_at" timestamp with time zone DEFAULT "now"()
+);
+
+
+ALTER TABLE "public"."visit_requests" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_facility_sales" AS
+ SELECT "id",
+    "shop_id",
+    "visit_request_id",
+    "sale_date",
+    "total_amount",
+    "details",
+    "created_at"
+   FROM "public"."sales" "s"
+  WHERE (("public"."current_facility_id"() IS NOT NULL) AND (EXISTS ( SELECT 1
+           FROM "public"."visit_requests" "v"
+          WHERE (("v"."id" = "s"."visit_request_id") AND ("v"."shop_id" = "s"."shop_id") AND ("v"."facility_user_id" = "public"."current_facility_id"())))));
+
+
+ALTER VIEW "public"."public_facility_sales" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_keep_dates" AS
+ SELECT "k"."shop_id",
+        CASE
+            WHEN ("k"."facility_user_id" = "public"."current_facility_id"()) THEN "k"."facility_user_id"
+            ELSE ("md5"((("s"."value" || ("k"."facility_user_id")::"text") || ("k"."shop_id")::"text")))::"uuid"
+        END AS "facility_user_id",
+    "k"."date",
+        CASE
+            WHEN ("k"."facility_user_id" = "public"."current_facility_id"()) THEN "k"."start_time"
+            ELSE NULL::time without time zone
+        END AS "start_time"
+   FROM ("public"."keep_dates" "k"
+     CROSS JOIN ( SELECT "app_secrets"."value"
+           FROM "private"."app_secrets"
+          WHERE ("app_secrets"."name" = 'facility_mask_salt'::"text")) "s");
+
+
+ALTER VIEW "public"."public_keep_dates" OWNER TO "postgres";
+
+
+CREATE TABLE IF NOT EXISTS "public"."regular_keep_exclusions" (
+    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
+    "facility_user_id" "uuid",
+    "shop_id" "uuid",
+    "excluded_date" "date" NOT NULL,
+    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
+);
+
+
+ALTER TABLE "public"."regular_keep_exclusions" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_keep_exclusions" AS
+ SELECT "e"."shop_id",
+        CASE
+            WHEN ("e"."facility_user_id" = "public"."current_facility_id"()) THEN "e"."facility_user_id"
+            ELSE ("md5"((("s"."value" || ("e"."facility_user_id")::"text") || ("e"."shop_id")::"text")))::"uuid"
+        END AS "facility_user_id",
+    "e"."excluded_date"
+   FROM ("public"."regular_keep_exclusions" "e"
+     CROSS JOIN ( SELECT "app_secrets"."value"
+           FROM "private"."app_secrets"
+          WHERE ("app_secrets"."name" = 'facility_mask_salt'::"text")) "s");
+
+
+ALTER VIEW "public"."public_keep_exclusions" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_partner_shops" AS
+ SELECT "id",
+    "business_name",
+    "theme_color",
+    "subscription_plan",
+    "business_type",
+    "owner_name",
+    "address",
+    "zip_code",
+    "phone",
+    "business_hours",
+    "special_holidays",
+    "facility_visit_slots",
+    "facility_visit_end",
+    "facility_lunch_start",
+    "facility_lunch_end",
+    "facility_staff_count",
+    "hourly_capacity_per_staff",
+    "is_strict_facility_block",
+    "email_contact",
+    "official_url"
+   FROM "public"."profiles" "p"
+  WHERE (("role" = 'shop'::"text") AND ("public"."current_facility_id"() IS NOT NULL) AND ((EXISTS ( SELECT 1
+           FROM "public"."shop_facility_connections" "c"
+          WHERE (("c"."shop_id" = "p"."id") AND ("c"."facility_user_id" = "public"."current_facility_id"())))) OR (EXISTS ( SELECT 1
+           FROM "public"."visit_requests" "v"
+          WHERE (("v"."shop_id" = "p"."id") AND ("v"."facility_user_id" = "public"."current_facility_id"()))))));
+
+
+ALTER VIEW "public"."public_partner_shops" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_private_busy" AS
+ SELECT "shop_id",
+    "staff_id",
+    "start_time",
+    "end_time"
+   FROM "public"."private_tasks";
+
+
+ALTER VIEW "public"."public_private_busy" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_shops" AS
  SELECT "id",
     "business_name",
     "business_name_kana",
@@ -1525,12 +2226,30 @@ CREATE OR REPLACE VIEW "public"."public_shops" WITH ("security_invoker"='true') 
     "liff_id",
     "line_official_url",
     "official_url",
-    "notes"
+    "notes",
+    "is_facility_searchable"
    FROM "public"."profiles"
   WHERE (("role" = 'shop'::"text") AND ("is_suspended" = false) AND ("business_name" IS NOT NULL) AND (("is_tester" = true) OR ("subscription_status" = 'active'::"public"."subscription_status") OR ("subscription_status" = 'trialing'::"public"."subscription_status")));
 
 
 ALTER VIEW "public"."public_shops" OWNER TO "postgres";
+
+
+CREATE OR REPLACE VIEW "public"."public_visit_dates" AS
+ SELECT "v"."shop_id",
+        CASE
+            WHEN ("v"."facility_user_id" = "public"."current_facility_id"()) THEN "v"."facility_user_id"
+            ELSE ("md5"((("s"."value" || ("v"."facility_user_id")::"text") || ("v"."shop_id")::"text")))::"uuid"
+        END AS "facility_user_id",
+    "v"."scheduled_date",
+    "v"."status"
+   FROM ("public"."visit_requests" "v"
+     CROSS JOIN ( SELECT "app_secrets"."value"
+           FROM "private"."app_secrets"
+          WHERE ("app_secrets"."name" = 'facility_mask_salt'::"text")) "s");
+
+
+ALTER VIEW "public"."public_visit_dates" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
@@ -1542,18 +2261,6 @@ CREATE TABLE IF NOT EXISTS "public"."push_subscriptions" (
 
 
 ALTER TABLE "public"."push_subscriptions" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."regular_keep_exclusions" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "facility_user_id" "uuid",
-    "shop_id" "uuid",
-    "excluded_date" "date" NOT NULL,
-    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()) NOT NULL
-);
-
-
-ALTER TABLE "public"."regular_keep_exclusions" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."reservation_guests" (
@@ -1589,29 +2296,6 @@ CREATE TABLE IF NOT EXISTS "public"."residents" (
 
 
 ALTER TABLE "public"."residents" OWNER TO "postgres";
-
-
-CREATE TABLE IF NOT EXISTS "public"."sales" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "shop_id" "uuid",
-    "customer_id" "uuid",
-    "sale_date" "date" DEFAULT CURRENT_DATE,
-    "total_amount" integer DEFAULT 0,
-    "payment_method" "text" DEFAULT '現金'::"text",
-    "memo" "text",
-    "created_at" timestamp with time zone DEFAULT "timezone"('utc'::"text", "now"()),
-    "reservation_id" "uuid",
-    "service_amount" integer DEFAULT 0,
-    "product_amount" integer DEFAULT 0,
-    "details" "jsonb" DEFAULT '{}'::"jsonb",
-    "tax_amount" integer DEFAULT 0,
-    "discount_amount" integer DEFAULT 0,
-    "visit_note" "text",
-    "visit_request_id" "uuid"
-);
-
-
-ALTER TABLE "public"."sales" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."service_categories" (
@@ -1689,22 +2373,6 @@ COMMENT ON COLUMN "public"."services"."is_full_day" IS 'trueの場合、許可�
 
 COMMENT ON COLUMN "public"."services"."is_admin_only" IS 'trueの場合、管理者による「ねじ込み予約」時のみ表示する';
 
-
-
-CREATE TABLE IF NOT EXISTS "public"."shop_facility_connections" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "shop_id" "uuid",
-    "facility_user_id" "uuid",
-    "status" "text" DEFAULT 'pending'::"text",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "regular_rules" "jsonb" DEFAULT '[]'::"jsonb",
-    "created_by_type" "text" DEFAULT 'shop'::"text",
-    "advance_booking_days" integer DEFAULT 0,
-    "assigned_staff_id" "uuid"
-);
-
-
-ALTER TABLE "public"."shop_facility_connections" OWNER TO "postgres";
 
 
 CREATE TABLE IF NOT EXISTS "public"."shop_ng_dates" (
@@ -1799,6 +2467,10 @@ CREATE TABLE IF NOT EXISTS "public"."visit_request_residents" (
 ALTER TABLE "public"."visit_request_residents" OWNER TO "postgres";
 
 
+COMMENT ON TABLE "public"."visit_request_residents" IS '施設訪問の名簿（キャッシュ更新用に更新 2026-09-09）';
+
+
+
 ALTER TABLE "public"."visit_request_residents" ALTER COLUMN "id" ADD GENERATED BY DEFAULT AS IDENTITY (
     SEQUENCE NAME "public"."visit_request_residents_id_seq"
     START WITH 1
@@ -1810,26 +2482,9 @@ ALTER TABLE "public"."visit_request_residents" ALTER COLUMN "id" ADD GENERATED B
 
 
 
-CREATE TABLE IF NOT EXISTS "public"."visit_requests" (
-    "id" "uuid" DEFAULT "gen_random_uuid"() NOT NULL,
-    "facility_id" "uuid",
-    "shop_id" "uuid",
-    "request_date" "date" DEFAULT CURRENT_DATE,
-    "scheduled_date" "date",
-    "status" "text" DEFAULT 'pending'::"text",
-    "is_list_confirmed" boolean DEFAULT false,
-    "memo" "text",
-    "created_at" timestamp with time zone DEFAULT "now"(),
-    "facility_user_id" "uuid",
-    "end_date" "date",
-    "visit_date_list" "jsonb",
-    "start_time" time without time zone DEFAULT '09:00:00'::time without time zone,
-    "parent_id" "uuid",
-    "updated_at" timestamp with time zone DEFAULT "now"()
-);
+ALTER TABLE ONLY "private"."app_secrets"
+    ADD CONSTRAINT "app_secrets_pkey" PRIMARY KEY ("name");
 
-
-ALTER TABLE "public"."visit_requests" OWNER TO "postgres";
 
 
 ALTER TABLE ONLY "public"."admin_adjustments"
@@ -1864,6 +2519,11 @@ ALTER TABLE ONLY "public"."dealers"
 
 ALTER TABLE ONLY "public"."facilities"
     ADD CONSTRAINT "facilities_pkey" PRIMARY KEY ("id");
+
+
+
+ALTER TABLE ONLY "public"."facility_sessions"
+    ADD CONSTRAINT "facility_sessions_pkey" PRIMARY KEY ("token");
 
 
 
@@ -2157,6 +2817,14 @@ ALTER TABLE ONLY "public"."visit_requests"
 
 
 
+CREATE INDEX "facility_sessions_expires_at_idx" ON "public"."facility_sessions" USING "btree" ("expires_at");
+
+
+
+CREATE INDEX "facility_sessions_facility_user_id_idx" ON "public"."facility_sessions" USING "btree" ("facility_user_id");
+
+
+
 CREATE INDEX "idx_game_character_cards_char" ON "public"."game_character_cards" USING "btree" ("character_id");
 
 
@@ -2190,6 +2858,18 @@ CREATE INDEX "idx_reservations_customer_id" ON "public"."reservations" USING "bt
 
 
 CREATE INDEX "push_subscriptions_shop_id_idx" ON "public"."push_subscriptions" USING "btree" ("shop_id");
+
+
+
+CREATE OR REPLACE TRIGGER "guard_connection_update" BEFORE UPDATE ON "public"."shop_facility_connections" FOR EACH ROW EXECUTE FUNCTION "public"."guard_connection_update"();
+
+
+
+CREATE OR REPLACE TRIGGER "guard_facility_self_update" BEFORE UPDATE ON "public"."facility_users" FOR EACH ROW EXECUTE FUNCTION "public"."guard_facility_self_update"();
+
+
+
+CREATE OR REPLACE TRIGGER "guard_profile_role" BEFORE INSERT OR UPDATE ON "public"."profiles" FOR EACH ROW EXECUTE FUNCTION "public"."guard_profile_role"();
 
 
 
@@ -2249,6 +2929,11 @@ ALTER TABLE ONLY "public"."dealers"
 
 ALTER TABLE ONLY "public"."facilities"
     ADD CONSTRAINT "facilities_tenant_id_fkey" FOREIGN KEY ("tenant_id") REFERENCES "public"."profiles"("id") ON DELETE CASCADE;
+
+
+
+ALTER TABLE ONLY "public"."facility_sessions"
+    ADD CONSTRAINT "facility_sessions_facility_user_id_fkey" FOREIGN KEY ("facility_user_id") REFERENCES "public"."facility_users"("id") ON DELETE CASCADE;
 
 
 
@@ -2647,103 +3332,13 @@ ALTER TABLE ONLY "public"."visit_requests"
 
 
 
-CREATE POLICY "Allow all access for now" ON "public"."service_options" USING (true);
+ALTER TABLE "private"."app_secrets" ENABLE ROW LEVEL SECURITY;
 
 
-
-CREATE POLICY "Allow all access to customers" ON "public"."customers" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Allow all for draft" ON "public"."visit_list_drafts" USING (true);
-
-
-
-CREATE POLICY "Allow all for members" ON "public"."members" USING (true);
-
-
-
-CREATE POLICY "Allow all for visit_requests" ON "public"."visit_requests" USING (true);
-
-
-
-CREATE POLICY "Allow all for visit_residents" ON "public"."visit_request_residents" USING (true);
-
+ALTER TABLE "private"."bk_customers_auth_20260916" ENABLE ROW LEVEL SECURITY;
 
 
 CREATE POLICY "Allow individual select own customer" ON "public"."customers" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "auth_id"));
-
-
-
-CREATE POLICY "Allow public select" ON "public"."profiles" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Allow public select staffs" ON "public"."staffs" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Allow shop owners to manage staffs" ON "public"."staffs" USING (true);
-
-
-
-CREATE POLICY "Anyone can do anything" ON "public"."keep_dates" USING (true);
-
-
-
-CREATE POLICY "Anyone can do anything" ON "public"."shop_ng_dates" USING (true);
-
-
-
-CREATE POLICY "Anyone can do anything with keep_dates" ON "public"."keep_dates" USING (true);
-
-
-
-CREATE POLICY "Anyone can do anything with keep_exclusions" ON "public"."regular_keep_exclusions" USING (true);
-
-
-
-CREATE POLICY "Anyone can do anything with visit_requests" ON "public"."visit_requests" USING (true);
-
-
-
-CREATE POLICY "Enable all access for authenticated users" ON "public"."portal_categories" TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all access for authenticated users" ON "public"."reservation_guests" TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all access for portal users" ON "public"."reservation_guests" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all for category" ON "public"."service_categories" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all for options" ON "public"."service_options" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all for services" ON "public"."services" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all management for admin users" ON "public"."portal_news" TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all management for authenticated users" ON "public"."private_tasks" TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all management for authenticated users" ON "public"."products" TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable all management for authenticated users" ON "public"."push_subscriptions" TO "authenticated" USING (true) WITH CHECK (true);
 
 
 
@@ -2755,23 +3350,7 @@ CREATE POLICY "Enable insert access for anyone" ON "public"."inquiries" FOR INSE
 
 
 
-CREATE POLICY "Enable insert for all users" ON "public"."push_subscriptions" FOR INSERT WITH CHECK (true);
-
-
-
-CREATE POLICY "Enable insert for authenticated users" ON "public"."sales" FOR INSERT WITH CHECK (("auth"."role"() = 'authenticated'::"text"));
-
-
-
-CREATE POLICY "Enable insert for authenticated users only" ON "public"."admin_adjustments" FOR INSERT TO "authenticated" WITH CHECK (true);
-
-
-
 CREATE POLICY "Enable insert for owners" ON "public"."sales" FOR INSERT TO "authenticated" WITH CHECK (("shop_id" = "auth"."uid"()));
-
-
-
-CREATE POLICY "Enable read access for all users" ON "public"."admin_adjustments" FOR SELECT USING (true);
 
 
 
@@ -2783,31 +3362,7 @@ CREATE POLICY "Enable read access for all users" ON "public"."portal_news" FOR S
 
 
 
-CREATE POLICY "Enable read access for all users" ON "public"."private_tasks" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Enable read access for all users" ON "public"."products" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Enable read access for authenticated users only" ON "public"."inquiries" FOR SELECT TO "authenticated" USING (true);
-
-
-
 CREATE POLICY "Enable read access for own shop" ON "public"."sales" FOR SELECT USING (("auth"."uid"() = "shop_id"));
-
-
-
-CREATE POLICY "Enable update for authenticated users only" ON "public"."admin_adjustments" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "Profiles are viewable by everyone" ON "public"."profiles" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "Super Admin can do everything" ON "public"."shop_facility_connections" USING (true);
 
 
 
@@ -2879,30 +3434,161 @@ ALTER TABLE "public"."business_settings" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."customers" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "customers_coexistence" ON "public"."customers" FOR SELECT TO "authenticated" USING ((("shop_id" = "auth"."uid"()) OR ("name" IN ( SELECT "facility_users"."facility_name"
-   FROM "public"."facility_users"
-  WHERE ("facility_users"."id" = "auth"."uid"())))));
-
-
-
-CREATE POLICY "customers_open_access" ON "public"."customers" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "customers_select_test" ON "public"."customers" FOR SELECT TO "authenticated" USING (true);
-
-
-
 ALTER TABLE "public"."dealers" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."facilities" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "facility_delete_connections" ON "public"."shop_facility_connections" FOR DELETE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_delete_keep_dates" ON "public"."keep_dates" FOR DELETE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_delete_own_drafts" ON "public"."visit_list_drafts" FOR DELETE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_insert_connections" ON "public"."shop_facility_connections" FOR INSERT TO "authenticated", "anon" WITH CHECK ((("public"."current_facility_id"() = "facility_user_id") AND ("status" = 'pending'::"text") AND ("created_by_type" = 'facility'::"text")));
+
+
+
+CREATE POLICY "facility_insert_exclusions" ON "public"."regular_keep_exclusions" FOR INSERT TO "authenticated", "anon" WITH CHECK ((("public"."current_facility_id"() = "facility_user_id") AND (EXISTS ( SELECT 1
+   FROM "public"."shop_facility_connections" "c"
+  WHERE (("c"."facility_user_id" = "regular_keep_exclusions"."facility_user_id") AND ("c"."shop_id" = "regular_keep_exclusions"."shop_id") AND ("c"."status" = 'active'::"text"))))));
+
+
+
+CREATE POLICY "facility_insert_keep_dates" ON "public"."keep_dates" FOR INSERT TO "authenticated", "anon" WITH CHECK ((("public"."current_facility_id"() = "facility_user_id") AND (EXISTS ( SELECT 1
+   FROM "public"."shop_facility_connections" "c"
+  WHERE (("c"."facility_user_id" = "keep_dates"."facility_user_id") AND ("c"."shop_id" = "keep_dates"."shop_id") AND ("c"."status" = 'active'::"text"))))));
+
+
+
+CREATE POLICY "facility_insert_members" ON "public"."members" FOR INSERT TO "authenticated", "anon" WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_insert_own_drafts" ON "public"."visit_list_drafts" FOR INSERT TO "authenticated", "anon" WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_insert_residents" ON "public"."visit_request_residents" FOR INSERT TO "authenticated", "anon" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."facility_user_id" = "public"."current_facility_id"())))));
+
+
+
+CREATE POLICY "facility_insert_visits" ON "public"."visit_requests" FOR INSERT TO "authenticated", "anon" WITH CHECK ((("public"."current_facility_id"() = "facility_user_id") AND (EXISTS ( SELECT 1
+   FROM "public"."shop_facility_connections" "c"
+  WHERE (("c"."facility_user_id" = "visit_requests"."facility_user_id") AND ("c"."shop_id" = "visit_requests"."shop_id") AND ("c"."status" = 'active'::"text"))))));
+
+
+
+CREATE POLICY "facility_select_connections" ON "public"."shop_facility_connections" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_select_exclusions" ON "public"."regular_keep_exclusions" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_select_keep_dates" ON "public"."keep_dates" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_select_members" ON "public"."members" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_select_own_drafts" ON "public"."visit_list_drafts" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_select_residents" ON "public"."visit_request_residents" FOR SELECT TO "authenticated", "anon" USING ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."facility_user_id" = "public"."current_facility_id"())))));
+
+
+
+CREATE POLICY "facility_select_self" ON "public"."facility_users" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "id"));
+
+
+
+CREATE POLICY "facility_select_visits" ON "public"."visit_requests" FOR SELECT TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+ALTER TABLE "public"."facility_sessions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "facility_update_connections" ON "public"."shop_facility_connections" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_update_exclusions" ON "public"."regular_keep_exclusions" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_update_keep_dates" ON "public"."keep_dates" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_update_members" ON "public"."members" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_update_own_drafts" ON "public"."visit_list_drafts" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
+CREATE POLICY "facility_update_residents" ON "public"."visit_request_residents" FOR UPDATE TO "authenticated", "anon" USING ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."facility_user_id" = "public"."current_facility_id"()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."facility_user_id" = "public"."current_facility_id"())))));
+
+
+
+CREATE POLICY "facility_update_self" ON "public"."facility_users" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "id")) WITH CHECK (("public"."current_facility_id"() = "id"));
+
+
+
+CREATE POLICY "facility_update_visits" ON "public"."visit_requests" FOR UPDATE TO "authenticated", "anon" USING (("public"."current_facility_id"() = "facility_user_id")) WITH CHECK (("public"."current_facility_id"() = "facility_user_id"));
+
+
+
 ALTER TABLE "public"."facility_users" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."favorites" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_character_cards" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_characters" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_inventory" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_master_items" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_master_quests" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_master_skills" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_master_units" ENABLE ROW LEVEL SECURITY;
+
+
+ALTER TABLE "public"."game_party_status" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."holidays" ENABLE ROW LEVEL SECURITY;
@@ -2914,29 +3600,36 @@ ALTER TABLE "public"."inquiries" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."inventory_logs" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "inventory_logs_delete_policy" ON "public"."inventory_logs" FOR DELETE TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "inventory_logs_insert_policy" ON "public"."inventory_logs" FOR INSERT TO "authenticated" WITH CHECK (true);
-
-
-
-CREATE POLICY "inventory_logs_select_policy" ON "public"."inventory_logs" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "inventory_logs_update_policy" ON "public"."inventory_logs" FOR UPDATE TO "authenticated" USING (true) WITH CHECK (true);
-
-
-
 ALTER TABLE "public"."keep_dates" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."members" ENABLE ROW LEVEL SECURITY;
 
 
+ALTER TABLE "public"."members_facility_backup_20260908" ENABLE ROW LEVEL SECURITY;
+
+
 ALTER TABLE "public"."orders" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "own_rows_game_character_cards" ON "public"."game_character_cards" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "own_rows_game_characters" ON "public"."game_characters" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "own_rows_game_inventory" ON "public"."game_inventory" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "own_rows_game_party_status" ON "public"."game_party_status" TO "authenticated" USING (("user_id" = "auth"."uid"())) WITH CHECK (("user_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "owner_all_admin_adjustments" ON "public"."admin_adjustments" TO "authenticated" USING (("shop_id" = "auth"."uid"())) WITH CHECK (("shop_id" = "auth"."uid"()));
+
 
 
 CREATE POLICY "owner_all_customers" ON "public"."customers" TO "authenticated" USING (("auth"."uid"() = "shop_id"));
@@ -2944,6 +3637,14 @@ CREATE POLICY "owner_all_customers" ON "public"."customers" TO "authenticated" U
 
 
 CREATE POLICY "owner_all_private_tasks" ON "public"."private_tasks" TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_all_products" ON "public"."products" TO "authenticated" USING (("shop_id" = "auth"."uid"())) WITH CHECK (("shop_id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "owner_all_push_subscriptions" ON "public"."push_subscriptions" TO "authenticated" USING (("shop_id" = "auth"."uid"())) WITH CHECK (("shop_id" = "auth"."uid"()));
 
 
 
@@ -2955,7 +3656,85 @@ CREATE POLICY "owner_all_sales" ON "public"."sales" TO "authenticated" USING (("
 
 
 
+CREATE POLICY "owner_delete_categories" ON "public"."service_categories" FOR DELETE TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_delete_inventory_logs" ON "public"."inventory_logs" FOR DELETE TO "authenticated" USING ((("shop_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM "public"."products" "p"
+  WHERE (("p"."id" = "inventory_logs"."product_id") AND ("p"."shop_id" = "auth"."uid"()))))));
+
+
+
+CREATE POLICY "owner_delete_service_options" ON "public"."service_options" FOR DELETE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."services" "s"
+  WHERE (("s"."id" = "service_options"."service_id") AND ("s"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "owner_delete_services" ON "public"."services" FOR DELETE TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_delete_staffs" ON "public"."staffs" FOR DELETE TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_insert_categories" ON "public"."service_categories" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_insert_inventory_logs" ON "public"."inventory_logs" FOR INSERT TO "authenticated" WITH CHECK (((EXISTS ( SELECT 1
+   FROM "public"."products" "p"
+  WHERE (("p"."id" = "inventory_logs"."product_id") AND ("p"."shop_id" = "auth"."uid"())))) AND (("shop_id" IS NULL) OR ("shop_id" = "auth"."uid"()))));
+
+
+
+CREATE POLICY "owner_insert_service_options" ON "public"."service_options" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."services" "s"
+  WHERE (("s"."id" = "service_options"."service_id") AND ("s"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "owner_insert_services" ON "public"."services" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_insert_staffs" ON "public"."staffs" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_read_inquiries" ON "public"."inquiries" FOR SELECT TO "authenticated" USING (("shop_id" = "auth"."uid"()));
+
+
+
 CREATE POLICY "owner_read_profile" ON "public"."profiles" FOR SELECT TO "authenticated" USING (("id" = "auth"."uid"()));
+
+
+
+CREATE POLICY "owner_select_inventory_logs" ON "public"."inventory_logs" FOR SELECT TO "authenticated" USING ((("shop_id" = "auth"."uid"()) OR (EXISTS ( SELECT 1
+   FROM "public"."products" "p"
+  WHERE (("p"."id" = "inventory_logs"."product_id") AND ("p"."shop_id" = "auth"."uid"()))))));
+
+
+
+CREATE POLICY "owner_update_categories" ON "public"."service_categories" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_update_service_options" ON "public"."service_options" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."services" "s"
+  WHERE (("s"."id" = "service_options"."service_id") AND ("s"."shop_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."services" "s"
+  WHERE (("s"."id" = "service_options"."service_id") AND ("s"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "owner_update_services" ON "public"."services" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "owner_update_staffs" ON "public"."staffs" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
 
 
 
@@ -2977,11 +3756,39 @@ ALTER TABLE "public"."products" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."profiles" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "public_insert_shop_only" ON "public"."profiles" FOR INSERT TO "authenticated", "anon" WITH CHECK (("role" = 'shop'::"text"));
+CREATE POLICY "public_select_categories" ON "public"."service_categories" FOR SELECT TO "authenticated", "anon" USING (true);
+
+
+
+CREATE POLICY "public_select_service_options" ON "public"."service_options" FOR SELECT TO "authenticated", "anon" USING (true);
+
+
+
+CREATE POLICY "public_select_services" ON "public"."services" FOR SELECT TO "authenticated", "anon" USING (true);
+
+
+
+CREATE POLICY "public_select_staffs" ON "public"."staffs" FOR SELECT TO "authenticated", "anon" USING (true);
 
 
 
 ALTER TABLE "public"."push_subscriptions" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "read_game_master_items" ON "public"."game_master_items" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "read_game_master_quests" ON "public"."game_master_quests" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "read_game_master_skills" ON "public"."game_master_skills" FOR SELECT TO "authenticated" USING (true);
+
+
+
+CREATE POLICY "read_game_master_units" ON "public"."game_master_units" FOR SELECT TO "authenticated" USING (true);
+
 
 
 ALTER TABLE "public"."regular_keep_exclusions" ENABLE ROW LEVEL SECURITY;
@@ -2999,20 +3806,6 @@ ALTER TABLE "public"."residents" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."sales" ENABLE ROW LEVEL SECURITY;
 
 
-CREATE POLICY "sales_coexistence" ON "public"."sales" FOR SELECT TO "authenticated" USING ((("shop_id" = "auth"."uid"()) OR ("visit_request_id" IN ( SELECT "visit_requests"."id"
-   FROM "public"."visit_requests"
-  WHERE ("visit_requests"."facility_user_id" = "auth"."uid"()))) OR ("customer_id" IN ( SELECT "customers"."id"
-   FROM "public"."customers"
-  WHERE ("customers"."name" IN ( SELECT "facility_users"."facility_name"
-           FROM "public"."facility_users"
-          WHERE ("facility_users"."id" = "auth"."uid"())))))));
-
-
-
-CREATE POLICY "sales_open_access" ON "public"."sales" FOR SELECT USING (true);
-
-
-
 ALTER TABLE "public"."service_categories" ENABLE ROW LEVEL SECURITY;
 
 
@@ -3022,16 +3815,152 @@ ALTER TABLE "public"."service_options" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."services" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "shop_delete_connections" ON "public"."shop_facility_connections" FOR DELETE TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_delete_keep_dates" ON "public"."keep_dates" FOR DELETE TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
 ALTER TABLE "public"."shop_facility_connections" ENABLE ROW LEVEL SECURITY;
+
+
+CREATE POLICY "shop_insert_connections" ON "public"."shop_facility_connections" FOR INSERT TO "authenticated" WITH CHECK ((("auth"."uid"() = "shop_id") AND ("status" = 'pending'::"text") AND ("created_by_type" = 'shop'::"text")));
+
+
+
+CREATE POLICY "shop_insert_exclusions" ON "public"."regular_keep_exclusions" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_insert_keep_dates" ON "public"."keep_dates" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_insert_members" ON "public"."members" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."shop_facility_connections" "c"
+  WHERE (("c"."facility_user_id" = "members"."facility_user_id") AND ("c"."shop_id" = "auth"."uid"()) AND ("c"."status" = 'active'::"text")))));
+
+
+
+CREATE POLICY "shop_insert_residents" ON "public"."visit_request_residents" FOR INSERT TO "authenticated" WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "shop_insert_visits" ON "public"."visit_requests" FOR INSERT TO "authenticated" WITH CHECK (("auth"."uid"() = "shop_id"));
+
 
 
 ALTER TABLE "public"."shop_ng_dates" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "shop_select_connections" ON "public"."shop_facility_connections" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_select_exclusions" ON "public"."regular_keep_exclusions" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_select_keep_dates" ON "public"."keep_dates" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_select_members" ON "public"."members" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."shop_facility_connections" "c"
+  WHERE (("c"."facility_user_id" = "members"."facility_user_id") AND ("c"."shop_id" = "auth"."uid"()) AND ("c"."status" = 'active'::"text")))));
+
+
+
+CREATE POLICY "shop_select_residents" ON "public"."visit_request_residents" FOR SELECT TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "shop_select_visits" ON "public"."visit_requests" FOR SELECT TO "authenticated" USING (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_update_connections" ON "public"."shop_facility_connections" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_update_exclusions" ON "public"."regular_keep_exclusions" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
+CREATE POLICY "shop_update_residents" ON "public"."visit_request_residents" FOR UPDATE TO "authenticated" USING ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."shop_id" = "auth"."uid"()))))) WITH CHECK ((EXISTS ( SELECT 1
+   FROM "public"."visit_requests" "v"
+  WHERE (("v"."id" = "visit_request_residents"."visit_request_id") AND ("v"."shop_id" = "auth"."uid"())))));
+
+
+
+CREATE POLICY "shop_update_visits" ON "public"."visit_requests" FOR UPDATE TO "authenticated" USING (("auth"."uid"() = "shop_id")) WITH CHECK (("auth"."uid"() = "shop_id"));
+
+
+
 ALTER TABLE "public"."staffs" ENABLE ROW LEVEL SECURITY;
 
 
+CREATE POLICY "super_admin_all_categories" ON "public"."service_categories" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_connections" ON "public"."shop_facility_connections" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_exclusions" ON "public"."regular_keep_exclusions" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_facility_users" ON "public"."facility_users" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_keep_dates" ON "public"."keep_dates" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_members" ON "public"."members" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_portal_categories" ON "public"."portal_categories" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_portal_news" ON "public"."portal_news" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_residents" ON "public"."visit_request_residents" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_services" ON "public"."services" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_staffs" ON "public"."staffs" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_all_visits" ON "public"."visit_requests" TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
 CREATE POLICY "super_admin_full_update" ON "public"."profiles" FOR UPDATE TO "authenticated" USING ("public"."is_super_admin"()) WITH CHECK ("public"."is_super_admin"());
+
+
+
+CREATE POLICY "super_admin_read_profiles" ON "public"."profiles" FOR SELECT TO "authenticated" USING ("public"."is_super_admin"());
 
 
 
@@ -3048,46 +3977,6 @@ ALTER TABLE "public"."visit_request_residents" ENABLE ROW LEVEL SECURITY;
 
 
 ALTER TABLE "public"."visit_requests" ENABLE ROW LEVEL SECURITY;
-
-
-CREATE POLICY "visit_requests_coexistence" ON "public"."visit_requests" FOR SELECT TO "authenticated" USING ((("shop_id" = "auth"."uid"()) OR ("facility_user_id" = "auth"."uid"())));
-
-
-
-CREATE POLICY "visit_requests_select_test" ON "public"."visit_requests" FOR SELECT TO "authenticated" USING (true);
-
-
-
-CREATE POLICY "visits_open_access" ON "public"."visit_requests" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "ログイン照合のための閲覧許可" ON "public"."facility_users" FOR SELECT TO "authenticated", "anon" USING (true);
-
-
-
-CREATE POLICY "店舗スタッフは自店舗の予約のみ操作可能" ON "public"."reservations" USING ((("shop_id")::"text" = (("current_setting"('request.headers'::"text"))::json ->> 'x-shop-id'::"text")));
-
-
-
-CREATE POLICY "店舗スタッフは自店舗の売上のみ操作可能" ON "public"."sales" USING ((("shop_id")::"text" = (("current_setting"('request.headers'::"text"))::json ->> 'x-shop-id'::"text")));
-
-
-
-CREATE POLICY "店舗スタッフは自店舗の顧客のみ操作可能" ON "public"."customers" USING (((("shop_id")::"text" = ("auth"."uid"())::"text") OR (("shop_id")::"text" = (("current_setting"('request.headers'::"text"))::json ->> 'x-shop-id'::"text"))));
-
-
-
-CREATE POLICY "施設ユーザーは自分の情報を更新できる" ON "public"."facility_users" FOR UPDATE USING (true) WITH CHECK (true);
-
-
-
-CREATE POLICY "施設情報は誰でも参照できる" ON "public"."facility_users" FOR SELECT USING (true);
-
-
-
-CREATE POLICY "管理者による全操作を許可" ON "public"."facility_users" TO "authenticated" USING (true) WITH CHECK (true);
-
 
 
 
@@ -3276,6 +4165,13 @@ GRANT USAGE ON SCHEMA "public" TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") TO "service_role";
+GRANT ALL ON FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."book_public_reservation"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_reservation_date" "date", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_menu_name" "text", "p_options" "jsonb", "p_customer" "jsonb") TO "authenticated";
+
+
+
 GRANT ALL ON TABLE "public"."reservations" TO "anon";
 GRANT ALL ON TABLE "public"."reservations" TO "authenticated";
 GRANT ALL ON TABLE "public"."reservations" TO "service_role";
@@ -3326,6 +4222,13 @@ GRANT ALL ON FUNCTION "public"."create_reservation_with_capacity"("p_shop_id" "u
 
 
 
+REVOKE ALL ON FUNCTION "public"."current_facility_id"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."current_facility_id"() TO "anon";
+GRANT ALL ON FUNCTION "public"."current_facility_id"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."current_facility_id"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."get_my_reservations"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "anon";
 GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "authenticated";
@@ -3337,6 +4240,24 @@ REVOKE ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "tex
 GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "anon";
 GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "authenticated";
 GRANT ALL ON FUNCTION "public"."get_reservation_by_cancel_token"("p_token" "text") TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."guard_connection_update"() TO "anon";
+GRANT ALL ON FUNCTION "public"."guard_connection_update"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."guard_connection_update"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."guard_facility_self_update"() TO "anon";
+GRANT ALL ON FUNCTION "public"."guard_facility_self_update"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."guard_facility_self_update"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "anon";
+GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "service_role";
 
 
 
@@ -3358,6 +4279,13 @@ GRANT ALL ON FUNCTION "public"."sync_facility_to_customers"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."update_facility_self"("p_patch" "jsonb") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."update_facility_self"("p_patch" "jsonb") TO "anon";
+GRANT ALL ON FUNCTION "public"."update_facility_self"("p_patch" "jsonb") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."update_facility_self"("p_patch" "jsonb") TO "service_role";
+
+
+
 GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "anon";
 GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "service_role";
@@ -3367,6 +4295,13 @@ GRANT ALL ON FUNCTION "public"."update_product_stock"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "anon";
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."update_updated_at_column"() TO "service_role";
+
+
+
+REVOKE ALL ON FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") TO "anon";
+GRANT ALL ON FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."verify_facility_login"("p_login_id" "text", "p_password" "text") TO "service_role";
 
 
 
@@ -3427,9 +4362,23 @@ GRANT ALL ON TABLE "public"."facilities" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."facility_users" TO "anon";
-GRANT ALL ON TABLE "public"."facility_users" TO "authenticated";
+GRANT ALL ON TABLE "public"."facility_sessions" TO "service_role";
+
+
+
 GRANT ALL ON TABLE "public"."facility_users" TO "service_role";
+GRANT INSERT,DELETE,UPDATE ON TABLE "public"."facility_users" TO "anon";
+GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."facility_users" TO "authenticated";
+
+
+
+GRANT SELECT("password") ON TABLE "public"."facility_users" TO "authenticated";
+
+
+
+GRANT ALL ON TABLE "public"."facility_users_public" TO "service_role";
+GRANT SELECT ON TABLE "public"."facility_users_public" TO "anon";
+GRANT SELECT ON TABLE "public"."facility_users_public" TO "authenticated";
 
 
 
@@ -3517,6 +4466,12 @@ GRANT ALL ON TABLE "public"."members" TO "service_role";
 
 
 
+GRANT ALL ON TABLE "public"."members_facility_backup_20260908" TO "anon";
+GRANT ALL ON TABLE "public"."members_facility_backup_20260908" TO "authenticated";
+GRANT ALL ON TABLE "public"."members_facility_backup_20260908" TO "service_role";
+
+
+
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."members_id_seq" TO "service_role";
@@ -3565,33 +4520,93 @@ GRANT ALL ON TABLE "public"."profiles" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."public_booking_settings" TO "anon";
-GRANT ALL ON TABLE "public"."public_booking_settings" TO "authenticated";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_booking_settings" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_booking_settings" TO "authenticated";
 GRANT ALL ON TABLE "public"."public_booking_settings" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."public_busy_slots" TO "anon";
-GRANT ALL ON TABLE "public"."public_busy_slots" TO "authenticated";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_busy_slots" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_busy_slots" TO "authenticated";
 GRANT ALL ON TABLE "public"."public_busy_slots" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."public_shops" TO "anon";
-GRANT ALL ON TABLE "public"."public_shops" TO "authenticated";
-GRANT ALL ON TABLE "public"."public_shops" TO "service_role";
+GRANT ALL ON TABLE "public"."shop_facility_connections" TO "anon";
+GRANT ALL ON TABLE "public"."shop_facility_connections" TO "authenticated";
+GRANT ALL ON TABLE "public"."shop_facility_connections" TO "service_role";
 
 
 
-GRANT ALL ON TABLE "public"."push_subscriptions" TO "anon";
-GRANT ALL ON TABLE "public"."push_subscriptions" TO "authenticated";
-GRANT ALL ON TABLE "public"."push_subscriptions" TO "service_role";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_connection_rules" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_connection_rules" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_connection_rules" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."sales" TO "anon";
+GRANT ALL ON TABLE "public"."sales" TO "authenticated";
+GRANT ALL ON TABLE "public"."sales" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."visit_requests" TO "anon";
+GRANT ALL ON TABLE "public"."visit_requests" TO "authenticated";
+GRANT ALL ON TABLE "public"."visit_requests" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."public_facility_sales" TO "service_role";
+GRANT SELECT ON TABLE "public"."public_facility_sales" TO "anon";
+GRANT SELECT ON TABLE "public"."public_facility_sales" TO "authenticated";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_keep_dates" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_keep_dates" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_keep_dates" TO "service_role";
 
 
 
 GRANT ALL ON TABLE "public"."regular_keep_exclusions" TO "anon";
 GRANT ALL ON TABLE "public"."regular_keep_exclusions" TO "authenticated";
 GRANT ALL ON TABLE "public"."regular_keep_exclusions" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_keep_exclusions" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_keep_exclusions" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_keep_exclusions" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_partner_shops" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_partner_shops" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_partner_shops" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_private_busy" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_private_busy" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_private_busy" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_shops" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_shops" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_shops" TO "service_role";
+
+
+
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_visit_dates" TO "anon";
+GRANT SELECT,MAINTAIN ON TABLE "public"."public_visit_dates" TO "authenticated";
+GRANT ALL ON TABLE "public"."public_visit_dates" TO "service_role";
+
+
+
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "anon";
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "authenticated";
+GRANT ALL ON TABLE "public"."push_subscriptions" TO "service_role";
 
 
 
@@ -3604,12 +4619,6 @@ GRANT ALL ON TABLE "public"."reservation_guests" TO "service_role";
 GRANT ALL ON TABLE "public"."residents" TO "anon";
 GRANT ALL ON TABLE "public"."residents" TO "authenticated";
 GRANT ALL ON TABLE "public"."residents" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."sales" TO "anon";
-GRANT ALL ON TABLE "public"."sales" TO "authenticated";
-GRANT ALL ON TABLE "public"."sales" TO "service_role";
 
 
 
@@ -3628,12 +4637,6 @@ GRANT ALL ON TABLE "public"."service_options" TO "service_role";
 GRANT ALL ON TABLE "public"."services" TO "anon";
 GRANT ALL ON TABLE "public"."services" TO "authenticated";
 GRANT ALL ON TABLE "public"."services" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."shop_facility_connections" TO "anon";
-GRANT ALL ON TABLE "public"."shop_facility_connections" TO "authenticated";
-GRANT ALL ON TABLE "public"."shop_facility_connections" TO "service_role";
 
 
 
@@ -3676,12 +4679,6 @@ GRANT ALL ON TABLE "public"."visit_request_residents" TO "service_role";
 GRANT ALL ON SEQUENCE "public"."visit_request_residents_id_seq" TO "anon";
 GRANT ALL ON SEQUENCE "public"."visit_request_residents_id_seq" TO "authenticated";
 GRANT ALL ON SEQUENCE "public"."visit_request_residents_id_seq" TO "service_role";
-
-
-
-GRANT ALL ON TABLE "public"."visit_requests" TO "anon";
-GRANT ALL ON TABLE "public"."visit_requests" TO "authenticated";
-GRANT ALL ON TABLE "public"."visit_requests" TO "service_role";
 
 
 
