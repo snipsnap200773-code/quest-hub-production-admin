@@ -45,6 +45,8 @@ const FacilityPortal = () => {
 
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  // ⚠️ 2026/09/25【BR①】：開いたまま施設のログインの期限が切れたときに、案内画面を出すための印
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // =========================================================
   // 🚀 共通ロジックをコンポーネント直下に移動（これでどこからでも呼べる）
@@ -134,6 +136,28 @@ const FacilityPortal = () => {
     };
     checkAuth();
   }, [facilityId, navigate]);
+
+  // ⚠️ 2026/09/25【BR①】：開いている間も、施設のログインがまだ有効かを確かめる。
+  //    従来は開いた瞬間しか確かめておらず、開いたまま期限が切れると、
+  //    読み込み・保存が黙って0件や失敗になり、担当者の方には理由が分からなかった。
+  //    5分ごとと、画面に戻ってきたときに確かめる。
+  //    通信エラー（電波が悪いなど）は期限切れと決めつけない。
+  useEffect(() => {
+    let stopped = false;
+    const recheck = async () => {
+      if (stopped || document.visibilityState !== 'visible') return;
+      const { data, error } = await supabase.rpc('current_facility_id');
+      if (stopped || error) return;
+      if (!data || data !== facilityId) setSessionExpired(true);
+    };
+    const timer = setInterval(recheck, 5 * 60 * 1000);
+    document.addEventListener('visibilitychange', recheck);
+    return () => {
+      stopped = true;
+      clearInterval(timer);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, [facilityId]);
 
   const fetchFacilityData = async () => {
     setLoading(true);
@@ -357,6 +381,32 @@ const FacilityPortal = () => {
   ];
 
   const menuItems = menuGroups.flatMap(group => group.items);
+
+  // ⚠️ 2026/09/25【BR①】：ログインの期限切れの案内
+  if (sessionExpired) {
+    return (
+      <div style={centerStyle}>
+        <div style={{ background: '#fff', padding: '40px 30px', borderRadius: '24px', border: '1px solid #eee', textAlign: 'center', maxWidth: '420px', width: '90%', boxShadow: '0 10px 30px rgba(0,0,0,0.08)' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: '10px' }}>🔒</div>
+          <h2 style={{ margin: '0 0 12px', fontSize: '1.2rem', color: '#3d2b1f' }}>ログインの有効期限が切れました</h2>
+          <p style={{ fontSize: '0.9rem', color: '#64748b', lineHeight: 1.7, margin: '0 0 24px' }}>
+            保存済みの名簿や予約は消えていません。<br />
+            お手数ですが、もう一度ログインしてください。<br />
+            <span style={{ fontSize: '0.8rem' }}>※ 入力途中で保存していない内容は、反映されていない場合があります。</span>
+          </p>
+          <button
+            onClick={() => {
+              clearFacilitySession();
+              navigate(`/facility-login/${facilityId}`, { replace: true });
+            }}
+            style={{ background: '#3d2b1f', color: '#fff', border: 'none', padding: '14px 30px', borderRadius: '12px', fontWeight: 'bold', fontSize: '1rem', cursor: 'pointer', width: '100%' }}
+          >
+            ログイン画面へ
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (loading) return <div style={centerStyle}>読み込み中...</div>;
 
