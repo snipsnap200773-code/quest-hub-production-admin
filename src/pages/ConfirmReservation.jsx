@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { supabase, supabaseAnon } from '../supabaseClient';
 import { Loader2, Sparkles, Clock } from 'lucide-react';
@@ -7,6 +7,31 @@ import { triggerGameEvent } from '../components/game/GameBridge';
 // 🚀 🆕 admin側：ConfirmReservation.jsx の最上部（Step 1）
 import { gameServices } from '../components/game/services/gameServices';
 
+// 🆕 ねじ込み予約の顧客検索・一覧用の道具
+// 顧客名簿に紛れているブロック用の名前（予約管理画面の顧客名簿と同じ）
+const BLOCK_NAMES = ['臨時休業', '管理者ブロック', '休憩', '銀行', '買い出し', '移動'];
+
+// 検索用に文字をそろえる：全角/半角・大文字/小文字・カタカナ/ひらがな・空白の違いをなくす
+const normalizeForSearch = (s) =>
+  (s || '')
+    .normalize('NFKC')
+    .toLowerCase()
+    .replace(/[\u30a1-\u30f6]/g, (ch) => String.fromCharCode(ch.charCodeAt(0) - 0x60))
+    .replace(/\s+/g, '');
+
+// あいうえお順の見出し（濁音・半濁音・小さい字も含める）
+const KANA_ROWS = [
+  ['あ行', 'ぁ', 'お'], ['か行', 'か', 'ご'], ['さ行', 'さ', 'ぞ'], ['た行', 'た', 'ど'],
+  ['な行', 'な', 'の'], ['は行', 'は', 'ぽ'], ['ま行', 'ま', 'も'], ['や行', 'ゃ', 'よ'],
+  ['ら行', 'ら', 'ろ'], ['わ行', 'ゎ', 'ん']
+];
+const KANA_ROW_ORDER = [...KANA_ROWS.map(r => r[0]), 'その他'];
+const getKanaRow = (key) => {
+  const ch = (key || '').charAt(0);
+  const row = KANA_ROWS.find(([, from, to]) => ch >= from && ch <= to);
+  return row ? row[0] : 'その他';
+};
+
 function ConfirmReservation() {
   const { shopId } = useParams();
   const location = useLocation();
@@ -14,8 +39,13 @@ function ConfirmReservation() {
 
   // 🆕 修正1：Stateの追加（ここに4つのStateを定義します）
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [suggestedCustomers, setSuggestedCustomers] = useState([]);
-  const [selectedCustomerId, setSelectedCustomerId] = useState(null);
+  // 🆕 ねじ込み予約：お客様の選び方（'existing' 既存 / 'new' 新規）
+  const [customerMode, setCustomerMode] = useState('existing');
+  const [allCustomers, setAllCustomers] = useState([]);   // 既存のお客様（検索・一覧用）
+  const [isCustomersLoading, setIsCustomersLoading] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [showAllList, setShowAllList] = useState(false);
+  const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [staffName, setStaffName] = useState('');
   // 🆕 追記：自動入力通知の表示管理 [cite: 2025-12-01]
@@ -179,58 +209,114 @@ useEffect(() => {
   fetchStaffName();
 }, [lineUser, authUserProfile, shopId]);
 
-// 🆕 顧客検索ロジックを一括State（customerData.name）に対応
+// 🆕 ねじ込み予約（既存）：この店舗のお客様をまとめて読み込む（1000件の壁を越えて全件）
   useEffect(() => {
-    const searchCustomers = async () => {
-      if (!isAdminEntry || !customerData.name || customerData.name.length < 1 || selectedCustomerId) {
-        setSuggestedCustomers([]);
-        setSelectedIndex(-1);
-        return;
+    if (!isAdminEntry) return;
+    const loadCustomers = async () => {
+      setIsCustomersLoading(true);
+      const pageSize = 1000;
+      let page = 0;
+      let rows = [];
+      while (true) {
+        const { data, error } = await supabase
+          .from('customers')
+          .select('id, name, admin_name, furigana, phone, email, zip_code, address, parking, is_facility')
+          .eq('shop_id', shopId)
+          .range(page * pageSize, page * pageSize + pageSize - 1);
+        if (error) { console.error('顧客一覧の取得に失敗しました:', error.message); break; }
+        if (!data || data.length === 0) break;
+        rows = rows.concat(data);
+        if (data.length < pageSize) break;
+        page++;
       }
-      const { data } = await supabase
-        .from('customers')
-        .select('*')
-        .eq('shop_id', shopId)
-        .or(`name.ilike.%${customerData.name}%,furigana.ilike.%${customerData.name}%`)
-        .limit(5);
-      
-      setSuggestedCustomers(data || []);
-      setSelectedIndex(-1);
+      const list = rows
+        .filter(c => !c.is_facility && !BLOCK_NAMES.includes((c.name || '').trim()))
+        .map(c => {
+          const displayName = c.admin_name || c.name || '';
+          const sortKey = normalizeForSearch(c.furigana) || normalizeForSearch(displayName);
+          return {
+            ...c,
+            displayName,
+            sortKey,
+            kanaRow: getKanaRow(sortKey),
+            searchKey: [c.name, c.admin_name, c.furigana].map(normalizeForSearch).join('|'),
+            phoneDigits: (c.phone || '').replace(/[^0-9]/g, '')
+          };
+        })
+        .sort((a, b) => {
+          const ra = KANA_ROW_ORDER.indexOf(a.kanaRow);
+          const rb = KANA_ROW_ORDER.indexOf(b.kanaRow);
+          if (ra !== rb) return ra - rb;
+          return a.sortKey.localeCompare(b.sortKey, 'ja');
+        });
+      setAllCustomers(list);
+      setIsCustomersLoading(false);
     };
-    const timer = setTimeout(searchCustomers, 300);
-    return () => clearTimeout(timer);
-  }, [customerData.name, selectedCustomerId, isAdminEntry, shopId]);
+    loadCustomers();
+  }, [isAdminEntry, shopId]);
 
-// 🆕 候補から選んだ際、一括State（customerData）を更新
+  // 🆕 画面に出すリスト（検索語があれば絞り込み、なければ「一覧」を開いたときだけ全員）
+  const visibleCustomers = useMemo(() => {
+    const q = normalizeForSearch(searchText);
+    if (!q) return showAllList ? allCustomers : [];
+    const digits = q.replace(/[^0-9]/g, '');
+    const isPhoneQuery = /^[0-9-]+$/.test(q) && digits.length >= 2;
+    return allCustomers.filter(c =>
+      c.searchKey.includes(q) || (isPhoneQuery && c.phoneDigits.includes(digits))
+    );
+  }, [searchText, showAllList, allCustomers]);
+
+  // 🆕 既存のお客様を選ぶ
   const handleSelectCustomer = (c) => {
-    setCustomerData({
-      ...customerData,
-      name: c.name,
+    setSelectedCustomer(c);
+    setCustomerData(prev => ({
+      ...prev,
+      name: c.name || c.admin_name || '',
       furigana: c.furigana || '',
       phone: c.phone || '',
       email: c.email || '',
-      address: c.address || '' // 住所データがあればそれもセット
-    });
-    setSelectedCustomerId(c.id);
-    setSuggestedCustomers([]);
+      zip_code: c.zip_code || '',
+      address: c.address || '',
+      parking: c.parking || ''
+    }));
+    setSearchText('');
+    setShowAllList(false);
     setSelectedIndex(-1);
   };
 
-  const handleKeyDown = (e) => {
-    if (suggestedCustomers.length === 0) return;
+  // 🆕 選んだお客様を外す
+  const clearSelectedCustomer = () => {
+    setSelectedCustomer(null);
+    setCustomerData(prev => ({
+      ...prev, name: '', furigana: '', phone: '', email: '', zip_code: '', address: '', parking: ''
+    }));
+  };
+
+  // 🆕 「既存」「新規」の切り替え（前のモードの入力は持ち越さない）
+  const switchCustomerMode = (mode) => {
+    if (mode === customerMode) return;
+    setCustomerMode(mode);
+    clearSelectedCustomer();
+    setSearchText('');
+    setShowAllList(false);
+    setSelectedIndex(-1);
+  };
+
+  // 🆕 PC：↑↓で候補を移動、Enterで選択、Escで閉じる
+  const handleSearchKeyDown = (e) => {
+    if (visibleCustomers.length === 0) return;
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev < suggestedCustomers.length - 1 ? prev + 1 : prev));
+      setSelectedIndex(prev => Math.min(prev + 1, visibleCustomers.length - 1));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : 0));
-    } else if (e.key === 'Enter') {
-      if (selectedIndex >= 0) {
-        e.preventDefault();
-        handleSelectCustomer(suggestedCustomers[selectedIndex]);
-      }
+      setSelectedIndex(prev => Math.max(prev - 1, 0));
+    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+      e.preventDefault();
+      handleSelectCustomer(visibleCustomers[selectedIndex]);
     } else if (e.key === 'Escape') {
-      setSuggestedCustomers([]);
+      setSearchText('');
+      setShowAllList(false);
       setSelectedIndex(-1);
     }
   };
@@ -246,7 +332,6 @@ const handleInputChange = (e) => {
     }
 
     setCustomerData(prev => ({ ...prev, [name]: value }));
-    if (name === 'name') setSelectedCustomerId(null);
   };
 
   // 動的に生成される入力フォーム（input/select/textarea）で共通利用するスタイル定義
@@ -261,6 +346,18 @@ const handleInputChange = (e) => {
 
 // ✅ 修正後の保存ロジック（handleReserve）
 const handleReserve = async () => {
+    // 🆕 ねじ込み：既存はお客様を選んでから、新規はお名前を入れてから
+    if (isAdminEntry) {
+      if (customerMode === 'existing' && !selectedCustomer) {
+        alert('お客様を選択してください。');
+        return;
+      }
+      if (customerMode === 'new' && !customerData.name.trim()) {
+        alert('お名前を入力してください。');
+        return;
+      }
+    }
+
     // 🚀 🆕 【ガード1】そもそも名前や日時がない場合は処理を完全に中断する
     if (!customerData.name || (!adminDate && !date) || (!adminTime && !time)) {
       console.error("🚫 予約データが不足しています。処理を中断しました。");
@@ -523,24 +620,27 @@ const handleReserve = async () => {
         cancelUrl = `https://questhub-portal.vercel.app/cancel?token=${cancelToken}`;
 
       } else {
-        // --- 店舗のねじ込み（従来どおり） ---
-        let finalCustomerId = selectedCustomerId;
+        // --- 店舗のねじ込み ---
+        let finalCustomerId = null;
 
-        if (!finalCustomerId) {
-          const cleanPhone = customerData.phone?.replace(/[^0-9]/g, '');
-          if (cleanPhone) {
-            const { data: matched } = await supabase
-              .from('customers')
-              .select('*')
-              .eq('phone', cleanPhone)
-              .eq('shop_id', shopId)
-              .maybeSingle();
-            if (matched) {
-              finalCustomerId = matched.id;
-              existingCust = matched;
-            }
+        if (customerMode === 'existing') {
+          // 🆕 既存：選んだお客様を、最新の来店回数・表示名ごと読み直す
+          //    （以前は候補から選ぶと existingCust が空のままで、来店回数が 1 に戻っていました）
+          const { data: picked, error: pickError } = await supabase
+            .from('customers')
+            .select('id, name, admin_name, total_visits')
+            .eq('id', selectedCustomer.id)
+            .eq('shop_id', shopId)
+            .maybeSingle();
+          if (pickError) throw pickError;
+          if (!picked) {
+            alert('選択したお客様が見つかりませんでした。もう一度選び直してください。');
+            return;
           }
+          finalCustomerId = picked.id;
+          existingCust = picked;
         }
+        // 🆕 新規：照合はせず、下の insert で新しい名簿を作る
 
         if (finalCustomerId) {
           const updatePayload = {
@@ -857,6 +957,104 @@ return (
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+        {/* 🆕 ねじ込み予約：「既存」「新規」の切り替え */}
+        {isAdminEntry && (
+          <div style={{ display: 'flex', gap: '8px', background: '#f1f5f9', padding: '6px', borderRadius: '14px' }}>
+            {[{ mode: 'existing', label: '既存' }, { mode: 'new', label: '新規' }].map(({ mode, label }) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => switchCustomerMode(mode)}
+                style={{
+                  flex: 1, padding: '12px', borderRadius: '10px', border: 'none', cursor: 'pointer',
+                  fontWeight: 'bold', fontSize: '0.95rem', transition: '0.2s',
+                  background: customerMode === mode ? '#e11d48' : 'transparent',
+                  color: customerMode === mode ? '#fff' : '#64748b'
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* 🆕 ねじ込み予約（既存）：検索・一覧から選ぶ */}
+        {isAdminEntry && customerMode === 'existing' && (
+          selectedCustomer ? (
+            <div style={{ padding: '16px', borderRadius: '12px', border: '2px solid #e11d48', background: '#fff1f2', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '10px' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: '0.75rem', color: '#e11d48', fontWeight: 'bold', marginBottom: '4px' }}>選択中のお客様</div>
+                <div style={{ fontSize: '1.1rem', fontWeight: 'bold', color: '#1e293b' }}>{selectedCustomer.displayName} 様</div>
+                <div style={{ fontSize: '0.75rem', color: '#64748b', marginTop: '2px' }}>
+                  {selectedCustomer.furigana || 'ふりがな未登録'} ／ {selectedCustomer.phone || '電話未登録'}
+                </div>
+              </div>
+              <button type="button" onClick={clearSelectedCustomer} style={{ flexShrink: 0, background: '#fff', color: '#e11d48', border: '1px solid #e11d48', padding: '6px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 'bold', cursor: 'pointer' }}>
+                変更
+              </button>
+            </div>
+          ) : (
+            <div>
+              <label style={{ fontSize: '0.8rem', fontWeight: 'bold', display: 'block', marginBottom: '8px' }}>検索</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  value={searchText}
+                  onChange={(e) => { setSearchText(e.target.value); setSelectedIndex(-1); }}
+                  onKeyDown={handleSearchKeyDown}
+                  placeholder="名前・ふりがな・電話番号の一部"
+                  style={{ ...inputStyle, flex: 1, minWidth: 0 }}
+                />
+                <button
+                  type="button"
+                  onClick={() => { setShowAllList(v => !v); setSelectedIndex(-1); }}
+                  style={{ flexShrink: 0, padding: '0 16px', borderRadius: '10px', border: '1px solid #cbd5e1', background: showAllList ? '#1e293b' : '#f1f5f9', color: showAllList ? '#fff' : '#475569', fontWeight: 'bold', cursor: 'pointer' }}
+                >
+                  一覧
+                </button>
+              </div>
+
+              {isCustomersLoading && (
+                <div style={{ padding: '12px', fontSize: '0.8rem', color: '#94a3b8' }}>お客様を読み込み中...</div>
+              )}
+
+              {!isCustomersLoading && (searchText || showAllList) && (
+                <div style={{ marginTop: '10px', maxHeight: '50vh', overflowY: 'auto', border: '1px solid #e2e8f0', borderRadius: '12px', background: '#fff' }}>
+                  {visibleCustomers.length === 0 ? (
+                    <div style={{ padding: '16px', textAlign: 'center', fontSize: '0.85rem', color: '#94a3b8' }}>
+                      該当するお客様がいません（「新規」から登録できます）
+                    </div>
+                  ) : (
+                    visibleCustomers.map((c, index) => {
+                      const isNewRow = index === 0 || c.kanaRow !== visibleCustomers[index - 1].kanaRow;
+                      return (
+                        <React.Fragment key={c.id}>
+                          {isNewRow && (
+                            <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '6px 12px', fontSize: '0.75rem', fontWeight: '900', color: '#e11d48', background: '#fff1f2', borderBottom: '1px solid #fecdd3' }}>
+                              {c.kanaRow}
+                            </div>
+                          )}
+                          <div
+                            onClick={() => handleSelectCustomer(c)}
+                            style={{ padding: '12px', borderBottom: '1px solid #f1f5f9', cursor: 'pointer', background: index === selectedIndex ? '#fff1f2' : '#fff' }}
+                          >
+                            <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: '#1e293b' }}>{c.displayName} 様</div>
+                            <div style={{ fontSize: '0.75rem', color: '#94a3b8', marginTop: '2px' }}>
+                              {c.furigana || 'ふりがな未登録'} ／ {c.phone || '電話未登録'}
+                            </div>
+                          </div>
+                        </React.Fragment>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
+          )
+        )}
+
         {/* --- 1. 基本項目 & 業種別項目のループ --- */}
         {formConfig && Object.entries(formConfig).map(([key, config]) => {
           const isEnabled = lineUser ? config.line_enabled : config.enabled;
@@ -864,6 +1062,8 @@ return (
           // 表示しない条件
           if (!isEnabled) return null;
           if (isAdminEntry && key !== 'name') return null;
+          // 🆕 ねじ込み（既存）はお名前欄を出さない（上の検索で選ぶ）
+          if (isAdminEntry && customerMode === 'existing') return null;
 
           // 👇 🌟 🆕 追加：設定画面で決めた「表示対象（salon / visit）」を判定して出し分ける！
           const targetMode = config.target_mode || 'all';
@@ -890,37 +1090,15 @@ return (
                 </label>
 
                 {key === 'name' ? (
-                  <>
-                    <input 
-                      name="name"
-                      type="text" 
-                      autoComplete="off"
-                      value={customerData.name} 
-                      onChange={handleInputChange} 
-                      onKeyDown={handleKeyDown}
-                      placeholder={`${config.label}を入力`} 
-                      style={inputStyle} 
-                    />
-                    {isAdminEntry && suggestedCustomers.length > 0 && (
-                      <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: '#fff', boxShadow: '0 10px 25px rgba(0,0,0,0.1)', borderRadius: '10px', zIndex: 100, border: '1px solid #eee', overflow: 'hidden' }}>
-                        {suggestedCustomers.map((c, index) => (
-                          <div 
-                            key={c.id} 
-                            onClick={() => handleSelectCustomer(c)} 
-                            style={{ 
-                              padding: '12px', 
-                              borderBottom: '1px solid #f8fafc', 
-                              cursor: 'pointer', 
-                              fontSize: '0.9rem',
-                              background: index === selectedIndex ? `${themeColor}15` : 'transparent'
-                            }}
-                          >
-                            <b>{c.name} 様</b> <span style={{ color: '#94a3b8', fontSize: '0.75rem' }}>({c.phone || '電話なし'})</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
+                  <input 
+                    name="name"
+                    type="text" 
+                    autoComplete="off"
+                    value={customerData.name} 
+                    onChange={handleInputChange} 
+                    placeholder={`${config.label}を入力`} 
+                    style={inputStyle} 
+                  />
                 ) : key === 'parking' ? (
                   <select name={key} value={customerData[key]} onChange={handleInputChange} style={inputStyle} required={config.required}>
                     <option value="">選択してください</option>
