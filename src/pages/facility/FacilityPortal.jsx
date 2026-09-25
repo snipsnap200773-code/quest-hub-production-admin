@@ -477,6 +477,11 @@ const FacilityPortal = () => {
                 //    施設ユーザーは Auth を持たないため不要であるうえ、
                 //    同じブラウザで店舗オーナーがログインしていると
                 //    そちらのセッションまで切れていました。
+                // ⚠️ 2026/09/25【BX】：サーバー側のトークン（facility_sessions の行）も消す。
+                //    従来はブラウザから消すだけで、30日間有効なまま残っていた。
+                //    失敗してもログアウト自体は続ける（通信エラーで画面に閉じ込めないため）。
+                const { error: logoutError } = await supabase.rpc('facility_logout');
+                if (logoutError) console.error('ログアウト時のトークン削除に失敗:', logoutError.message);
                 clearFacilitySession();
                 sessionStorage.clear(); 
                 localStorage.removeItem('facility_user_id');
