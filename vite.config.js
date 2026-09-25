@@ -6,7 +6,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      registerType: 'autoUpdate',
+      // ⚠️ 2026/09/25【BR②】：autoUpdate → prompt。新しい版が届いたら、
+      //    PwaUpdateBanner の「更新する」を押したときだけ切り替える（入力中の内容を消さないため）。
+      registerType: 'prompt',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       devOptions: {
         enabled: true
