@@ -12,6 +12,7 @@ export default function PwaUpdateBanner() {
   } = useRegisterSW({
     onRegisteredSW(_swUrl, registration) {
       if (!registration) return;
+      console.info('[PWA] Service Worker を登録しました（30分ごと・画面に戻ったときに更新を確認します）');
       const check = () => {
         if (document.visibilityState === 'visible') {
           registration.update().catch(() => {});
