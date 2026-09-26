@@ -43,6 +43,7 @@ import GameMasterDashboard from './pages/admin/GameMaster/GameMasterDashboard';
 
 // --- 🛠️ 共通コンポーネント ---
 import FacilitySearch from './components/FacilitySearch';
+import FacilityFeatureGate from './components/FacilityFeatureGate'; // 🔐 2026/09/26 施設連携の封印
 import ShopSearch from './components/ShopSearch';
 import ScrollToTop from './components/ScrollToTop';
 import InquiryForm from "./components/InquiryForm";
@@ -154,8 +155,9 @@ function App() {
 
           {/* --- 🏢 施設ポータル連携機能（店舗側） --- */}
           <Route path="/admin/:shopId/facilities" element={<FacilityManagement />} />
-          <Route path="/admin/:shopId/visit-requests/:visitId" element={<AdminFacilityVisit_PC />} />
-          <Route path="/admin/:shopId/facility-search" element={<FacilitySearch />} />
+          {/* 🔐 2026/09/26（1-2 施設連携の封印）：スイッチ ON の店舗だけ開ける */}
+          <Route path="/admin/:shopId/visit-requests/:visitId" element={<FacilityFeatureGate><AdminFacilityVisit_PC /></FacilityFeatureGate>} />
+          <Route path="/admin/:shopId/facility-search" element={<FacilityFeatureGate><FacilitySearch /></FacilityFeatureGate>} />
         </Route>
         {/* 👆 ここまでが SubscriptionProvider の適用範囲 */}
 
