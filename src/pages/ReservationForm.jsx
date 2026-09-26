@@ -8,6 +8,9 @@ import { MapPin, CheckCircle2, ChevronRight, AlertCircle, User, Image as ImageIc
 
 // 🚀 🆕 修正：アニメーション用のパッケージを追加
 import { motion, AnimatePresence } from 'framer-motion';
+// ⚠️ 2026/09/26【CF】1-15 ②：訪問型のキーワードと訪問エリアの判定を共通のものにした
+import { VISIT_KEYWORDS } from '../constants/industryMaster';
+import { isOutsideVisitAreas } from '../utils/visitArea';
 
 function ReservationForm() {
   const { shopId } = useParams();
@@ -42,8 +45,7 @@ function ReservationForm() {
   const [targetStaffName, setTargetStaffName] = useState(''); 
   const [autoStaffId, setAutoStaffId] = useState(null); // 🆕 自動セットされたスタッフIDを保存  
 
-  // ✅ 1. 訪問型とみなす業種リスト（BasicSettingsの選択肢と合わせる）
-const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+  // ✅ 1. 訪問型とみなす業種リスト → ⚠️ 2026/09/26 industryMaster.js の VISIT_KEYWORDS を使う（上で import）
 
   // ✅ 2. 新しいState
   const [visitorZip, setVisitorZip] = useState(''); // 🆕 追加：郵便番号用
@@ -480,6 +482,10 @@ if (servRes.data) {
     });
   }, [stylists, serviceMode, visitIndustries, salonIndustries]);
 
+  // ⚠️ 2026/09/26【CF】1-15 ②：訪問先が訪問エリア外かどうか（エリアを登録していない店舗は常に false）
+  //    ねじ込み（isAdminMode）は判定しない（店舗が電話で相談を受けて入れる流れのため）
+  const isOutsideArea = serviceMode === 'visit' && !isAdminMode && isAddressFixed && isOutsideVisitAreas(shop, visitorAddress);
+
   // 来店／訪問の切り替え（切り替えたら、選択中のメニューをリセットする）
   const switchMode = (mode) => {
     if (mode === serviceMode) return;
@@ -555,6 +561,7 @@ const handleNextStep = (input = null) => {
     // 5. 画面遷移
     if (isAdminMode) {
       const confirmUrl = `/shop/${shopId}/confirm${finalStaffId ? `?staff=${finalStaffId}` : ''}`;
+      // ⚠️ 2026/09/26【CF】1-15 ②：移動時間は予約に保存しない仕様（日時選択で開始時刻の前をふさぐ）なので、ねじ込みでは渡さない
       navigate(confirmUrl, { 
         state: { ...commonState, date: adminDate, time: adminTime, adminDate, adminTime } 
       });
@@ -623,7 +630,8 @@ const handleNextStep = (input = null) => {
         <h2 style={{ margin: '0 0 10px 0', fontSize: '1.4rem' }}>{displayBranding.name}</h2>
 
         {/* 👇 🌟 🆕 ここから追加：ハイブリッド店舗専用のご利用モード切替トグル */}
-        {!isAdminMode && visitIndustries.length > 0 && salonIndustries.length > 0 && (
+        {/* ⚠️ 2026/09/26【CF】1-15 ②：ねじ込み（isAdminMode）でも出す（訪問のねじ込みができるように） */}
+        {visitIndustries.length > 0 && salonIndustries.length > 0 && (
           <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', background: '#f1f5f9', padding: '6px', borderRadius: '16px' }}>
             <button 
               onClick={() => switchMode('salon')}
@@ -735,12 +743,25 @@ const handleNextStep = (input = null) => {
                 </button>
               </>
             ) : (
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <p style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold', marginBottom: '4px' }}>📍 訪問先</p>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{visitorAddress}</div>
+              <div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <p style={{ fontSize: '0.75rem', color: themeColor, fontWeight: 'bold', marginBottom: '4px' }}>📍 訪問先</p>
+                    <div style={{ fontSize: '0.9rem', fontWeight: 'bold' }}>{visitorAddress}</div>
+                  </div>
+                  <button onClick={() => setIsAddressFixed(false)} style={{ background: 'none', border: `2px solid ${themeColor}`, color: themeColor, padding: '5px 15px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>変更</button>
                 </div>
-                <button onClick={() => setIsAddressFixed(false)} style={{ background: 'none', border: `2px solid ${themeColor}`, color: themeColor, padding: '5px 15px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 'bold', cursor: 'pointer' }}>変更</button>
+                {/* ⚠️ 2026/09/26【CF】1-15 ②：訪問エリア外の案内 */}
+                {isOutsideArea && (
+                  <div style={{ marginTop: '12px', padding: '12px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '10px', fontSize: '0.85rem', color: '#991b1b', lineHeight: 1.6 }}>
+                    申し訳ありません。こちらの住所は、Web予約の訪問エリア外です。
+                    {shop?.phone ? (
+                      <span>お電話でご相談ください（<a href={`tel:${shop.phone}`} style={{ color: '#991b1b', fontWeight: 'bold' }}>{shop.phone}</a>）。</span>
+                    ) : (
+                      <span>お手数ですが、お店に直接ご相談ください。</span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -832,7 +853,8 @@ const handleNextStep = (input = null) => {
       </div>
 
       {/* 🚀 🆕 【住所確定ガード】訪問型サービスで住所未確定ならメニューを隠す */}
-      {(!(serviceMode === 'visit') || isAddressFixed || isAdminMode) ? (
+      {/* ⚠️ 2026/09/26【CF】1-15 ②：訪問エリア外のときもメニューを隠す */}
+      {((!(serviceMode === 'visit') || isAddressFixed || isAdminMode) && !isOutsideArea) ? (
         <div style={{ animation: 'fadeIn 0.5s ease-out' }}>
           <h3 style={{ fontSize: '1rem', borderLeft: `4px solid ${themeColor}`, paddingLeft: '10px', marginBottom: '20px' }}>
             {people.length === 0 ? "サービスを選択" : `${people.length + 1}人目のサービスを選択`}
@@ -1055,7 +1077,7 @@ const handleNextStep = (input = null) => {
             })
           }
         </div>
-      ) : (
+      ) : isOutsideArea ? null : (
         /* 🚀 🆕 住所がまだ決まっていない時に出す「待機ガイド」 */
         <div style={{ 
           textAlign: 'center', padding: '60px 20px', background: '#fff', 
@@ -1098,7 +1120,7 @@ const handleNextStep = (input = null) => {
 
       {/* --- 固定フッター：予約ボタンエリア --- */}
       {/* 👇 🌟 修正：ここから下の isVisitService を全て serviceMode === 'visit' に置換 */}
-      {(selectedServices.length > 0 || people.length > 0 || (serviceMode === 'visit' && !isAddressFixed && !isAdminMode)) && (
+      {!isOutsideArea && (selectedServices.length > 0 || people.length > 0 || (serviceMode === 'visit' && !isAddressFixed && !isAdminMode)) && (
         <div style={{ position: 'fixed', bottom: 0, left: 0, right: 0, background: 'rgba(255,255,255,0.98)', backdropFilter: 'blur(10px)', padding: '15px 20px', borderTop: '1px solid #e2e8f0', textAlign: 'center', zIndex: 1000, boxShadow: '0 -4px 12px rgba(0,0,0,0.05)' }}>
           <button 
             disabled={

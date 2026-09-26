@@ -853,13 +853,13 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
               <MapPin size={18} /> 訪問エリア・移動時間
             </h4>
             <p style={{ fontSize: '0.75rem', color: '#0c4a6e', marginBottom: '15px', lineHeight: 1.6 }}>
-              ※訪問の予約は「施術＋準備＋標準の移動時間」の長さで枠を押さえます。訪問エリアを登録すると、エリア外の住所からのWeb予約には、お電話でのご相談をご案内します。
+              ※訪問の予約は、開始時刻の前に「標準の移動時間」をあけて入ります（予約の枠は「施術＋準備」の長さです）。訪問エリアを登録すると、エリア外の住所からのWeb予約には、お電話でのご相談をご案内します。
             </p>
 
             <div style={{ marginBottom: '20px' }}>
               <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
                 標準の移動時間
-                <HelpTooltip themeColor={themeColor} text="訪問の予約すべてに使う移動時間です。施術の後ろに付けて、次の予約までの枠を押さえます。" />
+                <HelpTooltip themeColor={themeColor} text="訪問の予約すべてに使う移動時間です。予約の開始時刻の前に、この時間をあけます（前の予約の終わりから、この時間がたたないと次の訪問は入りません）。" />
               </label>
               <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                 <input type="number" min="0" max="240"

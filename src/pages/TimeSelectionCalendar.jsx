@@ -2,6 +2,8 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { useParams, useLocation, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { ChevronLeft, ChevronRight, Clock, User, Calendar as CalendarIcon } from 'lucide-react';
+// ⚠️ 2026/09/26【CF】1-15 ②：移動時間は店舗基本設定の「標準の移動時間」を使う
+import { getTravelMinutes } from '../utils/visitArea';
 
 function TimeSelectionCalendar() {
   const { shopId } = useParams();
@@ -149,12 +151,11 @@ function TimeSelectionCalendar() {
       // 👇 🌟 修正：前の画面から渡されたモードを受け取り、それに応じて移動時間を判定する
       const passedServiceMode = location.state?.serviceMode || 'salon';
 
-      if (passedServiceMode === 'visit' && profile.use_travel_time_logic !== false && profile.minutes_per_km) {
-        const speed = profile.minutes_per_km; 
-        const averageDistance = 7; 
-        const calculatedBuffer = averageDistance * speed; 
-        setTravelTimeMinutes(calculatedBuffer);
-        console.log(`🚗 訪問予約・計算ON: バッファ ${calculatedBuffer}分`);
+      // ⚠️ 2026/09/26【CF】1-15 ②：「7km × 1kmあたりの分数」をやめ、店舗基本設定の「標準の移動時間」を使う
+      const travelMin = passedServiceMode === 'visit' ? getTravelMinutes(profile) : 0;
+      if (travelMin > 0) {
+        setTravelTimeMinutes(travelMin);
+        console.log(`🚗 訪問予約：移動時間 ${travelMin}分`);
       } else {
         // 設定がOFF、または来店型の場合はバッファを 0 にする
         setTravelTimeMinutes(0);
@@ -407,9 +408,14 @@ if (isGlobalBlocked || isGlobalPrivate) return { status: 'booked', label: '×', 
     };
 
     const effectiveTotalSlots = getCalculatedTotalSlots();
-    const totalMinRequired = (effectiveTotalSlots * interval) + buffer + (travelTimeMinutes || 0);
+    // ⚠️ 2026/09/26【CF】1-15 ②：移動時間は予約の「前」に付ける（次の行き先はまだ決まっていないため）。
+    //    予約の長さは「施術＋準備」だけ。移動は、開始時刻の前（windowStartTime から）をふさぐ。
+    //    朝一・休憩明けの訪問は、移動が営業時間外・休憩中にかかってもよい扱い（休憩・閉店の判定は開始時刻から）。
+    const totalMinRequired = (effectiveTotalSlots * interval) + buffer;
+    const travelMs = (travelTimeMinutes || 0) * 60 * 1000;
     const targetDateTime = new Date(`${dateStr}T${timeStr}:00`);
     const potentialEndTime = new Date(targetDateTime.getTime() + totalMinRequired * 60 * 1000);
+    const windowStartTime = new Date(targetDateTime.getTime() - travelMs);
 
     // 休憩時間を貫通していないかチェック
     for (let t = targetDateTime.getTime(); t < potentialEndTime.getTime(); t += interval * 60 * 1000) {
@@ -443,9 +449,11 @@ if (isGlobalBlocked || isGlobalPrivate) return { status: 'booked', label: '×', 
     // 🚀 🆕 修正：固定の店舗上限を廃止し、毎時間ごとにリアルタイム計算する
     let minRemaining = 999; 
 
-    for (let t = targetDateTime.getTime(); t < potentialEndTime.getTime(); t += interval * 60 * 1000) {
-      const travelBufferMs = (travelTimeMinutes || 0) * 60 * 1000;
-      const prepBufferMs = (shop.buffer_preparation_min || 0) * 60 * 1000;
+    // ⚠️ 2026/09/26【CF】1-15 ②：移動（開始時刻の前）の時間も、人手が空いているかを確かめる
+    for (let t = windowStartTime.getTime(); t < potentialEndTime.getTime(); t += interval * 60 * 1000) {
+      // ⚠️ 2026/09/26【CF】1-15 ②・【CL】：既存の予約の後ろに、移動時間も準備時間も足さない。
+      //    予約は「施術＋準備」を含めた終了時刻で保存しているため（準備を足すと二重になる）。
+      //    移動は、既存の予約の「前」でふさぐ（下の resStart）。
       const checkTStr = new Date(t).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tokyo' }).slice(0, 5);
   
       // 👇 🌟 🆕 追加：前の画面から渡された「今回の予約の対象業種」を受け取る
@@ -488,9 +496,10 @@ if (isGlobalBlocked || isGlobalPrivate) return { status: 'booked', label: '×', 
         // 👇 🌟 修正：今のモードで対応できないスタッフ（違う業種のスタッフ）の予約はカウントから除外！
         if (res.staff_id && !workingStaffs.some(s => s.id === res.staff_id)) return false;
 
-        const resStart = new Date(res.start_time).getTime();
+        // ⚠️ 2026/09/26【CF】1-15 ②：既存の予約の前にも移動時間をふさぐ（休みなどのブロックは除く）
+        const resStart = new Date(res.start_time).getTime() - (res.is_block ? 0 : travelMs);
         const resEnd = new Date(res.end_time).getTime();
-        const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
+        const blockedUntil = resEnd;
         return t >= resStart && t < blockedUntil;
       }).length;
         
@@ -509,9 +518,10 @@ const anyStaffAvailable = workingStylists.some(staff => {
   const staffCurrentLoad = existingReservations.filter(res => {
     if (res.status === 'canceled') return false;
     if (res.staff_id !== staff.id) return false;
-    const resStart = new Date(res.start_time).getTime();
+    // ⚠️ 2026/09/26【CF】1-15 ②：既存の予約の前にも移動時間をふさぐ（休みなどのブロックは除く）
+    const resStart = new Date(res.start_time).getTime() - (res.is_block ? 0 : travelMs);
     const resEnd = new Date(res.end_time).getTime();
-    const blockedUntil = resEnd + prepBufferMs + travelBufferMs;
+    const blockedUntil = resEnd;
     // 💡 個人のブロック(休みにする等)はここに入っているため自動でカウントされる
     return t >= resStart && t < blockedUntil;
   }).length;
@@ -1009,8 +1019,8 @@ const anyStaffAvailable = workingStylists.some(staff => {
                   ...location.state, 
                   date: selectedDate.toLocaleDateString('sv-SE', { timeZone: 'Asia/Tokyo' }), 
                   time: selectedTime, 
-                  staffId: targetStaff?.id || staffIdFromUrl || location.state?.staffId 
-                } 
+                  staffId: targetStaff?.id || staffIdFromUrl || location.state?.staffId
+                }
               });
             }}
           >

@@ -694,7 +694,10 @@ const handleReserve = async () => {
             people: people,
             applied_shop_name: customShopName || shop.business_name,
             is_sales_excluded: isSalesExcluded,
-            visit_info: { address: customerData.address, parking: customerData.parking, custom_answers: customAnswers }
+            visit_info: { address: customerData.address, parking: customerData.parking, custom_answers: customAnswers },
+            // ⚠️ 2026/09/26【CF】1-15 ②：ねじ込みでも「ご利用形式」を保存する
+            //    （予約詳細の「今回の訪問先」の表示と、これから作る移動時間表で使う）
+            form_input: { service_mode: location.state?.serviceMode || 'salon' }
           }
         });
 
