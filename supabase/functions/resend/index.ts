@@ -317,9 +317,23 @@ Deno.serve(async (req) => {
         conn = data;
       }
 
+      // ⚠️ 2026/09/26（1-2 施設連携の封印）：店舗の施設連携スイッチ（profiles.facility_feature_enabled）が
+      //    ON の店舗だけ、施設まわりの通知を送る。OFF の店舗は提携の状態に関係なく止める。
+      let shopFacilityOn = false;
+      if (reqShopId) {
+        const { data: sw } = await supabaseAdmin
+          .from('profiles')
+          .select('facility_feature_enabled')
+          .eq('id', reqShopId)
+          .maybeSingle();
+        shopFacilityOn = sw?.facility_feature_enabled === true;
+      }
+
       let bvReason = '';
       if (!reqShopId || !reqFacilityId) {
         bvReason = 'shopId / facilityId がありません';
+      } else if (!shopFacilityOn) {
+        bvReason = '店舗の施設連携が有効ではありません';
       } else if (type === 'facility_booking' || type === 'facility_booking_update') {
         if (!isFacilityCaller) bvReason = '施設本人からの呼び出しではありません';
         else if (conn?.status !== 'active') bvReason = '提携が有効ではありません';
@@ -341,7 +355,7 @@ Deno.serve(async (req) => {
       }
 
       // ログにはトークンの値を出さない（有無だけ）
-      const bvInfo = `shop=${reqShopId} facility=${reqFacilityId} facToken=${facToken ? 'あり' : 'なし'} tokenOk=${!!tokenFacilityId} shopCaller=${shopCaller?.userId ?? 'なし'} conn=${conn?.status ?? 'なし'}`;
+      const bvInfo = `shop=${reqShopId} facility=${reqFacilityId} facToken=${facToken ? 'あり' : 'なし'} tokenOk=${!!tokenFacilityId} shopCaller=${shopCaller?.userId ?? 'なし'} conn=${conn?.status ?? 'なし'} sw=${shopFacilityOn}`;
       if (bvReason) {
         if (BV_ENFORCE) return deny(bvReason, 401);
         console.log(`[FAC_GUARD] would reject ${type}: ${bvReason} (${bvInfo})`);
