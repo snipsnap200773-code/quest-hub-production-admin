@@ -400,6 +400,22 @@ $$;
 ALTER FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_staff_id" "uuid", "p_start_time" timestamp with time zone, "p_end_time" timestamp with time zone, "p_staff_max" integer, "p_store_max" integer, "p_bypass_check" boolean, "p_customer_id" "uuid", "p_reservation_date" "date", "p_customer_name" "text", "p_customer_phone" "text", "p_customer_email" "text", "p_zip_code" "text", "p_total_slots" integer, "p_biz_type" "text", "p_line_user_id" "text", "p_cancel_token" "text", "p_menu_name" "text", "p_options" "jsonb") OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") RETURNS boolean
+    LANGUAGE "sql" STABLE SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+  select coalesce(public.current_facility_id() = p_facility_id, false)
+      or exists (
+           select 1 from public.profiles p
+           where p.id = auth.uid()
+             and p.role in ('shop', 'super_admin')
+         );
+$$;
+
+
+ALTER FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") RETURNS TABLE("ok" boolean, "reason" "text")
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -651,6 +667,25 @@ $$;
 ALTER FUNCTION "public"."current_facility_id"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."facility_logout"() RETURNS "void"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+declare
+  v_token text;
+begin
+  v_token := coalesce(current_setting('request.headers', true)::json ->> 'x-facility-token', '');
+  if v_token = '' then
+    return;
+  end if;
+  delete from public.facility_sessions where token = v_token;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."facility_logout"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."get_my_reservations"() RETURNS TABLE("id" "uuid", "shop_id" "uuid", "shop_name" "text", "start_time" timestamp with time zone, "menu_name" "text", "status" "text", "is_today" boolean)
     LANGUAGE "plpgsql" SECURITY DEFINER
     SET "search_path" TO 'public'
@@ -873,6 +908,25 @@ $$;
 ALTER FUNCTION "public"."guard_profile_role"() OWNER TO "postgres";
 
 
+CREATE OR REPLACE FUNCTION "public"."hash_facility_password"() RETURNS "trigger"
+    LANGUAGE "plpgsql" SECURITY DEFINER
+    SET "search_path" TO 'public'
+    AS $$
+begin
+  if tg_op = 'INSERT' or new.password is distinct from old.password then
+    if coalesce(new.password, '') <> '' and new.password <> '********' then
+      new.password_hash := extensions.crypt(btrim(new.password), extensions.gen_salt('bf'));
+      new.password := '********';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+
+ALTER FUNCTION "public"."hash_facility_password"() OWNER TO "postgres";
+
+
 CREATE OR REPLACE FUNCTION "public"."is_account_active"("profile_id" "uuid") RETURNS boolean
     LANGUAGE "plpgsql" SECURITY DEFINER
     AS $$
@@ -1022,31 +1076,56 @@ CREATE OR REPLACE FUNCTION "public"."verify_facility_login"("p_login_id" "text",
     SET "search_path" TO 'public'
     AS $$
 declare
-  v_facility public.facility_users%rowtype;
-  v_token    text;
+  v_id    uuid;
+  v_name  text;
+  v_pw    text;
+  v_hash  text;
+  v_ok    boolean := false;
+  v_token text;
 begin
-  select f.* into v_facility
-  from public.facility_users f
-  where f.login_id = btrim(p_login_id)
-    and f.password = btrim(p_password)
-    and f.is_suspended = false
-  limit 1;
-
-  if not found then
+  v_id := (select f.id from public.facility_users f
+           where f.login_id = btrim(p_login_id)
+             and f.is_suspended = false
+           limit 1);
+  if v_id is null then
     return;
   end if;
 
+  v_name := (select f.facility_name from public.facility_users f where f.id = v_id);
+  v_pw   := (select f.password      from public.facility_users f where f.id = v_id);
+  v_hash := (select f.password_hash from public.facility_users f where f.id = v_id);
+
+  if coalesce(v_hash, '') <> '' then
+    v_ok := extensions.crypt(btrim(p_password), v_hash) = v_hash;
+  else
+    v_ok := v_pw = btrim(p_password);
+  end if;
+
+  if not coalesce(v_ok, false) then
+    return;
+  end if;
+
+  -- 期限切れのセッションを掃除（全施設）
   delete from public.facility_sessions s
-  where s.facility_user_id = v_facility.id
-    and s.expires_at <= now();
+  where s.expires_at <= now();
 
   v_token := replace(gen_random_uuid()::text, '-', '')
           || replace(gen_random_uuid()::text, '-', '');
 
   insert into public.facility_sessions (token, facility_user_id, expires_at)
-  values (v_token, v_facility.id, now() + interval '30 days');
+  values (v_token, v_id, now() + interval '30 days');
 
-  return query select v_facility.id, v_facility.facility_name, v_token;
+  -- 1施設あたり新しい方から5本だけ残す
+  delete from public.facility_sessions s
+  where s.facility_user_id = v_id
+    and s.token not in (
+      select s2.token from public.facility_sessions s2
+      where s2.facility_user_id = v_id
+      order by s2.created_at desc, s2.token
+      limit 5
+    );
+
+  return query select v_id, v_name, v_token;
 end;
 $$;
 
@@ -1230,7 +1309,8 @@ CREATE TABLE IF NOT EXISTS "public"."facility_users" (
     "allowed_categories" "text"[] DEFAULT '{}'::"text"[],
     "furigana" "text",
     "is_suspended" boolean DEFAULT false NOT NULL,
-    "is_test_mode" boolean DEFAULT false NOT NULL
+    "is_test_mode" boolean DEFAULT false NOT NULL,
+    "password_hash" "text"
 );
 
 
@@ -1248,21 +1328,33 @@ COMMENT ON COLUMN "public"."facility_users"."is_test_mode" IS 'テストモー�
 CREATE OR REPLACE VIEW "public"."facility_users_public" AS
  SELECT "id",
     "facility_name",
-    "email",
-    "address",
-    "tel",
+        CASE
+            WHEN "public"."can_see_facility_contact"("id") THEN "email"
+            ELSE NULL::"text"
+        END AS "email",
+        CASE
+            WHEN "public"."can_see_facility_contact"("id") THEN "address"
+            ELSE NULL::"text"
+        END AS "address",
+        CASE
+            WHEN "public"."can_see_facility_contact"("id") THEN "tel"
+            ELSE NULL::"text"
+        END AS "tel",
     "created_at",
     "accept_salon",
     "accept_dentist",
     "accept_massage",
     "email_notifications_enabled",
-    "contact_name",
+        CASE
+            WHEN "public"."can_see_facility_contact"("id") THEN "contact_name"
+            ELSE NULL::"text"
+        END AS "contact_name",
     "official_url",
     "allowed_categories",
     "furigana",
     "is_suspended",
     "is_test_mode"
-   FROM "public"."facility_users";
+   FROM "public"."facility_users" "f";
 
 
 ALTER VIEW "public"."facility_users_public" OWNER TO "postgres";
@@ -2873,6 +2965,10 @@ CREATE OR REPLACE TRIGGER "guard_profile_role" BEFORE INSERT OR UPDATE ON "publi
 
 
 
+CREATE OR REPLACE TRIGGER "hash_facility_password" BEFORE INSERT OR UPDATE ON "public"."facility_users" FOR EACH ROW EXECUTE FUNCTION "public"."hash_facility_password"();
+
+
+
 CREATE OR REPLACE TRIGGER "set_updated_at" BEFORE UPDATE ON "public"."visit_requests" FOR EACH ROW EXECUTE FUNCTION "public"."update_updated_at_column"();
 
 
@@ -4184,6 +4280,13 @@ GRANT ALL ON FUNCTION "public"."book_reservation_safely"("p_shop_id" "uuid", "p_
 
 
 
+REVOKE ALL ON FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") TO "anon";
+GRANT ALL ON FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") TO "authenticated";
+GRANT ALL ON FUNCTION "public"."can_see_facility_contact"("p_facility_id" "uuid") TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") TO "anon";
 GRANT ALL ON FUNCTION "public"."cancel_my_reservation"("p_reservation_id" "uuid") TO "authenticated";
@@ -4229,6 +4332,13 @@ GRANT ALL ON FUNCTION "public"."current_facility_id"() TO "service_role";
 
 
 
+REVOKE ALL ON FUNCTION "public"."facility_logout"() FROM PUBLIC;
+GRANT ALL ON FUNCTION "public"."facility_logout"() TO "anon";
+GRANT ALL ON FUNCTION "public"."facility_logout"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."facility_logout"() TO "service_role";
+
+
+
 REVOKE ALL ON FUNCTION "public"."get_my_reservations"() FROM PUBLIC;
 GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "anon";
 GRANT ALL ON FUNCTION "public"."get_my_reservations"() TO "authenticated";
@@ -4258,6 +4368,12 @@ GRANT ALL ON FUNCTION "public"."guard_facility_self_update"() TO "service_role";
 GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "anon";
 GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "authenticated";
 GRANT ALL ON FUNCTION "public"."guard_profile_role"() TO "service_role";
+
+
+
+GRANT ALL ON FUNCTION "public"."hash_facility_password"() TO "anon";
+GRANT ALL ON FUNCTION "public"."hash_facility_password"() TO "authenticated";
+GRANT ALL ON FUNCTION "public"."hash_facility_password"() TO "service_role";
 
 
 
@@ -4367,7 +4483,6 @@ GRANT ALL ON TABLE "public"."facility_sessions" TO "service_role";
 
 
 GRANT ALL ON TABLE "public"."facility_users" TO "service_role";
-GRANT INSERT,DELETE,UPDATE ON TABLE "public"."facility_users" TO "anon";
 GRANT SELECT,INSERT,DELETE,UPDATE ON TABLE "public"."facility_users" TO "authenticated";
 
 
