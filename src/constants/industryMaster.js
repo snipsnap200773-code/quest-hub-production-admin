@@ -77,3 +77,11 @@ export const getSubCategories = (mainLabel) => {
   const preset = Object.values(INDUSTRY_PRESETS).find(p => p.label === mainLabel);
   return preset ? preset.subCategories : [];
 };
+
+// ⚠️ 2026/09/26【CF】1-15 ②：訪問型の業種を見分けるキーワード。
+//    ReservationForm（admin・biz）と BasicSettings（admin）に別々に書いていたものを、ここにまとめた。
+//    業種名にこのどれかが含まれていれば訪問型（例：「訪問サービス」）。
+export const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
+
+export const isVisitIndustry = (label) =>
+  VISIT_KEYWORDS.some(k => (label || '').includes(k));

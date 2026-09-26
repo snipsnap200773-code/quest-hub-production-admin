@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { INDUSTRY_LABELS, getSubCategories } from '../../../constants/industryMaster';
+import { INDUSTRY_LABELS, getSubCategories, isVisitIndustry } from '../../../constants/industryMaster';
+import { normalizeAddress } from '../../../utils/visitArea';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 import { supabase } from "../../../supabaseClient";
@@ -44,6 +45,11 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const [address, setAddress] = useState('');
   const [baseAddress, setBaseAddress] = useState('');
   const [minutesPerKm, setMinutesPerKm] = useState(3);
+  // ⚠️ 2026/09/26【CF】1-15 ②：訪問エリア（[{ prefix, minutes }]）と標準の移動時間（分）
+  const [visitAreas, setVisitAreas] = useState([]);
+  const [defaultTravelMinutes, setDefaultTravelMinutes] = useState(20);
+  const [areaZip, setAreaZip] = useState('');               // エリア追加用の郵便番号
+  const [areaCandidates, setAreaCandidates] = useState([]); // 郵便番号から出した範囲の候補
   const [description, setDescription] = useState('');
   const [introText, setIntroText] = useState('');
   const [notes, setNotes] = useState('');
@@ -80,7 +86,7 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
 
   // 📝 現在の全入力状態を文字列（JSON）化してまとめる
   const currentDataStr = JSON.stringify({
-    businessName, businessNameKana, ownerName, ownerNameKana, businessType, subBusinessType, phone, emailContact, zipCode, address, baseAddress, minutesPerKm: Number(minutesPerKm), description, introText, notes, imageUrl, officialUrl, themeColor, catchphrase, businessHours, regularHoliday, instagramUrl, xUrl, youtubeUrl, ownerBio, ownerImageUrl, galleryUrls, gallerySectionTitle, menuSectionSubtitle, menuSectionTitle, highlightMenus, faqs, weeklySchedule, weeklyScheduleNote
+    businessName, businessNameKana, ownerName, ownerNameKana, businessType, subBusinessType, phone, emailContact, zipCode, address, baseAddress, minutesPerKm: Number(minutesPerKm), visitAreas, defaultTravelMinutes: Number(defaultTravelMinutes), description, introText, notes, imageUrl, officialUrl, themeColor, catchphrase, businessHours, regularHoliday, instagramUrl, xUrl, youtubeUrl, ownerBio, ownerImageUrl, galleryUrls, gallerySectionTitle, menuSectionSubtitle, menuSectionTitle, highlightMenus, faqs, weeklySchedule, weeklyScheduleNote
   });
 
   // 💡 初期データと現在のデータに差分があるかを判定
@@ -123,6 +129,9 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       setAddress(data.address || '');
       setBaseAddress(data.base_address || data.address || '');
       setMinutesPerKm(data.minutes_per_km ?? 3);
+      // ⚠️ 2026/09/26【CF】1-15 ②：訪問エリアと標準の移動時間
+      setVisitAreas(Array.isArray(data.visit_areas) ? data.visit_areas : []);
+      setDefaultTravelMinutes(data.default_travel_minutes ?? 20);
       setDescription(data.description || '');
       setIntroText(data.intro_text || '');
       setNotes(data.notes || '');
@@ -348,6 +357,56 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
     setWeeklySchedule(weeklySchedule.filter((_, i) => i !== idx));
   };
 
+  // ⚠️ 2026/09/26【CF】1-15 ②：訪問エリアの操作
+  //    郵便番号 → zipcloud で住所を引き、「町名まで／市区町村／市全域／都道府県」から範囲を選んで追加する
+  const handleAreaZipSearch = async () => {
+    const zip = normalizeAddress(areaZip).replace(/[^0-9]/g, '');
+    if (zip.length !== 7) {
+      alert('郵便番号を7桁で入力してください');
+      return;
+    }
+    try {
+      const res = await fetch(`https://zipcloud.ibsnet.co.jp/api/search?zipcode=${zip}`);
+      const data = await res.json();
+      if (!data.results || data.results.length === 0) {
+        alert('住所が見つかりませんでした。郵便番号を確かめてください。');
+        return;
+      }
+      const list = [];
+      const push = (label, prefix) => {
+        if (prefix && !list.some(c => c.prefix === prefix)) list.push({ label, prefix });
+      };
+      data.results.forEach(r => {
+        if (r.address3) push('町名まで', `${r.address1}${r.address2}${r.address3}`);
+      });
+      const { address1, address2 } = data.results[0];
+      push('市区町村', `${address1}${address2}`);
+      // 政令市（例：横浜市青葉区）は「横浜市」全体も選べるようにする。東京23区には市全域がない
+      const city = (address2.match(/^(.+?市).+区$/) || [])[1];
+      if (city) push('市全域', `${address1}${city}`);
+      push('都道府県', address1);
+      setAreaCandidates(list);
+    } catch (err) {
+      console.error('郵便番号検索エラー:', err);
+      alert('一時的に住所検索が利用できません。時間をおいてお試しください。');
+    }
+  };
+
+  const addVisitArea = (prefix) => {
+    if (visitAreas.some(a => normalizeAddress(a.prefix) === normalizeAddress(prefix))) {
+      alert('このエリアはすでに登録されています。');
+      return;
+    }
+    // ⚠️ 2026/09/26：エリアは「行ける場所の一覧」だけ（分数は持たない。移動時間表で決める）
+    setVisitAreas([...visitAreas, { prefix }]);
+    setAreaCandidates([]);
+    setAreaZip('');
+  };
+
+  const removeVisitArea = (idx) => {
+    setVisitAreas(visitAreas.filter((_, i) => i !== idx));
+  };
+
   // --- 保存処理 ---
   const handleSave = async () => {
     const { error } = await supabase.from('profiles').update({
@@ -369,6 +428,12 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
       official_url: officialUrl,
       base_address: baseAddress,
       minutes_per_km: Number(minutesPerKm) || 3, // 🔧 修正：文字列のまま保存されるのを防ぎ、数値に統一する
+      // ⚠️ 2026/09/26【CF】1-15 ②：訪問エリア（行ける場所の一覧）と標準の移動時間（0〜240分にそろえて保存）
+      //    拠点住所・1kmあたりの分数は画面から外したが、列と値は残す（レベル2で使う）
+      visit_areas: visitAreas
+        .filter(a => a && String(a.prefix || '').trim())
+        .map(a => ({ prefix: String(a.prefix).trim() })),
+      default_travel_minutes: Math.min(240, Math.max(0, Math.round(Number(defaultTravelMinutes) || 0))),
 
       // 🆕 保存対象に追加
       catchphrase,
@@ -403,9 +468,8 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
   const inputStyle = { width: '100%', padding: '12px', borderRadius: '10px', border: '1px solid #cbd5e1', boxSizing: 'border-box', fontSize: '1rem', background: '#fff' };
   const labelStyle = { fontSize: '0.85rem', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', color: '#334155' };
 
-  const VISIT_KEYWORDS = ['訪問', '出張', '代行', 'デリバリー', '清掃'];
-  // 👇 🌟 修正：配列を一度カンマ区切りの文字列にしてからキーワード判定する
-  const isVisit = VISIT_KEYWORDS.some(keyword => (businessType.join(',') || '').includes(keyword));
+  // ⚠️ 2026/09/26【CF】1-15 ②：キーワードは industryMaster.js の VISIT_KEYWORDS にまとめた
+  const isVisit = businessType.some(t => isVisitIndustry(t));
 
   return (
     <div style={containerStyle}>
@@ -781,43 +845,84 @@ const BasicSettings = ({ reloadPreview, setShowMobilePreview }) => {
         </div>
 
         {/* 訪問サービス設定 */}
+        {/* ⚠️ 2026/09/26【CF】1-15 ②：拠点住所・1kmあたりの分数を外し、訪問エリアと標準の移動時間に作り直した。
+               拠点住所・1kmあたりの分数の列と値は残している（レベル2で使う） */}
         {isVisit && (
           <div style={{ marginTop: '20px', marginBottom: '20px', padding: '20px', background: '#f0f9ff', borderRadius: '16px', border: '1px solid #bae6fd' }}>
             <h4 style={{ marginTop: 0, fontSize: '0.9rem', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <MapPin size={18} /> 訪問サービス・移動時間設定
+              <MapPin size={18} /> 訪問エリア・移動時間
             </h4>
-            <p style={{ fontSize: '0.75rem', color: '#0c4a6e', marginBottom: '15px' }}>
-              ※訪問先までの移動時間を自動計算するために使用します。
+            <p style={{ fontSize: '0.75rem', color: '#0c4a6e', marginBottom: '15px', lineHeight: 1.6 }}>
+              ※訪問の予約は「施術＋準備＋標準の移動時間」の長さで枠を押さえます。訪問エリアを登録すると、エリア外の住所からのWeb予約には、お電話でのご相談をご案内します。
             </p>
 
-            <div style={{ marginBottom: '15px' }}>
+            <div style={{ marginBottom: '20px' }}>
               <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-                拠点住所（出発・帰着地点）
-                <HelpTooltip themeColor={themeColor} text="出張・訪問サービスを行う際の「出発地点」であり「戻ってくる場所」でもあります。" />
+                標準の移動時間
+                <HelpTooltip themeColor={themeColor} text="訪問の予約すべてに使う移動時間です。施術の後ろに付けて、次の予約までの枠を押さえます。" />
               </label>
-              <input 
-                value={baseAddress} 
-                onChange={(e) => setBaseAddress(e.target.value)} 
-                style={inputStyle} 
-                placeholder="事務所や自宅の住所" 
-              />
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <input type="number" min="0" max="240"
+                  value={defaultTravelMinutes}
+                  onChange={(e) => setDefaultTravelMinutes(e.target.value === '' ? '' : Number(e.target.value))}
+                  style={{ ...inputStyle, width: '90px', textAlign: 'center' }}
+                />
+                <span style={{ fontSize: '0.85rem' }}>分</span>
+              </div>
             </div>
 
             <div>
               <label style={{ ...labelStyle, display: 'flex', alignItems: 'center' }}>
-                移動スピード目安
-                <HelpTooltip themeColor={themeColor} text="1km移動するのにかかる「分」を入力します。" />
+                訪問エリア
+                <HelpTooltip themeColor={themeColor} text="訪問できる場所の一覧です。郵便番号から住所を調べて、範囲（町名まで／市区町村／市全域／都道府県）を選んで追加します。エリアを1つも登録しないと、どの住所からでも予約を受け付けます。" />
               </label>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ fontSize: '0.85rem' }}>1km あたり</span>
-                <input 
-                  type="number" 
-                  value={minutesPerKm} 
-                  onChange={(e) => setMinutesPerKm(e.target.value === '' ? '' : Number(e.target.value))} 
-                  style={{ ...inputStyle, width: '80px', textAlign: 'center' }} 
+
+              <div style={{ display: 'flex', gap: '8px', marginBottom: '10px' }}>
+                <input value={areaZip}
+                  onChange={(e) => setAreaZip(e.target.value)}
+                  style={{ ...inputStyle, flex: 1 }}
+                  placeholder="郵便番号（例：1940013）"
+                  inputMode="numeric"
                 />
-                <span style={{ fontSize: '0.85rem' }}>分で移動</span>
+                <button type="button" onClick={handleAreaZipSearch}
+                  style={{ padding: '0 16px', borderRadius: '10px', border: 'none', background: '#0369a1', color: '#fff', fontWeight: 'bold', cursor: 'pointer', whiteSpace: 'nowrap' }}
+                >
+                  住所を調べる
+                </button>
               </div>
+
+              {areaCandidates.length > 0 && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#0c4a6e' }}>追加する範囲を選んでください</div>
+                  {areaCandidates.map(c => (
+                    <button key={c.prefix} type="button" onClick={() => addVisitArea(c.prefix)}
+                      style={{ textAlign: 'left', padding: '10px 12px', borderRadius: '10px', border: '1px solid #7dd3fc', background: '#fff', cursor: 'pointer', fontSize: '0.85rem' }}
+                    >
+                      <span style={{ fontWeight: 'bold', color: '#0369a1', marginRight: '8px' }}>{c.label}</span>
+                      {c.prefix}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {visitAreas.length === 0 ? (
+                <div style={{ fontSize: '0.8rem', color: '#64748b', padding: '10px', background: '#fff', borderRadius: '10px', border: '1px dashed #cbd5e1' }}>
+                  エリアの登録はありません（どの住所からでも予約を受け付けます）
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {visitAreas.map((area, idx) => (
+                    <div key={`${area.prefix}-${idx}`} style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#fff', padding: '10px 12px', borderRadius: '10px', border: '1px solid #e2e8f0' }}>
+                      <span style={{ flex: 1, fontSize: '0.85rem', wordBreak: 'break-all' }}>{area.prefix}</span>
+                      <button type="button" onClick={() => removeVisitArea(idx)} aria-label="削除"
+                        style={{ border: 'none', background: 'none', color: '#ef4444', cursor: 'pointer', padding: '4px' }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         )}
