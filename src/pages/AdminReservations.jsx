@@ -444,12 +444,29 @@ const [finalizedSale, setFinalizedSale] = useState(null); // 🆕 売上実績�
         }
 
       } else {
-        await supabase.from('regular_keep_exclusions').upsert([{ 
+        // 🔐 2026/09/26（1-2 施設連携の封印・【AD】）：AdminTimeline と同じく、
+        //    施設IDの確認と、保存・削除のエラーの確認を追加（DBで止まったときに黙って成功扱いにしないため）
+        if (!id) {
+          console.error('施設キャンセル: facility_user_id(id) が未定義です');
+          alert("施設情報が取得できませんでした。画面を再読み込みしてお試しください。");
+          return;
+        }
+
+        const { error: exclusionError } = await supabase.from('regular_keep_exclusions').upsert([{ 
           facility_user_id: id, shop_id: shopId, excluded_date: date 
         }]);
-        await supabase.from('keep_dates').delete().match({ 
+        if (exclusionError) {
+          console.error('regular_keep_exclusions upsertエラー:', exclusionError);
+          throw exclusionError;
+        }
+
+        const { error: keepDeleteError } = await supabase.from('keep_dates').delete().match({ 
           facility_user_id: id, shop_id: shopId, date: date 
         });
+        if (keepDeleteError) {
+          console.error('keep_dates 削除エラー(keep分岐):', keepDeleteError);
+          throw keepDeleteError;
+        }
       }
 
       showMsg(`${name} 様の予定をキャンセルしました。`);
