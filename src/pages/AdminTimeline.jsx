@@ -11,6 +11,7 @@ import {
   BarChart3, // 🚀 🆕 追加：ボトムナビ用アイコン
   Store, Clock, Menu // 🚀 追加：設定☰ポップアップメニュー用
 } from 'lucide-react';
+import VisitDestinationBox from '../components/VisitDestinationBox';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name) => {
@@ -2374,6 +2375,9 @@ const timeSlots = useMemo(() => {
                       <label style={{ fontSize: '0.75rem', fontWeight: '900', color: themeColor, display: 'block', marginBottom: '10px' }}>📋 予約メニュー内訳</label>
                       <div style={{ fontWeight: 'bold', color: '#1e293b' }}>{selectedRes?.menu_name || 'メニュー未設定'}</div>
                     </div>
+
+                    {/* 🆕 2026/09/26【CE】：予約に保存された「今回の訪問先」（名簿の住所とは別） */}
+                    <VisitDestinationBox res={selectedRes} />
 
                     {staffs.length > 1 && (
                       <>

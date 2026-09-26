@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { Clipboard, Activity, BarChart3, Calendar, Building2, Trash2, Clock, Settings, CheckCircle, Search, Scissors, ShoppingBag, X, Percent, User, Users, Store, Menu, PackageOpen } from 'lucide-react';
+import VisitDestinationBox from '../components/VisitDestinationBox';
 
 // 🆕 予約者名から固有のパステルカラーを生成するロジック
 const getCustomerColor = (name, type) => {
@@ -1439,15 +1440,10 @@ setSalesRecords(salesData || []);
 
       // 4. 以降、予約データの更新やリフレッシュ処理へと続く...
       if (selectedRes?.id && selectedRes.res_type === 'normal') {
-        const currentOptions = selectedRes.options || {};
-        const updatedVisitInfo = {
-          ...(currentOptions.visit_info || {}),
-          address: editFields.address,
-          parking: editFields.parking,
-          furigana: editFields.furigana,
-          zip_code: editFields.zip_code
-        };
-
+        // ⚠️ 2026/09/26【CE】：予約の options（visit_info＝今回の訪問先）は書き換えない。
+        //    以前は画面の「住所」欄（名簿の住所）で visit_info.address を上書きしていたため、
+        //    お客様が予約のときに入力した訪問先が、名簿の住所に置き換わっていた。
+        //    名簿の住所・駐車場は、上の customerPayload で名簿（customers）に保存している。
         await supabase
           .from('reservations')
           .update({ 
@@ -1455,7 +1451,6 @@ setSalesRecords(salesData || []);
             customer_phone: editFields.phone,
             customer_id: finalCustomerId,
             staff_id: selectedRes.staff_id, // 🚀 🆕 変更したスタッフIDを保存対象に追加！
-            options: { ...currentOptions, visit_info: updatedVisitInfo }
           })
           .eq('id', selectedRes.id);
       }
@@ -3371,6 +3366,9 @@ else if (
                         );
                       })()}
                     </div>
+
+                    {/* 🆕 2026/09/26【CE】：予約に保存された「今回の訪問先」（名簿の住所とは別） */}
+                    <VisitDestinationBox res={selectedRes} />
 
                     {/* 担当スタッフの変更 */}
                     {staffs.length > 1 && !editFields.is_facility && (
